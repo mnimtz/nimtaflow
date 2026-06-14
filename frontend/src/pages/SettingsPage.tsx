@@ -620,20 +620,25 @@ function AISection() {
           </select>
         </div>
 
-        {/* XMP auto-write */}
-        <label className="flex items-start justify-between gap-4 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer">
-          <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">AI-Beschreibung automatisch in XMP schreiben</p>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              Legt eine <code>.xmp</code>-Sidecar-Datei neben das Original mit <code>dc:description</code> + Schlagwörtern.
-              Originale bleiben unverändert. Praktisch für Lightroom/digiKam/Immich-Export.
-            </p>
-          </div>
-          <Toggle
-            value={String(settings['xmp.auto_write'] ?? '').toLowerCase() === 'true'}
-            onChange={v => set('xmp.auto_write', v ? 'true' : 'false')}
-          />
-        </label>
+        {/* AI metadata write-back */}
+        <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <Label>AI-Beschreibung & Tags zurückschreiben</Label>
+          <select
+            value={settings['xmp.write_mode'] ?? 'off'}
+            onChange={e => set('xmp.write_mode', e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="off">Aus — nur in der PhotoFlow-DB</option>
+            <option value="file">Nur ins Bild (EXIF/IPTC/XMP eingebettet)</option>
+            <option value="file_sidecar">Ins Bild + zusätzlich .xmp-Sidecar</option>
+            <option value="sidecar">Nur .xmp-Sidecar (Original unberührt)</option>
+          </select>
+          <p className="text-xs text-zinc-400 mt-1.5">
+            Schreibt <code>dc:description</code>/<code>IPTC:Caption</code> + Schlagwörter.
+            „Ins Bild" verändert die Originaldatei (mit Backup bei der ersten Änderung), „Sidecar" legt eine
+            <code>.xmp</code> daneben. Kompatibel mit Lightroom, digiKam, Immich.
+          </p>
+        </div>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>

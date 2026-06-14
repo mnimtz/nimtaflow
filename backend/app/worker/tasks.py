@@ -164,23 +164,33 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                             if not existing_pt:
                                 db.add(PhotoTag(photo_id=photo_id, tag_id=tag.id, source="ai"))
 
-                        # Optionally write the AI description into an XMP sidecar
-                        if description and str(ai_settings.get("xmp.auto_write", "")).lower() in ("1", "true", "on", "yes"):
+                        # Write the AI description into the file and/or a sidecar.
+                        # xmp.write_mode: off | file | file_sidecar | sidecar
+                        xmp_mode = str(ai_settings.get("xmp.write_mode", "off")).lower()
+                        if description and xmp_mode in ("file", "file_sidecar", "sidecar"):
+                            kw = [t for t in tags[:20]]
                             try:
-                                from app.services.xmp_sidecar import write_sidecar
-                                xmp_path = write_sidecar(
-                                    photo.path,
-                                    description=description,
-                                    title=photo.title,
-                                    keywords=[t for t in tags[:20]] or None,
-                                    latitude=photo.latitude, longitude=photo.longitude,
-                                    city=photo.city, country=photo.country,
-                                )
-                                photo.xmp_sidecar_written = True
-                                photo.xmp_sidecar_path = xmp_path
-                                flog("ai", "INFO", f"XMP dc:description geschrieben: {photo.filename}")
+                                if xmp_mode in ("file", "file_sidecar"):
+                                    from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+                                    await _wd(photo.path, description, overwrite=True)
+                                    if kw:
+                                        await _wk(photo.path, kw)
+                                    flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
+                                if xmp_mode in ("file_sidecar", "sidecar"):
+                                    from app.services.xmp_sidecar import write_sidecar
+                                    xmp_path = write_sidecar(
+                                        photo.path,
+                                        description=description,
+                                        title=photo.title,
+                                        keywords=kw or None,
+                                        latitude=photo.latitude, longitude=photo.longitude,
+                                        city=photo.city, country=photo.country,
+                                    )
+                                    photo.xmp_sidecar_written = True
+                                    photo.xmp_sidecar_path = xmp_path
+                                    flog("ai", "INFO", f"XMP-Sidecar geschrieben: {photo.filename}")
                             except Exception as xe:
-                                flog("ai", "WARNING", f"XMP-Schreiben fehlgeschlagen: {photo.filename}: {str(xe)[:120]}")
+                                flog("ai", "WARNING", f"Metadaten-Schreiben fehlgeschlagen: {photo.filename}: {str(xe)[:120]}")
 
                         if description:
                             embedding, _ = await ai.embed_text(description)
