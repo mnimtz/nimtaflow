@@ -81,16 +81,26 @@
 
 /* ── Sidebar nav pill ──────────────────────────── */
 .nav-pill {
-  @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150;
+  @apply relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150;
   color: var(--sidebar-text);
 }
 .nav-pill:hover {
   background: rgba(255,255,255,0.06);
-  color: #d4d4d8;
+  color: #e4e4e7;
 }
 .nav-pill.active {
-  background: rgba(99, 102, 241, 0.18);
-  color: #818cf8;
+  background: linear-gradient(90deg, rgba(99,102,241,0.22), rgba(139,92,246,0.10));
+  color: #c7d2fe;
+}
+/* left accent bar on the active item */
+.nav-pill.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  height: 18px; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #818cf8, #a78bfa);
 }
 
 /* ── Chip ──────────────────────────────────────── */

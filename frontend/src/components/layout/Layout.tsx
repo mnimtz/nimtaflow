@@ -35,7 +35,7 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-100 dark:bg-zinc-950">
       {/* ── Sidebar ──────────────────────────────── */}
-      <aside className="w-[60px] md:w-[220px] flex flex-col bg-zinc-900 shrink-0 select-none">
+      <aside className="w-[60px] md:w-[220px] flex flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 border-r border-white/5 shrink-0 select-none">
         {/* Logo */}
         <div className="h-14 flex items-center px-3 md:px-4 gap-3 border-b border-white/5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
