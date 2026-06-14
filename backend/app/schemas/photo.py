@@ -42,6 +42,12 @@ class PhotoDetail(PhotoBase):
     file_size: Optional[int]
     mime_type: Optional[str]
     processed_at: Optional[datetime]
+    # editable metadata
+    title: Optional[str] = None
+    caption: Optional[str] = None
+    keywords: Optional[str] = None
+    user_description: Optional[str] = None
+    artist: Optional[str] = None
 
 
 class PhotoListResponse(BaseModel):

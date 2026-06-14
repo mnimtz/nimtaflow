@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   X, ChevronLeft, ChevronRight, Heart, Download, Info,
-  MapPin, Camera, Aperture, Trash2, Calendar, Star,
+  MapPin, Camera, Aperture, Trash2, Calendar, Star, Pencil, Save, Loader2,
 } from 'lucide-react'
 import { api, type Photo } from '../../lib/api'
 import VideoPlayer from './VideoPlayer'
@@ -22,6 +22,10 @@ type PhotoDetail = Photo & {
   location_name?: string
   file_size?: number
   mime_type?: string
+  title?: string
+  caption?: string
+  keywords?: string
+  user_description?: string
 }
 
 type Props = {
@@ -44,6 +48,9 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
   const [index, setIndex] = useState(initialIndex)
   const [showInfo, setShowInfo] = useState(false)
   const [rating, setRating] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ title: '', user_description: '', keywords: '', writeFile: false, writeXmp: false })
+  const touch = useRef<{ x: number; y: number } | null>(null)
   const qc = useQueryClient()
 
   const photo = photos[index]
@@ -56,7 +63,45 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
 
   useEffect(() => {
     setRating(detail?.user_rating ?? 0)
+    setEditing(false)
+    setForm({
+      title: detail?.title ?? '',
+      user_description: detail?.user_description ?? detail?.description ?? '',
+      keywords: detail?.keywords ?? '',
+      writeFile: false,
+      writeXmp: false,
+    })
   }, [detail])
+
+  const saveMeta = useMutation({
+    mutationFn: () => api.patch(`/photos/${photo.id}/meta`, {
+      title: form.title || null,
+      user_description: form.user_description || null,
+      keywords: form.keywords || null,
+      write_to_file: form.writeFile,
+      write_xmp_sidecar: form.writeXmp,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['photo-detail', photo.id] })
+      qc.invalidateQueries({ queryKey: ['photos'] })
+      setEditing(false)
+    },
+  })
+
+  function onTouchStart(e: React.TouchEvent) {
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (!touch.current) return
+    const dx = e.changedTouches[0].clientX - touch.current.x
+    const dy = e.changedTouches[0].clientY - touch.current.y
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+      go(dx < 0 ? 1 : -1)
+    } else if (dy > 90 && Math.abs(dy) > Math.abs(dx)) {
+      onClose()
+    }
+    touch.current = null
+  }
 
   const favMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/photos/${id}/favorite`),
@@ -140,7 +185,11 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
         </div>
 
         {/* Media */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden">
+        <div
+          className="flex-1 flex items-center justify-center overflow-hidden"
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
           {photo.is_video ? (
             <VideoPlayer photoId={photo.id} className="w-full h-full" autoPlay />
           ) : (
@@ -181,11 +230,77 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
         </div>
       </div>
 
-      {/* Info panel */}
+      {/* Info panel — side panel on desktop, bottom sheet on mobile */}
       {showInfo && (
-        <div className="w-72 shrink-0 bg-gray-950 border-l border-white/10 overflow-y-auto">
+        <div className="
+          bg-gray-950 border-white/10 overflow-y-auto
+          md:w-80 md:shrink-0 md:border-l md:static
+          fixed inset-x-0 bottom-0 max-h-[70vh] border-t rounded-t-2xl md:rounded-none z-20
+        ">
           <div className="p-4 space-y-5">
-            <h3 className="text-white font-semibold text-sm">Details</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-semibold text-sm">Details</h3>
+              <div className="flex items-center gap-1">
+                {!editing ? (
+                  <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors">
+                    <Pencil size={13} /> Bearbeiten
+                  </button>
+                ) : (
+                  <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-white px-2 py-1">Abbrechen</button>
+                )}
+                <button onClick={() => setShowInfo(false)} className="md:hidden text-gray-400 hover:text-white p-1"><X size={16} /></button>
+              </div>
+            </div>
+
+            {/* Editable metadata */}
+            {editing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">Titel</label>
+                  <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                    className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">Beschreibung</label>
+                  <textarea value={form.user_description} onChange={e => setForm(f => ({ ...f, user_description: e.target.value }))} rows={3}
+                    className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">Schlagwörter (Komma-getrennt)</label>
+                  <input value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} placeholder="urlaub, strand, 2024"
+                    className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                    <input type="checkbox" checked={form.writeFile} onChange={e => setForm(f => ({ ...f, writeFile: e.target.checked }))} className="accent-indigo-500" />
+                    In Originaldatei schreiben (EXIF/IPTC)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                    <input type="checkbox" checked={form.writeXmp} onChange={e => setForm(f => ({ ...f, writeXmp: e.target.checked }))} className="accent-indigo-500" />
+                    XMP-Sidecar (.xmp) schreiben
+                  </label>
+                </div>
+                <button onClick={() => saveMeta.mutate()} disabled={saveMeta.isPending}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors">
+                  {saveMeta.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Speichern
+                </button>
+              </div>
+            ) : (detail?.title || detail?.user_description || detail?.description || detail?.keywords) ? (
+              <div className="space-y-2">
+                {detail?.title && <p className="text-gray-100 text-sm font-medium">{detail.title}</p>}
+                {(detail?.user_description || detail?.description) && (
+                  <p className="text-gray-300 text-sm">{detail.user_description || detail.description}</p>
+                )}
+                {detail?.keywords && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {detail.keywords.split(',').map(k => k.trim()).filter(Boolean).map(k => (
+                      <span key={k} className="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 text-[11px]">{k}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {photo.taken_at && (
               <div className="flex items-start gap-3">
