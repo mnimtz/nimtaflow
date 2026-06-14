@@ -26,8 +26,8 @@ python-magic==0.4.27
 # ── Local / integrated AI (CPU) ───────────────────────────────────────────────
 # CPU-only torch wheels (much smaller than the default CUDA build)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.4.1
-torchvision==0.19.1
+torch==2.2.2
+torchvision==0.17.2
 transformers==4.49.0
 accelerate==1.0.1
 einops==0.8.0
