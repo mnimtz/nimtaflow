@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2 } from 'lucide-react'
 import { api, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
@@ -115,15 +115,17 @@ export default function GalleryPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastIndex, setLastIndex] = useState<number | null>(null)
   const [library, setLibrary] = useState<'library' | 'favorites' | 'archive' | 'trash'>('library')
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'added' | 'name'>('newest')
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE)
   const rowHeight = useRowHeight()
   const qc = useQueryClient()
 
-  const filterParams = { ...buildFilterParams(filters), view: library }
+  const filterParams = { ...buildFilterParams(filters), view: library, sort }
 
   const infiniteQuery = useInfiniteQuery({
-    queryKey: ['photos', 'grid', filterParams],
+    queryKey: ['photos', 'grid', filterParams, pageSize],
     queryFn: ({ pageParam = 1 }) =>
-      api.get('/photos', { params: { ...filterParams, page: pageParam, limit: PAGE_SIZE } })
+      api.get('/photos', { params: { ...filterParams, page: pageParam, limit: pageSize } })
         .then(r => r.data as PhotoListResponse),
     getNextPageParam: (last) =>
       last.page * last.limit < last.total ? last.page + 1 : undefined,
@@ -185,6 +187,20 @@ export default function GalleryPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // Infinite scroll: auto-load next page when the sentinel scrolls into view
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && infiniteQuery.hasNextPage && !infiniteQuery.isFetchingNextPage) {
+        infiniteQuery.fetchNextPage()
+      }
+    }, { rootMargin: '600px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [infiniteQuery.hasNextPage, infiniteQuery.isFetchingNextPage, viewMode])
 
   const selectionCount = selected.size
 
@@ -275,6 +291,27 @@ export default function GalleryPage() {
           </span>
         )}
 
+        {viewMode === 'grid' && (
+          <>
+            <select value={sort} onChange={e => setSort(e.target.value as any)}
+              title="Sortierung"
+              className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="newest">Neueste zuerst</option>
+              <option value="oldest">Älteste zuerst</option>
+              <option value="added">Zuletzt hinzugefügt</option>
+              <option value="name">Dateiname</option>
+            </select>
+            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+              title="Bilder pro Ladevorgang"
+              className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={250}>250</option>
+            </select>
+          </>
+        )}
+
         {viewMode !== 'memories' && (
           <FilterPanel filters={filters} onChange={setFilters} />
         )}
@@ -300,17 +337,17 @@ export default function GalleryPage() {
               selected={selected}
               onToggleSelect={toggleSelect}
             />
-            {infiniteQuery.hasNextPage && (
-              <div className="flex justify-center py-6">
-                <button
-                  onClick={() => infiniteQuery.fetchNextPage()}
-                  disabled={infiniteQuery.isFetchingNextPage}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                >
-                  {infiniteQuery.isFetchingNextPage ? 'Lade...' : 'Mehr laden'}
-                </button>
-              </div>
-            )}
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} className="h-12 flex items-center justify-center">
+              {infiniteQuery.isFetchingNextPage && (
+                <span className="text-xs text-gray-400 flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin" /> Lade weitere…
+                </span>
+              )}
+              {!infiniteQuery.hasNextPage && allGridPhotos.length > 0 && (
+                <span className="text-xs text-gray-300 dark:text-gray-600">Alle {total.toLocaleString('de')} Fotos geladen</span>
+              )}
+            </div>
           </>
         )}
 

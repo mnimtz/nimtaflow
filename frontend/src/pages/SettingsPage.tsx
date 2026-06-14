@@ -1103,10 +1103,40 @@ function BackupSection() {
 }
 
 function MapSection() {
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const qc = useQueryClient()
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+
   return (
     <div>
-      <SectionHeader title="Karten-Provider" desc="Wähle den Kartendienst für die Weltkarte." />
-      <p className="text-sm text-zinc-400">Kommt bald.</p>
+      <SectionHeader title="Karte" desc="Kartendarstellung der Fotos mit GPS-Daten." />
+      <div className="space-y-5 max-w-xl">
+        <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-1">Verfügbare Kartenebenen (kostenlos, ohne API-Key)</p>
+          <p className="text-xs text-zinc-400">Standard (OSM) · Satellit (Esri) · Dunkel/Hell/Voyager (CARTO) · Topo (OpenTopoMap) · Wikimedia — umschaltbar direkt auf der Karte.</p>
+        </div>
+
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">Street-View-Link anzeigen</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Öffnet Google Street View an den Foto-Koordinaten (kostenlos, kein Key).</p>
+          </div>
+          <Toggle value={(settings['map.streetview'] ?? 'true') !== 'false'} onChange={v => set('map.streetview', v ? 'true' : 'false')} />
+        </label>
+
+        <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+      </div>
     </div>
   )
 }

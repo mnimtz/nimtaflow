@@ -35,6 +35,21 @@ const LAYERS = {
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: '&copy; OpenTopoMap',
   },
+  light: {
+    label: 'Hell',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CARTO',
+  },
+  voyager: {
+    label: 'Voyager',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CARTO',
+  },
+  wiki: {
+    label: 'Wikimedia',
+    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png',
+    attribution: '&copy; Wikimedia',
+  },
 } as const
 type LayerKey = keyof typeof LAYERS
 
@@ -57,6 +72,13 @@ export default function MapPage() {
     queryKey: ['photos-map'],
     queryFn: () => api.get('/photos', { params: { has_gps: true, limit: 2000, page: 1 } }).then((r) => r.data.items as Photo[]),
   })
+
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then((r) => r.data),
+    staleTime: 60_000,
+  })
+  const streetView = (settings?.['map.streetview'] ?? 'true') !== 'false'
 
   const withGps = useMemo(() => (data ?? []).filter((p) => p.latitude && p.longitude), [data])
   const points = useMemo(() => withGps.map((p) => [p.latitude!, p.longitude!] as [number, number]), [withGps])
@@ -109,14 +131,16 @@ export default function MapPage() {
                       className="w-36 h-36 object-cover rounded mb-1.5"
                     />
                     <p className="text-xs text-gray-600 truncate max-w-[9rem]">{photo.filename}</p>
-                    <a
-                      href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${photo.latitude},${photo.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block mt-1 text-[11px] text-indigo-600 hover:underline"
-                    >
-                      📍 In Street View öffnen
-                    </a>
+                    {streetView && (
+                      <a
+                        href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${photo.latitude},${photo.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block mt-1 text-[11px] text-indigo-600 hover:underline"
+                      >
+                        📍 In Street View öffnen
+                      </a>
+                    )}
                   </div>
                 </Popup>
               </Marker>

@@ -26,6 +26,16 @@ type PhotoDetail = Photo & {
   caption?: string
   keywords?: string
   user_description?: string
+  tags?: string[]
+  people?: { face_id: number; person_id: number | null; name: string | null; confidence?: number }[]
+  exposure_time?: number
+  white_balance?: number
+  flash?: number
+  orientation?: number
+  color_space?: string
+  software?: string
+  focal_length_35mm?: number
+  description_model?: string
 }
 
 type Props = {
@@ -299,8 +309,37 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
                     ))}
                   </div>
                 )}
+                {detail?.description_model && (
+                  <p className="text-[10px] text-gray-500">KI-Beschreibung via {detail.description_model}</p>
+                )}
               </div>
             ) : null}
+
+            {/* Recognized people */}
+            {detail?.people && detail.people.length > 0 && (
+              <div className="border-t border-white/10 pt-4">
+                <p className="text-xs text-gray-400 mb-1.5">Personen ({detail.people.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.people.map(p => (
+                    <span key={p.face_id} className={`px-2 py-0.5 rounded-full text-[11px] ${p.name ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-gray-400'}`}>
+                      {p.name || 'Unbenannt'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI tags */}
+            {detail?.tags && detail.tags.length > 0 && (
+              <div className="border-t border-white/10 pt-4">
+                <p className="text-xs text-gray-400 mb-1.5">KI-Tags</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.tags.map(t => (
+                    <span key={t} className="px-2 py-0.5 rounded-full bg-white/8 text-gray-300 text-[11px]">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {photo.taken_at && (
               <div className="flex items-start gap-3">
@@ -365,6 +404,14 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
                   value={detail?.file_size ? `${(detail.file_size / 1024 / 1024).toFixed(1)} MB` : null}
                 />
                 <ExifRow label="Format" value={detail?.mime_type} />
+                <ExifRow label="Belichtungszeit" value={detail?.exposure_time ? `${detail.exposure_time}s` : null} />
+                <ExifRow label="KB-Brennweite" value={detail?.focal_length_35mm ? `${detail.focal_length_35mm}mm` : null} />
+                <ExifRow label="Blitz" value={detail?.flash != null ? (detail.flash ? 'Ja' : 'Nein') : null} />
+                <ExifRow label="Weißabgleich" value={detail?.white_balance != null ? (detail.white_balance ? 'Manuell' : 'Auto') : null} />
+                <ExifRow label="Farbraum" value={detail?.color_space} />
+                <ExifRow label="Software" value={detail?.software} />
+                <ExifRow label="Künstler" value={(detail as any)?.artist} />
+                {detail?.is_video && <ExifRow label="Dauer" value={photo.duration_seconds ? `${Math.round(photo.duration_seconds)}s` : null} />}
               </div>
             )}
 
