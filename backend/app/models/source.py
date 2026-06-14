@@ -17,6 +17,11 @@ class PhotoSource(Base):
     exclusion_patterns: Mapped[Optional[str]] = mapped_column(String(1024))  # comma-separated
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Folder watching: re-scan every N minutes (0 = manual only)
+    scan_interval_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    # Detect & flag files removed from disk on each scan
+    detect_deletions: Mapped[bool] = mapped_column(Boolean, default=True)
+
     last_scan_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_scan_count: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

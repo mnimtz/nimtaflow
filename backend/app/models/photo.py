@@ -99,6 +99,9 @@ class Photo(Base):
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_trashed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # File no longer present on disk (detected during scan)
+    is_missing: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    missing_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     user_rating: Mapped[Optional[int]] = mapped_column(Integer)
     user_description: Mapped[Optional[str]] = mapped_column(Text)
 

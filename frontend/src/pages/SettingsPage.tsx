@@ -200,6 +200,20 @@ function SourcesSection() {
     },
   })
 
+  const patch = useMutation({
+    mutationFn: ({ id, ...body }: { id: number } & Partial<Source>) => api.patch(`/sources/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
+  })
+
+  const INTERVALS: { label: string; value: number }[] = [
+    { label: 'Manuell (kein Auto-Scan)', value: 0 },
+    { label: 'Alle 15 Minuten', value: 15 },
+    { label: 'Alle 30 Minuten', value: 30 },
+    { label: 'Stündlich', value: 60 },
+    { label: 'Alle 6 Stunden', value: 360 },
+    { label: 'Täglich', value: 1440 },
+  ]
+
   return (
     <div>
       <SectionHeader title="Foto-Quellen" desc="Ordner die PhotoFlow überwachen soll. Scan + Verarbeitung starten automatisch." />
@@ -210,33 +224,66 @@ function SourcesSection() {
         )}
         {sources.map(s => {
           const isScanning = scanningIds.has(s.id)
+          const watching = s.scan_interval_minutes > 0
           return (
-            <div key={s.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
-              <HardDrive size={15} className={`shrink-0 ${isScanning ? 'text-indigo-400 animate-pulse' : 'text-zinc-400'}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate font-mono">{s.path}</p>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  {isScanning
-                    ? '⏳ Scannt und verarbeitet Fotos…'
-                    : s.last_scan_at
-                      ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')} · ${s.last_scan_count ?? 0} neue Fotos`
-                      : 'Noch nicht gescannt'}
-                </p>
+            <div key={s.id} className="px-4 py-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+              <div className="flex items-center gap-3">
+                <HardDrive size={15} className={`shrink-0 ${isScanning ? 'text-indigo-400 animate-pulse' : 'text-zinc-400'}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate font-mono">{s.path}</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {isScanning
+                      ? '⏳ Scannt und verarbeitet Fotos…'
+                      : s.last_scan_at
+                        ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')} · ${s.last_scan_count ?? 0} neue Fotos`
+                        : 'Noch nicht gescannt'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => scan.mutate(s.id)}
+                  disabled={isScanning}
+                  title="Erneut scannen"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
+                </button>
+                <button
+                  onClick={() => del.mutate(s.id)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <button
-                onClick={() => scan.mutate(s.id)}
-                disabled={isScanning}
-                title="Erneut scannen"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-40"
-              >
-                <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
-              </button>
-              <button
-                onClick={() => del.mutate(s.id)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
+
+              {/* Watch / interval controls */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700/60">
+                <div className="flex items-center gap-2">
+                  <Eye size={13} className={watching ? 'text-indigo-500' : 'text-zinc-400'} />
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Überwachung:</label>
+                  <select
+                    value={s.scan_interval_minutes}
+                    onChange={e => patch.mutate({
+                      id: s.id,
+                      scan_interval_minutes: Number(e.target.value),
+                      watch_enabled: Number(e.target.value) > 0,
+                    })}
+                    className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {INTERVALS.map(iv => (
+                      <option key={iv.value} value={iv.value}>{iv.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={s.detect_deletions}
+                    onChange={e => patch.mutate({ id: s.id, detect_deletions: e.target.checked })}
+                    className="rounded accent-indigo-500"
+                  />
+                  Gelöschte Dateien erkennen
+                </label>
+              </div>
             </div>
           )
         })}

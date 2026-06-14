@@ -19,3 +19,12 @@ celery_app.conf.update(
     task_track_started=True,
     worker_prefetch_multiplier=1,
 )
+
+# Periodic folder watching — check every minute which sources are due for a re-scan.
+# The per-source interval (scan_interval_minutes) is honoured inside the task itself.
+celery_app.conf.beat_schedule = {
+    "watch-sources": {
+        "task": "watch_sources",
+        "schedule": 60.0,
+    },
+}

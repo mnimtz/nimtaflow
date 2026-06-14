@@ -35,6 +35,40 @@ def scan_source_task(self, source_id: int):
     return _run(_run_scan())
 
 
+@celery_app.task(bind=True, name="watch_sources")
+def watch_sources_task(self):
+    """Beat task: trigger a re-scan for every watched source whose interval elapsed."""
+    async def _check():
+        from app.core.database import init_db, get_db
+        from app.models.source import PhotoSource
+        from sqlalchemy import select
+        from datetime import timedelta
+
+        init_db()
+        triggered = []
+        now = datetime.now(timezone.utc)
+
+        async for db in get_db():
+            result = await db.execute(
+                select(PhotoSource).where(
+                    PhotoSource.enabled == True,  # noqa: E712
+                    PhotoSource.watch_enabled == True,  # noqa: E712
+                    PhotoSource.scan_interval_minutes > 0,
+                )
+            )
+            for src in result.scalars():
+                due = (
+                    src.last_scan_at is None
+                    or (now - src.last_scan_at) >= timedelta(minutes=src.scan_interval_minutes)
+                )
+                if due:
+                    scan_source_task.delay(src.id)
+                    triggered.append(src.id)
+            return {"triggered": triggered}
+
+    return _run(_check())
+
+
 @celery_app.task(bind=True, name="process_photo")
 def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
     async def _run_process():
@@ -67,8 +101,9 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     if thumb:
                         setattr(photo, f"thumb_{size}", thumb)
 
-                # AI processing
-                ai_settings = {}  # In prod: load from DB settings
+                # AI processing — load provider config from DB settings
+                from app.services.settings_loader import load_settings
+                ai_settings = await load_settings(db)
                 ai = AIManager(ai_settings)
 
                 img = open_image_for_ai(photo.path)

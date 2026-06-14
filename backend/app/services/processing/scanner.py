@@ -48,7 +48,7 @@ async def scan_source(
 ) -> dict:
     patterns = [p for p in (source.exclusion_patterns or "").split(",") if p.strip()]
     root = Path(source.path)
-    stats = {"new": 0, "skipped": 0, "errors": 0}
+    stats = {"new": 0, "skipped": 0, "errors": 0, "missing": 0, "restored": 0}
 
     if not root.exists():
         return stats
@@ -112,6 +112,26 @@ async def scan_source(
         except Exception as e:
             await session.rollback()
             stats["errors"] += 1
+
+    # ── Deletion detection ──────────────────────────────────────────────
+    # Flag DB photos under this source root whose files vanished from disk;
+    # un-flag any that reappeared. (Recursive sources match the whole subtree.)
+    if getattr(source, "detect_deletions", True):
+        root_prefix = str(root)
+        result = await session.execute(
+            select(Photo).where(Photo.path.startswith(root_prefix))
+        )
+        for photo in result.scalars():
+            on_disk = os.path.exists(photo.path)
+            if not on_disk and not photo.is_missing:
+                photo.is_missing = True
+                photo.missing_at = datetime.now(timezone.utc)
+                stats["missing"] += 1
+            elif on_disk and photo.is_missing:
+                photo.is_missing = False
+                photo.missing_at = None
+                stats["restored"] += 1
+        await session.commit()
 
     source.last_scan_at = datetime.now(timezone.utc)
     source.last_scan_count = stats["new"]

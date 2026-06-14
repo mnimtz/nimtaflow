@@ -88,6 +88,8 @@ export type Source = {
   recursive: boolean
   exclusion_patterns: string | null
   locked: boolean
+  scan_interval_minutes: number
+  detect_deletions: boolean
   last_scan_at: string | null
   last_scan_count: number | null
 }

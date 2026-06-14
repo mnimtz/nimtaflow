@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.models.source import PhotoSource
-from app.schemas.source import SourceCreate, SourceOut, ScanResult
+from app.schemas.source import SourceCreate, SourceUpdate, SourceOut, ScanResult
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -25,6 +25,18 @@ async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db)):
     # Auto-scan immediately after adding
     from app.worker.tasks import scan_source_task
     scan_source_task.delay(source.id)
+    return source
+
+
+@router.patch("/{source_id}", response_model=SourceOut)
+async def update_source(source_id: int, data: SourceUpdate, db: AsyncSession = Depends(get_db)):
+    source = await db.get(PhotoSource, source_id)
+    if not source:
+        raise HTTPException(404)
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(source, key, value)
+    await db.commit()
+    await db.refresh(source)
     return source
 
 

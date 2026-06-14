@@ -8,14 +8,27 @@ from app.api.routes import fs, ai_api, logs, backup, albums
 from app.api.v1 import router as v1_router
 
 
+# Idempotent column additions applied on every startup (Postgres ADD COLUMN IF NOT EXISTS).
+_COLUMN_MIGRATIONS = [
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_missing BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS missing_at TIMESTAMPTZ",
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     from app.core.database import Base, _engine
     import app.models  # noqa
+    from sqlalchemy import text
     async with _engine.begin() as conn:
-        await conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight column migrations (create_all never ALTERs existing tables).
+        for stmt in _COLUMN_MIGRATIONS:
+            await conn.execute(text(stmt))
     yield
     if _engine:
         await _engine.dispose()

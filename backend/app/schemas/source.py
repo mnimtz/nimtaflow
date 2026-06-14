@@ -10,6 +10,18 @@ class SourceCreate(BaseModel):
     watch_enabled: bool = False
     recursive: bool = True
     exclusion_patterns: Optional[str] = "@eaDir,#recycle,@Thumb,.DS_Store"
+    scan_interval_minutes: int = 0
+    detect_deletions: bool = True
+
+
+class SourceUpdate(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    watch_enabled: Optional[bool] = None
+    recursive: Optional[bool] = None
+    exclusion_patterns: Optional[str] = None
+    scan_interval_minutes: Optional[int] = None
+    detect_deletions: Optional[bool] = None
 
 
 class SourceOut(BaseModel):
@@ -21,6 +33,8 @@ class SourceOut(BaseModel):
     recursive: bool
     exclusion_patterns: Optional[str]
     locked: bool
+    scan_interval_minutes: int
+    detect_deletions: bool
     last_scan_at: Optional[datetime]
     last_scan_count: Optional[int]
     created_at: datetime
