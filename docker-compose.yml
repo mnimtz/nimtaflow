@@ -69,6 +69,7 @@ services:
       HF_HOME: /models
       HF_HUB_CACHE: /models/hub
       TRANSFORMERS_CACHE: /models/hub
+      TORCH_HOME: /models/torch
 
   beat:
     build: ./backend

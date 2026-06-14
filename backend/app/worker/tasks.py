@@ -233,6 +233,35 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     photo = await db.get(Photo, photo_id)
                     flog("ai", "WARNING", f"AI übersprungen (Thumbnail bleibt): {photo.filename if photo else photo_id}: {str(ai_err)[:160]}")
 
+                # ── Face detection (local, best-effort) ───────────────────────
+                if str(ai_settings.get("faces.enabled", "true")).lower() != "false":
+                    try:
+                        from app.services.face_detect import detect_faces, available as faces_available
+                        from app.models.face import Face
+                        from sqlalchemy import delete as _del
+                        if faces_available():
+                            face_img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
+                            if face_img is not None:
+                                min_conf = float(ai_settings.get("face.min_confidence", "0.9") or 0.9)
+                                faces = detect_faces(face_img, min_conf=min_conf)
+                                await db.execute(_del(Face).where(Face.photo_id == photo_id))
+                                for f in faces:
+                                    db.add(Face(
+                                        photo_id=photo_id,
+                                        bbox_x=f.bbox_x, bbox_y=f.bbox_y, bbox_w=f.bbox_w, bbox_h=f.bbox_h,
+                                        confidence=f.confidence, embedding=f.embedding, detector="facenet",
+                                    ))
+                                await db.commit()
+                                if faces:
+                                    flog("faces", "INFO", f"{len(faces)} Gesicht(er) erkannt: {photo.filename}")
+                    except Exception as fe:
+                        try:
+                            await db.rollback()
+                            photo = await db.get(Photo, photo_id)
+                        except Exception:
+                            pass
+                        flog("faces", "WARNING", f"Gesichtserkennung fehlgeschlagen: {getattr(photo, 'filename', photo_id)}: {str(fe)[:160]}")
+
                 photo.status = PhotoStatus.done
                 photo.processed_at = datetime.now(timezone.utc)
 
