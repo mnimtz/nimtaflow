@@ -151,7 +151,18 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     if description:
                         embedding, _ = await ai.embed_text(description)
                         if embedding:
-                            photo.embedding = embedding
+                            # pgvector column is fixed at 768 dims. Some models
+                            # (e.g. gemini-embedding-001) return 3072 — truncate
+                            # (Matryoshka) + renormalize so any model fits.
+                            if len(embedding) > 768:
+                                import math
+                                embedding = embedding[:768]
+                                norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
+                                embedding = [x / norm for x in embedding]
+                            if len(embedding) == 768:
+                                photo.embedding = embedding
+                            else:
+                                flog("ai", "WARNING", f"Embedding {len(embedding)}≠768 dims, übersprungen: {photo.filename}")
 
                 photo.status = PhotoStatus.done
                 photo.processed_at = datetime.now(timezone.utc)
@@ -169,12 +180,28 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                 await db.commit()
 
             except Exception as e:
-                photo.status = PhotoStatus.error
-                photo.error_message = str(e)
-                await db.commit()
-                flog("system", "ERROR", f"Verarbeitung fehlgeschlagen: {photo.filename}: {e}")
+                # Roll back the broken transaction before recording the error,
+                # otherwise the error-write itself fails and the row stays "processing".
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                fname = "?"
+                try:
+                    p2 = await db.get(Photo, photo_id)
+                    if p2:
+                        fname = p2.filename
+                        p2.status = PhotoStatus.error
+                        p2.error_message = str(e)[:500]
+                        await db.commit()
+                except Exception:
+                    pass
+                flog("system", "ERROR", f"Verarbeitung fehlgeschlagen: {fname}: {str(e)[:200]}")
                 if job_id:
-                    db.add(JobLog(job_id=job_id, photo_id=photo_id, level="ERROR", message=f"❌ {photo.filename}: {e}"))
-                    await db.commit()
+                    try:
+                        db.add(JobLog(job_id=job_id, photo_id=photo_id, level="ERROR", message=f"❌ {fname}: {e}"))
+                        await db.commit()
+                    except Exception:
+                        pass
 
     _run(_run_process())
