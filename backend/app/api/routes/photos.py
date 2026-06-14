@@ -229,9 +229,40 @@ async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db)):
     return {"is_trashed": photo.is_trashed}
 
 
-# ── EXIF / metadata editing ───────────────────────────────────────────────────
+# ── Bulk actions ──────────────────────────────────────────────────────────────
 
 from pydantic import BaseModel as _BM
+from typing import List as _List
+
+
+class BatchAction(_BM):
+    ids: _List[int]
+    action: str  # favorite | unfavorite | archive | unarchive | trash | untrash
+
+
+@router.post("/batch")
+async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
+    """Apply an action to many photos at once (selection bar in the gallery)."""
+    field_value = {
+        "favorite": ("is_favorite", True),
+        "unfavorite": ("is_favorite", False),
+        "archive": ("is_archived", True),
+        "unarchive": ("is_archived", False),
+        "trash": ("is_trashed", True),
+        "untrash": ("is_trashed", False),
+    }.get(body.action)
+    if not field_value:
+        raise HTTPException(400, f"Unknown action: {body.action}")
+    field, value = field_value
+    result = await db.execute(select(Photo).where(Photo.id.in_(body.ids)))
+    photos = result.scalars().all()
+    for p in photos:
+        setattr(p, field, value)
+    await db.commit()
+    return {"updated": len(photos), "action": body.action}
+
+
+# ── EXIF / metadata editing ───────────────────────────────────────────────────
 
 class MetaUpdate(_BM):
     title: Optional[str] = None

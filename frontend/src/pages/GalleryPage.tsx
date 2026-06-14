@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Clock, Sparkles, Search, X } from 'lucide-react'
+import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2 } from 'lucide-react'
 import { api, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
 import JustifiedGrid from '../components/gallery/JustifiedGrid'
 import TimelineView from '../components/gallery/TimelineView'
@@ -24,6 +24,16 @@ type MemoryGroup = {
 
 const ROW_HEIGHT = 200
 const PAGE_SIZE = 100
+
+function useRowHeight() {
+  const [h, setH] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 640 ? 120 : 200))
+  useEffect(() => {
+    const onResize = () => setH(window.innerWidth < 640 ? 120 : 200)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return h
+}
 
 function buildFilterParams(f: Filters) {
   const p: Record<string, string> = {}
@@ -102,6 +112,9 @@ export default function GalleryPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
   const [searchDraft, setSearchDraft] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [lastIndex, setLastIndex] = useState<number | null>(null)
+  const rowHeight = useRowHeight()
   const qc = useQueryClient()
 
   const filterParams = buildFilterParams(filters)
@@ -136,8 +149,43 @@ export default function GalleryPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['photos'] }),
   })
 
+  const batchMutation = useMutation({
+    mutationFn: (action: string) => api.post('/photos/batch', { ids: [...selected], action }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['photos'] })
+      clearSelection()
+    },
+  })
+
   const allGridPhotos = infiniteQuery.data?.pages.flatMap(p => p.items) ?? []
   const total = infiniteQuery.data?.pages[0]?.total ?? 0
+
+  function clearSelection() { setSelected(new Set()); setLastIndex(null) }
+
+  function toggleSelect(photo: Photo, index: number, shift: boolean) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (shift && lastIndex !== null) {
+        const [a, b] = [Math.min(lastIndex, index), Math.max(lastIndex, index)]
+        for (let i = a; i <= b; i++) if (allGridPhotos[i]) next.add(allGridPhotos[i].id)
+      } else if (next.has(photo.id)) {
+        next.delete(photo.id)
+      } else {
+        next.add(photo.id)
+      }
+      return next
+    })
+    setLastIndex(index)
+  }
+
+  // Esc clears selection
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') clearSelection() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const selectionCount = selected.size
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -217,10 +265,13 @@ export default function GalleryPage() {
             )}
             <JustifiedGrid
               photos={allGridPhotos}
-              rowHeight={ROW_HEIGHT}
+              rowHeight={rowHeight}
               gap={4}
               onPhotoClick={(_, i) => setLightbox({ photos: allGridPhotos, index: i })}
               onFavoriteToggle={photo => favMutation.mutate(photo.id)}
+              selectable
+              selected={selected}
+              onToggleSelect={toggleSelect}
             />
             {infiniteQuery.hasNextPage && (
               <div className="flex justify-center py-6">
@@ -262,6 +313,29 @@ export default function GalleryPage() {
           <MemoriesView onPhotoClick={(photos, i) => setLightbox({ photos, index: i })} />
         )}
       </div>
+
+      {/* Selection action bar */}
+      {selectionCount > 0 && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-2xl bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-md shadow-2xl ring-1 ring-white/10 animate-[fadeIn_180ms_ease]">
+          <button onClick={clearSelection} className="p-2 rounded-xl text-zinc-300 hover:bg-white/10 transition-colors" title="Auswahl aufheben">
+            <X size={18} />
+          </button>
+          <span className="px-2 text-sm font-semibold text-white tabular-nums">{selectionCount}</span>
+          <div className="w-px h-6 bg-white/15 mx-1" />
+          <button onClick={() => batchMutation.mutate('favorite')} disabled={batchMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Favorisieren">
+            <Heart size={16} /> <span className="hidden sm:inline">Favorit</span>
+          </button>
+          <button onClick={() => batchMutation.mutate('archive')} disabled={batchMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Archivieren">
+            <Archive size={16} /> <span className="hidden sm:inline">Archiv</span>
+          </button>
+          <button onClick={() => batchMutation.mutate('trash')} disabled={batchMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="In Papierkorb">
+            <Trash2 size={16} /> <span className="hidden sm:inline">Papierkorb</span>
+          </button>
+        </div>
+      )}
 
       {/* Lightbox */}
       {lightbox && (
