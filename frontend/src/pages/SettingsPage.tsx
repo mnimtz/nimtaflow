@@ -451,6 +451,7 @@ function AISection() {
               { id: 'openai', label: 'OpenAI', sub: 'GPT-4o' },
               { id: 'azure', label: 'Azure', sub: 'Copilot/OAI' },
               { id: 'ollama', label: 'Ollama', sub: 'Lokal' },
+              { id: 'local', label: 'Integriert', sub: 'Lokal, eingebaut' },
             ] as const).map(p => (
               <button
                 key={p.id}
@@ -608,6 +609,33 @@ function AISection() {
           </div>
         )}
 
+        {/* Integrated local model */}
+        {provider === 'local' && (
+          <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Integriertes Modell (läuft lokal, kein Ollama/Cloud)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {([
+                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: '~0.7 GB · schnell · läuft in 4 GB' },
+                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: '~7 GB · multilingual · braucht ~12 GB RAM' },
+              ] as const).map(m => (
+                <button key={m.id} onClick={() => set('ai.local.model', m.id)}
+                  className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
+                    (settings['ai.local.model'] ?? 'florence2-base') === m.id
+                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                      : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400'
+                  }`}>
+                  <span className="block">{m.label}</span>
+                  <span className="text-[10px] text-zinc-400">{m.sub}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-400">
+              Das Modell wird beim ersten Lauf einmalig heruntergeladen (in den Modell-Cache) und danach lokal ausgeführt.
+              Florence-2 liefert englische Captions, die für Deutsch lokal übersetzt werden; Qwen schreibt direkt Deutsch.
+            </p>
+          </div>
+        )}
+
         {/* Language */}
         <div>
           <Label>Sprache für Beschreibungen</Label>
@@ -694,9 +722,9 @@ function VideoAISection() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {([
               { id: 'same', label: 'Wie Fotos', sub: 'Gleicher Provider' },
+              { id: 'local', label: 'Integriert', sub: 'Lokal, eingebaut' },
               { id: 'ollama', label: 'Ollama', sub: 'Lokal / privat' },
               { id: 'gemini', label: 'Gemini', sub: 'Google Video AI' },
-              { id: 'moondream', label: 'Moondream', sub: 'Eingebaut (klein, schnell)' },
             ] as const).map(p => (
               <button key={p.id} onClick={() => set('video.ai_provider', p.id)}
                 className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
@@ -710,6 +738,24 @@ function VideoAISection() {
               </button>
             ))}
           </div>
+          {vidProvider === 'local' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              {([
+                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: '~0.7 GB · schnell' },
+                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: '~7 GB · multilingual' },
+              ] as const).map(m => (
+                <button key={m.id} onClick={() => set('video.local.model', m.id)}
+                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all text-left ${
+                    (settings['video.local.model'] ?? 'florence2-base') === m.id
+                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                      : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400'
+                  }`}>
+                  <span className="block">{m.label}</span>
+                  <span className="text-[10px] text-zinc-400">{m.sub}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {vidProvider === 'ollama' && (

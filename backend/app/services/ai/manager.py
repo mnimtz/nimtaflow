@@ -24,6 +24,9 @@ def build_video_settings(settings: dict) -> dict:
     out = dict(settings)  # keep API keys etc.
     if vp == "gemini":
         out["ai.provider"] = "gemini"
+    elif vp == "local":
+        out["ai.provider"] = "local"
+        out["ai.local.model"] = settings.get("video.local.model") or settings.get("ai.local.model", "florence2-base")
     elif vp in ("ollama", "moondream"):
         out["ai.provider"] = "ollama"
         out["ai.ollama.url"] = settings.get("video.ollama_url") or settings.get("ai.ollama.url", "http://localhost:11434")
@@ -56,10 +59,15 @@ class AIManager:
                 vision_model=s.get("ai.ollama.vision_model", "llava:7b"),
                 embed_model=s.get("ai.ollama.embed_model", "nomic-embed-text"),
             ))
+        elif provider_name == "local":
+            from .local_vlm import LocalVLMProvider
+            self._providers.append(LocalVLMProvider(
+                model_key=s.get("ai.local.model", "florence2-base"),
+            ))
 
-        # Fallback Ollama
+        # Fallback Ollama (only if explicitly configured and not the primary)
         fallback_ollama = s.get("ai.ollama.url")
-        if fallback_ollama and provider_name != "ollama":
+        if fallback_ollama and provider_name not in ("ollama", "local"):
             self._providers.append(OllamaProvider(base_url=fallback_ollama))
 
     async def _get_active(self) -> Optional[AIProvider]:

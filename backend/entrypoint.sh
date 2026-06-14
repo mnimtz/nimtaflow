@@ -3,7 +3,7 @@
 # We run as root briefly, chown, then drop to appuser via gosu.
 set -e
 
-for dir in /cache /config; do
+for dir in /cache /config /models; do
     if [ -d "$dir" ]; then
         chown -R appuser:appuser "$dir" 2>/dev/null || true
     else

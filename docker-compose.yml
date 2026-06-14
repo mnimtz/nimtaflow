@@ -52,6 +52,7 @@ services:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
       - photoflow-cache:/cache
       - photoflow-config:/config
+      - photoflow-models:/models
     depends_on:
       db:
         condition: service_healthy
@@ -64,6 +65,10 @@ services:
       CACHE_PATH: /cache
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Persistent model cache (HuggingFace) so downloads survive rebuilds
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
 
   beat:
     build: ./backend
@@ -96,3 +101,4 @@ volumes:
   photoflow-db:
   photoflow-cache:
   photoflow-config:
+  photoflow-models:
