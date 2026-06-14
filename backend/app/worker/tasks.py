@@ -109,9 +109,9 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     if photo.taken_at is None and ex.taken_at is not None:
                         photo.taken_at = ex.taken_at
                     if not photo.camera_make and ex.camera_make:
-                        photo.camera_make = ex.camera_make
+                        photo.camera_make = ex.camera_make[:120]
                     if not photo.camera_model and ex.camera_model:
-                        photo.camera_model = ex.camera_model
+                        photo.camera_model = ex.camera_model[:120]
                 except Exception:
                     pass
 
@@ -164,13 +164,16 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                         description, provider = await ai.describe_image(img, lang, custom_prompt)
                         if description:
                             photo.description = description
-                            photo.description_model = provider
+                            photo.description_model = (provider or "")[:120]
                             flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description}")
                         elif provider == "none":
                             flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
 
                         tags, _ = await ai.generate_tags(img)
                         for tag_name in tags[:20]:
+                            tag_name = (tag_name or "").strip()[:120]  # column is VARCHAR(128)
+                            if not tag_name:
+                                continue
                             tag = await db.scalar(select(Tag).where(Tag.name == tag_name))
                             if not tag:
                                 tag = Tag(name=tag_name)

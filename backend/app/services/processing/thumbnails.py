@@ -53,6 +53,18 @@ def _open_image_any(photo_path: str) -> Optional[Image.Image]:
                 return Image.open(io.BytesIO(r.stdout))
     except Exception:
         pass
+    # last resort: let ffmpeg decode one frame (handles HEIC variants without preview)
+    try:
+        import subprocess, tempfile, os as _os
+        tmp = tempfile.mktemp(suffix=".png")
+        r = subprocess.run([_FFMPEG, "-y", "-i", photo_path, "-frames:v", "1", tmp],
+                           capture_output=True, timeout=30)
+        if r.returncode == 0 and _os.path.exists(tmp) and _os.path.getsize(tmp) > 1000:
+            img = Image.open(tmp).copy()
+            _os.remove(tmp)
+            return img
+    except Exception:
+        pass
     return None
 
 
