@@ -1,7 +1,7 @@
 import base64
 import io
 import time
-from typing import List
+from typing import List, Optional
 from PIL import Image
 import httpx
 from .base import AIProvider, DetectedFace
