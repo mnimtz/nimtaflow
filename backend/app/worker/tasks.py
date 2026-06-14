@@ -143,7 +143,9 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
                         else open_image_for_ai(photo.path)
                     if img:
-                        description, provider = await ai.describe_image(img, "de")
+                        lang = ai_settings.get("ai.language", "de")
+                        custom_prompt = ai_settings.get("ai.prompt.video" if photo.is_video else "ai.prompt.image") or None
+                        description, provider = await ai.describe_image(img, lang, custom_prompt)
                         if description:
                             photo.description = description
                             photo.description_model = provider

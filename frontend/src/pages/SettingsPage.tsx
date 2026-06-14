@@ -21,13 +21,17 @@ type ModelInfo = {
 
 type Settings = Record<string, string>
 
+const DEFAULT_IMAGE_PROMPT = 'Beschreibe dieses Foto sachlich in 2-3 Sätzen auf Deutsch. Nenne Personen, Ort, Aktivität und Stimmung.'
+const DEFAULT_VIDEO_PROMPT = 'Beschreibe diese Videoszene sachlich in 2-3 Sätzen auf Deutsch. Nenne Personen, Ort, Aktivität und Stimmung.'
+
 // ─── Layout helpers ──────────────────────────────────────────────────────────
 
 const SECTIONS = [
   { id: 'sources',   icon: HardDrive, label: 'Foto-Quellen' },
   { id: 'gallery',   icon: Layers,    label: 'Galerie' },
-  { id: 'ai',        icon: Brain,     label: 'Foto-AI' },
-  { id: 'video-ai',  icon: Video,     label: 'Video-AI & Gesichter' },
+  { id: 'ai',        icon: Brain,     label: 'Bilder-AI' },
+  { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
+  { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
   { id: 'map',       icon: Map,       label: 'Karte' },
@@ -669,6 +673,22 @@ function AISection() {
           </div>
         )}
 
+        {/* Description prompt */}
+        <div>
+          <Label>Prompt für Bildbeschreibung</Label>
+          <textarea
+            value={settings['ai.prompt.image'] ?? DEFAULT_IMAGE_PROMPT}
+            onChange={e => set('ai.prompt.image', e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+          />
+          <div className="flex justify-between items-center mt-1">
+            <p className="text-[11px] text-zinc-400">Geht an Gemini/OpenAI/Ollama/Qwen. (Florence-2 nutzt feste Tasks.)</p>
+            <button type="button" onClick={() => set('ai.prompt.image', DEFAULT_IMAGE_PROMPT)}
+              className="text-[11px] text-indigo-500 hover:underline">Standard</button>
+          </div>
+        </div>
+
         {/* Language */}
         <div>
           <Label>Sprache für Beschreibungen</Label>
@@ -746,7 +766,7 @@ function VideoAISection() {
 
   return (
     <div>
-      <SectionHeader title="Video-AI & Gesichtserkennung" desc="Separate AI-Konfiguration für Video-Analyse und Gesichtserkennung in Videos." />
+      <SectionHeader title="Video-AI" desc="Separate AI-Konfiguration für Video-Analyse. Gesichter werden unter „Personen & Gesichter“ konfiguriert." />
       <div className="space-y-7">
 
         {/* Video AI provider */}
@@ -810,53 +830,19 @@ function VideoAISection() {
           </div>
         )}
 
-        {vidProvider === 'moondream' && (
-          <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Moondream (eingebaut)</p>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Moondream 2 (~1.7GB) läuft direkt im Backend — kein externer Dienst nötig.
-              Beim ersten Start wird das Modell automatisch heruntergeladen.
-            </p>
-            <div className="mt-3">
-              <Label>Modell-Variante</Label>
-              <select value={settings['video.moondream_model'] ?? 'moondream2'} onChange={e => set('video.moondream_model', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="moondream2">Moondream 2 (Standard)</option>
-                <option value="moondream2-int4">Moondream 2 INT4 (kleiner)</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* Face recognition in videos */}
-        <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-2">
-            <Eye size={12} /> Gesichtserkennung in Videos
-          </p>
-          <div className="space-y-3">
-            <label className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichtserkennung in Videos aktivieren</p>
-                <p className="text-xs text-zinc-400">Frames werden extrahiert und analysiert (langsamer)</p>
-              </div>
-              <Toggle
-                value={(settings['video.face_recognition'] ?? 'false') === 'true'}
-                onChange={v => set('video.face_recognition', v ? 'true' : 'false')}
-              />
-            </label>
-
-            <div>
-              <Label>Frame-Intervall (Sekunden)</Label>
-              <Input value={settings['video.face_interval_sec'] ?? '5'}
-                onChange={v => set('video.face_interval_sec', v)} placeholder="5" />
-              <p className="text-[11px] text-zinc-400 mt-1">Alle N Sekunden ein Frame für Gesichtserkennung extrahieren</p>
-            </div>
-
-            <div>
-              <Label>Max. Frames pro Video</Label>
-              <Input value={settings['video.max_frames'] ?? '30'}
-                onChange={v => set('video.max_frames', v)} placeholder="30" />
-            </div>
+        {/* Video description prompt */}
+        <div>
+          <Label>Prompt für Videobeschreibung</Label>
+          <textarea
+            value={settings['ai.prompt.video'] ?? DEFAULT_VIDEO_PROMPT}
+            onChange={e => set('ai.prompt.video', e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+          />
+          <div className="flex justify-between items-center mt-1">
+            <p className="text-[11px] text-zinc-400">Angewendet auf den extrahierten Video-Frame.</p>
+            <button type="button" onClick={() => set('ai.prompt.video', DEFAULT_VIDEO_PROMPT)}
+              className="text-[11px] text-indigo-500 hover:underline">Standard</button>
           </div>
         </div>
 
@@ -896,6 +882,95 @@ function PipelineSection() {
     <div>
       <SectionHeader title="Pipeline" desc="Batch-Verarbeitung, Parallelität und automatischer Scan-Zeitplan." />
       <p className="text-sm text-zinc-400">Kommt bald.</p>
+    </div>
+  )
+}
+
+function FacesSection() {
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const qc = useQueryClient()
+
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+
+  const enabled = (settings['faces.enabled'] ?? 'true') === 'true'
+
+  return (
+    <div>
+      <SectionHeader title="Personen & Gesichter" desc="Gesichtserkennung und automatisches Personen-Clustering (lokal, InsightFace)." />
+      <div className="space-y-6 max-w-xl">
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichtserkennung aktivieren</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Erkennt Gesichter pro Foto, speichert Position + Embedding für Clustering.</p>
+          </div>
+          <Toggle value={enabled} onChange={v => set('faces.enabled', v ? 'true' : 'false')} />
+        </label>
+
+        <div>
+          <Label>Modell</Label>
+          <select value={settings['faces.model'] ?? 'buffalo_l'} onChange={e => set('faces.model', e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="buffalo_s">buffalo_s — schlank (wenig RAM)</option>
+            <option value="buffalo_l">buffalo_l — beste Erkennung</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <Label>Cluster-Schwelle</Label>
+            <Input value={settings['face.clustering_threshold'] ?? '0.6'} onChange={v => set('face.clustering_threshold', v)} placeholder="0.6" />
+          </div>
+          <div>
+            <Label>Min. Konfidenz</Label>
+            <Input value={settings['face.min_confidence'] ?? '0.7'} onChange={v => set('face.min_confidence', v)} placeholder="0.7" />
+          </div>
+          <div>
+            <Label>Min. Größe (px)</Label>
+            <Input value={settings['face.min_size_px'] ?? '40'} onChange={v => set('face.min_size_px', v)} placeholder="40" />
+          </div>
+        </div>
+
+        <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-2">
+            <Video size={12} /> Gesichter in Videos
+          </p>
+          <label className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">Auch in Videos erkennen</p>
+              <p className="text-xs text-zinc-400">Extrahiert Frames und analysiert sie (langsamer).</p>
+            </div>
+            <Toggle value={(settings['video.face_recognition'] ?? 'false') === 'true'} onChange={v => set('video.face_recognition', v ? 'true' : 'false')} />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Frame-Intervall (s)</Label>
+              <Input value={settings['video.face_interval_sec'] ?? '5'} onChange={v => set('video.face_interval_sec', v)} placeholder="5" />
+            </div>
+            <div>
+              <Label>Max. Frames/Video</Label>
+              <Input value={settings['video.max_frames'] ?? '30'} onChange={v => set('video.max_frames', v)} placeholder="30" />
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-amber-500">
+          Hinweis: Die Gesichtserkennung wird gerade integriert (Stage 3) — diese Einstellungen werden dann wirksam.
+        </p>
+
+        <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+      </div>
     </div>
   )
 }
@@ -1170,6 +1245,7 @@ export default function SettingsPage() {
         {section === 'gallery'  && <GallerySection />}
         {section === 'ai'       && <AISection />}
         {section === 'video-ai' && <VideoAISection />}
+        {section === 'faces'    && <FacesSection />}
         {section === 'pipeline' && <PipelineSection />}
         {section === 'backup'   && <BackupSection />}
         {section === 'map'      && <MapSection />}

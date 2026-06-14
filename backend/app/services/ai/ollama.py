@@ -1,6 +1,6 @@
 import base64
 import io
-from typing import List
+from typing import List, Optional
 import httpx
 from PIL import Image
 from .base import AIProvider, DetectedFace
@@ -19,15 +19,16 @@ class OllamaProvider(AIProvider):
         image.save(buf, format="JPEG", quality=85)
         return base64.b64encode(buf.getvalue()).decode()
 
-    async def describe_image(self, image: Image.Image, language: str = "de") -> str:
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         lang_map = {"de": "German", "en": "English", "fr": "French"}
         lang = lang_map.get(language, "German")
+        the_prompt = prompt or f"Describe this photo in {lang} in 2-3 sentences. Describe people, places, activities and mood."
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.vision_model,
-                    "prompt": f"Describe this photo in {lang} in 2-3 sentences. Describe people, places, activities and mood.",
+                    "prompt": the_prompt,
                     "images": [self._image_to_b64(image)],
                     "stream": False,
                 },

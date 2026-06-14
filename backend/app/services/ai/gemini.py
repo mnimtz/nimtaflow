@@ -43,8 +43,8 @@ class GeminiProvider(AIProvider):
         except (IndexError, AttributeError, TypeError):
             return ""
 
-    async def describe_image(self, image: Image.Image, language: str = "de") -> str:
-        prompt = LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
+        prompt = prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
         b64 = _image_to_b64(image)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(

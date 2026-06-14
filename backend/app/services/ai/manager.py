@@ -76,11 +76,11 @@ class AIManager:
                 return p
         return None
 
-    async def describe_image(self, image: Image.Image, language: str = "de") -> tuple[str, str]:
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> tuple[str, str]:
         provider = await self._get_active()
         if not provider:
             return "", "none"
-        result = await provider.describe_image(image, language)
+        result = await provider.describe_image(image, language, prompt)
         return result, provider.name
 
     async def generate_tags(self, image: Image.Image) -> tuple[List[str], str]:

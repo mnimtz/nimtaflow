@@ -29,7 +29,7 @@ class AIProvider(ABC):
     name: str = "base"
 
     @abstractmethod
-    async def describe_image(self, image: Image.Image, language: str = "de") -> str:
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         ...
 
     @abstractmethod

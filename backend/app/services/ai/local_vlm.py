@@ -83,14 +83,15 @@ class LocalVLMProvider(AIProvider):
             return text  # fall back to original (English) on any failure
 
     # ── interface ───────────────────────────────────────────────────────────
-    async def describe_image(self, image: Image.Image, language: str = "de") -> str:
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         try:
             kind, model, proc = self._load_vlm()
             import torch
             image = image.convert("RGB")
             if kind == "florence":
-                prompt = "<MORE_DETAILED_CAPTION>"
-                inputs = proc(text=prompt, images=image, return_tensors="pt")
+                # Florence-2 only understands its task tokens, not free prompts
+                task = "<MORE_DETAILED_CAPTION>"
+                inputs = proc(text=task, images=image, return_tensors="pt")
                 with torch.no_grad():
                     ids = model.generate(
                         input_ids=inputs["input_ids"],
@@ -99,17 +100,18 @@ class LocalVLMProvider(AIProvider):
                     )
                 text = proc.batch_decode(ids, skip_special_tokens=True)[0]
                 parsed = proc.post_process_generation(
-                    text, task=prompt, image_size=(image.width, image.height)
+                    text, task=task, image_size=(image.width, image.height)
                 )
-                caption = (parsed.get(prompt) or "").strip() if isinstance(parsed, dict) else str(parsed).strip()
+                caption = (parsed.get(task) or "").strip() if isinstance(parsed, dict) else str(parsed).strip()
                 if language == "de":
                     caption = self._translate_de(caption)
                 return caption
-            else:  # qwen — multilingual, ask directly in target language
+            else:  # qwen — multilingual, honours a custom prompt directly
                 lang_word = {"de": "auf Deutsch", "en": "in English", "fr": "en français", "es": "en español"}.get(language, "auf Deutsch")
+                user_text = prompt or f"Beschreibe dieses Bild {lang_word} in 1-2 Sätzen, sachlich."
                 messages = [{"role": "user", "content": [
                     {"type": "image", "image": image},
-                    {"type": "text", "text": f"Beschreibe dieses Bild {lang_word} in 1-2 Sätzen, sachlich."},
+                    {"type": "text", "text": user_text},
                 ]}]
                 text = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                 from qwen_vl_utils import process_vision_info

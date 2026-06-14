@@ -80,6 +80,7 @@ async def list_photos(
     favorites: bool = False,
     has_gps: Optional[bool] = None,
     view: str = "library",
+    sort: str = "newest",  # newest | oldest | added | name
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
@@ -98,7 +99,14 @@ async def list_photos(
         )
 
     total = await db.scalar(select(func.count()).select_from(q.subquery()))
-    q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+    if sort == "oldest":
+        q = q.order_by(Photo.taken_at.asc().nullsfirst(), Photo.id.asc())
+    elif sort == "added":
+        q = q.order_by(Photo.indexed_at.desc().nullslast(), Photo.id.desc())
+    elif sort == "name":
+        q = q.order_by(Photo.filename.asc())
+    else:  # newest (default)
+        q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
     q = q.offset((page - 1) * limit).limit(limit)
     photos = (await db.execute(q)).scalars().all()
     return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
@@ -187,12 +195,38 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
     return memories
 
 
-@router.get("/{photo_id}", response_model=PhotoDetail)
+@router.get("/{photo_id}")
 async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(404, "Photo not found")
-    return photo
+
+    from sqlalchemy import inspect as sa_inspect
+    from app.models.tag import Tag, PhotoTag
+    from app.models.face import Face
+    from app.models.person import Person
+
+    # all scalar columns (except the heavy embedding vector)
+    data = {c.key: getattr(photo, c.key) for c in sa_inspect(photo).mapper.column_attrs}
+    data.pop("embedding", None)
+
+    tag_rows = await db.execute(
+        select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id).where(PhotoTag.photo_id == photo_id)
+    )
+    data["tags"] = [t for t in tag_rows.scalars()]
+
+    face_rows = (await db.execute(
+        select(Face.id, Face.bbox_x, Face.bbox_y, Face.bbox_w, Face.bbox_h,
+               Face.confidence, Person.id, Person.name)
+        .join(Person, Person.id == Face.person_id, isouter=True)
+        .where(Face.photo_id == photo_id)
+    )).all()
+    data["people"] = [
+        {"face_id": r[0], "bbox": [r[1], r[2], r[3], r[4]], "confidence": r[5],
+         "person_id": r[6], "name": r[7]}
+        for r in face_rows
+    ]
+    return data
 
 
 @router.patch("/{photo_id}/favorite")
