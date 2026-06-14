@@ -99,6 +99,22 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
 
             start = time.time()
             try:
+                # Refresh metadata (fills GPS/date/camera that PIL missed on HEIC/MOV,
+                # so reprocessing also repairs older entries).
+                try:
+                    from app.services.processing.exif import extract_exif
+                    ex = extract_exif(photo.path)
+                    if photo.latitude is None and ex.latitude is not None:
+                        photo.latitude, photo.longitude, photo.altitude = ex.latitude, ex.longitude, ex.altitude
+                    if photo.taken_at is None and ex.taken_at is not None:
+                        photo.taken_at = ex.taken_at
+                    if not photo.camera_make and ex.camera_make:
+                        photo.camera_make = ex.camera_make
+                    if not photo.camera_model and ex.camera_model:
+                        photo.camera_model = ex.camera_model
+                except Exception:
+                    pass
+
                 # Generate all thumbnail sizes — videos need a frame extracted via ffmpeg
                 if photo.is_video:
                     for size in ("small", "medium", "large"):
