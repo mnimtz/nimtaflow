@@ -112,6 +112,39 @@ async def list_photos(
     return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
 
 
+@router.get("/search/semantic", response_model=PhotoListResponse)
+async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: AsyncSession = Depends(get_db)):
+    """Natural-language semantic search over photo embeddings (pgvector cosine).
+    Embeds the query with the configured embedding provider and returns the
+    closest photos. Requires photos to have embeddings (AI processing done)."""
+    if not q.strip():
+        return PhotoListResponse(total=0, page=1, limit=limit, items=[])
+    from app.services.settings_loader import load_settings
+    from app.services.ai.manager import AIManager
+    s = await load_settings(db)
+    ai = AIManager(s)
+    vec, provider = await ai.embed_text(q.strip())
+    if not vec:
+        raise HTTPException(400, "Kein Embedding-Provider aktiv/erreichbar. In Foto-AI konfigurieren.")
+    # match the stored 768-dim space (some providers return more → truncate+renormalize)
+    if len(vec) > 768:
+        import math
+        vec = vec[:768]
+        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+        vec = [x / norm for x in vec]
+    if len(vec) != 768:
+        raise HTTPException(400, f"Embedding-Dimension {len(vec)} passt nicht zur DB (768).")
+    qy = (
+        select(Photo)
+        .where(Photo.status == PhotoStatus.done, Photo.is_missing == False,
+               Photo.is_trashed == False, Photo.embedding.isnot(None))
+        .order_by(Photo.embedding.cosine_distance(vec))
+        .limit(limit)
+    )
+    photos = (await db.execute(qy)).scalars().all()
+    return PhotoListResponse(total=len(photos), page=1, limit=limit, items=photos)
+
+
 @router.get("/timeline", response_model=List[TimelineGroup])
 async def get_timeline(
     search: Optional[str] = None,
