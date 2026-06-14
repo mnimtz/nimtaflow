@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Trash2, RefreshCw, Check, X, FolderOpen,
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
-  ChevronDown, ChevronRight, Loader2, CircleCheck, CircleX,
+  Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
@@ -29,6 +29,7 @@ const SECTIONS = [
   { id: 'ai',        icon: Brain,     label: 'AI-Provider' },
   { id: 'video-ai',  icon: Video,     label: 'Video & Gesichter' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
+  { id: 'backup',    icon: HardDrive, label: 'Backup' },
   { id: 'map',       icon: Map,       label: 'Karte' },
   { id: 'logs',      icon: Terminal,  label: 'Logs' },
 ] as const
@@ -690,6 +691,133 @@ function PipelineSection() {
   )
 }
 
+type BackupFile = { name: string; size_mb: number; created_at: string; type: string }
+type HWInfo = { name: string; available: boolean; info: string; encode_h264_codec: string }
+
+function BackupSection() {
+  const [rcloneRemote, setRcloneRemote] = useState('')
+  const [keepDays, setKeepDays] = useState(30)
+  const qc = useQueryClient()
+
+  const { data: backups = [], refetch } = useQuery<BackupFile[]>({
+    queryKey: ['backups'],
+    queryFn: () => api.get('/backup/list').then(r => r.data),
+  })
+
+  const { data: hw } = useQuery<HWInfo>({
+    queryKey: ['hw-info'],
+    queryFn: () => api.get('/backup/hw').then(r => r.data),
+    staleTime: 300_000,
+  })
+
+  const runBackup = useMutation({
+    mutationFn: () => api.post('/backup/run', null, { params: { rclone_remote: rcloneRemote } }),
+    onSuccess: () => { refetch() },
+  })
+
+  const prune = useMutation({
+    mutationFn: () => api.delete('/backup/prune', { params: { keep_days: keepDays } }),
+    onSuccess: () => refetch(),
+  })
+
+  const hwColor = !hw ? 'text-zinc-400'
+    : hw.name === 'cuda' ? 'text-green-400'
+    : hw.name === 'qsv' ? 'text-blue-400'
+    : hw.name === 'vaapi' ? 'text-sky-400'
+    : 'text-zinc-400'
+
+  return (
+    <div>
+      <SectionHeader title="Backup & Hardware" desc="Datenbank-Sicherung, Offsiste-Sync und Hardware-Beschleunigung." />
+
+      {/* HW acceleration status */}
+      <div className="mb-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+          <Cpu size={12} /> Hardware-Beschleunigung
+        </p>
+        {hw ? (
+          <div className="flex items-center gap-3">
+            <div className={`text-sm font-medium ${hwColor}`}>
+              {hw.name === 'cuda' ? 'NVIDIA CUDA / NVENC' :
+               hw.name === 'qsv' ? 'Intel Quick Sync' :
+               hw.name === 'vaapi' ? 'VAAPI' :
+               hw.name === 'videotoolbox' ? 'Apple VideoToolbox' :
+               'Software (libx264/libvpx-vp9)'}
+            </div>
+            <span className="text-xs text-zinc-400">{hw.info}</span>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-400">Erkenne Hardware...</p>
+        )}
+        <p className="text-xs text-zinc-500 mt-1">Encoder: <code className="text-indigo-400">{hw?.encode_h264_codec ?? '...'}</code></p>
+      </div>
+
+      {/* Backup list */}
+      <div className="mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Gespeicherte Backups</p>
+          <button onClick={() => refetch()} className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
+            <RefreshCw size={11} /> Aktualisieren
+          </button>
+        </div>
+        {backups.length === 0 && (
+          <p className="text-sm text-zinc-400">Noch keine Backups erstellt.</p>
+        )}
+        <div className="space-y-2">
+          {backups.map(b => (
+            <div key={b.name} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm">
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${b.type === 'db' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
+                {b.type.toUpperCase()}
+              </span>
+              <span className="flex-1 font-mono text-xs text-zinc-600 dark:text-zinc-400 truncate">{b.name}</span>
+              <span className="text-zinc-400 text-xs">{b.size_mb} MB</span>
+              <a href={`/api/backup/download/${b.name}`} download
+                className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors">Download</a>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Run backup */}
+      <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Backup erstellen</p>
+        <div>
+          <Label>Rclone Remote (optional)</Label>
+          <Input value={rcloneRemote} onChange={setRcloneRemote} placeholder="b2:my-bucket/photoflow oder gdrive:backup" />
+          <p className="text-[11px] text-zinc-400 mt-1">Leer lassen = nur lokal. rclone muss auf dem Server konfiguriert sein.</p>
+        </div>
+        <button
+          onClick={() => runBackup.mutate()}
+          disabled={runBackup.isPending}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {runBackup.isPending ? <Loader2 size={14} className="animate-spin" /> : <HardDrive size={14} />}
+          Backup jetzt starten
+        </button>
+        {runBackup.isSuccess && (
+          <p className="text-xs text-emerald-400 flex items-center gap-1"><CircleCheck size={12} /> Backup erfolgreich!</p>
+        )}
+      </div>
+
+      {/* Prune */}
+      <div className="mt-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Alte Backups löschen</p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <Label>Aufbewahrung (Tage): {keepDays}</Label>
+            <input type="range" min={7} max={365} step={7} value={keepDays} onChange={e => setKeepDays(Number(e.target.value))}
+              className="w-full accent-indigo-500" />
+          </div>
+          <button onClick={() => prune.mutate()} disabled={prune.isPending}
+            className="px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors shrink-0">
+            Bereinigen
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MapSection() {
   return (
     <div>
@@ -817,6 +945,7 @@ export default function SettingsPage() {
         {section === 'ai'       && <AISection />}
         {section === 'video-ai' && <VideoAISection />}
         {section === 'pipeline' && <PipelineSection />}
+        {section === 'backup'   && <BackupSection />}
         {section === 'map'      && <MapSection />}
         {section === 'logs'     && <LogsSection />}
       </div>
