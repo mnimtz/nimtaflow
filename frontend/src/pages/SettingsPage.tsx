@@ -4,7 +4,7 @@ import {
   Plus, Trash2, RefreshCw, Check, X, FolderOpen,
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
-  Eye, Zap, Brain,
+  Eye, Zap, Brain, Download,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -380,15 +380,22 @@ function AISection() {
   const qc = useQueryClient()
   const provider = settings['ai.provider'] ?? 'none'
 
-  useQuery({
+  const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.get('/settings').then(r => r.data as Settings),
-    onSuccess: (d: Settings) => setSettings(d),
-  } as any)
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
+  useEffect(() => {
+    if (settingsQuery.data) setSettings(settingsQuery.data)
+  }, [settingsQuery.data])
 
   const save = useMutation({
     mutationFn: (s: Settings) => api.put('/settings', s),
-    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200) },
+    onSuccess: () => {
+      setSaved(true); setTimeout(() => setSaved(false), 2200)
+      qc.invalidateQueries({ queryKey: ['settings'] })
+    },
   })
 
   function set(key: string, val: string) {
@@ -615,16 +622,24 @@ function AISection() {
 function VideoAISection() {
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
+  const qc = useQueryClient()
 
-  useQuery({
+  const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.get('/settings').then(r => r.data as Settings),
-    onSuccess: (d: Settings) => setSettings(d),
-  } as any)
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
+  useEffect(() => {
+    if (settingsQuery.data) setSettings(settingsQuery.data)
+  }, [settingsQuery.data])
 
   const save = useMutation({
     mutationFn: (s: Settings) => api.put('/settings', s),
-    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200) },
+    onSuccess: () => {
+      setSaved(true); setTimeout(() => setSaved(false), 2200)
+      qc.invalidateQueries({ queryKey: ['settings'] })
+    },
   })
 
   function set(key: string, val: string) {
@@ -942,6 +957,17 @@ function LogsSection() {
 
   const reversed = [...data].reverse()
 
+  function exportLogs() {
+    const text = data.map(e => `${e.ts} [${e.level}] (${e.feature}) ${e.message}`).join('\n')
+    const blob = new Blob([text], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `photoflow-logs-${feature}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       <SectionHeader title="Feature-Logs" desc="Detaillierte Logs pro Funktion für Diagnose und Fehlersuche." />
@@ -972,10 +998,16 @@ function LogsSection() {
           Auto-Refresh (5s)
         </label>
 
-        <button onClick={() => refetch()} disabled={isLoading}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-          <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} /> Aktualisieren
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={exportLogs} disabled={data.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-40">
+            <Download size={13} /> Export
+          </button>
+          <button onClick={() => refetch()} disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} /> Aktualisieren
+          </button>
+        </div>
       </div>
 
       {/* Log output */}
@@ -987,14 +1019,14 @@ function LogsSection() {
             <span className="text-xs text-zinc-600 ml-2">— Noch keine Logs. Log-Dateien entstehen beim ersten Scan/AI-Lauf.</span>
           )}
         </div>
-        <div className="h-[480px] overflow-y-auto font-mono text-xs p-4 space-y-0.5">
+        <div className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto font-mono text-[13px] leading-relaxed p-4 space-y-0.5">
           {isLoading && <span className="text-zinc-500">Lade...</span>}
           {reversed.map((e, i) => (
-            <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 py-0.5 rounded">
+            <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 py-0.5 rounded whitespace-nowrap">
               <span className="text-zinc-600 shrink-0">{e.ts}</span>
-              <span className={`${LEVEL_COLORS[e.level] ?? 'text-zinc-400'} shrink-0 w-14`}>{e.level}</span>
-              <span className="text-indigo-400/70 shrink-0 w-14">{e.feature}</span>
-              <span className="text-zinc-300 break-all">{e.message}</span>
+              <span className={`${LEVEL_COLORS[e.level] ?? 'text-zinc-400'} shrink-0 w-16`}>{e.level}</span>
+              <span className="text-indigo-400/70 shrink-0 w-16">{e.feature}</span>
+              <span className="text-zinc-200 whitespace-pre-wrap break-words">{e.message}</span>
             </div>
           ))}
         </div>

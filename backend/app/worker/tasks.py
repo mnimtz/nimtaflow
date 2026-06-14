@@ -76,8 +76,11 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
         from app.models.photo import Photo, PhotoStatus
         from app.models.job import JobLog
         from app.models.tag import Tag, PhotoTag
-        from app.services.processing.thumbnails import generate_thumbnail, open_image_for_ai
+        from app.services.processing.thumbnails import (
+            generate_thumbnail, generate_video_thumbnail, video_duration, open_image_for_ai,
+        )
         from app.services.ai.manager import AIManager
+        from app.services.feature_log import log as flog
         from app.core.config import get_settings
         from sqlalchemy import select
         import time
@@ -95,22 +98,42 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
 
             start = time.time()
             try:
-                # Generate all thumbnail sizes
-                for size in ("small", "medium", "large"):
-                    thumb = generate_thumbnail(photo.path, settings.cache_path, size)
-                    if thumb:
-                        setattr(photo, f"thumb_{size}", thumb)
+                # Generate all thumbnail sizes — videos need a frame extracted via ffmpeg
+                if photo.is_video:
+                    for size in ("small", "medium", "large"):
+                        thumb = generate_video_thumbnail(photo.path, settings.cache_path, size)
+                        if thumb:
+                            setattr(photo, f"thumb_{size}", thumb)
+                    if photo.duration_seconds is None:
+                        photo.duration_seconds = video_duration(photo.path)
+                    if photo.thumb_small:
+                        flog("video", "INFO", f"Thumbnail erstellt: {photo.filename}")
+                    else:
+                        flog("video", "WARNING", f"Kein Frame extrahierbar: {photo.filename}")
+                else:
+                    for size in ("small", "medium", "large"):
+                        thumb = generate_thumbnail(photo.path, settings.cache_path, size)
+                        if thumb:
+                            setattr(photo, f"thumb_{size}", thumb)
+                    if not photo.thumb_small:
+                        flog("scanner", "WARNING", f"Thumbnail fehlgeschlagen: {photo.filename}")
 
                 # AI processing — load provider config from DB settings
                 from app.services.settings_loader import load_settings
                 ai_settings = await load_settings(db)
                 ai = AIManager(ai_settings)
 
-                img = open_image_for_ai(photo.path)
+                # Videos: AImage description from the extracted frame; else the photo
+                img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
+                    else open_image_for_ai(photo.path)
                 if img:
                     description, provider = await ai.describe_image(img, "de")
                     if description:
                         photo.description = description
+                        photo.description_model = provider
+                        flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description[:60]}")
+                    elif provider == "none":
+                        flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
 
                     tags, _ = await ai.generate_tags(img)
                     for tag_name in tags[:20]:
@@ -149,6 +172,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                 photo.status = PhotoStatus.error
                 photo.error_message = str(e)
                 await db.commit()
+                flog("system", "ERROR", f"Verarbeitung fehlgeschlagen: {photo.filename}: {e}")
                 if job_id:
                     db.add(JobLog(job_id=job_id, photo_id=photo_id, level="ERROR", message=f"❌ {photo.filename}: {e}"))
                     await db.commit()

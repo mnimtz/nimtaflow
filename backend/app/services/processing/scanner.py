@@ -153,4 +153,12 @@ async def scan_source(
         for pid in new_photo_ids:
             process_photo_task.delay(pid)
 
+    try:
+        from app.services.feature_log import log as flog
+        flog("scanner", "INFO",
+             f"Scan {root}: {stats['new']} neu, {stats['skipped']} übersprungen, "
+             f"{stats['missing']} fehlend, {stats['errors']} Fehler")
+    except Exception:
+        pass
+
     return stats
