@@ -22,26 +22,36 @@ and enriches your library with local or cloud AI.
 - **EXIF editing** — write title/caption/description/keywords/rating/GPS back into files (optional).
 - **XMP sidecars** — write `.xmp` files (Dublin Core, IPTC) instead of touching originals (settings toggle).
 
-### AI (pluggable providers)
-- **Image descriptions** & **auto-tagging** in your chosen language.
-- **Semantic search** via vector embeddings (pgvector, 768-dim).
-- **Providers**: Google Gemini (cloud) · Ollama (local: llava, nomic-embed) — with fallback chain.
+### AI (pluggable providers, per medium)
+- **Separate config** for **Bilder-AI** and **Video-AI** (different providers/models each).
+- **Configurable prompts** for image & video descriptions (with sensible defaults).
+- **Providers**: Google Gemini · OpenAI/Azure · Ollama (local) · **Integriert/Local** — Florence-2-base (Optimum) or Qwen2.5-VL-3B (Best) running in-process, no Ollama needed; English captions auto-translated to German (opus-mt).
+- **Auto-tagging** + **semantic search embeddings** (pgvector 768-dim; local e5 for the integrated provider).
+- **AI write-back**: embed `dc:description`/IPTC + keywords into the file and/or a `.xmp` sidecar (mode selectable: off / file / file+sidecar / sidecar).
 
 ### People & Faces
-- Face detection, clustering, and person management.
+- Face detection (InsightFace), clustering, and person management *(in progress)*.
 - **Merge / rename / delete** people, choose a **display avatar** (face crop).
-- Person photo galleries.
+- Configurable model (buffalo_s/l) + clustering thresholds; optional video face recognition.
 
 ### Albums
 - **Manual** albums (hand-picked, re-orderable).
 - **Smart** albums (rule-based: date, camera, person, media type, favorites, rating).
 - **AI** albums (free-text prompt matched against descriptions).
 
+### Library & Gallery
+- **Watched folders** with per-source scan intervals + deletion detection.
+- **Library verify/cleanup**: removes orphaned entries (deleted files *and* photos no longer under any watched source) incl. their thumbnails/previews/faces.
+- Justified grid with **infinite scroll**, **sort** (newest/oldest/added/name), **page size**, multi-select + bulk actions, Library/Favorites/Archive/Trash views.
+- Timeline with date scrubber, lightbox (swipe, full EXIF + AI tags + recognized people + inline metadata editing), animated video hover previews.
+
+### Map
+- Photos on a map with **7 free no-key tile layers** (OSM, Esri satellite, CARTO dark/light/voyager, OpenTopoMap, Wikimedia).
+- Auto fit-to-photos; optional **Street View link** per photo (toggle in settings).
+
 ### Other
-- Timeline & justified grid gallery, lightbox, video player.
-- Map view (GPS-tagged photos).
-- Background job pipeline with logging.
-- Encrypted backups.
+- Background job pipeline with **per-feature logs** (export, live view).
+- Encrypted backups. App **version shown in the sidebar** (matches the running Docker build).
 
 ---
 

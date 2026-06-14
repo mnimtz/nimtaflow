@@ -108,6 +108,13 @@ async def verify_library(delete: bool = True, db: AsyncSession = Depends(get_db)
     from datetime import datetime, timezone
     import os
 
+    # Roots of all enabled sources — a photo is only valid if it lives under one.
+    src_rows = (await db.execute(select(PhotoSource.path).where(PhotoSource.enabled == True))).all()  # noqa: E712
+    roots = [s[0].rstrip("/") for s in src_rows]
+
+    def _under_a_source(p: str) -> bool:
+        return any(p == root or p.startswith(root + "/") for root in roots)
+
     rows = (await db.execute(
         select(Photo.id, Photo.path, Photo.thumb_small, Photo.thumb_medium,
                Photo.thumb_large, Photo.video_preview_path)
@@ -117,7 +124,8 @@ async def verify_library(delete: bool = True, db: AsyncSession = Depends(get_db)
     missing_ids: list[int] = []
     removed_files = 0
     for r in rows:
-        if not os.path.exists(r[1]):
+        # orphaned = file gone from disk OR no longer under any watched source
+        if not os.path.exists(r[1]) or not _under_a_source(r[1]):
             missing_ids.append(r[0])
             if delete:
                 for cached in (r[2], r[3], r[4], r[5]):
