@@ -438,7 +438,7 @@ function AISection() {
 
   return (
     <div>
-      <SectionHeader title="Foto-AI" desc="AI nur für Fotos: Bildbeschreibungen, Tags und Embeddings. Videos werden separat unter „Video-AI & Gesichter" konfiguriert." />
+      <SectionHeader title="Foto-AI" desc={'AI nur für Fotos: Bildbeschreibungen, Tags und Embeddings. Videos werden separat unter „Video-AI & Gesichter“ konfiguriert.'} />
       <div className="space-y-7">
 
         {/* Provider picker */}
