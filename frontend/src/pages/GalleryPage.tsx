@@ -196,7 +196,7 @@ export default function GalleryPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm px-4 py-2 flex items-center gap-3 flex-wrap">
+      <div className="relative z-40 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm px-4 py-2 flex items-center gap-3 flex-wrap">
         {/* Library views */}
         <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
           {([
