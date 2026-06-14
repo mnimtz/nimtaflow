@@ -60,6 +60,18 @@ class Photo(Base):
     thumb_medium: Mapped[Optional[str]] = mapped_column(String(512))
     thumb_large: Mapped[Optional[str]] = mapped_column(String(512))
 
+    # Media type
+    is_video: Mapped[bool] = mapped_column(Boolean, default=False)
+    duration_seconds: Mapped[Optional[float]] = mapped_column(Float)
+    video_codec: Mapped[Optional[str]] = mapped_column(String(32))
+    video_webm_path: Mapped[Optional[str]] = mapped_column(String(512))  # transcoded WebM
+
+    # User interaction
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_trashed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    user_rating: Mapped[Optional[int]] = mapped_column(Integer)  # 1-5
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 

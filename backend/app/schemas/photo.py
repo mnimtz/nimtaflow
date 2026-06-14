@@ -16,6 +16,12 @@ class PhotoBase(BaseModel):
     status: PhotoStatus
     thumb_small: Optional[str]
     thumb_medium: Optional[str]
+    is_video: bool = False
+    duration_seconds: Optional[float] = None
+    is_favorite: bool = False
+    is_archived: bool = False
+    is_trashed: bool = False
+    user_rating: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -43,3 +49,9 @@ class PhotoListResponse(BaseModel):
     page: int
     limit: int
     items: List[PhotoBase]
+
+
+class TimelineGroup(BaseModel):
+    date: str
+    count: int
+    photos: List[PhotoBase]

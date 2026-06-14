@@ -45,6 +45,28 @@ export type Photo = {
   status: string
   thumb_small: string | null
   thumb_medium: string | null
+  is_video: boolean
+  duration_seconds: number | null
+  is_favorite: boolean
+  is_archived: boolean
+  is_trashed: boolean
+  user_rating: number | null
+}
+
+export type TimelineGroup = {
+  date: string
+  count: number
+  photos: Photo[]
+}
+
+export type PhotoStats = {
+  total: number
+  videos: number
+  favorites: number
+  with_gps: number
+  cameras: { model: string; count: number }[]
+  date_min: string | null
+  date_max: string | null
 }
 
 export type Person = {

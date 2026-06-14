@@ -4,7 +4,7 @@ import { Plus, Trash2, RefreshCw, Check, X, FolderOpen } from 'lucide-react'
 import { api, Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
 
-const SECTIONS = ['Quellen', 'AI-Provider', 'Pipeline', 'Karte', 'Backup'] as const
+const SECTIONS = ['Quellen', 'Galerie', 'AI-Provider', 'Pipeline', 'Karte', 'Backup'] as const
 type Section = typeof SECTIONS[number]
 
 export default function SettingsPage() {
@@ -32,6 +32,7 @@ export default function SettingsPage() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-6 max-w-2xl">
         {section === 'Quellen' && <SourcesSection />}
+        {section === 'Galerie' && <GalerieSection />}
         {section === 'AI-Provider' && <AISection />}
         {section === 'Pipeline' && <PipelineSection />}
         {section === 'Karte' && <MapSection />}
@@ -148,6 +149,75 @@ function SourcesSection() {
           onClose={() => setShowBrowser(false)}
         />
       )}
+    </div>
+  )
+}
+
+function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer">
+      <div
+        onClick={() => onChange(!value)}
+        className={`w-9 h-5 rounded-full transition-colors relative ${value ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-gray-700'}`}
+      >
+        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </div>
+      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+    </label>
+  )
+}
+
+function GalerieSection() {
+  const [saved, setSaved] = useState(false)
+  const [rowHeight, setRowHeight] = useState(200)
+  const [autoplayVideos, setAutoplayVideos] = useState(true)
+  const [showFaceBoxes, setShowFaceBoxes] = useState(true)
+  const [defaultView, setDefaultView] = useState('grid')
+
+  return (
+    <div>
+      <SectionHeader title="Galerie-Einstellungen" desc="Anzeige, Thumbnails und Video-Verhalten anpassen." />
+      <div className="space-y-6">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Standard-Ansicht</label>
+          <select
+            value={defaultView}
+            onChange={e => setDefaultView(e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="grid">Raster (Justified Grid)</option>
+            <option value="timeline">Timeline</option>
+            <option value="memories">Erinnerungen</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+            Zeilenhöhe: {rowHeight}px
+          </label>
+          <input
+            type="range" min={120} max={400} step={20}
+            value={rowHeight}
+            onChange={e => setRowHeight(Number(e.target.value))}
+            className="w-full accent-indigo-600"
+          />
+          <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+            <span>Kompakt</span><span>Groß</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Toggle value={autoplayVideos} onChange={setAutoplayVideos} label="Videos automatisch abspielen" />
+          <Toggle value={showFaceBoxes} onChange={setShowFaceBoxes} label="Gesichtsrahmen anzeigen" />
+        </div>
+
+        <button
+          onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000) }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+        >
+          {saved ? <><Check size={15} /> Gespeichert</> : 'Speichern'}
+        </button>
+      </div>
     </div>
   )
 }

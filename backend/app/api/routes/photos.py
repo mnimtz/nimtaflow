@@ -1,43 +1,89 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, distinct, extract, text
 from datetime import date
+import os, subprocess, pathlib, mimetypes
 
 from app.core.database import get_db
 from app.models.photo import Photo, PhotoStatus
-from app.schemas.photo import PhotoListResponse, PhotoDetail
+from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup
 
 router = APIRouter(prefix="/photos", tags=["photos"])
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".mts", ".3gp"}
+
+
+def _base_query(
+    db: AsyncSession,
+    search: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    person_id: Optional[int] = None,
+    tag: Optional[str] = None,
+    camera: Optional[str] = None,
+    media_type: Optional[str] = None,  # photo | video | raw
+    favorites_only: bool = False,
+    has_gps: Optional[bool] = None,
+):
+    q = select(Photo).where(
+        Photo.status == PhotoStatus.done,
+        Photo.is_trashed == False,
+        Photo.is_archived == False,
+    )
+    if search:
+        q = q.where(Photo.description.ilike(f"%{search}%"))
+    if date_from:
+        q = q.where(Photo.taken_at >= date_from)
+    if date_to:
+        q = q.where(Photo.taken_at <= date_to)
+    if camera:
+        q = q.where(Photo.camera_model.ilike(f"%{camera}%"))
+    if favorites_only:
+        q = q.where(Photo.is_favorite == True)
+    if has_gps is True:
+        q = q.where(Photo.latitude != None)
+    elif has_gps is False:
+        q = q.where(Photo.latitude == None)
+    if media_type == "video":
+        q = q.where(Photo.is_video == True)
+    elif media_type == "photo":
+        q = q.where(Photo.is_video == False, Photo.mime_type.not_like("image/raw%"))
+    elif media_type == "raw":
+        q = q.where(Photo.mime_type.like("image/raw%"))
+    if person_id:
+        from app.models.face import Face
+        q = q.join(Face, Face.photo_id == Photo.id).where(Face.person_id == person_id)
+    if tag:
+        from app.models.tag import Tag, PhotoTag
+        q = q.join(PhotoTag, PhotoTag.photo_id == Photo.id).join(Tag, Tag.id == PhotoTag.tag_id).where(Tag.name == tag)
+    return q
 
 
 @router.get("", response_model=PhotoListResponse)
 async def list_photos(
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=500),
+    search: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     person_id: Optional[int] = None,
     tag: Optional[str] = None,
-    search: Optional[str] = None,
+    camera: Optional[str] = None,
+    media_type: Optional[str] = None,
+    favorites: bool = False,
+    has_gps: Optional[bool] = None,
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Photo).where(Photo.status == PhotoStatus.done)
+    q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps)
 
-    if date_from:
-        q = q.where(Photo.taken_at >= date_from)
-    if date_to:
-        q = q.where(Photo.taken_at <= date_to)
-    if search:
-        q = q.where(Photo.description.ilike(f"%{search}%"))
     if lat and lng and radius_km:
-        # Simple bounding box; proper haversine via PostGIS in future
         lat_delta = radius_km / 111.0
-        lng_delta = radius_km / (111.0 * abs(lat) ** 0.5 + 0.001)
+        lng_delta = radius_km / (111.0 * max(abs(lat), 0.01))
         q = q.where(
             and_(
                 Photo.latitude.between(lat - lat_delta, lat + lat_delta),
@@ -45,16 +91,94 @@ async def list_photos(
             )
         )
 
-    if person_id:
-        from app.models.face import Face
-        q = q.join(Face, Face.photo_id == Photo.id).where(Face.person_id == person_id)
-
     total = await db.scalar(select(func.count()).select_from(q.subquery()))
     q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
     q = q.offset((page - 1) * limit).limit(limit)
-
     photos = (await db.execute(q)).scalars().all()
-    return PhotoListResponse(total=total, page=page, limit=limit, items=photos)
+    return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
+
+
+@router.get("/timeline", response_model=List[TimelineGroup])
+async def get_timeline(
+    search: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    person_id: Optional[int] = None,
+    camera: Optional[str] = None,
+    media_type: Optional[str] = None,
+    favorites: bool = False,
+    limit_per_group: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns photos grouped by day, newest first, for timeline view."""
+    q = _base_query(db, search, date_from, date_to, person_id, None, camera, media_type, favorites)
+    q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+    all_photos = (await db.execute(q)).scalars().all()
+
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for photo in all_photos:
+        key = photo.taken_at.date().isoformat() if photo.taken_at else "unknown"
+        groups[key].append(photo)
+
+    result = []
+    for day_key in sorted(groups.keys(), reverse=True):
+        photos_in_group = groups[day_key]
+        result.append(TimelineGroup(
+            date=day_key,
+            count=len(photos_in_group),
+            photos=photos_in_group[:limit_per_group],
+        ))
+    return result
+
+
+@router.get("/stats")
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    """Filter facets: cameras, date range, counts."""
+    cameras = (await db.execute(
+        select(Photo.camera_model, func.count().label("n"))
+        .where(Photo.camera_model != None, Photo.is_trashed == False)
+        .group_by(Photo.camera_model).order_by(text("n desc")).limit(20)
+    )).all()
+
+    total = await db.scalar(select(func.count()).where(Photo.is_trashed == False, Photo.status == PhotoStatus.done))
+    videos = await db.scalar(select(func.count()).where(Photo.is_video == True, Photo.is_trashed == False))
+    favorites = await db.scalar(select(func.count()).where(Photo.is_favorite == True, Photo.is_trashed == False))
+    with_gps = await db.scalar(select(func.count()).where(Photo.latitude != None, Photo.is_trashed == False))
+
+    min_date = await db.scalar(select(func.min(Photo.taken_at)).where(Photo.is_trashed == False))
+    max_date = await db.scalar(select(func.max(Photo.taken_at)).where(Photo.is_trashed == False))
+
+    return {
+        "total": total or 0,
+        "videos": videos or 0,
+        "favorites": favorites or 0,
+        "with_gps": with_gps or 0,
+        "cameras": [{"model": r[0], "count": r[1]} for r in cameras],
+        "date_min": min_date.isoformat() if min_date else None,
+        "date_max": max_date.isoformat() if max_date else None,
+    }
+
+
+@router.get("/memories")
+async def get_memories(db: AsyncSession = Depends(get_db)):
+    """Photos from exactly 1, 2, 3... years ago today."""
+    from datetime import datetime, timezone, timedelta
+    today = datetime.now(timezone.utc)
+    memories = []
+    for years_ago in range(1, 11):
+        target = today.replace(year=today.year - years_ago)
+        start = target - timedelta(days=1)
+        end = target + timedelta(days=1)
+        photos = (await db.execute(
+            select(Photo)
+            .where(Photo.taken_at.between(start, end), Photo.is_trashed == False, Photo.status == PhotoStatus.done)
+            .order_by(Photo.taken_at)
+            .limit(20)
+        )).scalars().all()
+        if photos:
+            memories.append({"years_ago": years_ago, "date": target.date().isoformat(), "photos": photos})
+    return memories
 
 
 @router.get("/{photo_id}", response_model=PhotoDetail)
@@ -65,15 +189,55 @@ async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db)):
     return photo
 
 
+@router.patch("/{photo_id}/favorite")
+async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db)):
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    photo.is_favorite = not photo.is_favorite
+    await db.commit()
+    return {"is_favorite": photo.is_favorite}
+
+
+@router.patch("/{photo_id}/archive")
+async def toggle_archive(photo_id: int, db: AsyncSession = Depends(get_db)):
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    photo.is_archived = not photo.is_archived
+    await db.commit()
+    return {"is_archived": photo.is_archived}
+
+
+@router.patch("/{photo_id}/rating")
+async def set_rating(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db)):
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    photo.user_rating = max(0, min(5, rating))
+    await db.commit()
+    return {"user_rating": photo.user_rating}
+
+
+@router.patch("/{photo_id}/trash")
+async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db)):
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    photo.is_trashed = not photo.is_trashed
+    await db.commit()
+    return {"is_trashed": photo.is_trashed}
+
+
 @router.get("/{photo_id}/thumbnail")
 async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(404)
     thumb = getattr(photo, f"thumb_{size}", None) or photo.thumb_medium or photo.thumb_small
-    if not thumb:
-        raise HTTPException(404, "Thumbnail not generated yet")
-    return FileResponse(thumb, media_type="image/jpeg")
+    if not thumb or not os.path.exists(thumb):
+        raise HTTPException(404, "Thumbnail not ready")
+    return FileResponse(thumb, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000"})
 
 
 @router.get("/{photo_id}/original")
@@ -81,6 +245,57 @@ async def get_original(photo_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(404)
-    import mimetypes
     mime = photo.mime_type or mimetypes.guess_type(photo.path)[0] or "application/octet-stream"
     return FileResponse(photo.path, media_type=mime, filename=photo.filename)
+
+
+@router.get("/{photo_id}/video/stream")
+async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db)):
+    """Stream video directly or serve transcoded WebM."""
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+
+    # Prefer pre-transcoded WebM
+    if photo.video_webm_path and os.path.exists(photo.video_webm_path):
+        return FileResponse(photo.video_webm_path, media_type="video/webm",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
+    # Fall back to original (browser handles mp4/mov natively)
+    mime = photo.mime_type or "video/mp4"
+    return FileResponse(photo.path, media_type=mime)
+
+
+@router.post("/{photo_id}/video/transcode")
+async def transcode_video(photo_id: int, db: AsyncSession = Depends(get_db)):
+    """Trigger ffmpeg WebM transcode for a video."""
+    from app.core.config import get_settings
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+
+    settings = get_settings()
+    out_dir = pathlib.Path(settings.cache_path) / "videos"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{photo_id}.webm"
+
+    if out_path.exists():
+        photo.video_webm_path = str(out_path)
+        await db.commit()
+        return {"status": "already_done", "path": str(out_path)}
+
+    # Run ffmpeg (non-blocking — in production use Celery task)
+    cmd = [
+        "ffmpeg", "-i", photo.path,
+        "-c:v", "libvpx-vp9", "-crf", "33", "-b:v", "0",
+        "-c:a", "libopus", "-b:a", "128k",
+        "-vf", "scale=-2:720",
+        str(out_path), "-y",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=300)
+    if proc.returncode == 0:
+        photo.video_webm_path = str(out_path)
+        await db.commit()
+        return {"status": "done", "path": str(out_path)}
+    else:
+        raise HTTPException(500, f"ffmpeg error: {proc.stderr.decode()[-500:]}")
