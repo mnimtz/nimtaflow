@@ -153,15 +153,15 @@ def generate_video_thumbnail(
 def generate_video_preview_webp(
     video_path: str,
     cache_root: str,
-    duration_sec: float = 3.0,
-    fps: int = 8,
-    width: int = 480,
+    duration_sec: float = 2.0,
+    fps: int = 6,
+    width: int = 320,
     at_second: Optional[float] = None,
 ) -> Optional[str]:
-    """Generate an animated WebP preview clip (silent, looping hover preview).
+    """Generate a lightweight animated WebP hover preview (silent, looping).
 
-    Falls back to animated GIF if WebP conversion fails.
-    Strategy: extract N frames, encode as animated WebP via ffmpeg.
+    Kept cheap on purpose so it never clogs the worker pool: short clip, low
+    fps, small width, single fast pass with a tight timeout. No GIF fallback.
     """
     h = _hash(video_path + ":preview")
     out = Path(cache_root) / "previews" / h[:2] / f"{h}.webp"
@@ -173,19 +173,12 @@ def generate_video_preview_webp(
     if not dur:
         return None
 
-    # Start at 5% mark to skip intros, but not beyond (dur - duration_sec)
     if at_second is None:
-        at_second = max(0, min(dur * 0.05, dur - duration_sec - 1))
+        at_second = max(0, min(dur * 0.05, max(0, dur - duration_sec - 1)))
 
     total_frames = int(duration_sec * fps)
-    palette_tmp = out.with_suffix(".palette.png")
-
+    vf = f"scale={width}:-2:flags=fast_bilinear,fps={fps}"
     try:
-        # Two-pass: generate palette → encode animated WebP
-        # Pass 1: palette (only needed for GIF; skip for WebP but keep for fallback)
-        vf = f"scale={width}:-2:flags=lanczos,fps={fps}"
-
-        # Try animated WebP directly
         r = subprocess.run(
             [
                 _FFMPEG, "-y",
@@ -194,42 +187,18 @@ def generate_video_preview_webp(
                 "-t", str(duration_sec),
                 "-vf", vf,
                 "-vframes", str(total_frames),
-                "-loop", "0",          # loop forever
-                "-compression_level", "4",
-                "-quality", "75",
-                "-an",                 # no audio
+                "-loop", "0",
+                "-compression_level", "2",
+                "-quality", "70",
+                "-an",
                 str(out),
             ],
-            capture_output=True, timeout=60,
+            capture_output=True, timeout=20,
         )
-        if r.returncode == 0 and out.stat().st_size > 1000:
+        if r.returncode == 0 and out.exists() and out.stat().st_size > 800:
             return str(out)
     except Exception:
         pass
-
-    # Fallback: animated GIF
-    gif_out = out.with_suffix(".gif")
-    try:
-        palette = str(palette_tmp)
-        subprocess.run(
-            [_FFMPEG, "-y", "-ss", str(at_second), "-i", video_path,
-             "-t", str(duration_sec), "-vf", f"{vf},palettegen", palette],
-            capture_output=True, timeout=30,
-        )
-        r2 = subprocess.run(
-            [_FFMPEG, "-y", "-ss", str(at_second), "-i", video_path,
-             "-i", palette, "-t", str(duration_sec),
-             "-vf", f"{vf} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3",
-             gif_out],
-            capture_output=True, timeout=60,
-        )
-        if r2.returncode == 0 and gif_out.exists():
-            return str(gif_out)
-    except Exception:
-        pass
-    finally:
-        palette_tmp.unlink(missing_ok=True)
-
     return None
 
 
