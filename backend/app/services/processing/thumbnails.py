@@ -34,6 +34,28 @@ def _thumb_path(cache_root: str, source: str, size: str, ext: str = "jpg") -> Pa
 
 # ── Image thumbnails ──────────────────────────────────────────────────────────
 
+def _open_image_any(photo_path: str) -> Optional[Image.Image]:
+    """Open an image, falling back to exiftool's embedded preview for HEIC/RAW
+    variants that Pillow/pillow-heif can't decode."""
+    try:
+        return Image.open(photo_path)
+    except Exception:
+        pass
+    # fallback: extract embedded preview via exiftool
+    try:
+        import shutil as _sh, subprocess, io
+        exe = _sh.which("exiftool")
+        if not exe:
+            return None
+        for tag in ("-PreviewImage", "-JpgFromRaw", "-ThumbnailImage"):
+            r = subprocess.run([exe, "-b", tag, photo_path], capture_output=True, timeout=20)
+            if r.returncode == 0 and r.stdout and len(r.stdout) > 1000:
+                return Image.open(io.BytesIO(r.stdout))
+    except Exception:
+        pass
+    return None
+
+
 def generate_thumbnail(photo_path: str, cache_root: str, size: str = "medium") -> Optional[str]:
     """Generate JPEG thumbnail; returns path or None on failure."""
     out = _thumb_path(cache_root, photo_path, size)
@@ -41,7 +63,9 @@ def generate_thumbnail(photo_path: str, cache_root: str, size: str = "medium") -
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
-        img = Image.open(photo_path)
+        img = _open_image_any(photo_path)
+        if img is None:
+            return None
         img = _fix_orientation(img)
         img.thumbnail(SIZES[size], Image.LANCZOS)
         img = _to_rgb(img)

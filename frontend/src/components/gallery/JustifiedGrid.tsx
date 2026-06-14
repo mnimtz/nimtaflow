@@ -74,7 +74,7 @@ function buildRows(photos: Photo[], containerWidth: number, targetHeight: number
   return rows
 }
 
-function JustifiedRow({ items, containerWidth, targetHeight, gap, onPhotoClick, onFavoriteToggle, selectable, selected, onToggleSelect, anySelected }: {
+function JustifiedRow({ items, containerWidth, targetHeight, gap, onPhotoClick, onFavoriteToggle, selectable, selected, onToggleSelect, anySelected, isLast }: {
   items: RowItem[]
   containerWidth: number
   targetHeight: number
@@ -85,12 +85,15 @@ function JustifiedRow({ items, containerWidth, targetHeight, gap, onPhotoClick, 
   selected?: Set<number>
   onToggleSelect?: (photo: Photo, index: number, shift: boolean) => void
   anySelected: boolean
+  isLast?: boolean
 }) {
   const totalNatural = items.reduce((sum, it) => sum + it.width, 0)
   const totalGaps = gap * (items.length - 1)
-  const scale = (containerWidth - totalGaps) / totalNatural
+  let scale = (containerWidth - totalGaps) / totalNatural
+  // Don't blow up a sparse last row (e.g. a single item) to full width.
+  if (isLast && scale > 1.15) scale = 1
   return (
-    <div className="flex" style={{ gap, height: targetHeight }}>
+    <div className="flex" style={{ gap, height: targetHeight, justifyContent: 'flex-start' }}>
       {items.map(({ photo, index, width }) => {
         const w = Math.floor(width * scale)
         const isSelected = selected?.has(photo.id) ?? false
@@ -195,6 +198,7 @@ export default function JustifiedGrid({ photos, rowHeight = 200, gap = 4, onPhot
             selected={selected}
             onToggleSelect={onToggleSelect}
             anySelected={anySelected}
+            isLast={ri === rows.length - 1}
           />
         ))}
       </div>

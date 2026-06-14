@@ -112,4 +112,51 @@ def extract_exif(path: str) -> ExifData:
     except Exception:
         pass
 
+    # Fallback via exiftool — PIL can't read GPS/dates from HEIC or videos (MOV).
+    if result.latitude is None or result.taken_at is None:
+        _exiftool_fallback(path, result)
+
     return result
+
+
+def _exiftool_fallback(path: str, result: "ExifData") -> None:
+    import shutil, subprocess, json as _json
+    exe = shutil.which("exiftool")
+    if not exe:
+        return
+    try:
+        r = subprocess.run(
+            [exe, "-n", "-j",
+             "-GPSLatitude", "-GPSLongitude", "-GPSAltitude",
+             "-DateTimeOriginal", "-CreateDate", "-Make", "-Model", "-LensModel", path],
+            capture_output=True, timeout=20,
+        )
+        data = _json.loads(r.stdout or "[]")
+        if not data:
+            return
+        d = data[0]
+        if result.latitude is None and d.get("GPSLatitude") is not None and d.get("GPSLongitude") is not None:
+            result.latitude = float(d["GPSLatitude"])
+            result.longitude = float(d["GPSLongitude"])
+            if d.get("GPSAltitude") is not None:
+                try:
+                    result.altitude = float(d["GPSAltitude"])
+                except (TypeError, ValueError):
+                    pass
+        if result.taken_at is None:
+            for key in ("DateTimeOriginal", "CreateDate"):
+                v = d.get(key)
+                if v:
+                    try:
+                        result.taken_at = datetime.strptime(str(v)[:19], "%Y:%m:%d %H:%M:%S")
+                        break
+                    except ValueError:
+                        continue
+        if not result.camera_make and d.get("Make"):
+            result.camera_make = str(d["Make"]).strip()
+        if not result.camera_model and d.get("Model"):
+            result.camera_model = str(d["Model"]).strip()
+        if not result.lens_model and d.get("LensModel"):
+            result.lens_model = str(d["LensModel"]).strip()
+    except Exception:
+        pass
