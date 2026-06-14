@@ -93,6 +93,64 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
     return {"deleted_photos": len(photo_ids), "deleted_files": removed_files}
 
 
+@router.post("/verify")
+async def verify_library(delete: bool = True, db: AsyncSession = Depends(get_db)):
+    """Check every indexed photo against the filesystem. Entries whose original
+    file no longer exists are removed (with their thumbnails/previews/faces) when
+    delete=true, otherwise just flagged is_missing. Cleans up dead links left by
+    deleted files or whole removed folders."""
+    from sqlalchemy import delete as sql_delete, update as sql_update
+    from app.models.photo import Photo
+    from app.models.face import Face
+    from app.models.person import Person
+    from app.models.tag import PhotoTag
+    from app.models.album import AlbumPhoto
+    from datetime import datetime, timezone
+    import os
+
+    rows = (await db.execute(
+        select(Photo.id, Photo.path, Photo.thumb_small, Photo.thumb_medium,
+               Photo.thumb_large, Photo.video_preview_path)
+    )).all()
+
+    checked = len(rows)
+    missing_ids: list[int] = []
+    removed_files = 0
+    for r in rows:
+        if not os.path.exists(r[1]):
+            missing_ids.append(r[0])
+            if delete:
+                for cached in (r[2], r[3], r[4], r[5]):
+                    if cached and os.path.isfile(cached):
+                        try:
+                            os.remove(cached); removed_files += 1
+                        except OSError:
+                            pass
+
+    def _chunks(seq, n=400):
+        for i in range(0, len(seq), n):
+            yield seq[i:i + n]
+
+    if missing_ids and delete:
+        for chunk in _chunks(missing_ids):
+            await db.execute(sql_delete(Face).where(Face.photo_id.in_(chunk)))
+            await db.execute(sql_delete(PhotoTag).where(PhotoTag.photo_id.in_(chunk)))
+            await db.execute(sql_delete(AlbumPhoto).where(AlbumPhoto.photo_id.in_(chunk)))
+            await db.execute(sql_delete(Photo).where(Photo.id.in_(chunk)))
+        await db.execute(sql_delete(Person).where(
+            ~Person.id.in_(select(Face.person_id).where(Face.person_id.isnot(None)))
+        ))
+    elif missing_ids:
+        for chunk in _chunks(missing_ids):
+            await db.execute(sql_update(Photo).where(Photo.id.in_(chunk)).values(
+                is_missing=True, missing_at=datetime.now(timezone.utc)))
+
+    await db.commit()
+    return {"checked": checked, "missing": len(missing_ids),
+            "removed_photos": len(missing_ids) if delete else 0,
+            "removed_files": removed_files, "deleted": delete}
+
+
 @router.post("/{source_id}/scan", response_model=ScanResult)
 async def trigger_scan(source_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     source = await db.get(PhotoSource, source_id)

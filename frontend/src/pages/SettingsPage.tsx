@@ -212,6 +212,18 @@ function SourcesSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
   })
 
+  const [verifyResult, setVerifyResult] = useState<string | null>(null)
+  const verify = useMutation({
+    mutationFn: () => api.post('/sources/verify').then(r => r.data),
+    onSuccess: (d: { checked: number; removed_photos: number; removed_files: number }) => {
+      setVerifyResult(`${d.checked} Einträge geprüft · ${d.removed_photos} verwaiste entfernt · ${d.removed_files} Dateien gelöscht`)
+      qc.invalidateQueries({ queryKey: ['photos'] })
+      qc.invalidateQueries({ queryKey: ['photo-stats'] })
+      qc.invalidateQueries({ queryKey: ['people'] })
+      qc.invalidateQueries({ queryKey: ['memories'] })
+    },
+  })
+
   const INTERVALS: { label: string; value: number }[] = [
     { label: 'Manuell (kein Auto-Scan)', value: 0 },
     { label: 'Alle 15 Minuten', value: 15 },
@@ -320,6 +332,27 @@ function SourcesSection() {
           Nach dem Hinzufügen startet der Scan automatisch. Mehrere Ordner können einzeln hinzugefügt werden.
         </p>
       </form>
+
+      {/* Library maintenance */}
+      <div className="mt-6 pt-5 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Bilddatenbank überprüfen</p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Gleicht alle Einträge mit der Festplatte ab und entfernt verwaiste Fotos, Thumbnails, Vorschauen
+              und Gesichter von Dateien/Ordnern, die es nicht mehr gibt.
+            </p>
+          </div>
+          <button
+            onClick={() => { if (confirm('Bibliothek überprüfen und verwaiste Einträge (gelöschte Dateien) entfernen?')) { setVerifyResult(null); verify.mutate() } }}
+            disabled={verify.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors shrink-0"
+          >
+            <RefreshCw size={14} className={verify.isPending ? 'animate-spin' : ''} /> Jetzt überprüfen
+          </button>
+        </div>
+        {verifyResult && <p className="text-xs text-emerald-500 mt-2">✓ {verifyResult}</p>}
+      </div>
 
       {showBrowser && (
         <FolderBrowser initialPath={newPath || '/photos'} onSelect={p => setNewPath(p)} onClose={() => setShowBrowser(false)} />
