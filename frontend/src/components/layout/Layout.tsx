@@ -1,7 +1,22 @@
 import { Outlet, NavLink } from 'react-router-dom'
 import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
+import { api } from '../../lib/api'
 import clsx from 'clsx'
+
+function VersionBadge() {
+  const { data } = useQuery<{ version: string }>({
+    queryKey: ['version'],
+    queryFn: () => api.get('/version').then(r => r.data),
+    staleTime: 300_000,
+  })
+  return (
+    <p className="px-3 pt-1.5 text-[10px] text-zinc-600 select-text" title="Laufende Docker-Version">
+      <span className="hidden md:inline">PhotoFlow </span>v{data?.version ?? '…'}
+    </p>
+  )
+}
 
 const nav = [
   { to: '/gallery', icon: Images, label: 'Galerie' },
@@ -66,6 +81,7 @@ export default function Layout() {
             }
             <span className="hidden md:block">{dark ? 'Helles Design' : 'Dunkles Design'}</span>
           </button>
+          <VersionBadge />
         </div>
       </aside>
 

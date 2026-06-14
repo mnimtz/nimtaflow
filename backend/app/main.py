@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db, _engine
+from app.version import __version__
 from app.api.routes import auth, photos, people, sources, settings_api, jobs
 from app.api.routes import fs, ai_api, logs, backup, albums
 from app.api.v1 import router as v1_router
@@ -80,7 +81,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PhotoFlow",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -113,6 +114,18 @@ app.include_router(albums.router, prefix="/api")
 app.include_router(v1_router.router, prefix="/api")
 
 
+@app.middleware("http")
+async def add_version_header(request, call_next):
+    response = await call_next(request)
+    response.headers["X-PhotoFlow-Version"] = __version__
+    return response
+
+
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": __version__}
+
+
+@app.get("/api/version")
+async def version():
+    return {"version": __version__}
