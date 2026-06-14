@@ -26,12 +26,17 @@ def _base_query(
     media_type: Optional[str] = None,  # photo | video | raw
     favorites_only: bool = False,
     has_gps: Optional[bool] = None,
+    view: str = "library",  # library | favorites | archive | trash
 ):
-    q = select(Photo).where(
-        Photo.status == PhotoStatus.done,
-        Photo.is_trashed == False,
-        Photo.is_archived == False,
-    )
+    q = select(Photo).where(Photo.status == PhotoStatus.done)
+    if view == "trash":
+        q = q.where(Photo.is_trashed == True)
+    elif view == "archive":
+        q = q.where(Photo.is_archived == True, Photo.is_trashed == False)
+    elif view == "favorites":
+        q = q.where(Photo.is_favorite == True, Photo.is_trashed == False, Photo.is_archived == False)
+    else:  # library
+        q = q.where(Photo.is_trashed == False, Photo.is_archived == False)
     if search:
         q = q.where(Photo.description.ilike(f"%{search}%"))
     if date_from:
@@ -74,12 +79,13 @@ async def list_photos(
     media_type: Optional[str] = None,
     favorites: bool = False,
     has_gps: Optional[bool] = None,
+    view: str = "library",
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps)
+    q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps, view)
 
     if lat and lng and radius_km:
         lat_delta = radius_km / 111.0

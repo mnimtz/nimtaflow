@@ -114,10 +114,11 @@ export default function GalleryPage() {
   const [searchDraft, setSearchDraft] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastIndex, setLastIndex] = useState<number | null>(null)
+  const [library, setLibrary] = useState<'library' | 'favorites' | 'archive' | 'trash'>('library')
   const rowHeight = useRowHeight()
   const qc = useQueryClient()
 
-  const filterParams = buildFilterParams(filters)
+  const filterParams = { ...buildFilterParams(filters), view: library }
 
   const infiniteQuery = useInfiniteQuery({
     queryKey: ['photos', 'grid', filterParams],
@@ -196,27 +197,53 @@ export default function GalleryPage() {
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm px-4 py-2 flex items-center gap-3 flex-wrap">
-        {/* View tabs */}
+        {/* Library views */}
         <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
           {([
-            { id: 'grid', icon: LayoutGrid, label: 'Raster' },
-            { id: 'timeline', icon: Clock, label: 'Timeline' },
-            { id: 'memories', icon: Sparkles, label: 'Erinnerungen' },
+            { id: 'library', icon: LayoutGrid, label: 'Bibliothek' },
+            { id: 'favorites', icon: Heart, label: 'Favoriten' },
+            { id: 'archive', icon: Archive, label: 'Archiv' },
+            { id: 'trash', icon: Trash2, label: 'Papierkorb' },
           ] as const).map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => setViewMode(id)}
+              onClick={() => { setLibrary(id); clearSelection(); if (id !== 'library') setViewMode('grid') }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                viewMode === id
+                library === id
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
+              title={label}
             >
               <Icon size={14} />
-              <span className="hidden sm:inline">{label}</span>
+              <span className="hidden md:inline">{label}</span>
             </button>
           ))}
         </div>
+
+        {/* View tabs — only meaningful in the main library */}
+        {library === 'library' && (
+          <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
+            {([
+              { id: 'grid', icon: LayoutGrid, label: 'Raster' },
+              { id: 'timeline', icon: Clock, label: 'Timeline' },
+              { id: 'memories', icon: Sparkles, label: 'Erinnerungen' },
+            ] as const).map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => setViewMode(id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === id
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+              >
+                <Icon size={14} />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Search */}
         {viewMode !== 'memories' && (
@@ -322,18 +349,34 @@ export default function GalleryPage() {
           </button>
           <span className="px-2 text-sm font-semibold text-white tabular-nums">{selectionCount}</span>
           <div className="w-px h-6 bg-white/15 mx-1" />
-          <button onClick={() => batchMutation.mutate('favorite')} disabled={batchMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Favorisieren">
-            <Heart size={16} /> <span className="hidden sm:inline">Favorit</span>
-          </button>
-          <button onClick={() => batchMutation.mutate('archive')} disabled={batchMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Archivieren">
-            <Archive size={16} /> <span className="hidden sm:inline">Archiv</span>
-          </button>
-          <button onClick={() => batchMutation.mutate('trash')} disabled={batchMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="In Papierkorb">
-            <Trash2 size={16} /> <span className="hidden sm:inline">Papierkorb</span>
-          </button>
+          {library === 'trash' ? (
+            <button onClick={() => batchMutation.mutate('untrash')} disabled={batchMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50" title="Wiederherstellen">
+              <Archive size={16} /> <span className="hidden sm:inline">Wiederherstellen</span>
+            </button>
+          ) : library === 'archive' ? (
+            <button onClick={() => batchMutation.mutate('unarchive')} disabled={batchMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Aus Archiv">
+              <Archive size={16} /> <span className="hidden sm:inline">Aus Archiv</span>
+            </button>
+          ) : (
+            <>
+              <button onClick={() => batchMutation.mutate('favorite')} disabled={batchMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Favorisieren">
+                <Heart size={16} /> <span className="hidden sm:inline">Favorit</span>
+              </button>
+              <button onClick={() => batchMutation.mutate('archive')} disabled={batchMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors disabled:opacity-50" title="Archivieren">
+                <Archive size={16} /> <span className="hidden sm:inline">Archiv</span>
+              </button>
+            </>
+          )}
+          {library !== 'trash' && (
+            <button onClick={() => batchMutation.mutate('trash')} disabled={batchMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="In Papierkorb">
+              <Trash2 size={16} /> <span className="hidden sm:inline">Papierkorb</span>
+            </button>
+          )}
         </div>
       )}
 
