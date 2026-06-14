@@ -12,9 +12,12 @@ function VersionBadge() {
     staleTime: 300_000,
   })
   return (
-    <p className="px-3 pt-1.5 text-[10px] text-zinc-600 select-text" title="Laufende Docker-Version">
-      <span className="hidden md:inline">PhotoFlow </span>v{data?.version ?? '…'}
-    </p>
+    <div className="px-3 pt-2 mt-1 border-t border-white/5" title="Laufende Docker-Version">
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+        <span className="hidden md:inline">PhotoFlow&nbsp;</span>v{data?.version ?? '…'}
+      </span>
+    </div>
   )
 }
 
