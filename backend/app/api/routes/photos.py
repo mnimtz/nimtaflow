@@ -374,6 +374,18 @@ async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = 
     return FileResponse(thumb, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000"})
 
 
+@router.get("/{photo_id}/preview")
+async def get_video_preview(photo_id: int, db: AsyncSession = Depends(get_db)):
+    """Animated hover preview clip for a video (webp/gif)."""
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.video_preview_path or not os.path.exists(photo.video_preview_path):
+        raise HTTPException(404, "Preview not ready")
+    ext = os.path.splitext(photo.video_preview_path)[1].lower()
+    media = "image/gif" if ext == ".gif" else "image/webp"
+    return FileResponse(photo.video_preview_path, media_type=media,
+                        headers={"Cache-Control": "public, max-age=31536000"})
+
+
 @router.get("/{photo_id}/original")
 async def get_original(photo_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)

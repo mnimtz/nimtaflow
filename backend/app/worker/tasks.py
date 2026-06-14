@@ -77,7 +77,8 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
         from app.models.job import JobLog
         from app.models.tag import Tag, PhotoTag
         from app.services.processing.thumbnails import (
-            generate_thumbnail, generate_video_thumbnail, video_duration, open_image_for_ai,
+            generate_thumbnail, generate_video_thumbnail, generate_video_preview_webp,
+            video_duration, open_image_for_ai,
         )
         from app.services.ai.manager import AIManager
         from app.services.feature_log import log as flog
@@ -106,8 +107,15 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                             setattr(photo, f"thumb_{size}", thumb)
                     if photo.duration_seconds is None:
                         photo.duration_seconds = video_duration(photo.path)
+                    # animated hover preview (best-effort)
+                    try:
+                        preview = generate_video_preview_webp(photo.path, settings.cache_path)
+                        if preview:
+                            photo.video_preview_path = preview
+                    except Exception:
+                        pass
                     if photo.thumb_small:
-                        flog("video", "INFO", f"Thumbnail erstellt: {photo.filename}")
+                        flog("video", "INFO", f"Thumbnail + Vorschau erstellt: {photo.filename}")
                     else:
                         flog("video", "WARNING", f"Kein Frame extrahierbar: {photo.filename}")
                 else:
@@ -136,7 +144,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                         if description:
                             photo.description = description
                             photo.description_model = provider
-                            flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description[:60]}")
+                            flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description}")
                         elif provider == "none":
                             flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
 

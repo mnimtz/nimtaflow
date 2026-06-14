@@ -40,13 +40,57 @@ async def update_source(source_id: int, data: SourceUpdate, db: AsyncSession = D
     return source
 
 
-@router.delete("/{source_id}", status_code=204)
+@router.delete("/{source_id}")
 async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
+    """Remove a watched folder AND everything derived from it: photos, cached
+    thumbnails/previews, faces, tag links, album entries, and any person that
+    is left with no faces — so no dead links remain."""
+    from sqlalchemy import delete as sql_delete
+    from app.models.photo import Photo
+    from app.models.face import Face
+    from app.models.person import Person
+    from app.models.tag import PhotoTag
+    from app.models.album import AlbumPhoto
+    import os
+
     source = await db.get(PhotoSource, source_id)
     if not source:
         raise HTTPException(404)
+
+    prefix = source.path.rstrip("/")
+    # Match files directly in the folder or any subfolder, but not sibling
+    # folders that merely share a name prefix.
+    rows = (await db.execute(
+        select(Photo.id, Photo.thumb_small, Photo.thumb_medium, Photo.thumb_large, Photo.video_webm_path)
+        .where((Photo.path == prefix) | (Photo.path.startswith(prefix + "/")))
+    )).all()
+    photo_ids = [r[0] for r in rows]
+
+    removed_files = 0
+    for r in rows:
+        for cached in (r[1], r[2], r[3], r[4]):
+            if cached and os.path.isfile(cached):
+                try:
+                    os.remove(cached)
+                    removed_files += 1
+                except OSError:
+                    pass
+
+    if photo_ids:
+        # children first (FKs), then photos
+        await db.execute(sql_delete(Face).where(Face.photo_id.in_(photo_ids)))
+        await db.execute(sql_delete(PhotoTag).where(PhotoTag.photo_id.in_(photo_ids)))
+        await db.execute(sql_delete(AlbumPhoto).where(AlbumPhoto.photo_id.in_(photo_ids)))
+        await db.execute(sql_delete(Photo).where(Photo.id.in_(photo_ids)))
+
+    # Drop persons that no longer have any faces anywhere
+    await db.execute(sql_delete(Person).where(
+        ~Person.id.in_(select(Face.person_id).where(Face.person_id.isnot(None)))
+    ))
+
     await db.delete(source)
     await db.commit()
+    return {"deleted_photos": len(photo_ids), "deleted_files": removed_files}
 
 
 @router.post("/{source_id}/scan", response_model=ScanResult)

@@ -94,6 +94,8 @@ class Photo(Base):
     video_fps: Mapped[Optional[float]] = mapped_column(Float)
     video_bitrate: Mapped[Optional[int]] = mapped_column(Integer)
     video_webm_path: Mapped[Optional[str]] = mapped_column(String(512))
+    # short animated hover preview (webp/gif), like a thumbnail for videos
+    video_preview_path: Mapped[Optional[str]] = mapped_column(String(512))
 
     # ── User interaction ──────────────────────────────────────────────────────
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

@@ -1022,11 +1022,11 @@ function LogsSection() {
         <div className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto font-mono text-[13px] leading-relaxed p-4 space-y-0.5">
           {isLoading && <span className="text-zinc-500">Lade...</span>}
           {reversed.map((e, i) => (
-            <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 py-0.5 rounded whitespace-nowrap">
-              <span className="text-zinc-600 shrink-0">{e.ts}</span>
+            <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 py-1 rounded items-start">
+              <span className="text-zinc-600 shrink-0 tabular-nums">{e.ts}</span>
               <span className={`${LEVEL_COLORS[e.level] ?? 'text-zinc-400'} shrink-0 w-16`}>{e.level}</span>
               <span className="text-indigo-400/70 shrink-0 w-16">{e.feature}</span>
-              <span className="text-zinc-200 whitespace-pre-wrap break-words">{e.message}</span>
+              <span className="text-zinc-200 flex-1 min-w-0 whitespace-pre-wrap break-words">{e.message}</span>
             </div>
           ))}
         </div>
