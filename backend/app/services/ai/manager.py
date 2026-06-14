@@ -1,0 +1,64 @@
+"""
+AI Provider Manager — loads provider based on DB settings, supports fallback chain.
+"""
+from typing import Optional, List
+from PIL import Image
+from .base import AIProvider, AIResult, DetectedFace
+from .gemini import GeminiProvider
+from .ollama import OllamaProvider
+
+
+class AIManager:
+    def __init__(self, settings: dict):
+        self._settings = settings
+        self._providers: List[AIProvider] = []
+        self._build_providers()
+
+    def _build_providers(self):
+        s = self._settings
+        # Primary
+        provider_name = s.get("ai.provider", "none")
+        if provider_name == "gemini" and s.get("ai.gemini.api_key"):
+            self._providers.append(GeminiProvider(
+                api_key=s["ai.gemini.api_key"],
+                model=s.get("ai.gemini.model", "gemini-2.5-flash"),
+                embed_model=s.get("ai.gemini.embed_model", "text-embedding-004"),
+            ))
+        elif provider_name == "ollama":
+            self._providers.append(OllamaProvider(
+                base_url=s.get("ai.ollama.url", "http://localhost:11434"),
+                vision_model=s.get("ai.ollama.vision_model", "llava:7b"),
+                embed_model=s.get("ai.ollama.embed_model", "nomic-embed-text"),
+            ))
+
+        # Fallback Ollama
+        fallback_ollama = s.get("ai.ollama.url")
+        if fallback_ollama and provider_name != "ollama":
+            self._providers.append(OllamaProvider(base_url=fallback_ollama))
+
+    async def _get_active(self) -> Optional[AIProvider]:
+        for p in self._providers:
+            if await p.is_available():
+                return p
+        return None
+
+    async def describe_image(self, image: Image.Image, language: str = "de") -> tuple[str, str]:
+        provider = await self._get_active()
+        if not provider:
+            return "", "none"
+        result = await provider.describe_image(image, language)
+        return result, provider.name
+
+    async def generate_tags(self, image: Image.Image) -> tuple[List[str], str]:
+        provider = await self._get_active()
+        if not provider:
+            return [], "none"
+        tags = await provider.generate_tags(image)
+        return tags, provider.name
+
+    async def embed_text(self, text: str) -> tuple[Optional[List[float]], str]:
+        provider = await self._get_active()
+        if not provider:
+            return None, "none"
+        embedding = await provider.embed_text(text)
+        return embedding, provider.name

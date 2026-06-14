@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    volumes:
+      - photoflow-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: photoflow
+      POSTGRES_USER: photoflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photoflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
+      - photoflow-cache:/cache
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  worker:
+    build: ./backend
+    command: celery -A app.worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -c ${WORKER_CONCURRENCY:-4}
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
+      - photoflow-cache:/cache
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8090}:80"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: /api
+
+volumes:
+  photoflow-db:
+  photoflow-cache:
+  photoflow-config:

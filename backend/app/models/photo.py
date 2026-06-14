@@ -1,0 +1,73 @@
+import enum
+from datetime import datetime
+from typing import Optional, List
+from sqlalchemy import String, DateTime, Integer, Float, Boolean, Text, Enum, ForeignKey, Index
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
+from app.core.database import Base
+
+
+class PhotoStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    done = "done"
+    error = "error"
+    skipped = "skipped"
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    path: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False)
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(128))
+
+    # EXIF
+    taken_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    width: Mapped[Optional[int]] = mapped_column(Integer)
+    height: Mapped[Optional[int]] = mapped_column(Integer)
+    camera_make: Mapped[Optional[str]] = mapped_column(String(128))
+    camera_model: Mapped[Optional[str]] = mapped_column(String(128))
+    lens_model: Mapped[Optional[str]] = mapped_column(String(256))
+    focal_length: Mapped[Optional[float]] = mapped_column(Float)
+    aperture: Mapped[Optional[float]] = mapped_column(Float)
+    shutter_speed: Mapped[Optional[str]] = mapped_column(String(32))
+    iso: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # GPS
+    latitude: Mapped[Optional[float]] = mapped_column(Float)
+    longitude: Mapped[Optional[float]] = mapped_column(Float)
+    altitude: Mapped[Optional[float]] = mapped_column(Float)
+    location_name: Mapped[Optional[str]] = mapped_column(String(512))
+    city: Mapped[Optional[str]] = mapped_column(String(256))
+    country: Mapped[Optional[str]] = mapped_column(String(128))
+
+    # AI
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    description_language: Mapped[Optional[str]] = mapped_column(String(8))
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+
+    # Processing
+    status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Thumbnails
+    thumb_small: Mapped[Optional[str]] = mapped_column(String(512))
+    thumb_medium: Mapped[Optional[str]] = mapped_column(String(512))
+    thumb_large: Mapped[Optional[str]] = mapped_column(String(512))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    faces: Mapped[List["Face"]] = relationship("Face", back_populates="photo", cascade="all, delete-orphan")
+    tags: Mapped[List["PhotoTag"]] = relationship("PhotoTag", back_populates="photo", cascade="all, delete-orphan")
+    album_entries: Mapped[List["AlbumPhoto"]] = relationship("AlbumPhoto", back_populates="photo", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_photos_taken_at_id", "taken_at", "id"),
+        Index("ix_photos_latitude_longitude", "latitude", "longitude"),
+    )

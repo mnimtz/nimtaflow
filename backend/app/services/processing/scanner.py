@@ -1,0 +1,118 @@
+"""Scan photo source directories and upsert Photo records."""
+import hashlib
+import os
+from pathlib import Path
+from typing import List, Optional, AsyncGenerator
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.models.photo import Photo, PhotoStatus
+from app.models.source import PhotoSource
+from .exif import extract_exif
+from .thumbnails import generate_thumbnail
+
+SUPPORTED_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ".heic", ".heif", ".tiff", ".tif", ".bmp",
+    ".raw", ".cr2", ".cr3", ".nef", ".arw", ".dng",
+    ".mp4", ".mov", ".avi", ".mkv", ".m4v",
+}
+
+
+def _should_exclude(path: Path, patterns: List[str]) -> bool:
+    for pattern in patterns:
+        p = pattern.strip()
+        if not p:
+            continue
+        if p in path.parts:
+            return True
+        if path.name == p:
+            return True
+    return False
+
+
+def _file_hash(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+async def scan_source(
+    source: PhotoSource,
+    session: AsyncSession,
+    cache_root: str,
+) -> dict:
+    patterns = [p for p in (source.exclusion_patterns or "").split(",") if p.strip()]
+    root = Path(source.path)
+    stats = {"new": 0, "skipped": 0, "errors": 0}
+
+    if not root.exists():
+        return stats
+
+    walk_fn = root.rglob("*") if source.recursive else root.iterdir()
+
+    for entry in walk_fn:
+        if not entry.is_file():
+            continue
+        if entry.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        if _should_exclude(entry, patterns):
+            stats["skipped"] += 1
+            continue
+
+        path_str = str(entry)
+
+        # Check if already indexed
+        existing = await session.scalar(select(Photo).where(Photo.path == path_str))
+        if existing:
+            stats["skipped"] += 1
+            continue
+
+        try:
+            exif = extract_exif(path_str)
+            stat = entry.stat()
+
+            photo = Photo(
+                path=path_str,
+                filename=entry.name,
+                file_size=stat.st_size,
+                status=PhotoStatus.pending,
+                taken_at=exif.taken_at,
+                width=exif.width,
+                height=exif.height,
+                camera_make=exif.camera_make,
+                camera_model=exif.camera_model,
+                lens_model=exif.lens_model,
+                focal_length=exif.focal_length,
+                aperture=exif.aperture,
+                shutter_speed=exif.shutter_speed,
+                iso=exif.iso,
+                latitude=exif.latitude,
+                longitude=exif.longitude,
+                altitude=exif.altitude,
+                indexed_at=datetime.now(timezone.utc),
+            )
+            session.add(photo)
+            await session.flush()
+
+            # Generate small thumbnail synchronously during scan
+            thumb = generate_thumbnail(path_str, cache_root, "small")
+            if thumb:
+                photo.thumb_small = thumb
+
+            await session.commit()
+            stats["new"] += 1
+
+        except Exception as e:
+            await session.rollback()
+            stats["errors"] += 1
+
+    source.last_scan_at = datetime.now(timezone.utc)
+    source.last_scan_count = stats["new"]
+    await session.commit()
+
+    return stats
