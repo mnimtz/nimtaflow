@@ -8,7 +8,11 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 
 # Each feature writes to its own rotating file in /config/logs/
 LOG_DIR = pathlib.Path(os.getenv("CONFIG_PATH", "/config")) / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    LOG_DIR = pathlib.Path("/tmp/photoflow-logs")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 FEATURES = {
     "scanner": "scanner.log",
