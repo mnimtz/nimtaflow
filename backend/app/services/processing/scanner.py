@@ -13,12 +13,15 @@ from app.models.source import PhotoSource
 from .exif import extract_exif
 from .thumbnails import generate_thumbnail
 
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".mts", ".3gp"}
+
 SUPPORTED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp",
     ".heic", ".heif", ".tiff", ".tif", ".bmp",
     ".raw", ".cr2", ".cr3", ".nef", ".arw", ".dng",
-    ".mp4", ".mov", ".avi", ".mkv", ".m4v",
-}
+} | VIDEO_EXTENSIONS
+
+import mimetypes
 
 
 def _should_exclude(path: Path, patterns: List[str]) -> bool:
@@ -76,11 +79,18 @@ async def scan_source(
         try:
             exif = extract_exif(path_str)
             stat = entry.stat()
+            ext = entry.suffix.lower()
+            is_video = ext in VIDEO_EXTENSIONS
+            mime_type = mimetypes.guess_type(path_str)[0] or (
+                "video/quicktime" if ext == ".mov" else None
+            )
 
             photo = Photo(
                 path=path_str,
                 filename=entry.name,
                 file_size=stat.st_size,
+                is_video=is_video,
+                mime_type=mime_type,
                 status=PhotoStatus.pending,
                 taken_at=exif.taken_at,
                 width=exif.width,
