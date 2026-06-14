@@ -40,7 +40,7 @@ export default function GalleryPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Semantische Suche… z.B. „Lea am Strand""
+              placeholder="Semantische Suche... z.B. Lea am Strand"
               className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>

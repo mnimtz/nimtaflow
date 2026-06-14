@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, RefreshCw, Check, X } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, Check, X, FolderOpen } from 'lucide-react'
 import { api, Source } from '../lib/api'
+import FolderBrowser from '../components/ui/FolderBrowser'
 
 const SECTIONS = ['Quellen', 'AI-Provider', 'Pipeline', 'Karte', 'Backup'] as const
 type Section = typeof SECTIONS[number]
@@ -51,6 +52,7 @@ function SectionHeader({ title, desc }: { title: string; desc: string }) {
 
 function SourcesSection() {
   const [newPath, setNewPath] = useState('')
+  const [showBrowser, setShowBrowser] = useState(false)
   const qc = useQueryClient()
 
   const { data: sources = [] } = useQuery<Source[]>({
@@ -106,23 +108,46 @@ function SourcesSection() {
 
       <form
         onSubmit={(e) => { e.preventDefault(); if (newPath) addMutation.mutate(newPath) }}
-        className="flex gap-2"
+        className="space-y-2"
       >
-        <input
-          value={newPath}
-          onChange={(e) => setNewPath(e.target.value)}
-          placeholder="/photos oder /mnt/media-8tb/Fotos"
-          className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <button
-          type="submit"
-          disabled={!newPath || addMutation.isPending}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-        >
-          <Plus size={15} />
-          Hinzufügen
-        </button>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              value={newPath}
+              onChange={(e) => setNewPath(e.target.value)}
+              placeholder="/photos"
+              className="w-full pl-3 pr-10 py-2 text-sm font-mono rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={() => setShowBrowser(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-gray-400 hover:text-indigo-600 transition-colors"
+              title="Ordner durchsuchen"
+            >
+              <FolderOpen size={16} />
+            </button>
+          </div>
+          <button
+            type="submit"
+            disabled={!newPath || addMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors shrink-0"
+          >
+            <Plus size={15} />
+            Hinzufügen
+          </button>
+        </div>
+        <p className="text-xs text-gray-400">
+          Tippe einen Pfad ein oder klicke <FolderOpen size={12} className="inline" /> um den Server-Dateisystem zu durchsuchen.
+        </p>
       </form>
+
+      {showBrowser && (
+        <FolderBrowser
+          initialPath={newPath || '/'}
+          onSelect={(path) => setNewPath(path)}
+          onClose={() => setShowBrowser(false)}
+        />
+      )}
     </div>
   )
 }
