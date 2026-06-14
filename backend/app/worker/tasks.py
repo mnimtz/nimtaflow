@@ -118,51 +118,60 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     if not photo.thumb_small:
                         flog("scanner", "WARNING", f"Thumbnail fehlgeschlagen: {photo.filename}")
 
-                # AI processing — load provider config from DB settings
-                from app.services.settings_loader import load_settings
-                ai_settings = await load_settings(db)
-                ai = AIManager(ai_settings)
+                # Persist thumbnails immediately — AI is best-effort and must
+                # never cost us the thumbnail or stick the photo on a transient error.
+                await db.commit()
 
-                # Videos: AImage description from the extracted frame; else the photo
-                img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
-                    else open_image_for_ai(photo.path)
-                if img:
-                    description, provider = await ai.describe_image(img, "de")
-                    if description:
-                        photo.description = description
-                        photo.description_model = provider
-                        flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description[:60]}")
-                    elif provider == "none":
-                        flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
+                # AI processing — load provider config from DB settings (non-fatal)
+                try:
+                    from app.services.settings_loader import load_settings
+                    ai_settings = await load_settings(db)
+                    ai = AIManager(ai_settings)
 
-                    tags, _ = await ai.generate_tags(img)
-                    for tag_name in tags[:20]:
-                        tag = await db.scalar(select(Tag).where(Tag.name == tag_name))
-                        if not tag:
-                            tag = Tag(name=tag_name)
-                            db.add(tag)
-                            await db.flush()
-                        existing_pt = await db.scalar(
-                            select(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.tag_id == tag.id)
-                        )
-                        if not existing_pt:
-                            db.add(PhotoTag(photo_id=photo_id, tag_id=tag.id, source="ai"))
+                    # Videos: describe from the extracted frame; else the photo
+                    img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
+                        else open_image_for_ai(photo.path)
+                    if img:
+                        description, provider = await ai.describe_image(img, "de")
+                        if description:
+                            photo.description = description
+                            photo.description_model = provider
+                            flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description[:60]}")
+                        elif provider == "none":
+                            flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
 
-                    if description:
-                        embedding, _ = await ai.embed_text(description)
-                        if embedding:
-                            # pgvector column is fixed at 768 dims. Some models
-                            # (e.g. gemini-embedding-001) return 3072 — truncate
-                            # (Matryoshka) + renormalize so any model fits.
-                            if len(embedding) > 768:
-                                import math
-                                embedding = embedding[:768]
-                                norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
-                                embedding = [x / norm for x in embedding]
-                            if len(embedding) == 768:
-                                photo.embedding = embedding
-                            else:
-                                flog("ai", "WARNING", f"Embedding {len(embedding)}≠768 dims, übersprungen: {photo.filename}")
+                        tags, _ = await ai.generate_tags(img)
+                        for tag_name in tags[:20]:
+                            tag = await db.scalar(select(Tag).where(Tag.name == tag_name))
+                            if not tag:
+                                tag = Tag(name=tag_name)
+                                db.add(tag)
+                                await db.flush()
+                            existing_pt = await db.scalar(
+                                select(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.tag_id == tag.id)
+                            )
+                            if not existing_pt:
+                                db.add(PhotoTag(photo_id=photo_id, tag_id=tag.id, source="ai"))
+
+                        if description:
+                            embedding, _ = await ai.embed_text(description)
+                            if embedding:
+                                # pgvector column is fixed at 768 dims. Some models
+                                # (e.g. gemini-embedding-001) return 3072 — truncate
+                                # (Matryoshka) + renormalize so any model fits.
+                                if len(embedding) > 768:
+                                    import math
+                                    embedding = embedding[:768]
+                                    norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
+                                    embedding = [x / norm for x in embedding]
+                                if len(embedding) == 768:
+                                    photo.embedding = embedding
+                                else:
+                                    flog("ai", "WARNING", f"Embedding {len(embedding)}≠768 dims, übersprungen: {photo.filename}")
+                except Exception as ai_err:
+                    await db.rollback()
+                    photo = await db.get(Photo, photo_id)
+                    flog("ai", "WARNING", f"AI übersprungen (Thumbnail bleibt): {photo.filename if photo else photo_id}: {str(ai_err)[:160]}")
 
                 photo.status = PhotoStatus.done
                 photo.processed_at = datetime.now(timezone.utc)
