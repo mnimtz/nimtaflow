@@ -8,12 +8,56 @@ from app.api.routes import fs, ai_api, logs, backup, albums
 from app.api.v1 import router as v1_router
 
 
-# Idempotent column additions applied on every startup (Postgres ADD COLUMN IF NOT EXISTS).
+# Idempotent schema migrations applied on every startup.
+# create_all() only creates *missing tables* — it never ALTERs an existing table,
+# so any column added to a model after its table first existed must be added here.
+# Each entry must be a single SQL statement (DO $$..$$ blocks count as one).
 _COLUMN_MIGRATIONS = [
-    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",
+    # ── photos: full v2 metadata set ──────────────────────────────────────────
+    """ALTER TABLE photos
+        ADD COLUMN IF NOT EXISTS taken_at_original    VARCHAR(32),
+        ADD COLUMN IF NOT EXISTS timezone_offset      VARCHAR(8),
+        ADD COLUMN IF NOT EXISTS orientation          INTEGER,
+        ADD COLUMN IF NOT EXISTS color_space          VARCHAR(32),
+        ADD COLUMN IF NOT EXISTS camera_serial        VARCHAR(128),
+        ADD COLUMN IF NOT EXISTS lens_make            VARCHAR(128),
+        ADD COLUMN IF NOT EXISTS focal_length_35mm    INTEGER,
+        ADD COLUMN IF NOT EXISTS exposure_time        FLOAT,
+        ADD COLUMN IF NOT EXISTS exposure_mode        VARCHAR(64),
+        ADD COLUMN IF NOT EXISTS metering_mode        INTEGER,
+        ADD COLUMN IF NOT EXISTS white_balance        INTEGER,
+        ADD COLUMN IF NOT EXISTS flash                INTEGER,
+        ADD COLUMN IF NOT EXISTS software             VARCHAR(256),
+        ADD COLUMN IF NOT EXISTS gps_accuracy         FLOAT,
+        ADD COLUMN IF NOT EXISTS country_code         VARCHAR(4),
+        ADD COLUMN IF NOT EXISTS artist               VARCHAR(256),
+        ADD COLUMN IF NOT EXISTS copyright            VARCHAR(512),
+        ADD COLUMN IF NOT EXISTS title                VARCHAR(512),
+        ADD COLUMN IF NOT EXISTS caption              TEXT,
+        ADD COLUMN IF NOT EXISTS keywords             TEXT,
+        ADD COLUMN IF NOT EXISTS xmp_sidecar_written  BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS xmp_sidecar_path     VARCHAR(2048),
+        ADD COLUMN IF NOT EXISTS description_model    VARCHAR(128),
+        ADD COLUMN IF NOT EXISTS video_fps            FLOAT,
+        ADD COLUMN IF NOT EXISTS video_bitrate        INTEGER,
+        ADD COLUMN IF NOT EXISTS user_description     TEXT""",
+    # ── photos: folder-watch / deletion detection ─────────────────────────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_missing BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS missing_at TIMESTAMPTZ",
+    # ── photo_sources: watching ───────────────────────────────────────────────
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",
+    # ── albums: smart/ai types ────────────────────────────────────────────────
+    "DO $$ BEGIN CREATE TYPE albumtype AS ENUM ('manual','smart','ai'); EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+    """ALTER TABLE albums
+        ADD COLUMN IF NOT EXISTS album_type        albumtype NOT NULL DEFAULT 'manual',
+        ADD COLUMN IF NOT EXISTS smart_criteria    JSONB,
+        ADD COLUMN IF NOT EXISTS ai_prompt         TEXT,
+        ADD COLUMN IF NOT EXISTS ai_last_evaluated TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ DEFAULT NOW()""",
+    "ALTER TABLE album_photos ADD COLUMN IF NOT EXISTS ai_score FLOAT",
+    # ── persons: alias ────────────────────────────────────────────────────────
+    "ALTER TABLE persons ADD COLUMN IF NOT EXISTS alias VARCHAR(256)",
 ]
 
 
