@@ -29,6 +29,20 @@ class GeminiProvider(AIProvider):
         self.embed_model = embed_model
         self._base = "https://generativelanguage.googleapis.com/v1beta"
 
+    @staticmethod
+    def _extract_text(data: dict) -> str:
+        """Safely pull the text out of a generateContent response.
+
+        Returns "" when Gemini blocked the response or returned no content
+        (finishReason SAFETY/RECITATION) instead of raising KeyError('content').
+        """
+        try:
+            cand = (data.get("candidates") or [{}])[0]
+            parts = (cand.get("content") or {}).get("parts") or []
+            return "".join(p.get("text", "") for p in parts).strip()
+        except (IndexError, AttributeError, TypeError):
+            return ""
+
     async def describe_image(self, image: Image.Image, language: str = "de") -> str:
         prompt = LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
         b64 = _image_to_b64(image)
@@ -44,8 +58,7 @@ class GeminiProvider(AIProvider):
                 },
             )
             resp.raise_for_status()
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            return self._extract_text(resp.json())
 
     async def generate_tags(self, image: Image.Image) -> List[str]:
         b64 = _image_to_b64(image)
@@ -61,7 +74,7 @@ class GeminiProvider(AIProvider):
                 },
             )
             resp.raise_for_status()
-            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            text = self._extract_text(resp.json())
             return [t.strip().lower() for t in text.split(",") if t.strip()]
 
     async def detect_faces(self, image: Image.Image) -> List[DetectedFace]:
@@ -76,7 +89,7 @@ class GeminiProvider(AIProvider):
                 json={"content": {"parts": [{"text": text}]}},
             )
             resp.raise_for_status()
-            return resp.json()["embedding"]["values"]
+            return (resp.json().get("embedding") or {}).get("values") or []
 
     async def is_available(self) -> bool:
         try:
