@@ -54,6 +54,7 @@ async def scan_source(
         return stats
 
     walk_fn = root.rglob("*") if source.recursive else root.iterdir()
+    new_photo_ids: List[int] = []
 
     for entry in walk_fn:
         if not entry.is_file():
@@ -106,6 +107,7 @@ async def scan_source(
 
             await session.commit()
             stats["new"] += 1
+            new_photo_ids.append(photo.id)
 
         except Exception as e:
             await session.rollback()
@@ -114,5 +116,11 @@ async def scan_source(
     source.last_scan_at = datetime.now(timezone.utc)
     source.last_scan_count = stats["new"]
     await session.commit()
+
+    # Queue processing for all new photos (thumbnails + AI)
+    if new_photo_ids:
+        from app.worker.tasks import process_photo_task
+        for pid in new_photo_ids:
+            process_photo_task.delay(pid)
 
     return stats

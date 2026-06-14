@@ -162,56 +162,93 @@ function HealthBadge({ provider, apiKey, baseUrl }: { provider: string; apiKey?:
 function SourcesSection() {
   const [newPath, setNewPath] = useState('')
   const [showBrowser, setShowBrowser] = useState(false)
+  const [scanningIds, setScanningIds] = useState<Set<number>>(new Set())
   const qc = useQueryClient()
 
   const { data: sources = [] } = useQuery<Source[]>({
     queryKey: ['sources'],
     queryFn: () => api.get('/sources').then(r => r.data),
+    refetchInterval: 5000, // live-update scan status
   })
 
   const add = useMutation({
     mutationFn: (path: string) => api.post('/sources', { path }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sources'] }); setNewPath('') },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['sources'] })
+      setNewPath('')
+      // Mark as scanning so UI shows spinner immediately
+      setScanningIds(s => new Set(s).add(res.data.id))
+      // After 30s assume scan is done and refresh
+      setTimeout(() => {
+        setScanningIds(s => { const n = new Set(s); n.delete(res.data.id); return n })
+        qc.invalidateQueries({ queryKey: ['sources'] })
+      }, 30_000)
+    },
   })
+
   const del = useMutation({
     mutationFn: (id: number) => api.delete(`/sources/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
   })
-  const scan = useMutation({ mutationFn: (id: number) => api.post(`/sources/${id}/scan`) })
+
+  const scan = useMutation({
+    mutationFn: (id: number) => api.post(`/sources/${id}/scan`).then(r => ({ id, ...r.data })),
+    onMutate: (id) => setScanningIds(s => new Set(s).add(id)),
+    onSettled: (data) => {
+      if (data?.id) setScanningIds(s => { const n = new Set(s); n.delete(data.id); return n })
+      qc.invalidateQueries({ queryKey: ['sources'] })
+    },
+  })
 
   return (
     <div>
-      <SectionHeader title="Foto-Quellen" desc="Ordner die PhotoFlow überwachen soll. Originale werden niemals verändert." />
+      <SectionHeader title="Foto-Quellen" desc="Ordner die PhotoFlow überwachen soll. Scan + Verarbeitung starten automatisch." />
 
       <div className="space-y-2 mb-5">
-        {sources.map(s => (
-          <div key={s.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
-            <HardDrive size={15} className="text-zinc-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate font-mono">{s.path}</p>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                {s.last_scan_at
-                  ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')}`
-                  : 'Noch nicht gescannt'}
-                {s.last_scan_count != null ? ` · ${s.last_scan_count} neue` : ''}
-              </p>
+        {sources.length === 0 && (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 py-2">Noch keine Quellen. Ordner unten hinzufügen.</p>
+        )}
+        {sources.map(s => {
+          const isScanning = scanningIds.has(s.id)
+          return (
+            <div key={s.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+              <HardDrive size={15} className={`shrink-0 ${isScanning ? 'text-indigo-400 animate-pulse' : 'text-zinc-400'}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate font-mono">{s.path}</p>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  {isScanning
+                    ? '⏳ Scannt und verarbeitet Fotos…'
+                    : s.last_scan_at
+                      ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')} · ${s.last_scan_count ?? 0} neue Fotos`
+                      : 'Noch nicht gescannt'}
+                </p>
+              </div>
+              <button
+                onClick={() => scan.mutate(s.id)}
+                disabled={isScanning}
+                title="Erneut scannen"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-40"
+              >
+                <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={() => del.mutate(s.id)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
-            <button onClick={() => scan.mutate(s.id)} title="Jetzt scannen"
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
-              <RefreshCw size={14} />
-            </button>
-            <button onClick={() => del.mutate(s.id)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <form onSubmit={e => { e.preventDefault(); if (newPath) add.mutate(newPath) }} className="space-y-2">
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <input value={newPath} onChange={e => setNewPath(e.target.value)} placeholder="/photos"
+            <input
+              value={newPath}
+              onChange={e => setNewPath(e.target.value)}
+              placeholder="/photos  oder  /photos/2024"
               className="w-full pl-3 pr-10 py-2 text-sm font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button type="button" onClick={() => setShowBrowser(true)}
@@ -221,13 +258,17 @@ function SourcesSection() {
           </div>
           <button type="submit" disabled={!newPath || add.isPending}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors shrink-0">
-            <Plus size={14} /> Hinzufügen
+            {add.isPending ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+            Hinzufügen
           </button>
         </div>
+        <p className="text-xs text-zinc-400">
+          Nach dem Hinzufügen startet der Scan automatisch. Mehrere Ordner können einzeln hinzugefügt werden.
+        </p>
       </form>
 
       {showBrowser && (
-        <FolderBrowser initialPath={newPath || '/'} onSelect={p => setNewPath(p)} onClose={() => setShowBrowser(false)} />
+        <FolderBrowser initialPath={newPath || '/photos'} onSelect={p => setNewPath(p)} onClose={() => setShowBrowser(false)} />
       )}
     </div>
   )

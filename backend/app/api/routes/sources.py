@@ -22,6 +22,9 @@ async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db)):
     db.add(source)
     await db.commit()
     await db.refresh(source)
+    # Auto-scan immediately after adding
+    from app.worker.tasks import scan_source_task
+    scan_source_task.delay(source.id)
     return source
 
 
