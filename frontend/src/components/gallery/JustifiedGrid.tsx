@@ -2,6 +2,41 @@ import { useEffect, useRef, useState } from 'react'
 import { Heart, Play, Star, Check } from 'lucide-react'
 import type { Photo } from '../../lib/api'
 
+/** Tile image with a skeleton shimmer until it loads + video hover preview. */
+function TileImage({ photo, isSelected }: { photo: Photo; isSelected: boolean }) {
+  const [loaded, setLoaded] = useState(false)
+  const [hover, setHover] = useState(false)
+  return (
+    <div
+      className="absolute inset-0"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {!loaded && <div className="absolute inset-0 animate-pulse bg-gray-200 dark:bg-gray-700/60" />}
+      <img
+        src={`/api/photos/${photo.id}/thumbnail?size=medium`}
+        alt={photo.filename}
+        onLoad={() => setLoaded(true)}
+        className={`w-full h-full object-cover transition-all duration-300 ${loaded ? 'opacity-100' : 'opacity-0'} ${
+          isSelected ? 'scale-[0.92]' : 'group-hover:scale-105'
+        }`}
+        loading="lazy"
+        draggable={false}
+      />
+      {/* animated preview on hover for videos */}
+      {photo.is_video && hover && (
+        <img
+          src={`/api/photos/${photo.id}/preview`}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          draggable={false}
+        />
+      )}
+    </div>
+  )
+}
+
 type Props = {
   photos: Photo[]
   rowHeight?: number
@@ -71,15 +106,7 @@ function JustifiedRow({ items, containerWidth, targetHeight, gap, onPhotoClick, 
               onPhotoClick(photo, index)
             }}
           >
-            <img
-              src={`/api/photos/${photo.id}/thumbnail?size=medium`}
-              alt={photo.filename}
-              className={`w-full h-full object-cover transition-transform duration-300 ${
-                isSelected ? 'scale-[0.92]' : 'group-hover:scale-105'
-              }`}
-              loading="lazy"
-              draggable={false}
-            />
+            <TileImage photo={photo} isSelected={isSelected} />
 
             {/* top gradient for control legibility */}
             <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
