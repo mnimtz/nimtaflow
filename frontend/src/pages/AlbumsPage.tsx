@@ -1,0 +1,377 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X } from 'lucide-react'
+import { api } from '../lib/api'
+import { format } from 'date-fns'
+import { de } from 'date-fns/locale'
+
+type AlbumType = 'manual' | 'smart' | 'ai'
+
+interface Album {
+  id: number
+  name: string
+  description?: string
+  album_type: AlbumType
+  cover_photo_id?: number
+  smart_criteria?: Record<string, unknown>
+  ai_prompt?: string
+  ai_last_evaluated?: string
+  photo_count: number
+  created_at: string
+  updated_at: string
+}
+
+interface AlbumPhoto {
+  id: number
+  filename: string
+  thumb_medium?: string
+}
+
+const TYPE_ICONS: Record<AlbumType, typeof FolderOpen> = {
+  manual: FolderOpen,
+  smart: Sparkles,
+  ai: Brain,
+}
+const TYPE_LABELS: Record<AlbumType, string> = {
+  manual: 'Manuell',
+  smart: 'Smart',
+  ai: 'KI-Album',
+}
+const TYPE_COLORS: Record<AlbumType, string> = {
+  manual: 'bg-zinc-800 text-zinc-300',
+  smart: 'bg-indigo-900/60 text-indigo-300',
+  ai: 'bg-violet-900/60 text-violet-300',
+}
+
+export default function AlbumsPage() {
+  const [showCreate, setShowCreate] = useState(false)
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null)
+  const qc = useQueryClient()
+
+  const { data: albums = [], isLoading } = useQuery<Album[]>({
+    queryKey: ['albums'],
+    queryFn: () => api.get('/albums').then(r => r.data),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/albums/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['albums'] }),
+  })
+
+  const refreshMutation = useMutation({
+    mutationFn: (id: number) => api.post(`/albums/${id}/refresh`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['albums'] }),
+  })
+
+  if (selectedAlbum) {
+    return <AlbumDetail album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />
+  }
+
+  return (
+    <div className="p-4 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Alben</h1>
+          <p className="text-sm text-zinc-400">{albums.length} Alben</p>
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={16} /> Neues Album
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
+      ) : albums.length === 0 ? (
+        <EmptyAlbums onCreateClick={() => setShowCreate(true)} />
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {albums.map(album => (
+            <AlbumCard
+              key={album.id}
+              album={album}
+              onClick={() => setSelectedAlbum(album)}
+              onDelete={() => deleteMutation.mutate(album.id)}
+              onRefresh={() => refreshMutation.mutate(album.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {showCreate && <CreateAlbumModal onClose={() => setShowCreate(false)} />}
+    </div>
+  )
+}
+
+function AlbumCard({ album, onClick, onDelete, onRefresh }: {
+  album: Album
+  onClick: () => void
+  onDelete: () => void
+  onRefresh: () => void
+}) {
+  const Icon = TYPE_ICONS[album.album_type]
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  return (
+    <div
+      className="group relative rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 cursor-pointer hover:border-zinc-600 transition-all"
+      onClick={onClick}
+    >
+      {/* Cover */}
+      <div className="aspect-square bg-zinc-800 flex items-center justify-center">
+        {album.cover_photo_id ? (
+          <img
+            src={`/api/photos/${album.cover_photo_id}/thumbnail?size=medium`}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <Icon size={36} className="text-zinc-600" />
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="p-3">
+        <p className="text-sm font-semibold text-white truncate">{album.name}</p>
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-xs text-zinc-500">{album.photo_count} Fotos</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded ${TYPE_COLORS[album.album_type]}`}>
+            {TYPE_LABELS[album.album_type]}
+          </span>
+        </div>
+      </div>
+
+      {/* Actions overlay */}
+      <div
+        className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={e => e.stopPropagation()}
+      >
+        {album.album_type !== 'manual' && (
+          <button
+            onClick={onRefresh}
+            title="Aktualisieren"
+            className="p-1 rounded bg-black/60 text-zinc-300 hover:text-white"
+          >
+            <RefreshCw size={13} />
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          title="Löschen"
+          className="p-1 rounded bg-black/60 text-zinc-300 hover:text-red-400"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EmptyAlbums({ onCreateClick }: { onCreateClick: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <FolderOpen size={48} className="text-zinc-700 mb-4" />
+      <h3 className="text-lg font-semibold text-white mb-2">Noch keine Alben</h3>
+      <p className="text-sm text-zinc-500 max-w-xs mb-6">
+        Erstelle manuelle Alben, regelbasierte Smart-Alben oder lass die KI passende Fotos finden.
+      </p>
+      <button
+        onClick={onCreateClick}
+        className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+      >
+        Erstes Album erstellen
+      </button>
+    </div>
+  )
+}
+
+// ── Create modal ─────────────────────────────────────────────────────────────
+
+function CreateAlbumModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [type, setType] = useState<AlbumType>('manual')
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [smartDate, setSmartDate] = useState({ from: '', to: '' })
+  const [smartFavorites, setSmartFavorites] = useState(false)
+  const [smartMediaType, setSmartMediaType] = useState('')
+  const qc = useQueryClient()
+
+  const create = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post('/albums', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); onClose() },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const body: Record<string, unknown> = { name, album_type: type }
+    if (type === 'ai') body.ai_prompt = aiPrompt
+    if (type === 'smart') {
+      body.smart_criteria = {
+        ...(smartDate.from ? { date_from: smartDate.from } : {}),
+        ...(smartDate.to ? { date_to: smartDate.to } : {}),
+        ...(smartFavorites ? { favorites: true } : {}),
+        ...(smartMediaType ? { media_type: smartMediaType } : {}),
+      }
+    }
+    create.mutate(body)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-white">Neues Album</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            required
+            placeholder="Album-Name"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+
+          {/* Type selector */}
+          <div className="grid grid-cols-3 gap-2">
+            {(['manual', 'smart', 'ai'] as AlbumType[]).map(t => {
+              const Icon = TYPE_ICONS[t]
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-lg border text-xs font-medium transition-all ${
+                    type === t
+                      ? 'border-indigo-500 bg-indigo-900/40 text-indigo-300'
+                      : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                  }`}
+                >
+                  <Icon size={18} />
+                  {TYPE_LABELS[t]}
+                </button>
+              )
+            })}
+          </div>
+
+          {type === 'ai' && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">KI-Prompt</label>
+              <textarea
+                placeholder='z.B. "Strandfotos mit Familie", "Sonnenuntergänge 2023"'
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Die KI sucht Fotos deren Beschreibung zum Prompt passt.</p>
+            </div>
+          )}
+
+          {type === 'smart' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Von</label>
+                  <input type="date" value={smartDate.from} onChange={e => setSmartDate(d => ({ ...d, from: e.target.value }))}
+                    className="w-full px-2 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Bis</label>
+                  <input type="date" value={smartDate.to} onChange={e => setSmartDate(d => ({ ...d, to: e.target.value }))}
+                    className="w-full px-2 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+              <select value={smartMediaType} onChange={e => setSmartMediaType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">Alle Medientypen</option>
+                <option value="photo">Nur Fotos</option>
+                <option value="video">Nur Videos</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                <input type="checkbox" checked={smartFavorites} onChange={e => setSmartFavorites(e.target.checked)}
+                  className="rounded accent-indigo-500" />
+                Nur Favoriten
+              </label>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2 rounded-lg border border-zinc-700 text-sm text-zinc-400 hover:bg-zinc-800">
+              Abbrechen
+            </button>
+            <button type="submit" disabled={create.isPending}
+              className="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+              {create.isPending ? 'Erstelle…' : 'Erstellen'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Album detail view ─────────────────────────────────────────────────────────
+
+function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['album-photos', album.id],
+    queryFn: () => api.get(`/albums/${album.id}/photos?limit=200`).then(r => r.data),
+  })
+
+  const photos: AlbumPhoto[] = data?.items || []
+  const Icon = TYPE_ICONS[album.album_type]
+
+  return (
+    <div className="p-4 max-w-7xl mx-auto">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={onBack} className="text-zinc-400 hover:text-white transition-colors">
+          ← Zurück
+        </button>
+        <div className="flex items-center gap-2">
+          <Icon size={18} className="text-zinc-400" />
+          <h1 className="text-xl font-bold text-white">{album.name}</h1>
+          <span className={`text-xs px-2 py-0.5 rounded ${TYPE_COLORS[album.album_type]}`}>
+            {TYPE_LABELS[album.album_type]}
+          </span>
+        </div>
+        <span className="text-sm text-zinc-500 ml-auto">{album.photo_count} Fotos</span>
+      </div>
+
+      {album.ai_prompt && (
+        <div className="mb-4 p-3 rounded-lg bg-violet-900/20 border border-violet-800/40 text-sm text-violet-300">
+          <span className="font-medium">KI-Prompt:</span> {album.ai_prompt}
+          {album.ai_last_evaluated && (
+            <span className="text-violet-400 text-xs ml-2">
+              · zuletzt: {format(new Date(album.ai_last_evaluated), 'dd.MM.yyyy HH:mm', { locale: de })}
+            </span>
+          )}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
+      ) : photos.length === 0 ? (
+        <div className="flex flex-col items-center py-16 text-zinc-500">
+          <FolderOpen size={40} className="mb-3" />
+          <p>Noch keine Fotos in diesem Album.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
+          {photos.map(photo => (
+            <div key={photo.id} className="aspect-square rounded-md overflow-hidden bg-zinc-800">
+              <img
+                src={`/api/photos/${photo.id}/thumbnail?size=small`}
+                className="w-full h-full object-cover hover:scale-105 transition-transform"
+                loading="lazy"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

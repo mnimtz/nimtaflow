@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db, _engine
 from app.api.routes import auth, photos, people, sources, settings_api, jobs
-from app.api.routes import fs, ai_api, logs, backup
+from app.api.routes import fs, ai_api, logs, backup, albums
 from app.api.v1 import router as v1_router
 
 
@@ -50,6 +50,7 @@ app.include_router(fs.router, prefix="/api")
 app.include_router(ai_api.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
+app.include_router(albums.router, prefix="/api")
 
 # ── iOS / mobile API v1 ──────────────────────────────────────────────────────
 app.include_router(v1_router.router, prefix="/api")

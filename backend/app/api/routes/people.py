@@ -1,7 +1,9 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.models.person import Person
@@ -11,11 +13,14 @@ from app.schemas.person import PersonCreate, PersonUpdate, PersonOut, PersonDeta
 router = APIRouter(prefix="/people", tags=["people"])
 
 
-@router.get("", response_model=List[PersonOut])
+@router.get("", response_model=List[PersonDetail])
 async def list_people(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Person).order_by(Person.name))
-    persons = result.scalars().all()
-    return persons
+    persons = (await db.execute(select(Person).order_by(Person.name))).scalars().all()
+    result = []
+    for p in persons:
+        face_count = await db.scalar(select(func.count()).where(Face.person_id == p.id))
+        result.append(PersonDetail(**{k: getattr(p, k) for k in PersonOut.model_fields}, notes=p.notes, face_count=face_count or 0))
+    return result
 
 
 @router.post("", response_model=PersonOut, status_code=201)
@@ -53,9 +58,135 @@ async def delete_person(person_id: int, db: AsyncSession = Depends(get_db)):
     person = await db.get(Person, person_id)
     if not person:
         raise HTTPException(404)
+    # Unassign all faces before deleting
+    await db.execute(update(Face).where(Face.person_id == person_id).values(person_id=None))
     await db.delete(person)
     await db.commit()
 
+
+# ── Merge persons ─────────────────────────────────────────────────────────────
+
+class MergeRequest(BaseModel):
+    source_id: int
+    target_id: int
+    keep_name: Optional[str] = None  # if set, override target name after merge
+
+
+@router.post("/merge")
+async def merge_persons(body: MergeRequest, db: AsyncSession = Depends(get_db)):
+    """Merge source into target: all faces of source are reassigned to target, source is deleted."""
+    source = await db.get(Person, body.source_id)
+    target = await db.get(Person, body.target_id)
+    if not source or not target:
+        raise HTTPException(404, "Person not found")
+    if source.id == target.id:
+        raise HTTPException(400, "Cannot merge a person with themselves")
+
+    moved = await db.scalar(
+        select(func.count()).where(Face.person_id == body.source_id)
+    ) or 0
+
+    await db.execute(
+        update(Face).where(Face.person_id == body.source_id).values(person_id=body.target_id)
+    )
+
+    if body.keep_name:
+        target.name = body.keep_name
+
+    # Prefer source profile face if target has none
+    if not target.profile_face_id and source.profile_face_id:
+        target.profile_face_id = source.profile_face_id
+
+    await db.delete(source)
+    await db.commit()
+    return {"ok": True, "faces_moved": moved, "target_id": target.id}
+
+
+# ── Profile / display image ───────────────────────────────────────────────────
+
+@router.post("/{person_id}/profile-face/{face_id}")
+async def set_profile_face(person_id: int, face_id: int, db: AsyncSession = Depends(get_db)):
+    """Set which face crop to use as the person's display avatar."""
+    person = await db.get(Person, person_id)
+    face = await db.get(Face, face_id)
+    if not person or not face:
+        raise HTTPException(404)
+    if face.person_id != person_id:
+        raise HTTPException(400, "Face does not belong to this person")
+    person.profile_face_id = face_id
+    await db.commit()
+    return {"ok": True, "profile_face_id": face_id}
+
+
+@router.get("/{person_id}/avatar")
+async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
+    """Return the face crop image for the person's profile."""
+    import os
+    person = await db.get(Person, person_id)
+    if not person:
+        raise HTTPException(404)
+
+    if person.profile_face_id:
+        face = await db.get(Face, person.profile_face_id)
+        if face:
+            from app.models.photo import Photo
+            photo = await db.get(Photo, face.photo_id)
+            if photo and face.bbox:
+                from app.services.face_crop import crop_face
+                crop_path = crop_face(photo.path, face.bbox, person_id, face.id)
+                if crop_path and os.path.exists(crop_path):
+                    return FileResponse(crop_path, media_type="image/jpeg")
+
+    # Fallback: pick any face
+    face = (await db.execute(
+        select(Face).where(Face.person_id == person_id).limit(1)
+    )).scalar_one_or_none()
+
+    if face and face.bbox:
+        from app.models.photo import Photo
+        from app.services.face_crop import crop_face
+        photo = await db.get(Photo, face.photo_id)
+        if photo:
+            crop_path = crop_face(photo.path, face.bbox, person_id, face.id)
+            if crop_path and os.path.exists(crop_path):
+                return FileResponse(crop_path, media_type="image/jpeg")
+
+    raise HTTPException(404, "No avatar available")
+
+
+# ── Person photos ──────────────────────────────────────────────────────────────
+
+@router.get("/{person_id}/photos")
+async def person_photos(
+    person_id: int,
+    page: int = 1,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    person = await db.get(Person, person_id)
+    if not person:
+        raise HTTPException(404)
+
+    from app.models.photo import Photo
+    from app.schemas.photo import PhotoBase
+
+    q = (
+        select(Photo)
+        .join(Face, Face.photo_id == Photo.id)
+        .where(Face.person_id == person_id, Photo.is_trashed == False)
+        .order_by(Photo.taken_at.desc())
+        .offset((page - 1) * limit).limit(limit)
+    )
+    photos = (await db.execute(q)).scalars().all()
+    total = await db.scalar(
+        select(func.count(func.distinct(Photo.id)))
+        .join(Face, Face.photo_id == Photo.id)
+        .where(Face.person_id == person_id, Photo.is_trashed == False)
+    )
+    return {"total": total or 0, "page": page, "limit": limit, "items": photos}
+
+
+# ── Face management ───────────────────────────────────────────────────────────
 
 @router.post("/faces/{face_id}/assign/{person_id}")
 async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(get_db)):
@@ -65,6 +196,15 @@ async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(g
     face.person_id = person_id
     await db.commit()
     return {"ok": True}
+
+
+@router.delete("/faces/{face_id}/unassign", status_code=204)
+async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
+    face = await db.get(Face, face_id)
+    if not face:
+        raise HTTPException(404)
+    face.person_id = None
+    await db.commit()
 
 
 @router.get("/faces/unassigned")

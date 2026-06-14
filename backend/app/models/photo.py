@@ -25,52 +25,82 @@ class Photo(Base):
     file_size: Mapped[Optional[int]] = mapped_column(Integer)
     mime_type: Mapped[Optional[str]] = mapped_column(String(128))
 
-    # EXIF
+    # ── Core EXIF ─────────────────────────────────────────────────────────────
     taken_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    taken_at_original: Mapped[Optional[str]] = mapped_column(String(32))
+    timezone_offset: Mapped[Optional[str]] = mapped_column(String(8))
     width: Mapped[Optional[int]] = mapped_column(Integer)
     height: Mapped[Optional[int]] = mapped_column(Integer)
+    orientation: Mapped[Optional[int]] = mapped_column(Integer)
+    color_space: Mapped[Optional[str]] = mapped_column(String(32))
+
+    # ── Camera & Optics ───────────────────────────────────────────────────────
     camera_make: Mapped[Optional[str]] = mapped_column(String(128))
     camera_model: Mapped[Optional[str]] = mapped_column(String(128))
+    camera_serial: Mapped[Optional[str]] = mapped_column(String(128))
+    lens_make: Mapped[Optional[str]] = mapped_column(String(128))
     lens_model: Mapped[Optional[str]] = mapped_column(String(256))
     focal_length: Mapped[Optional[float]] = mapped_column(Float)
+    focal_length_35mm: Mapped[Optional[int]] = mapped_column(Integer)
     aperture: Mapped[Optional[float]] = mapped_column(Float)
     shutter_speed: Mapped[Optional[str]] = mapped_column(String(32))
+    exposure_time: Mapped[Optional[float]] = mapped_column(Float)
     iso: Mapped[Optional[int]] = mapped_column(Integer)
+    exposure_mode: Mapped[Optional[str]] = mapped_column(String(64))
+    metering_mode: Mapped[Optional[int]] = mapped_column(Integer)
+    white_balance: Mapped[Optional[int]] = mapped_column(Integer)
+    flash: Mapped[Optional[int]] = mapped_column(Integer)
+    software: Mapped[Optional[str]] = mapped_column(String(256))
 
-    # GPS
+    # ── GPS ───────────────────────────────────────────────────────────────────
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
     altitude: Mapped[Optional[float]] = mapped_column(Float)
+    gps_accuracy: Mapped[Optional[float]] = mapped_column(Float)
     location_name: Mapped[Optional[str]] = mapped_column(String(512))
     city: Mapped[Optional[str]] = mapped_column(String(256))
     country: Mapped[Optional[str]] = mapped_column(String(128))
+    country_code: Mapped[Optional[str]] = mapped_column(String(4))
 
-    # AI
+    # ── Copyright / IPTC / XMP ────────────────────────────────────────────────
+    artist: Mapped[Optional[str]] = mapped_column(String(256))
+    copyright: Mapped[Optional[str]] = mapped_column(String(512))
+    title: Mapped[Optional[str]] = mapped_column(String(512))
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    keywords: Mapped[Optional[str]] = mapped_column(Text)
+    xmp_sidecar_written: Mapped[bool] = mapped_column(Boolean, default=False)
+    xmp_sidecar_path: Mapped[Optional[str]] = mapped_column(String(2048))
+
+    # ── AI ────────────────────────────────────────────────────────────────────
     description: Mapped[Optional[str]] = mapped_column(Text)
     description_language: Mapped[Optional[str]] = mapped_column(String(8))
+    description_model: Mapped[Optional[str]] = mapped_column(String(128))
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
 
-    # Processing
+    # ── Processing ────────────────────────────────────────────────────────────
     status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
 
-    # Thumbnails
+    # ── Thumbnails ────────────────────────────────────────────────────────────
     thumb_small: Mapped[Optional[str]] = mapped_column(String(512))
     thumb_medium: Mapped[Optional[str]] = mapped_column(String(512))
     thumb_large: Mapped[Optional[str]] = mapped_column(String(512))
 
-    # Media type
+    # ── Media type ────────────────────────────────────────────────────────────
     is_video: Mapped[bool] = mapped_column(Boolean, default=False)
     duration_seconds: Mapped[Optional[float]] = mapped_column(Float)
     video_codec: Mapped[Optional[str]] = mapped_column(String(32))
-    video_webm_path: Mapped[Optional[str]] = mapped_column(String(512))  # transcoded WebM
+    video_fps: Mapped[Optional[float]] = mapped_column(Float)
+    video_bitrate: Mapped[Optional[int]] = mapped_column(Integer)
+    video_webm_path: Mapped[Optional[str]] = mapped_column(String(512))
 
-    # User interaction
+    # ── User interaction ──────────────────────────────────────────────────────
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_trashed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    user_rating: Mapped[Optional[int]] = mapped_column(Integer)  # 1-5
+    user_rating: Mapped[Optional[int]] = mapped_column(Integer)
+    user_description: Mapped[Optional[str]] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

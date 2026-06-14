@@ -48,7 +48,7 @@ services:
 
   worker:
     build: ./backend
-    command: celery -A app.worker.celery_app worker --loglevel=${LOG_LEVEL:-info} -c ${WORKER_CONCURRENCY:-4}
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-4}"]
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro

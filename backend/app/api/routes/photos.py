@@ -229,6 +229,103 @@ async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db)):
     return {"is_trashed": photo.is_trashed}
 
 
+# ── EXIF / metadata editing ───────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BM
+
+class MetaUpdate(_BM):
+    title: Optional[str] = None
+    caption: Optional[str] = None
+    user_description: Optional[str] = None
+    description: Optional[str] = None      # AI description, can be corrected manually
+    keywords: Optional[str] = None         # comma-separated
+    artist: Optional[str] = None
+    copyright: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    altitude: Optional[float] = None
+    taken_at: Optional[str] = None         # ISO-8601
+    write_to_file: bool = False            # also write to original via exiftool
+    write_xmp_sidecar: bool = False        # write .xmp sidecar
+
+
+@router.patch("/{photo_id}/meta")
+async def update_meta(photo_id: int, body: MetaUpdate, db: AsyncSession = Depends(get_db)):
+    """Edit metadata in DB and optionally write to file / XMP sidecar."""
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+
+    # Update DB fields
+    for field in ("title", "caption", "user_description", "description",
+                  "keywords", "artist", "copyright", "latitude", "longitude", "altitude"):
+        val = getattr(body, field, None)
+        if val is not None:
+            setattr(photo, field, val)
+
+    if body.taken_at:
+        from datetime import datetime as dt
+        try:
+            photo.taken_at = dt.fromisoformat(body.taken_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "Invalid taken_at format, use ISO-8601")
+
+    errors = []
+
+    # Write to original file via exiftool
+    if body.write_to_file:
+        from app.services.exif_edit import write_exif, exiftool_available
+        if exiftool_available():
+            tags = {}
+            if body.title: tags["XMP:Title"] = body.title
+            if body.caption: tags["IPTC:Caption-Abstract"] = body.caption
+            if body.description: tags["XMP:Description"] = body.description
+            if body.artist: tags["EXIF:Artist"] = body.artist
+            if body.copyright: tags["EXIF:Copyright"] = body.copyright
+            if body.keywords: tags["XMP:Subject"] = body.keywords
+            if body.latitude is not None and body.longitude is not None:
+                from app.services.exif_edit import write_gps
+                try:
+                    await write_gps(photo.path, body.latitude, body.longitude, body.altitude)
+                except Exception as e:
+                    errors.append(f"GPS write: {e}")
+            if tags:
+                try:
+                    from app.services.exif_edit import write_exif
+                    await write_exif(photo.path, tags, make_backup=False)
+                except Exception as e:
+                    errors.append(f"exiftool: {e}")
+        else:
+            errors.append("exiftool not installed — file not modified")
+
+    # Write XMP sidecar
+    if body.write_xmp_sidecar:
+        try:
+            from app.services.xmp_sidecar import write_sidecar
+            kw_list = [k.strip() for k in (body.keywords or photo.keywords or "").split(",") if k.strip()]
+            sidecar_path = write_sidecar(
+                photo.path,
+                description=photo.description,
+                user_description=photo.user_description,
+                rating=photo.user_rating,
+                keywords=kw_list or None,
+                title=photo.title,
+                artist=photo.artist,
+                caption=photo.caption,
+                latitude=photo.latitude,
+                longitude=photo.longitude,
+                city=photo.city,
+                country=photo.country,
+            )
+            photo.xmp_sidecar_written = True
+            photo.xmp_sidecar_path = sidecar_path
+        except Exception as e:
+            errors.append(f"XMP sidecar: {e}")
+
+    await db.commit()
+    return {"ok": True, "errors": errors}
+
+
 @router.get("/{photo_id}/thumbnail")
 async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)

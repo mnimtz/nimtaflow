@@ -88,34 +88,36 @@ export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: 
           {data?.entries.map((entry) => (
             <button
               key={entry.path}
-              onClick={() => entry.has_children ? setCurrentPath(entry.path) : undefined}
-              onDoubleClick={() => setCurrentPath(entry.path)}
+              onClick={() => setCurrentPath(entry.path)}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group"
             >
               {entry.has_children
                 ? <FolderOpen size={17} className="text-yellow-500 shrink-0" />
-                : <Folder size={17} className="text-yellow-400 shrink-0" />
+                : <Folder size={17} className="text-yellow-400/70 shrink-0" />
               }
               <span className="flex-1 font-mono text-gray-800 dark:text-gray-200 truncate">{entry.name}</span>
-              {entry.has_children && (
-                <ChevronRight size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-gray-500 shrink-0" />
-              )}
+              <ChevronRight size={14} className={`shrink-0 transition-colors ${entry.has_children ? 'text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300' : 'text-gray-200 dark:text-gray-700'}`} />
             </button>
           ))}
         </div>
 
         {/* Footer — current selection */}
-        <div className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
-          <code className="flex-1 text-xs text-gray-500 dark:text-gray-400 font-mono truncate bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded">
-            {currentPath}
-          </code>
-          <button
-            onClick={() => { onSelect(currentPath); onClose() }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
-          >
-            <Check size={14} />
-            Auswählen
-          </button>
+        <div className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 space-y-2">
+          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+            Aktueller Ordner (klicke auf Unterordner zum Navigieren):
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs text-indigo-600 dark:text-indigo-400 font-mono truncate bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/40 px-2 py-1.5 rounded">
+              {currentPath}
+            </code>
+            <button
+              onClick={() => { onSelect(currentPath); onClose() }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
+            >
+              <Check size={14} />
+              Diesen wählen
+            </button>
+          </div>
         </div>
       </div>
     </div>

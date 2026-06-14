@@ -1,10 +1,11 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage } from 'lucide-react'
 import { useTheme } from '../../store/theme'
 import clsx from 'clsx'
 
 const nav = [
   { to: '/gallery', icon: Images, label: 'Galerie' },
+  { to: '/albums', icon: BookImage, label: 'Alben' },
   { to: '/people', icon: Users, label: 'Personen' },
   { to: '/map', icon: Map, label: 'Karte' },
   { to: '/pipeline', icon: Activity, label: 'Pipeline' },

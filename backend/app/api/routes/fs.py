@@ -38,23 +38,27 @@ async def browse(path: str = Query("/", description="Directory path to list")):
 
     entries: List[DirEntry] = []
     try:
-        items = sorted(os.scandir(resolved), key=lambda e: e.name.lower())
+        raw = list(os.scandir(resolved))
     except PermissionError:
         raise HTTPException(403, "Permission denied")
+    except OSError as e:
+        raise HTTPException(500, str(e))
+    items = sorted(raw, key=lambda e: e.name.lower())
 
     for item in items:
         if not item.is_dir(follow_symlinks=True):
             continue
         if item.name.startswith("."):
             continue
-        # Quick check if it has subdirectories
+        # Check for subdirectories (stop at first match for speed)
+        has_children = False
         try:
-            has_children = any(
-                e.is_dir(follow_symlinks=True)
-                for e in os.scandir(item.path)
-                if not e.name.startswith(".")
-            )
-        except PermissionError:
+            with os.scandir(item.path) as sub:
+                for e in sub:
+                    if e.is_dir(follow_symlinks=True) and not e.name.startswith("."):
+                        has_children = True
+                        break
+        except (PermissionError, OSError):
             has_children = False
 
         entries.append(DirEntry(name=item.name, path=item.path, has_children=has_children))
