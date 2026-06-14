@@ -918,13 +918,8 @@ function FacesSection() {
           <Toggle value={enabled} onChange={v => set('faces.enabled', v ? 'true' : 'false')} />
         </label>
 
-        <div>
-          <Label>Modell</Label>
-          <select value={settings['faces.model'] ?? 'buffalo_l'} onChange={e => set('faces.model', e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="buffalo_s">buffalo_s — schlank (wenig RAM)</option>
-            <option value="buffalo_l">buffalo_l — beste Erkennung</option>
-          </select>
+        <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500">
+          Engine: <span className="font-medium text-zinc-700 dark:text-zinc-300">facenet-pytorch</span> (MTCNN-Erkennung + 512-dim-Embeddings, lokal, CPU-tauglich). Läuft auch ohne RAM-Upgrade.
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -965,8 +960,9 @@ function FacesSection() {
           </div>
         </div>
 
-        <p className="text-xs text-amber-500">
-          Hinweis: Die Gesichtserkennung wird gerade integriert (Stage 3) — diese Einstellungen werden dann wirksam.
+        <p className="text-xs text-emerald-500">
+          Gesichtserkennung ist aktiv — Gesichter werden beim Verarbeiten erkannt und gespeichert.
+          Personen-Clustering (Gruppierung + Benennen) folgt als nächster Schritt.
         </p>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
