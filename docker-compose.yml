@@ -30,6 +30,7 @@ services:
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
+      - /mnt:/mnt:ro
       - photoflow-cache:/cache
       - photoflow-config:/config
     depends_on:
