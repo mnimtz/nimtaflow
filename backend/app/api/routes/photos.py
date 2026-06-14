@@ -28,7 +28,7 @@ def _base_query(
     has_gps: Optional[bool] = None,
     view: str = "library",  # library | favorites | archive | trash
 ):
-    q = select(Photo).where(Photo.status == PhotoStatus.done)
+    q = select(Photo).where(Photo.status == PhotoStatus.done, Photo.is_missing == False)
     if view == "trash":
         q = q.where(Photo.is_trashed == True)
     elif view == "archive":

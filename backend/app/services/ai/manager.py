@@ -8,6 +8,32 @@ from .gemini import GeminiProvider
 from .ollama import OllamaProvider
 
 
+def build_video_settings(settings: dict) -> dict:
+    """Map the separate `video.*` AI settings onto the `ai.*` keys AIManager
+    understands, so videos can use a different provider than photos.
+
+    video.ai_provider: same | ollama | gemini | moondream
+      - same      → use the photo provider unchanged
+      - ollama    → Ollama at video.ollama_url with video.ollama_model
+      - moondream → Ollama serving the 'moondream' model (small/fast, local)
+      - gemini    → Gemini (reuses the photo Gemini key)
+    """
+    vp = (settings.get("video.ai_provider") or "same").strip()
+    if vp in ("", "same"):
+        return settings
+    out = dict(settings)  # keep API keys etc.
+    if vp == "gemini":
+        out["ai.provider"] = "gemini"
+    elif vp in ("ollama", "moondream"):
+        out["ai.provider"] = "ollama"
+        out["ai.ollama.url"] = settings.get("video.ollama_url") or settings.get("ai.ollama.url", "http://localhost:11434")
+        out["ai.ollama.vision_model"] = (
+            "moondream" if vp == "moondream"
+            else (settings.get("video.ollama_model") or settings.get("ai.ollama.vision_model", "llava:7b"))
+        )
+    return out
+
+
 class AIManager:
     def __init__(self, settings: dict):
         self._settings = settings

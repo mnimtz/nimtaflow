@@ -26,8 +26,8 @@ type Settings = Record<string, string>
 const SECTIONS = [
   { id: 'sources',   icon: HardDrive, label: 'Foto-Quellen' },
   { id: 'gallery',   icon: Layers,    label: 'Galerie' },
-  { id: 'ai',        icon: Brain,     label: 'AI-Provider' },
-  { id: 'video-ai',  icon: Video,     label: 'Video & Gesichter' },
+  { id: 'ai',        icon: Brain,     label: 'Foto-AI' },
+  { id: 'video-ai',  icon: Video,     label: 'Video-AI & Gesichter' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
   { id: 'map',       icon: Map,       label: 'Karte' },
@@ -188,7 +188,14 @@ function SourcesSection() {
 
   const del = useMutation({
     mutationFn: (id: number) => api.delete(`/sources/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
+    onSuccess: () => {
+      // also refresh the gallery/people/stats so removed photos disappear immediately
+      qc.invalidateQueries({ queryKey: ['sources'] })
+      qc.invalidateQueries({ queryKey: ['photos'] })
+      qc.invalidateQueries({ queryKey: ['photo-stats'] })
+      qc.invalidateQueries({ queryKey: ['people'] })
+      qc.invalidateQueries({ queryKey: ['memories'] })
+    },
   })
 
   const scan = useMutation({
@@ -248,7 +255,7 @@ function SourcesSection() {
                   <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
                 </button>
                 <button
-                  onClick={() => del.mutate(s.id)}
+                  onClick={() => { if (confirm(`Ordner „${s.path}" entfernen?\n\nAlle daraus indizierten Fotos, Thumbnails, Vorschauen und Gesichter werden aus PhotoFlow gelöscht. Die Originaldateien auf der Festplatte bleiben unberührt.`)) del.mutate(s.id) }}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                   <Trash2 size={14} />
@@ -431,7 +438,7 @@ function AISection() {
 
   return (
     <div>
-      <SectionHeader title="AI-Provider" desc="Wähle Cloud- oder lokale AI für Bildbeschreibungen, Tags und Embeddings." />
+      <SectionHeader title="Foto-AI" desc="AI nur für Fotos: Bildbeschreibungen, Tags und Embeddings. Videos werden separat unter „Video-AI & Gesichter" konfiguriert." />
       <div className="space-y-7">
 
         {/* Provider picker */}
@@ -612,6 +619,21 @@ function AISection() {
             <option value="es">Spanisch</option>
           </select>
         </div>
+
+        {/* XMP auto-write */}
+        <label className="flex items-start justify-between gap-4 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">AI-Beschreibung automatisch in XMP schreiben</p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Legt eine <code>.xmp</code>-Sidecar-Datei neben das Original mit <code>dc:description</code> + Schlagwörtern.
+              Originale bleiben unverändert. Praktisch für Lightroom/digiKam/Immich-Export.
+            </p>
+          </div>
+          <Toggle
+            value={String(settings['xmp.auto_write'] ?? '').toLowerCase() === 'true'}
+            onChange={v => set('xmp.auto_write', v ? 'true' : 'false')}
+          />
+        </label>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>

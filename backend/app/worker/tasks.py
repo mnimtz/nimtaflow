@@ -133,8 +133,11 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                 # AI processing — load provider config from DB settings (non-fatal)
                 try:
                     from app.services.settings_loader import load_settings
+                    from app.services.ai.manager import build_video_settings
                     ai_settings = await load_settings(db)
-                    ai = AIManager(ai_settings)
+                    # Videos use the separate video.* provider (e.g. moondream/ollama)
+                    eff_settings = build_video_settings(ai_settings) if photo.is_video else ai_settings
+                    ai = AIManager(eff_settings)
 
                     # Videos: describe from the extracted frame; else the photo
                     img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
@@ -160,6 +163,24 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                             )
                             if not existing_pt:
                                 db.add(PhotoTag(photo_id=photo_id, tag_id=tag.id, source="ai"))
+
+                        # Optionally write the AI description into an XMP sidecar
+                        if description and str(ai_settings.get("xmp.auto_write", "")).lower() in ("1", "true", "on", "yes"):
+                            try:
+                                from app.services.xmp_sidecar import write_sidecar
+                                xmp_path = write_sidecar(
+                                    photo.path,
+                                    description=description,
+                                    title=photo.title,
+                                    keywords=[t for t in tags[:20]] or None,
+                                    latitude=photo.latitude, longitude=photo.longitude,
+                                    city=photo.city, country=photo.country,
+                                )
+                                photo.xmp_sidecar_written = True
+                                photo.xmp_sidecar_path = xmp_path
+                                flog("ai", "INFO", f"XMP dc:description geschrieben: {photo.filename}")
+                            except Exception as xe:
+                                flog("ai", "WARNING", f"XMP-Schreiben fehlgeschlagen: {photo.filename}: {str(xe)[:120]}")
 
                         if description:
                             embedding, _ = await ai.embed_text(description)
