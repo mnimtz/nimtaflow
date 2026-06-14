@@ -66,13 +66,6 @@ services:
       CACHE_PATH: /cache
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   frontend:
     build: ./frontend
