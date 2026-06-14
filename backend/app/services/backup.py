@@ -8,8 +8,13 @@ import pathlib
 import json
 from typing import Optional, Dict, Any
 
-BACKUP_DIR = pathlib.Path(os.getenv("CACHE_PATH", "/cache")) / "backups"
-BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+_cache = pathlib.Path(os.getenv("CACHE_PATH", "/cache"))
+BACKUP_DIR = _cache / "backups"
+try:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    BACKUP_DIR = pathlib.Path("/tmp/photoflow-backups")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 _RCLONE = shutil.which("rclone")
 _PG_DUMP = shutil.which("pg_dump") or "pg_dump"

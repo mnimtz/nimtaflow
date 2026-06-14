@@ -28,7 +28,11 @@ from app.schemas.photo import PhotoBase
 router = APIRouter(prefix="/v1", tags=["v1-ios"])
 
 _UPLOAD_DIR = Path(os.getenv("CACHE_PATH", "/cache")) / "uploads"
-_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    _UPLOAD_DIR = Path("/tmp/photoflow-uploads")
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 APP_VERSION = "1.0.0"
 
