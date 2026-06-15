@@ -269,8 +269,53 @@ async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(g
     if not face:
         raise HTTPException(404, "Face not found")
     face.person_id = person_id
+    face.is_ignored = False
     await db.commit()
     return {"ok": True}
+
+
+class AssignManyRequest(BaseModel):
+    face_ids: List[int]
+    person_id: int
+
+
+@router.post("/faces/assign-many")
+async def assign_faces_many(body: AssignManyRequest, db: AsyncSession = Depends(get_db)):
+    """Assign several selected faces to one existing person at once."""
+    if not body.face_ids:
+        return {"updated": 0}
+    person = await db.get(Person, body.person_id)
+    if not person:
+        raise HTTPException(404, "Person not found")
+    await db.execute(update(Face).where(Face.id.in_(body.face_ids))
+                     .values(person_id=body.person_id, is_ignored=False))
+    await db.commit()
+    return {"updated": len(body.face_ids), "person_id": body.person_id}
+
+
+class NewPersonManyRequest(BaseModel):
+    face_ids: List[int]
+    name: Optional[str] = None
+
+
+@router.post("/faces/new-person-many")
+async def new_person_from_faces(body: NewPersonManyRequest, db: AsyncSession = Depends(get_db)):
+    """Create a new person from several selected faces (optionally named)."""
+    if not body.face_ids:
+        raise HTTPException(400, "No faces given")
+    person = Person(name=(body.name or "").strip(), profile_face_id=body.face_ids[0])
+    db.add(person)
+    await db.flush()
+    await db.execute(update(Face).where(Face.id.in_(body.face_ids))
+                     .values(person_id=person.id, is_ignored=False))
+    await db.commit()
+    if (body.name or "").strip():
+        try:
+            from app.worker.tasks import write_person_name_task
+            write_person_name_task.delay(person.id)
+        except Exception:
+            pass
+    return {"person_id": person.id}
 
 
 @router.delete("/faces/{face_id}/unassign", status_code=204)

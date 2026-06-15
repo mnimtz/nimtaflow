@@ -39,7 +39,7 @@ export default function PeoplePage() {
   const [selection, setSelection] = useState<Set<number>>(new Set())
   const [showAdd, setShowAdd] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
-  const [assignFace, setAssignFace] = useState<FaceRef | null>(null)
+  const [assignIds, setAssignIds] = useState<number[] | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
   const qc = useQueryClient()
   const toast = useToast()
@@ -219,7 +219,7 @@ export default function PeoplePage() {
               <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-3">
                 {looseFaces.map(f => (
                   <FaceTile key={f.id} face={f} selected={faceSel.has(f.id)}
-                    onToggle={() => toggleFace(f.id)} onAssign={() => setAssignFace(f)} />
+                    onToggle={() => toggleFace(f.id)} onAssign={() => setAssignIds([f.id])} />
                 ))}
               </div>
             </section>
@@ -277,12 +277,10 @@ export default function PeoplePage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
             <EyeOff size={14} /> Ausblenden
           </button>
-          {faceSel.size === 1 && (
-            <button onClick={() => { const id = [...faceSel][0]; const f = looseFaces.find(x => x.id === id); if (f) { setAssignFace(f); setFaceSel(new Set()) } }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800">
-              <UserPlus size={14} /> Zuordnen
-            </button>
-          )}
+          <button onClick={() => setAssignIds([...faceSel])}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800">
+            <UserPlus size={14} /> Zu Person…
+          </button>
           <button onClick={() => setFaceSel(new Set())} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title="Auswahl aufheben">
             <X size={16} />
           </button>
@@ -297,12 +295,12 @@ export default function PeoplePage() {
           onMerged={(n) => { refresh(); clearSelection(); setMergeOpen(false); toast(`${n} Person(en) zusammengeführt`, 'success') }}
         />
       )}
-      {assignFace && (
+      {assignIds && assignIds.length > 0 && (
         <FaceAssignModal
-          face={assignFace}
+          faceIds={assignIds}
           people={known}
-          onClose={() => setAssignFace(null)}
-          onDone={() => { refresh(); setAssignFace(null) }}
+          onClose={() => setAssignIds(null)}
+          onDone={() => { refresh(); setAssignIds(null); setFaceSel(new Set()) }}
         />
       )}
     </div>
@@ -659,36 +657,39 @@ function MergeModal({ people, onClose, onMerged }: {
 }
 
 /* ─────────────── Face assign modal ─────────────── */
-function FaceAssignModal({ face, people, onClose, onDone }: {
-  face: FaceRef; people: Person[]; onClose: () => void; onDone: () => void
+function FaceAssignModal({ faceIds, people, onClose, onDone }: {
+  faceIds: number[]; people: Person[]; onClose: () => void; onDone: () => void
 }) {
   const [search, setSearch] = useState('')
   const [newName, setNewName] = useState('')
   const toast = useToast()
   const filtered = people.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+  const n = faceIds.length
 
   const assign = useMutation({
-    mutationFn: (personId: number) => api.post(`/people/faces/${face.id}/assign/${personId}`),
-    onSuccess: () => { toast('Gesicht zugeordnet', 'success'); onDone() },
+    mutationFn: (personId: number) => api.post('/people/faces/assign-many', { face_ids: faceIds, person_id: personId }),
+    onSuccess: () => { toast(`${n} Gesicht(er) zugeordnet`, 'success'); onDone() },
     onError: () => toast('Zuordnen fehlgeschlagen', 'error'),
   })
   const createNew = useMutation({
-    mutationFn: async () => {
-      const res = await api.post(`/people/faces/${face.id}/new-person`)
-      const pid = res.data?.person_id
-      if (newName.trim() && pid) await api.patch(`/people/${pid}`, { name: newName.trim() })
-      return pid
-    },
+    mutationFn: () => api.post('/people/faces/new-person-many', { face_ids: faceIds, name: newName.trim() || undefined }),
     onSuccess: () => { toast('Neue Person erstellt', 'success'); onDone() },
     onError: () => toast('Erstellen fehlgeschlagen', 'error'),
   })
 
   return (
-    <Modal open onClose={onClose} title="Gesicht zuordnen">
+    <Modal open onClose={onClose} title={n === 1 ? 'Gesicht zuordnen' : `${n} Gesichter zuordnen`}>
       <div className="flex gap-4 mb-4">
-        <img src={`/api/people/faces/${face.id}/crop`} className="w-24 h-24 rounded-xl object-cover bg-zinc-800 ring-1 ring-zinc-700 flex-shrink-0" />
+        <div className="flex -space-x-3 flex-shrink-0">
+          {faceIds.slice(0, 4).map((id, i) => (
+            <img key={id} src={`/api/people/faces/${id}/crop`}
+              className="w-16 h-16 rounded-xl object-cover bg-zinc-200 dark:bg-zinc-800 ring-2 ring-white dark:ring-zinc-900"
+              style={{ zIndex: 4 - i }} />
+          ))}
+          {n > 4 && <div className="w-16 h-16 rounded-xl bg-zinc-200 dark:bg-zinc-800 ring-2 ring-white dark:ring-zinc-900 flex items-center justify-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">+{n - 4}</div>}
+        </div>
         <div className="flex-1">
-          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Neue Person aus diesem Gesicht</label>
+          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{n === 1 ? 'Neue Person aus diesem Gesicht' : `Neue Person aus ${n} Gesichtern`}</label>
           <div className="flex gap-2">
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)"
               onKeyDown={e => { if (e.key === 'Enter') createNew.mutate() }}
@@ -701,7 +702,7 @@ function FaceAssignModal({ face, people, onClose, onDone }: {
         </div>
       </div>
 
-      <div className="border-t border-zinc-800 pt-4">
+      <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
         <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">…oder zu vorhandener Person</label>
         <div className="relative mb-2">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
