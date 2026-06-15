@@ -25,6 +25,7 @@ services:
 
   backend:
     build: ./backend
+    image: photoflow-app:latest
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
@@ -47,6 +48,7 @@ services:
 
   worker:
     build: ./backend
+    image: photoflow-app:latest
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-4}"]
     restart: unless-stopped
     runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
@@ -84,6 +86,7 @@ services:
 
   beat:
     build: ./backend
+    image: photoflow-app:latest
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=${LOG_LEVEL:-info}"]
     restart: unless-stopped
     depends_on:
