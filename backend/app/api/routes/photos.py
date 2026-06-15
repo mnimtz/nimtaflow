@@ -198,7 +198,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     thumbed = await db.scalar(select(func.count()).where(*live, Photo.thumb_small.isnot(None)))
     described = await db.scalar(select(func.count()).where(*live, Photo.description.isnot(None), Photo.description != ""))
     embedded = await db.scalar(select(func.count()).where(*live, Photo.embedding.isnot(None)))
-    ai_failed = await db.scalar(select(func.count()).where(*live, Photo.ai_error == True))  # noqa: E712
+    # only count AI errors that actually left the photo without a usable index
+    ai_failed = await db.scalar(select(func.count()).where(
+        *live, Photo.ai_error == True, Photo.embedding.is_(None), Photo.is_video == False))  # noqa: E712
     with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
 
     return {
