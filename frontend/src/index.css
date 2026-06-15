@@ -84,6 +84,20 @@
   to   { opacity: 1; transform: translateX(0); }
 }
 
+/* ── react-photo-album tiles ───────────────────── */
+.react-photo-album--photo {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  background: rgba(0,0,0,0.06);
+}
+.dark .react-photo-album--photo { background: rgba(255,255,255,0.04); }
+.react-photo-album--photo img { transition: transform .5s ease; }
+.react-photo-album--photo:hover img { transform: scale(1.04); }
+.react-photo-album--photo:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+.pf-show { opacity: 0; transition: opacity .2s ease; }
+.react-photo-album--photo:hover .pf-show { opacity: 1; }
+
 /* ── Sidebar nav pill ──────────────────────────── */
 .nav-pill {
   @apply relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150;

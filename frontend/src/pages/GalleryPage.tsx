@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus } from 'lucide-react'
-import { api, thumbUrl, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
-import JustifiedGrid from '../components/gallery/JustifiedGrid'
-import TimelineView from '../components/gallery/TimelineView'
-import PhotoLightbox from '../components/gallery/PhotoLightbox'
+import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3 } from 'lucide-react'
+import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
+import Gallery, { type LayoutMode } from '../components/gallery/Gallery'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import FilterPanel, { DEFAULT_FILTERS, type Filters } from '../components/gallery/FilterPanel'
 
-type ViewMode = 'grid' | 'timeline' | 'memories'
+type ViewMode = 'grid' | 'memories'
 
 type PhotoListResponse = {
   total: number
@@ -110,8 +109,10 @@ export default function GalleryPage() {
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE)
   const [zoom, setZoom] = useState<number>(() => Number(localStorage.getItem('gallery.zoom')) || (isMobile() ? 140 : 210))
   const [groupBy, setGroupBy] = useState<'none' | 'day' | 'month'>(() => (localStorage.getItem('gallery.groupBy') as any) || 'day')
+  const [layout, setLayout] = useState<LayoutMode>(() => (localStorage.getItem('gallery.layout') as LayoutMode) || 'rows')
   useEffect(() => { localStorage.setItem('gallery.zoom', String(zoom)) }, [zoom])
   useEffect(() => { localStorage.setItem('gallery.groupBy', groupBy) }, [groupBy])
+  useEffect(() => { localStorage.setItem('gallery.layout', layout) }, [layout])
   const rowHeight = zoom
   const qc = useQueryClient()
 
@@ -128,13 +129,6 @@ export default function GalleryPage() {
     enabled: viewMode === 'grid',
   })
 
-  const timelineQuery = useQuery<TimelineGroup[]>({
-    queryKey: ['photos', 'timeline', filterParams],
-    queryFn: () =>
-      api.get('/photos/timeline', { params: { ...filterParams, limit_per_group: 40 } })
-        .then(r => r.data),
-    enabled: viewMode === 'timeline',
-  })
 
   const { data: stats } = useQuery<PhotoStats>({
     queryKey: ['photo-stats'],
@@ -236,8 +230,7 @@ export default function GalleryPage() {
         {library === 'library' && (
           <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
             {([
-              { id: 'grid', icon: LayoutGrid, label: 'Raster' },
-              { id: 'timeline', icon: Clock, label: 'Timeline' },
+              { id: 'grid', icon: LayoutGrid, label: 'Galerie' },
               { id: 'memories', icon: Sparkles, label: 'Erinnerungen' },
             ] as const).map(({ id, icon: Icon, label }) => (
               <button
@@ -288,6 +281,15 @@ export default function GalleryPage() {
 
         {viewMode === 'grid' && (
           <>
+            {/* Layout mode */}
+            <div className="hidden md:flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5" title="Layout">
+              {([['rows', Rows3], ['masonry', Columns3]] as const).map(([id, Icon]) => (
+                <button key={id} onClick={() => setLayout(id)}
+                  className={`p-1.5 rounded-md transition-colors ${layout === id ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                  <Icon size={14} />
+                </button>
+              ))}
+            </div>
             {/* Group by date */}
             <div className="hidden sm:flex items-center gap-1.5" title="Nach Datum gruppieren">
               <Calendar size={14} className="text-gray-400" />
@@ -338,12 +340,12 @@ export default function GalleryPage() {
                 <p className="text-gray-500 dark:text-gray-400 text-sm">Keine Fotos gefunden.</p>
               </div>
             )}
-            <JustifiedGrid
+            <Gallery
               photos={allGridPhotos}
+              layout={layout}
               rowHeight={rowHeight}
-              gap={5}
               groupBy={(sort === 'name' || sort === 'added') ? 'none' : groupBy}
-              onPhotoClick={(_, i) => setLightbox({ photos: allGridPhotos, index: i })}
+              onPhotoClick={i => setLightbox({ photos: allGridPhotos, index: i })}
               onFavoriteToggle={photo => favMutation.mutate(photo.id)}
               selectable
               selected={selected}
@@ -360,28 +362,6 @@ export default function GalleryPage() {
                 <span className="text-xs text-gray-300 dark:text-gray-600">Alle {total.toLocaleString('de')} Fotos geladen</span>
               )}
             </div>
-          </>
-        )}
-
-        {viewMode === 'timeline' && (
-          <>
-            {timelineQuery.isLoading && (
-              <div className="flex justify-center py-12 text-gray-400 text-sm">Lade Timeline...</div>
-            )}
-            {timelineQuery.data && (
-              <TimelineView
-                groups={timelineQuery.data}
-                rowHeight={rowHeight}
-                onPhotoClick={(_, allPhotos, i) => setLightbox({ photos: allPhotos, index: i })}
-                onFavoriteToggle={photo => favMutation.mutate(photo.id)}
-              />
-            )}
-            {timelineQuery.data?.length === 0 && !timelineQuery.isLoading && (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <Clock size={48} className="text-gray-300 dark:text-gray-600 mb-4" />
-                <p className="text-gray-500 dark:text-gray-400 text-sm">Keine Fotos in der Timeline.</p>
-              </div>
-            )}
           </>
         )}
 
@@ -431,9 +411,9 @@ export default function GalleryPage() {
 
       {/* Lightbox */}
       {lightbox && (
-        <PhotoLightbox
+        <GalleryLightbox
           photos={lightbox.photos}
-          initialIndex={lightbox.index}
+          index={lightbox.index}
           onClose={() => setLightbox(null)}
         />
       )}
