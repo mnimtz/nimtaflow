@@ -88,6 +88,22 @@ def auto_cluster_faces_task(self):
                 res = await cluster_unassigned(db)
             except ImportError:
                 return {"skipped": "no sklearn"}
+            # Keep person-based smart albums current (face↔person links just changed).
+            try:
+                from sqlalchemy import select as _sel
+                from app.models.album import Album, AlbumType
+                from app.api.routes.albums import _populate_smart
+                albums = (await db.execute(_sel(Album).where(Album.album_type == AlbumType.smart))).scalars().all()
+                refreshed = 0
+                for a in albums:
+                    if (a.smart_criteria or {}).get("person_ids"):
+                        await _populate_smart(a, db)
+                        refreshed += 1
+                if refreshed:
+                    await db.commit()
+                    res["smart_albums_refreshed"] = refreshed
+            except Exception:
+                pass
             return res
 
     return _run(_run_cluster())

@@ -195,7 +195,17 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
   const [smartDate, setSmartDate] = useState({ from: '', to: '' })
   const [smartFavorites, setSmartFavorites] = useState(false)
   const [smartMediaType, setSmartMediaType] = useState('')
+  const [smartPersons, setSmartPersons] = useState<number[]>([])
+  const [personMatch, setPersonMatch] = useState<'any' | 'all'>('any')
   const qc = useQueryClient()
+
+  const { data: people = [] } = useQuery<{ id: number; name: string; face_count: number }[]>({
+    queryKey: ['people-for-album'],
+    queryFn: () => api.get('/people').then(r => r.data),
+    enabled: type === 'smart',
+  })
+  const togglePerson = (id: number) =>
+    setSmartPersons(ps => ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id])
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post('/albums', body),
@@ -212,6 +222,7 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
         ...(smartDate.to ? { date_to: smartDate.to } : {}),
         ...(smartFavorites ? { favorites: true } : {}),
         ...(smartMediaType ? { media_type: smartMediaType } : {}),
+        ...(smartPersons.length ? { person_ids: smartPersons, person_match: personMatch } : {}),
       }
     }
     create.mutate(body)
@@ -295,6 +306,46 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
                   className="rounded accent-indigo-500" />
                 Nur Favoriten
               </label>
+
+              {/* Personen-Filter */}
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1.5">Personen</label>
+                {people.length === 0 ? (
+                  <p className="text-xs text-zinc-500">Noch keine Personen erkannt.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-1">
+                      {people.map(p => {
+                        const sel = smartPersons.includes(p.id)
+                        return (
+                          <button key={p.id} type="button" onClick={() => togglePerson(p.id)}
+                            className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors ${
+                              sel ? 'border-indigo-500 bg-indigo-900/40 text-indigo-200' : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'
+                            }`}>
+                            <span className="w-5 h-5 rounded-full overflow-hidden bg-zinc-700 flex items-center justify-center text-[9px]">
+                              <img src={`/api/people/${p.id}/avatar`} className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                            </span>
+                            {p.name || 'Unbekannt'}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {smartPersons.length >= 2 && (
+                      <div className="flex gap-1 mt-2 text-xs">
+                        <button type="button" onClick={() => setPersonMatch('any')}
+                          className={`px-2.5 py-1 rounded-lg border ${personMatch === 'any' ? 'border-indigo-500 bg-indigo-900/40 text-indigo-200' : 'border-zinc-700 text-zinc-400'}`}>
+                          irgendeine Person
+                        </button>
+                        <button type="button" onClick={() => setPersonMatch('all')}
+                          className={`px-2.5 py-1 rounded-lg border ${personMatch === 'all' ? 'border-indigo-500 bg-indigo-900/40 text-indigo-200' : 'border-zinc-700 text-zinc-400'}`}>
+                          alle zusammen
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 

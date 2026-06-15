@@ -248,10 +248,20 @@ async def _populate_smart(album: Album, db: AsyncSession):
         q = q.where(Photo.user_rating >= c["min_rating"])
     if c.get("person_ids"):
         from app.models.face import Face
-        from sqlalchemy import or_
-        q = q.join(Face, Face.photo_id == Photo.id).where(
-            Face.person_id.in_(c["person_ids"])
-        )
+        pids = [int(p) for p in c["person_ids"]]
+        # Subquery (not a join) so a photo with several matching faces isn't
+        # duplicated. person_match: "any" (default) or "all" (must contain
+        # every selected person together — e.g. "Fotos von X UND Y").
+        if str(c.get("person_match", "any")).lower() == "all" and pids:
+            sub = (
+                select(Face.photo_id)
+                .where(Face.person_id.in_(pids))
+                .group_by(Face.photo_id)
+                .having(func.count(func.distinct(Face.person_id)) == len(set(pids)))
+            )
+        else:
+            sub = select(Face.photo_id).where(Face.person_id.in_(pids))
+        q = q.where(Photo.id.in_(sub))
 
     photos = (await db.execute(q.order_by(Photo.taken_at.desc()).limit(500))).scalars().all()
 
