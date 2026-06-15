@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3 } from 'lucide-react'
+import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3, FolderPlus } from 'lucide-react'
 import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
 import Gallery, { type LayoutMode } from '../components/gallery/Gallery'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import FilterPanel, { DEFAULT_FILTERS, type Filters } from '../components/gallery/FilterPanel'
+import { Modal, useToast } from '../components/ui/dialogs'
 
 type ViewMode = 'grid' | 'memories'
 
@@ -101,6 +102,7 @@ export default function GalleryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
+  const [albumModal, setAlbumModal] = useState(false)
   const [searchDraft, setSearchDraft] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastIndex, setLastIndex] = useState<number | null>(null)
@@ -406,12 +408,23 @@ export default function GalleryPage() {
             </>
           )}
           {library !== 'trash' && (
+            <button onClick={() => setAlbumModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-zinc-200 hover:bg-white/10 transition-colors" title="Zu Album hinzufügen">
+              <FolderPlus size={16} /> <span className="hidden sm:inline">Album</span>
+            </button>
+          )}
+          {library !== 'trash' && (
             <button onClick={() => batchMutation.mutate('trash')} disabled={batchMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-50" title="In Papierkorb">
               <Trash2 size={16} /> <span className="hidden sm:inline">Papierkorb</span>
             </button>
           )}
         </div>
+      )}
+
+      {albumModal && (
+        <AddToAlbumModal photoIds={[...selected]} onClose={() => setAlbumModal(false)}
+          onDone={() => { setAlbumModal(false); clearSelection() }} />
       )}
 
       {/* Lightbox */}
@@ -424,5 +437,44 @@ export default function GalleryPage() {
         />
       )}
     </div>
+  )
+}
+
+function AddToAlbumModal({ photoIds, onClose, onDone }: { photoIds: number[]; onClose: () => void; onDone: () => void }) {
+  const toast = useToast()
+  const qc = useQueryClient()
+  const [newName, setNewName] = useState('')
+  const { data: albums = [] } = useQuery<any[]>({ queryKey: ['albums'], queryFn: () => api.get('/albums').then(r => r.data) })
+  const manual = albums.filter(a => a.album_type === 'manual')
+  const done = () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast(`${photoIds.length} Foto(s) hinzugefügt`, 'success'); onDone() }
+  const addTo = useMutation({ mutationFn: (id: number) => api.post(`/albums/${id}/photos`, { photo_ids: photoIds }), onSuccess: done })
+  const create = useMutation({
+    mutationFn: async () => { const a = await api.post('/albums', { name: newName.trim(), album_type: 'manual' }); await api.post(`/albums/${a.data.id}/photos`, { photo_ids: photoIds }) },
+    onSuccess: done,
+  })
+  return (
+    <Modal open onClose={onClose} title={`${photoIds.length} Foto(s) zu Album`}>
+      <div className="flex gap-2 mb-4">
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Neues Album…"
+          onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) create.mutate() }}
+          className="flex-1 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button onClick={() => create.mutate()} disabled={!newName.trim() || create.isPending}
+          className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Erstellen</button>
+      </div>
+      <div className="max-h-72 overflow-y-auto space-y-1">
+        {manual.length === 0 ? (
+          <p className="text-sm text-zinc-500 text-center py-3">Noch keine manuellen Alben — oben eines anlegen.</p>
+        ) : manual.map(a => (
+          <button key={a.id} onClick={() => addTo.mutate(a.id)} disabled={addTo.isPending}
+            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left disabled:opacity-50">
+            <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
+              {a.cover_photo_id && <img src={thumbUrl({ id: a.cover_photo_id }, 'small')} className="w-full h-full object-cover" />}
+            </div>
+            <span className="text-sm text-zinc-900 dark:text-white flex-1 truncate">{a.name}</span>
+            <span className="text-xs text-zinc-500">{a.photo_count ?? ''}</span>
+          </button>
+        ))}
+      </div>
+    </Modal>
   )
 }
