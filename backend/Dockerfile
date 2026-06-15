@@ -9,12 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     tzdata \
     libheif-examples \
+    build-essential \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 FROM base AS deps
 COPY requirements.txt .
+# insightface's setup.py needs numpy + Cython available at build time, so
+# pre-install them before resolving the full requirements set.
+RUN pip install --no-cache-dir "numpy==1.26.4" "cython<3.1"
 RUN pip install --no-cache-dir -r requirements.txt
 
 FROM deps AS final

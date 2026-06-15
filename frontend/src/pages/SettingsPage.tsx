@@ -957,8 +957,35 @@ function FacesSection() {
           <Toggle value={enabled} onChange={v => set('faces.enabled', v ? 'true' : 'false')} />
         </label>
 
-        <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500">
-          Engine: <span className="font-medium text-zinc-700 dark:text-zinc-300">facenet-pytorch</span> (MTCNN-Erkennung + 512-dim-Embeddings, lokal, CPU-tauglich). Läuft auch ohne RAM-Upgrade.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label>Engine (Erkennung + Embedding)</Label>
+            <select value={settings['face.engine'] ?? 'facenet'} onChange={e => set('face.engine', e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="facenet">facenet (MTCNN + VGGFace2, leicht)</option>
+              <option value="insightface">InsightFace / ArcFace (genauer)</option>
+            </select>
+          </div>
+          <div>
+            <Label>Clustering-Algorithmus</Label>
+            <select value={settings['face.cluster_algo'] ?? 'dbscan'} onChange={e => set('face.cluster_algo', e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="dbscan">DBSCAN (Standard)</option>
+              <option value="hdbscan">HDBSCAN (variable Dichte)</option>
+            </select>
+          </div>
+        </div>
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">Automatisch clustern</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Gruppiert erkannte Gesichter alle 5 Min. selbstständig zu Personen.</p>
+          </div>
+          <Toggle value={(settings['face.auto_cluster'] ?? 'true') !== 'false'} onChange={v => set('face.auto_cluster', v ? 'true' : 'false')} />
+        </label>
+        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-700/40 text-xs text-amber-700 dark:text-amber-300">
+          Beide Engines liefern 512-dim-Embeddings — aber in <strong>unterschiedlichen Vektorräumen</strong>.
+          Nach einem Engine-Wechsel die Gesichter neu erkennen lassen („Neu verarbeiten“ pro Ordner),
+          damit alte und neue Embeddings nicht gemischt werden. InsightFace lädt beim ersten Lauf ein Modell (~300&nbsp;MB).
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1000,8 +1027,8 @@ function FacesSection() {
         </div>
 
         <p className="text-xs text-emerald-500">
-          Gesichtserkennung ist aktiv — Gesichter werden beim Verarbeiten erkannt und gespeichert.
-          Personen-Clustering (Gruppierung + Benennen) folgt als nächster Schritt.
+          Gesichtserkennung ist aktiv — Gesichter werden beim Verarbeiten erkannt, gespeichert und
+          (sofern aktiviert) automatisch zu Personen gruppiert. Gruppen benennen/zusammenführen unter „Personen“.
         </p>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />

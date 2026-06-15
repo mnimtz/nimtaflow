@@ -37,3 +37,9 @@ sacremoses==0.1.1
 qwen-vl-utils==0.0.8
 sentence-transformers==3.0.1
 facenet-pytorch==2.6.0
+
+# ── InsightFace (ArcFace) face engine — optional, selectable in Settings ───────
+onnxruntime==1.18.1
+insightface==0.7.3
+# HDBSCAN clustering option (code falls back to DBSCAN if this import fails)
+hdbscan==0.8.40

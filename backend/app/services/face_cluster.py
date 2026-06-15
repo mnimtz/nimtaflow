@@ -30,6 +30,7 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     s = await load_settings(db)
     threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
     min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))
+    algo = str(s.get("face.cluster_algo", "dbscan")).lower()
 
     rows = (await db.execute(
         select(Face.id, Face.embedding).where(Face.person_id == None, Face.embedding.isnot(None))  # noqa: E711
@@ -79,7 +80,19 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     clustered = 0
     if len(remaining_ids) >= min_size:
         Xr = X[remaining_idx]
-        labels = DBSCAN(eps=eps, min_samples=min_size, metric="cosine").fit_predict(Xr)
+        labels = None
+        if algo == "hdbscan":
+            # HDBSCAN handles varying cluster densities (people with many vs few
+            # photos) better than DBSCAN and needs no eps. Falls back if missing.
+            try:
+                import hdbscan
+                labels = hdbscan.HDBSCAN(
+                    min_cluster_size=min_size, metric="euclidean"
+                ).fit_predict(Xr)  # vectors are L2-normalised → euclidean ≈ cosine
+            except Exception:
+                labels = None
+        if labels is None:
+            labels = DBSCAN(eps=eps, min_samples=min_size, metric="cosine").fit_predict(Xr)
         clusters: dict = {}
         for fid, lbl in zip(remaining_ids, labels):
             if lbl == -1:

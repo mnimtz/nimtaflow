@@ -63,3 +63,30 @@ def available() -> bool:
         return True
     except Exception:
         return False
+
+
+# ── Engine dispatch ────────────────────────────────────────────────────────────
+# Lets the face engine be chosen in Settings (face.engine). InsightFace/ArcFace
+# is more accurate; facenet is the lighter default. Both yield 512-dim embeddings.
+
+def engine_available(engine: str) -> bool:
+    if engine == "insightface":
+        try:
+            from app.services import face_detect_insightface as fi
+            return fi.available()
+        except Exception:
+            return False
+    return available()
+
+
+def detect_faces_engine(image: Image.Image, min_conf: float, engine: str) -> List[DetectedFace]:
+    """Detect with the requested engine, falling back to facenet if the
+    requested one isn't installed/loadable (so a half-built image still works)."""
+    if engine == "insightface":
+        try:
+            from app.services import face_detect_insightface as fi
+            if fi.available():
+                return fi.detect_faces(image, min_conf)
+        except Exception:
+            pass
+    return detect_faces(image, min_conf)
