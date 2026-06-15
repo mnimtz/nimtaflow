@@ -60,6 +60,18 @@ export default function PeoplePage() {
   const known = people.filter(p => (p.name || '').trim())
   const unknown = people.filter(p => !(p.name || '').trim())
 
+  const { data: looseFaces = [] } = useQuery<{ id: number; photo_id: number }[]>({
+    queryKey: ['unassigned-faces'],
+    queryFn: () => api.get('/people/faces/unassigned', { params: { limit: 200 } }).then(r => r.data),
+  })
+  const newPersonFromFace = useMutation({
+    mutationFn: (faceId: number) => api.post(`/people/faces/${faceId}/new-person`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['people'] })
+      qc.invalidateQueries({ queryKey: ['unassigned-faces'] })
+    },
+  })
+
   if (selectedPerson) {
     return (
       <PersonDetail
@@ -125,7 +137,7 @@ export default function PeoplePage() {
 
       {isLoading ? (
         <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
-      ) : people.length === 0 ? (
+      ) : (people.length === 0 && looseFaces.length === 0) ? (
         <EmptyPeople />
       ) : (
         (() => {
@@ -160,6 +172,21 @@ export default function PeoplePage() {
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-300 mb-3">Unbekannte Personen <span className="text-zinc-500">({unknown.length})</span></h2>
                   <div className={gridCls}>{unknown.map(renderCard)}</div>
+                </div>
+              )}
+              {looseFaces.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-300 mb-1">Gesichter <span className="text-zinc-500">({looseFaces.length})</span></h2>
+                  <p className="text-xs text-zinc-500 mb-3">Einzelne, noch nicht gruppierte Gesichter. „Clustern" gruppiert sie automatisch; oder klicke ein Gesicht, um daraus eine Person zu machen.</p>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
+                    {looseFaces.map(f => (
+                      <button key={f.id} onClick={() => newPersonFromFace.mutate(f.id)} title="Neue Person aus diesem Gesicht"
+                        className="aspect-square rounded-lg overflow-hidden bg-zinc-800 ring-1 ring-zinc-700 hover:ring-indigo-500 transition-all">
+                        <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

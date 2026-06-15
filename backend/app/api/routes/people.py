@@ -209,11 +209,42 @@ async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/faces/unassigned")
-async def unassigned_faces(limit: int = Query(50, ge=1, le=200), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Face).where(Face.person_id == None).limit(limit)
-    )
-    return result.scalars().all()
+async def unassigned_faces(limit: int = Query(100, ge=1, le=500), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(Face.id, Face.photo_id, Face.confidence).where(Face.person_id == None).limit(limit)
+    )).all()
+    return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
+
+
+@router.get("/faces/{face_id}/crop")
+async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db)):
+    import os
+    from app.models.photo import Photo
+    from app.services.face_crop import crop_face
+    face = await db.get(Face, face_id)
+    if not face:
+        raise HTTPException(404)
+    photo = await db.get(Photo, face.photo_id)
+    if not photo:
+        raise HTTPException(404)
+    bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
+    path = crop_face(photo.path, bbox, 0, face_id)
+    if path and os.path.exists(path):
+        return FileResponse(path, media_type="image/jpeg")
+    raise HTTPException(404, "crop failed")
+
+
+@router.post("/faces/{face_id}/new-person")
+async def face_to_new_person(face_id: int, db: AsyncSession = Depends(get_db)):
+    face = await db.get(Face, face_id)
+    if not face:
+        raise HTTPException(404)
+    person = Person(name="", profile_face_id=face_id)
+    db.add(person)
+    await db.flush()
+    face.person_id = person.id
+    await db.commit()
+    return {"person_id": person.id}
 
 
 @router.post("/cluster")
