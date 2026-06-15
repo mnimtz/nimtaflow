@@ -87,6 +87,12 @@ services:
       MKL_NUM_THREADS: "4"
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # The 8 GB card is filled by the VLM (Qwen-3B ~6 GB). Keep InsightFace face
+      # detection on CPU so the two don't fight for VRAM (→ CUDA OOM). Identical
+      # embeddings, just ~1-2 s slower per image.
+      FACE_DEVICE: cpu
+      # Reduce CUDA fragmentation OOMs ("tried to allocate 44 MiB, 8 MiB free").
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
   # CPU worker: scanning, thumbnails, clustering, metadata. No GPU, runs in
   # parallel (concurrency 4) so a long AI backlog on the gpu worker never stalls

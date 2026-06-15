@@ -10,6 +10,7 @@ methods return empty results so the pipeline degrades gracefully (best-effort).
 
 Downloads are cached to HF_HOME (/models volume) so they survive rebuilds.
 """
+import os
 from typing import List, Optional
 from PIL import Image
 
@@ -96,6 +97,15 @@ class LocalVLMProvider(AIProvider):
             kind, model, proc, device, dtype = self._load_vlm()
             import torch
             image = image.convert("RGB")
+            # Cap the input resolution. A full 4000×3000 HEIC produces huge
+            # pixel/activation tensors that OOM the 8 GB card; ~1280 px keeps
+            # caption quality while bounding VRAM. Best-effort.
+            try:
+                max_edge = int(os.getenv("VLM_MAX_EDGE", "1280"))
+                if max(image.size) > max_edge:
+                    image.thumbnail((max_edge, max_edge), Image.LANCZOS)
+            except Exception:
+                pass
             if kind == "florence":
                 # Florence-2 only understands its task tokens, not free prompts
                 task = "<MORE_DETAILED_CAPTION>"
@@ -142,6 +152,15 @@ class LocalVLMProvider(AIProvider):
             except Exception:
                 pass
             return ""
+        finally:
+            # Release cached CUDA blocks between photos so fragmentation doesn't
+            # accumulate into "tried to allocate X MiB, Y free" OOMs.
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
         # Derive simple tags from the caption (keeps deps minimal & robust).

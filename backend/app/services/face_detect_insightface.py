@@ -24,14 +24,20 @@ def _app():
     if "app" in _cache:
         return _cache["app"]
     from insightface.app import FaceAnalysis
-    # CPU by default; onnxruntime picks CUDA automatically if the GPU build is present.
+    # Device policy via FACE_DEVICE: auto | cpu | cuda.
+    #   cpu  → never touch the GPU. Needed when a big VLM (Qwen-3B ~6 GB) already
+    #          fills the 8 GB card; InsightFace on the same GPU then OOMs. Face
+    #          embeddings are identical on CPU, only ~1-2 s slower per image.
+    #   auto → use CUDA if onnxruntime-gpu offers it (default).
+    pref = os.getenv("FACE_DEVICE", "auto").lower()
     providers = ["CPUExecutionProvider"]
-    try:
-        import onnxruntime as ort
-        if "CUDAExecutionProvider" in ort.get_available_providers():
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    except Exception:
-        pass
+    if pref != "cpu":
+        try:
+            import onnxruntime as ort
+            if "CUDAExecutionProvider" in ort.get_available_providers():
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        except Exception:
+            pass
     app = FaceAnalysis(name="buffalo_l", root=_ROOT, providers=providers,
                        allowed_modules=["detection", "recognition"])
     app.prepare(ctx_id=0 if providers[0].startswith("CUDA") else -1, det_size=(640, 640))
