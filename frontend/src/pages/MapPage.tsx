@@ -1,8 +1,10 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Suspense, lazy } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
-import { Layers, Navigation } from 'lucide-react'
+import { Layers, Navigation, Globe2, Map as MapIcon } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
+
+const GlobeView = lazy(() => import('./GlobeView'))
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -77,6 +79,7 @@ function FitBounds({ points }: { points: [number, number][] }) {
 
 export default function MapPage() {
   const [layer, setLayer] = useState<LayerKey>('osm')
+  const [view3d, setView3d] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
@@ -104,6 +107,9 @@ export default function MapPage() {
     const def = settings?.['map.default_layer']
     if (def && def in layers) setLayer(def)
   }, [settings])
+  useEffect(() => {
+    if ((settings?.['map.globe_default'] ?? 'false') === 'true') setView3d(true)
+  }, [settings])
 
   const withGps = useMemo(() => (data ?? []).filter((p) => p.latitude && p.longitude), [data])
   const points = useMemo(() => withGps.map((p) => [p.latitude!, p.longitude!] as [number, number]), [withGps])
@@ -114,18 +120,27 @@ export default function MapPage() {
         <h1 className="text-lg font-bold text-gray-900 dark:text-white">Karte</h1>
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500 dark:text-gray-400">{withGps.length} Fotos mit GPS</span>
-          <div className="flex items-center gap-1.5">
-            <Layers size={14} className="text-gray-400" />
-            <select
-              value={layer}
-              onChange={(e) => setLayer(e.target.value)}
-              className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              {Object.keys(layers).map((k) => (
-                <option key={k} value={k}>{layers[k].label}</option>
-              ))}
-            </select>
-          </div>
+          <button
+            onClick={() => setView3d(v => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            title={view3d ? 'Flache Karte' : '3D-Globus'}
+          >
+            {view3d ? <><MapIcon size={14} /> Karte</> : <><Globe2 size={14} /> Globus</>}
+          </button>
+          {!view3d && (
+            <div className="flex items-center gap-1.5">
+              <Layers size={14} className="text-gray-400" />
+              <select
+                value={layer}
+                onChange={(e) => setLayer(e.target.value)}
+                className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {Object.keys(layers).map((k) => (
+                  <option key={k} value={k}>{layers[k].label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -138,6 +153,12 @@ export default function MapPage() {
             <p className="text-sm">Keine Fotos mit GPS-Daten gefunden.</p>
             <p className="text-xs mt-1 opacity-70">Fotos mit Geo-Koordinaten erscheinen hier automatisch.</p>
           </div>
+        ) : view3d ? (
+          <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">Globus wird geladen…</div>}>
+            <GlobeView
+              points={withGps.map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
+            />
+          </Suspense>
         ) : (
           <MapContainer center={[51.1657, 10.4515]} zoom={5} className="h-full w-full">
             <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
