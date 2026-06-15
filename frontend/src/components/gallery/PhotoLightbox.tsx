@@ -205,7 +205,9 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
           ) : (
             <img
               key={photo.id}
-              src={`/api/photos/${photo.id}/original`}
+              /* Display the large JPEG thumbnail — browsers can't render HEIC
+                 originals. The real original stays available via the download button. */
+              src={`/api/photos/${photo.id}/thumbnail?size=large`}
               alt={photo.filename}
               className="max-h-full max-w-full object-contain select-none"
               draggable={false}

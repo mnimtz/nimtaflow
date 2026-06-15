@@ -43,39 +43,46 @@ class GeminiProvider(AIProvider):
         except (IndexError, AttributeError, TypeError):
             return ""
 
+    async def _generate(self, b64: str, text_prompt: str) -> str:
+        """POST a vision generateContent request with retry on transient 5xx/429."""
+        import asyncio
+        payload = {"contents": [{"parts": [
+            {"inlineData": {"mimeType": "image/jpeg", "data": b64}},
+            {"text": text_prompt},
+        ]}]}
+        last_exc = None
+        async with httpx.AsyncClient(timeout=60) as client:
+            for attempt in range(4):
+                try:
+                    resp = await client.post(
+                        f"{self._base}/models/{self.model}:generateContent",
+                        params={"key": self.api_key}, json=payload,
+                    )
+                    if resp.status_code in (429, 500, 503) and attempt < 3:
+                        await asyncio.sleep(2 ** attempt)  # 1,2,4s backoff
+                        continue
+                    resp.raise_for_status()
+                    return self._extract_text(resp.json())
+                except httpx.HTTPStatusError as e:
+                    last_exc = e
+                    if e.response.status_code in (429, 500, 503) and attempt < 3:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    raise
+        if last_exc:
+            raise last_exc
+        return ""
+
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         prompt = prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
-        b64 = _image_to_b64(image)
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{self._base}/models/{self.model}:generateContent",
-                params={"key": self.api_key},
-                json={
-                    "contents": [{"parts": [
-                        {"inlineData": {"mimeType": "image/jpeg", "data": b64}},
-                        {"text": prompt},
-                    ]}]
-                },
-            )
-            resp.raise_for_status()
-            return self._extract_text(resp.json())
+        return await self._generate(_image_to_b64(image), prompt)
 
     async def generate_tags(self, image: Image.Image) -> List[str]:
-        b64 = _image_to_b64(image)
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{self._base}/models/{self.model}:generateContent",
-                params={"key": self.api_key},
-                json={
-                    "contents": [{"parts": [
-                        {"inlineData": {"mimeType": "image/jpeg", "data": b64}},
-                        {"text": "List up to 15 descriptive tags for this photo. Return only a comma-separated list, no explanations."},
-                    ]}]
-                },
-            )
-            resp.raise_for_status()
-            text = self._extract_text(resp.json())
-            return [t.strip().lower() for t in text.split(",") if t.strip()]
+        text = await self._generate(
+            _image_to_b64(image),
+            "List up to 15 descriptive tags for this photo. Return only a comma-separated list, no explanations.",
+        )
+        return [t.strip().lower() for t in text.split(",") if t.strip()]
 
     async def detect_faces(self, image: Image.Image) -> List[DetectedFace]:
         # Gemini doesn't return bounding boxes — use local model for faces
