@@ -36,8 +36,13 @@ api.interceptors.response.use(
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
           syncAuthCookie()
-          window.location.href = '/login'
+          if (window.location.pathname !== '/login') window.location.href = '/login'
         }
+      } else if (window.location.pathname !== '/login') {
+        // No session at all (e.g. a phone that never logged in) and the server
+        // enforces auth → send the user to the login page instead of leaving a
+        // blank, content-less app that looks like a fresh install.
+        window.location.href = '/login'
       }
     }
     return Promise.reject(error)

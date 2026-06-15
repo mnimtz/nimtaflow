@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, DateTime, Integer, Float, Boolean, Text, Enum, ForeignKey, Index
+from sqlalchemy import String, DateTime, Integer, BigInteger, Float, Boolean, Text, Enum, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -22,7 +22,7 @@ class Photo(Base):
     path: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False)
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     file_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
-    file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger)  # videos exceed int4's 2.1 GB
     mime_type: Mapped[Optional[str]] = mapped_column(String(128))
 
     # ── Core EXIF ─────────────────────────────────────────────────────────────

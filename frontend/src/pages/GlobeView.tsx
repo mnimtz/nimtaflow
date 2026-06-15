@@ -28,11 +28,19 @@ export default function GlobeView({ points, onPoint }: {
     if (!g) return
     const c = g.controls()
     c.enableZoom = true
-    c.minDistance = 101      // almost touching the surface
+    c.minDistance = 100.4    // right down onto the surface (street-level feel)
     c.maxDistance = 600
-    c.zoomSpeed = 1.5
+    c.zoomSpeed = 2.0
     c.enableDamping = true
     c.dampingFactor = 0.15
+    c.autoRotate = false
+  }
+
+  // Click a location → smoothly fly the camera down to it (then notify parent).
+  const flyTo = (p: GlobePoint) => {
+    const g = globeRef.current
+    if (g) g.pointOfView({ lat: p.lat, lng: p.lng, altitude: 0.04 }, 1200)
+    onPoint?.(p.id)
   }
 
   return (
@@ -50,10 +58,10 @@ export default function GlobeView({ points, onPoint }: {
         pointLng="lng"
         pointLabel="label"
         pointColor={() => '#818cf8'}
-        pointAltitude={0.015}
-        pointRadius={0.35}
+        pointAltitude={0.01}
+        pointRadius={0.5}
         pointsMerge={false}
-        onPointClick={(p: any) => onPoint?.(p.id)}
+        onPointClick={(p: any) => flyTo(p as GlobePoint)}
         atmosphereColor="#6366f1"
         atmosphereAltitude={0.18}
       />

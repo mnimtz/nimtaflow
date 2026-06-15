@@ -15,56 +15,127 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 
 function fmtBytes(b?: number) { if (!b) return null; const u = ['B', 'KB', 'MB', 'GB']; let i = 0, n = b; while (n >= 1024 && i < 3) { n /= 1024; i++ } return `${n.toFixed(1)} ${u[i]}` }
 
+function fmtDur(s?: number) { if (!s) return null; const m = Math.floor(s / 60), sec = Math.round(s % 60); return `${m}:${String(sec).padStart(2, '0')} min` }
+function fmtDate(v?: string) { return v ? new Date(v).toLocaleString('de', { dateStyle: 'medium', timeStyle: 'short' }) : null }
+
 function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void }) {
   const { data: p } = useQuery<any>({ queryKey: ['photo-detail', photoId], queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data) })
   if (!p) return null
-  const Row = ({ icon: Icon, children }: any) => <div className="flex items-start gap-2 text-sm text-zinc-200"><Icon size={15} className="mt-0.5 text-zinc-400 shrink-0" /><div>{children}</div></div>
-  const date = p.taken_at ? new Date(p.taken_at).toLocaleString('de', { dateStyle: 'full', timeStyle: 'short' }) : null
+  const Row = ({ icon: Icon, label, children }: any) => (
+    <div className="flex items-start gap-2 text-sm text-zinc-200">
+      {Icon ? <Icon size={15} className="mt-0.5 text-zinc-400 shrink-0" /> : <span className="w-[15px] shrink-0" />}
+      <div className="min-w-0">{label && <div className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</div>}{children}</div>
+    </div>
+  )
+  const taken = p.taken_at ? new Date(p.taken_at).toLocaleString('de', { dateStyle: 'full', timeStyle: 'short' }) : null
+  const mp = p.width && p.height ? (p.width * p.height / 1e6).toFixed(1) : null
+  // tags come back as an array (p.tags); fall back to a keywords string
+  const tags: string[] = Array.isArray(p.tags) ? p.tags
+    : (p.keywords ? String(p.keywords).split(',').map((k: string) => k.trim()).filter(Boolean) : [])
+  const people: any[] = Array.isArray(p.people) ? p.people : []
+  const namedPeople = people.filter(pp => pp.name)
+  const exposure = [
+    p.focal_length && `${Math.round(p.focal_length)} mm`,
+    p.focal_length_35mm && `(KB ${p.focal_length_35mm} mm)`,
+    p.aperture && `ƒ/${p.aperture}`,
+    p.shutter_speed && `${p.shutter_speed}s`,
+    p.iso && `ISO ${p.iso}`,
+    p.exposure_compensation != null && p.exposure_compensation !== 0 && `${p.exposure_compensation > 0 ? '+' : ''}${p.exposure_compensation} EV`,
+  ].filter(Boolean)
   return (
     <div className="fixed z-[100000] bg-zinc-900/95 backdrop-blur border-zinc-700 text-white overflow-y-auto
-      inset-x-0 bottom-0 max-h-[55vh] border-t rounded-t-2xl
-      md:inset-y-0 md:right-0 md:left-auto md:w-[340px] md:max-h-none md:border-l md:border-t-0 md:rounded-none">
+      inset-x-0 bottom-0 max-h-[60vh] border-t rounded-t-2xl
+      md:inset-y-0 md:right-0 md:left-auto md:w-[360px] md:max-h-none md:border-l md:border-t-0 md:rounded-none">
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-900/95">
         <h3 className="font-semibold">Informationen</h3>
         <button onClick={onClose} className="text-zinc-400 hover:text-white text-sm">Schließen</button>
       </div>
       <div className="p-4 space-y-4">
-        <p className="text-sm text-zinc-300 break-all">{p.filename}</p>
-        {p.description && <p className="text-sm text-zinc-300 italic">{p.description}</p>}
-        {date && <Row icon={Calendar}>{date}</Row>}
-        {(p.camera_make || p.camera_model) && <Row icon={Camera}>{[p.camera_make, p.camera_model].filter(Boolean).join(' ')}{p.lens_model && <div className="text-xs text-zinc-400">{p.lens_model}</div>}</Row>}
-        {(p.aperture || p.shutter_speed || p.iso || p.focal_length) && (
-          <Row icon={Aperture}>
-            <div className="flex flex-wrap gap-x-3 text-zinc-300">
-              {p.focal_length && <span>{Math.round(p.focal_length)} mm</span>}
-              {p.aperture && <span>ƒ/{p.aperture}</span>}
-              {p.shutter_speed && <span>{p.shutter_speed}s</span>}
-              {p.iso && <span>ISO {p.iso}</span>}
+        <p className="text-sm font-medium text-zinc-100 break-all">{p.filename}</p>
+
+        {p.description && (
+          <div>
+            <p className="text-sm text-zinc-300 italic">{p.description}</p>
+            {p.description_model && <p className="text-[11px] text-zinc-500 mt-1">KI: {p.description_model}</p>}
+          </div>
+        )}
+
+        {taken && <Row icon={Calendar} label="Aufgenommen">{taken}</Row>}
+
+        {(p.camera_make || p.camera_model) && (
+          <Row icon={Camera} label="Kamera">
+            {[p.camera_make, p.camera_model].filter(Boolean).join(' ')}
+            {p.lens_model && <div className="text-xs text-zinc-400">{p.lens_model}</div>}
+          </Row>
+        )}
+
+        {exposure.length > 0 && (
+          <Row icon={Aperture} label="Belichtung">
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-zinc-300">{exposure.map((e, i) => <span key={i}>{e}</span>)}</div>
+          </Row>
+        )}
+
+        {(p.width && p.height) && (
+          <Row icon={Info} label={p.is_video ? 'Video' : 'Bild'}>
+            {p.width} × {p.height}{mp ? ` · ${mp} MP` : ''}
+            <div className="text-xs text-zinc-400 flex flex-wrap gap-x-3">
+              {fmtBytes(p.file_size) && <span>{fmtBytes(p.file_size)}</span>}
+              {p.mime_type && <span>{p.mime_type}</span>}
+              {p.is_video && fmtDur(p.duration_seconds) && <span>{fmtDur(p.duration_seconds)}</span>}
+              {p.is_video && p.video_codec && <span>{p.video_codec}</span>}
+              {p.is_video && p.video_fps && <span>{Math.round(p.video_fps)} fps</span>}
+              {p.is_video && p.video_bitrate && <span>{(p.video_bitrate / 1e6).toFixed(1)} Mbit/s</span>}
             </div>
           </Row>
         )}
-        {(p.width && p.height) && <Row icon={Info}>{p.width} × {p.height}{fmtBytes(p.file_size) ? ` · ${fmtBytes(p.file_size)}` : ''}</Row>}
-        {(p.city || p.country || p.location_name) && <Row icon={MapPin}>{[p.location_name, p.city, p.country].filter(Boolean).join(', ')}</Row>}
+
+        {namedPeople.length > 0 && (
+          <Row icon={UsersIcon} label="Personen">
+            <div className="flex flex-wrap gap-1.5">
+              {namedPeople.map(pp => <span key={pp.face_id} className="px-2 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">{pp.name}</span>)}
+            </div>
+          </Row>
+        )}
+
+        {(p.city || p.country || p.location_name) && <Row icon={MapPin} label="Ort">{[p.location_name, p.city, p.country].filter(Boolean).join(', ')}</Row>}
+
         {p.latitude != null && p.longitude != null && (
-          <div className="rounded-xl overflow-hidden border border-zinc-800 h-40">
-            <MapContainer center={[p.latitude, p.longitude]} zoom={13} className="h-full w-full" zoomControl={false} attributionControl={false} dragging={false} scrollWheelZoom={false}>
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-              <CircleMarker center={[p.latitude, p.longitude]} radius={7} pathOptions={{ color: '#6366f1', fillColor: '#818cf8', fillOpacity: 0.9 }} />
-            </MapContainer>
+          <div className="space-y-1.5">
+            <div className="rounded-xl overflow-hidden border border-zinc-800 h-40">
+              <MapContainer center={[p.latitude, p.longitude]} zoom={13} className="h-full w-full" zoomControl={false} attributionControl={false} dragging={false} scrollWheelZoom={false}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                <CircleMarker center={[p.latitude, p.longitude]} radius={7} pathOptions={{ color: '#6366f1', fillColor: '#818cf8', fillOpacity: 0.9 }} />
+              </MapContainer>
+            </div>
+            <p className="text-[11px] text-zinc-500">{p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}{p.altitude != null ? ` · ${Math.round(p.altitude)} m` : ''}</p>
           </div>
         )}
-        {p.keywords && (
-          <div className="flex flex-wrap gap-1.5">
-            {String(p.keywords).split(',').map((k: string) => k.trim()).filter(Boolean).slice(0, 20).map((k: string) => (
-              <span key={k} className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-xs">{k}</span>
-            ))}
-          </div>
+
+        {tags.length > 0 && (
+          <Row icon={TagIcon} label="Tags">
+            <div className="flex flex-wrap gap-1.5">
+              {tags.slice(0, 30).map((k) => <span key={k} className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-xs">{k}</span>)}
+            </div>
+          </Row>
         )}
+
+        {(p.user_rating || p.is_favorite) && (
+          <Row icon={Heart} label="Bewertung">
+            {p.user_rating ? '★'.repeat(p.user_rating) + '☆'.repeat(5 - p.user_rating) : ''}{p.is_favorite ? '  ❤️ Favorit' : ''}
+          </Row>
+        )}
+
+        <div className="pt-2 border-t border-zinc-800 space-y-1 text-[11px] text-zinc-500">
+          <div className="break-all">{p.path}</div>
+          {fmtDate(p.indexed_at) && <div>Indexiert: {fmtDate(p.indexed_at)}</div>}
+          {fmtDate(p.processed_at) && <div>Verarbeitet: {fmtDate(p.processed_at)}</div>}
+          {p.ai_error && <div className="text-amber-400">KI-Fehler bei der Verarbeitung</div>}
+        </div>
       </div>
     </div>
   )
