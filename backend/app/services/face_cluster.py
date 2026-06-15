@@ -68,6 +68,16 @@ async def consolidate_persons(db: AsyncSession, merge_eps: float) -> int:
             keep, drop = (ra, rb) if ra < rb else (rb, ra)
             parent[drop] = keep
 
+    # Persons the user named identically are clearly the same person → merge.
+    byname = defaultdict(list)
+    for p in pids:
+        nm = (names.get(p) or "").strip().lower()
+        if nm:
+            byname[nm].append(p)
+    for grp in byname.values():
+        for k in range(1, len(grp)):
+            union(grp[0], grp[k])
+
     arr = np.stack([cents[p] for p in pids])
     n = len(pids)
     for i in range(n):
