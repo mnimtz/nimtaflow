@@ -19,15 +19,23 @@ def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: i
 
     try:
         from PIL import Image
-        img = Image.open(photo_path)
+        from app.services.processing.thumbnails import _open_image_any
+        img = _open_image_any(photo_path)  # HEIC/MOV-safe (ffmpeg/exiftool fallback)
+        if img is None:
+            return None
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)  # respect orientation
+        except Exception:
+            pass
         if img.mode != "RGB":
             img = img.convert("RGB")
 
         w, h = img.size
-        x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
-
-        # bbox may be normalized [0-1] or pixel coords — detect
-        if all(0 <= v <= 1 for v in [x1, y1, x2, y2]):
+        # Face stores bbox as [x, y, width, height] (relative 0-1 or pixels)
+        bx, by, bw, bh = bbox[0], bbox[1], bbox[2], bbox[3]
+        x1, y1, x2, y2 = bx, by, bx + bw, by + bh
+        if all(0 <= v <= 1 for v in [bx, by, bw, bh]):
             x1, y1, x2, y2 = int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)
 
         # Expand box by 30% for context

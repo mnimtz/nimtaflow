@@ -70,7 +70,7 @@ export default function MapPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
-    queryFn: () => api.get('/photos', { params: { has_gps: true, limit: 2000, page: 1 } }).then((r) => r.data.items as Photo[]),
+    queryFn: () => api.get('/photos', { params: { has_gps: true, limit: 500, page: 1 } }).then((r) => r.data.items as Photo[]),
   })
 
   const { data: settings } = useQuery<Record<string, string>>({

@@ -1281,8 +1281,8 @@ export default function SettingsPage() {
         ))}
       </nav>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-6 max-w-2xl">
+      {/* Content — full width (sections cap their own width where it helps readability) */}
+      <div className="flex-1 overflow-auto p-6">
         {section === 'sources'  && <SourcesSection />}
         {section === 'gallery'  && <GallerySection />}
         {section === 'ai'       && <AISection />}

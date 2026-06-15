@@ -6,10 +6,10 @@ import JustifiedGrid from '../components/gallery/JustifiedGrid'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
 
 const EXAMPLES = [
-  'Mann im Bademantel mit Bier in der Hand',
-  'Sonnenuntergang am Strand',
-  'Geburtstagstorte mit Kerzen',
-  'Hund im Schnee',
+  'Kinder beim Eisessen',
+  'Personen auf einer Parkbank',
+  'Blühender Baum im Frühling',
+  'Familie im Freizeitpark',
 ]
 
 export default function SearchPage() {

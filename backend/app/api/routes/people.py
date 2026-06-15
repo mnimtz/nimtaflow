@@ -126,30 +126,31 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
     if not person:
         raise HTTPException(404)
 
-    if person.profile_face_id:
-        face = await db.get(Face, person.profile_face_id)
-        if face:
-            from app.models.photo import Photo
-            photo = await db.get(Photo, face.photo_id)
-            if photo and face.bbox:
-                from app.services.face_crop import crop_face
-                crop_path = crop_face(photo.path, face.bbox, person_id, face.id)
-                if crop_path and os.path.exists(crop_path):
-                    return FileResponse(crop_path, media_type="image/jpeg")
+    from app.models.photo import Photo
+    from app.services.face_crop import crop_face
 
-    # Fallback: pick any face
-    face = (await db.execute(
-        select(Face).where(Face.person_id == person_id).limit(1)
-    )).scalar_one_or_none()
-
-    if face and face.bbox:
-        from app.models.photo import Photo
-        from app.services.face_crop import crop_face
+    async def _try(face: Optional[Face]):
+        if not face:
+            return None
         photo = await db.get(Photo, face.photo_id)
-        if photo:
-            crop_path = crop_face(photo.path, face.bbox, person_id, face.id)
-            if crop_path and os.path.exists(crop_path):
-                return FileResponse(crop_path, media_type="image/jpeg")
+        if not photo:
+            return None
+        bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
+        crop_path = crop_face(photo.path, bbox, person_id, face.id)
+        if crop_path and os.path.exists(crop_path):
+            return FileResponse(crop_path, media_type="image/jpeg")
+        return None
+
+    if person.profile_face_id:
+        res = await _try(await db.get(Face, person.profile_face_id))
+        if res:
+            return res
+
+    res = await _try((await db.execute(
+        select(Face).where(Face.person_id == person_id).limit(1)
+    )).scalar_one_or_none())
+    if res:
+        return res
 
     raise HTTPException(404, "No avatar available")
 
