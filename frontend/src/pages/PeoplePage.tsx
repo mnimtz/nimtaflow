@@ -542,18 +542,22 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
 
       {faces.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Gesichter ({faces.length})</h2>
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({faces.length})</h2>
+          <p className="text-xs text-zinc-500 mb-3">Tippe ein Gesicht ★ um es als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
           <div className="flex gap-2 flex-wrap">
             {faces.map(f => (
-              <div key={f.id} className={`group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-1 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-700'}`}>
+              <div key={f.id} className={`group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-2 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-700'}`}>
                 <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
                   onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                  <button onClick={() => setCover.mutate(f.id)} title="Als Titelbild"
-                    className="w-6 h-6 rounded-full bg-white/90 text-zinc-900 flex items-center justify-center hover:bg-white"><Star size={12} /></button>
+                {person.profile_face_id === f.id && (
+                  <div className="absolute top-0.5 left-0.5 bg-indigo-500 rounded-full p-0.5"><Star size={9} className="text-white" fill="white" /></div>
+                )}
+                {/* always-visible action bar (works on touch too) */}
+                <div className="absolute inset-x-0 bottom-0 h-7 bg-black/55 flex items-center justify-center gap-2">
+                  <button onClick={() => setCover.mutate(f.id)} title="Als Profilbild"
+                    className="text-white/90 hover:text-yellow-300"><Star size={13} fill={person.profile_face_id === f.id ? 'currentColor' : 'none'} /></button>
                   <button onClick={async () => { if (await confirm({ title: 'Gehört nicht zu dieser Person?', message: 'Das Gesicht wird wieder freigegeben.' })) removeFace.mutate(f.id) }}
-                    title="Ist nicht diese Person"
-                    className="w-6 h-6 rounded-full bg-red-500/90 text-white flex items-center justify-center hover:bg-red-500"><X size={13} /></button>
+                    title="Ist nicht diese Person" className="text-white/90 hover:text-red-400"><X size={13} /></button>
                 </div>
               </div>
             ))}

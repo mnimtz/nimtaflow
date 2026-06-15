@@ -26,7 +26,9 @@ python-magic==0.4.27
 
 # ── Local / integrated AI (CPU) ───────────────────────────────────────────────
 # CPU-only torch wheels (much smaller than the default CUDA build)
---extra-index-url https://download.pytorch.org/whl/cpu
+# CUDA 12.1 wheels — GPU is passed through to this LXC (RTX 2080). torch ships its
+# own CUDA runtime; on a CPU-only host pip still resolves these but they need a GPU.
+--extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.2.2
 torchvision==0.17.2
 transformers==4.49.0
@@ -40,7 +42,7 @@ sentence-transformers==3.0.1
 facenet-pytorch==2.6.0
 
 # ── InsightFace (ArcFace) face engine — optional, selectable in Settings ───────
-onnxruntime==1.18.1
+onnxruntime-gpu==1.18.1
 insightface==0.7.3
 # HDBSCAN clustering option (code falls back to DBSCAN if this import fails)
 hdbscan==0.8.40

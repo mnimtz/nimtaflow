@@ -9,6 +9,7 @@ export default function GlobeView({ points, onPoint }: {
   points: GlobePoint[]; onPoint?: (id: number) => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
+  const globeRef = useRef<any>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
 
   useEffect(() => {
@@ -21,9 +22,24 @@ export default function GlobeView({ points, onPoint }: {
     return () => ro.disconnect()
   }, [])
 
+  // Allow zooming much closer (globe radius is 100; default minDistance is far).
+  const tuneControls = () => {
+    const g = globeRef.current
+    if (!g) return
+    const c = g.controls()
+    c.enableZoom = true
+    c.minDistance = 101      // almost touching the surface
+    c.maxDistance = 600
+    c.zoomSpeed = 1.5
+    c.enableDamping = true
+    c.dampingFactor = 0.15
+  }
+
   return (
     <div ref={wrap} className="absolute inset-0 bg-[#0b1020]">
       <Globe
+        ref={globeRef}
+        onGlobeReady={tuneControls}
         width={size.w}
         height={size.h}
         backgroundColor="rgba(0,0,0,0)"

@@ -49,6 +49,7 @@ services:
     build: ./backend
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-4}"]
     restart: unless-stopped
+    runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - photoflow-cache:/cache
@@ -78,6 +79,8 @@ services:
       OMP_NUM_THREADS: "4"
       OPENBLAS_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
   beat:
     build: ./backend

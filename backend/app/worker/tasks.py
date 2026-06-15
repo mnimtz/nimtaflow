@@ -319,12 +319,15 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         # Write the AI description into the file and/or a sidecar.
                         # xmp.write_mode: off | file | file_sidecar | sidecar
                         xmp_mode = str(ai_settings.get("xmp.write_mode", "off")).lower()
-                        if description and xmp_mode in ("file", "file_sidecar", "sidecar"):
-                            kw = [t for t in tags[:20]]
+                        kw = [t for t in tags[:20]]
+                        # Write XMP for ANY model (local/gemini/…) whenever there's a
+                        # description OR keywords — not gemini-only, not description-only.
+                        if (description or kw) and xmp_mode in ("file", "file_sidecar", "sidecar"):
                             try:
                                 if xmp_mode in ("file", "file_sidecar"):
                                     from app.services.exif_edit import write_description as _wd, write_keywords as _wk
-                                    await _wd(photo.path, description, overwrite=True)
+                                    if description:
+                                        await _wd(photo.path, description, overwrite=True)
                                     if kw:
                                         await _wk(photo.path, kw)
                                     flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
