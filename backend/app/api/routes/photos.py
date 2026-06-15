@@ -2,7 +2,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, distinct, extract, text
+from sqlalchemy import select, func, and_, or_, distinct, extract, text
 from datetime import date
 import os, subprocess, pathlib, mimetypes
 
@@ -134,18 +134,23 @@ async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: Asyn
         vec = [x / norm for x in vec]
     if len(vec) != 768:
         raise HTTPException(400, f"Embedding-Dimension {len(vec)} passt nicht zur DB (768).")
-    # Only return reasonably close matches (exact-ish), not the whole library.
-    # cosine_distance 0=identical … 2=opposite; ~0.55 keeps relevant hits only.
+    # Hybrid: keyword match (description/keywords) OR a strict semantic distance.
+    # Pure semantic over a tiny library returns everything; requiring a term hit
+    # (or a very close vector) makes results exact-ish. Slider tunes the vector part.
+    import re as _re
     max_dist = float(s.get("search.max_distance", "0.78") or 0.78)
+    tokens = [t for t in _re.findall(r"[\wäöüÄÖÜß]{3,}", q.lower())
+              if t not in {"der", "die", "das", "ein", "eine", "mit", "und", "beim", "der", "den", "von", "auf", "im", "in"}]
     dist = Photo.embedding.cosine_distance(vec)
-    qy = (
-        select(Photo)
-        .where(Photo.status == PhotoStatus.done, Photo.is_missing == False,
-               Photo.is_trashed == False, Photo.embedding.isnot(None),
-               dist < max_dist)
-        .order_by(dist)
-        .limit(limit)
-    )
+    conds = [Photo.status == PhotoStatus.done, Photo.is_missing == False,
+             Photo.is_trashed == False, Photo.embedding.isnot(None)]
+    if tokens:
+        text_or = [Photo.description.ilike(f"%{t}%") for t in tokens] + \
+                  [Photo.keywords.ilike(f"%{t}%") for t in tokens]
+        conds.append(or_(*text_or, dist < min(max_dist, 0.5)))  # term hit OR very close
+    else:
+        conds.append(dist < max_dist)
+    qy = select(Photo).where(*conds).order_by(dist).limit(limit)
     photos = (await db.execute(qy)).scalars().all()
     return PhotoListResponse(total=len(photos), page=1, limit=limit, items=photos)
 
