@@ -420,6 +420,7 @@ export default function GalleryPage() {
           photos={lightbox.photos}
           index={lightbox.index}
           onClose={() => setLightbox(null)}
+          onFavorite={p => favMutation.mutate(p.id)}
         />
       )}
     </div>
