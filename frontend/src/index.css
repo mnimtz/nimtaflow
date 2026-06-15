@@ -97,6 +97,11 @@
 .react-photo-album--photo:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
 .pf-show { opacity: 0; transition: opacity .2s ease; }
 .react-photo-album--photo:hover .pf-show { opacity: 1; }
+/* Touch devices have no hover — keep tap targets (select/favorite) visible. */
+@media (hover: none) {
+  .pf-show { opacity: 0.95; }
+  .react-photo-album--photo:hover img { transform: none; }
+}
 
 /* ── Sidebar nav pill ──────────────────────────── */
 .nav-pill {

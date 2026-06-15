@@ -161,7 +161,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
         from app.models.tag import Tag, PhotoTag
         from app.services.processing.thumbnails import (
             generate_thumbnail, generate_video_thumbnail, generate_video_preview_webp,
-            video_duration, open_image_for_ai,
+            video_duration, video_dimensions, open_image_for_ai,
         )
         from app.services.ai.manager import AIManager
         from app.services.feature_log import log as flog
@@ -208,6 +208,11 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                             setattr(photo, f"thumb_{size}", thumb)
                     if photo.duration_seconds is None:
                         photo.duration_seconds = video_duration(photo.path)
+                    # Real dimensions (rotation-aware) so the gallery lays videos out
+                    # with the correct aspect ratio instead of a 4:3 guess.
+                    vw, vh = video_dimensions(photo.path)
+                    if vw and vh:
+                        photo.width, photo.height = vw, vh
                     # animated hover preview (best-effort)
                     try:
                         preview = generate_video_preview_webp(photo.path, settings.cache_path, force=redo_thumbs)

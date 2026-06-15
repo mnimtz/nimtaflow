@@ -154,6 +154,10 @@ export default function GalleryPage() {
 
   function clearSelection() { setSelected(new Set()); setLastIndex(null) }
 
+  function selectMany(ids: number[], on: boolean) {
+    setSelected(prev => { const n = new Set(prev); ids.forEach(id => on ? n.add(id) : n.delete(id)); return n })
+  }
+
   function toggleSelect(photo: Photo, index: number, shift: boolean) {
     setSelected(prev => {
       const next = new Set(prev)
@@ -282,7 +286,7 @@ export default function GalleryPage() {
         {viewMode === 'grid' && (
           <>
             {/* Layout mode */}
-            <div className="hidden md:flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5" title="Layout">
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5" title="Layout">
               {([['rows', Rows3], ['masonry', Columns3]] as const).map(([id, Icon]) => (
                 <button key={id} onClick={() => setLayout(id)}
                   className={`p-1.5 rounded-md transition-colors ${layout === id ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
@@ -291,7 +295,7 @@ export default function GalleryPage() {
               ))}
             </div>
             {/* Group by date */}
-            <div className="hidden sm:flex items-center gap-1.5" title="Nach Datum gruppieren">
+            <div className="flex items-center gap-1.5" title="Nach Datum gruppieren">
               <Calendar size={14} className="text-gray-400" />
               <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)}
                 className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -301,9 +305,9 @@ export default function GalleryPage() {
               </select>
             </div>
             {/* Zoom / density */}
-            <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1" title="Bildgröße">
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1" title="Bildgröße">
               <button onClick={() => setZoom(z => Math.max(110, z - 30))} className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><Minus size={13} /></button>
-              <input type="range" min={110} max={360} step={10} value={zoom} onChange={e => setZoom(Number(e.target.value))} className="w-20 accent-indigo-500" />
+              <input type="range" min={110} max={360} step={10} value={zoom} onChange={e => setZoom(Number(e.target.value))} className="hidden sm:block w-20 accent-indigo-500" />
               <button onClick={() => setZoom(z => Math.min(360, z + 30))} className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><Plus size={13} /></button>
             </div>
             <select value={sort} onChange={e => setSort(e.target.value as any)}
@@ -316,7 +320,7 @@ export default function GalleryPage() {
             </select>
             <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
               title="Bilder pro Ladevorgang"
-              className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              className="hidden sm:block px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
@@ -350,6 +354,7 @@ export default function GalleryPage() {
               selectable
               selected={selected}
               onToggleSelect={toggleSelect}
+              onSelectMany={selectMany}
             />
             {/* Infinite scroll sentinel */}
             <div ref={sentinelRef} className="h-12 flex items-center justify-center">

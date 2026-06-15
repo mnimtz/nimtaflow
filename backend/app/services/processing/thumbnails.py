@@ -185,6 +185,34 @@ def video_duration(video_path: str) -> Optional[float]:
         return None
 
 
+def video_dimensions(video_path: str) -> Tuple[Optional[int], Optional[int]]:
+    """Return (width, height) of a video, accounting for rotation metadata
+    (phone videos are often stored rotated). Returns (None, None) on failure."""
+    try:
+        r = subprocess.run(
+            [_FFPROBE, "-v", "quiet", "-print_format", "json",
+             "-show_streams", "-select_streams", "v:0", video_path],
+            capture_output=True, timeout=15,
+        )
+        import json
+        st = (json.loads(r.stdout).get("streams") or [{}])[0]
+        w, h = int(st.get("width") or 0), int(st.get("height") or 0)
+        if not w or not h:
+            return (None, None)
+        rot = 0
+        tags = st.get("tags") or {}
+        if tags.get("rotate"):
+            rot = abs(int(tags["rotate"]))
+        for sd in (st.get("side_data_list") or []):
+            if "rotation" in sd:
+                rot = abs(int(sd["rotation"]))
+        if rot in (90, 270):
+            w, h = h, w
+        return (w, h)
+    except Exception:
+        return (None, None)
+
+
 def generate_video_thumbnail(
     video_path: str,
     cache_root: str,

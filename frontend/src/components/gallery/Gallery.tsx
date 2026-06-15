@@ -72,6 +72,7 @@ interface Props {
   selectable?: boolean
   selected?: Set<number>
   onToggleSelect?: (photo: Photo, index: number, shift: boolean) => void
+  onSelectMany?: (ids: number[], on: boolean) => void
 }
 
 function Album({ items, layout, rowHeight, anySelected, ...cb }: {
@@ -106,15 +107,25 @@ export default function Gallery({ photos, layout = 'rows', rowHeight = 200, grou
   }
   return (
     <div className="space-y-6">
-      {groupByDate(photos, groupBy).map(g => (
-        <section key={g.key}>
-          <div className="sticky top-0 z-20 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-2">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 capitalize">{g.label}</h3>
-            <span className="text-xs text-zinc-400">{g.items.length}</span>
-          </div>
-          <Album items={g.items} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
-        </section>
-      ))}
+      {groupByDate(photos, groupBy).map(g => {
+        const ids = g.items.map(it => it.photo.id)
+        const allSel = cb.selectable && ids.length > 0 && ids.every(id => cb.selected?.has(id))
+        return (
+          <section key={g.key}>
+            <div className="sticky top-0 z-20 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-2">
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 capitalize">{g.label}</h3>
+              <span className="text-xs text-zinc-400">{g.items.length}</span>
+              {cb.selectable && (
+                <button onClick={() => cb.onSelectMany?.(ids, !allSel)}
+                  className="ml-1 text-xs text-indigo-500 hover:text-indigo-400 font-medium">
+                  {allSel ? 'Abwählen' : 'Alle'}
+                </button>
+              )}
+            </div>
+            <Album items={g.items} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
+          </section>
+        )
+      })}
     </div>
   )
 }
