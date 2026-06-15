@@ -136,7 +136,7 @@ async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: Asyn
         raise HTTPException(400, f"Embedding-Dimension {len(vec)} passt nicht zur DB (768).")
     # Only return reasonably close matches (exact-ish), not the whole library.
     # cosine_distance 0=identical … 2=opposite; ~0.55 keeps relevant hits only.
-    max_dist = float(s.get("search.max_distance", "0.55") or 0.55)
+    max_dist = float(s.get("search.max_distance", "0.78") or 0.78)
     dist = Photo.embedding.cosine_distance(vec)
     qy = (
         select(Photo)

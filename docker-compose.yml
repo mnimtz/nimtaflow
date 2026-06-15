@@ -27,7 +27,7 @@ services:
     build: ./backend
     restart: unless-stopped
     volumes:
-      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - /mnt:/mnt:ro
       - photoflow-cache:/cache
       - photoflow-config:/config
@@ -50,7 +50,7 @@ services:
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-4}"]
     restart: unless-stopped
     volumes:
-      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:ro
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - photoflow-cache:/cache
       - photoflow-config:/config
       - photoflow-models:/models

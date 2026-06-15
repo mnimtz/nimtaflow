@@ -728,6 +728,18 @@ function AISection() {
           </select>
         </div>
 
+        {/* Search accuracy */}
+        <div>
+          <Label>Such-Genauigkeit (max. Distanz: {settings['search.max_distance'] ?? '0.78'})</Label>
+          <input type="range" min={0.4} max={1.2} step={0.02}
+            value={Number(settings['search.max_distance'] ?? 0.78)}
+            onChange={e => set('search.max_distance', e.target.value)}
+            className="w-full accent-indigo-500" />
+          <div className="flex justify-between text-[11px] text-zinc-400 mt-0.5">
+            <span>streng / exakt</span><span>locker / mehr Treffer</span>
+          </div>
+        </div>
+
         {/* AI metadata write-back */}
         <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <Label>AI-Beschreibung & Tags zurückschreiben</Label>
@@ -1155,7 +1167,8 @@ function MapSection() {
             <option value="light">Hell (CARTO)</option>
             <option value="voyager">Voyager (CARTO)</option>
             <option value="topo">Topo (OpenTopoMap)</option>
-            <option value="wiki">Wikimedia</option>
+            <option value="maptiler">MapTiler (Key nötig)</option>
+            <option value="maptiler_sat">MapTiler Satellit (Key nötig)</option>
           </select>
           <p className="text-xs text-zinc-400 mt-1">Alle Ebenen sind kostenlos & ohne API-Key. Auf der Karte jederzeit umschaltbar.</p>
         </div>
