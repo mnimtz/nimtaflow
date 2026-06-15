@@ -7,16 +7,20 @@ import { groupByDate, type Indexed } from './justified'
 
 export type LayoutMode = 'rows' | 'masonry'
 
-type AlbumPhoto = { src: string; width: number; height: number; key: string; _p: Photo; _i: number }
+type AlbumPhoto = { src: string; width: number; height: number; key: string; srcSet: { src: string; width: number; height: number }[]; _p: Photo; _i: number }
 
 function toAlbum(items: Indexed[]): AlbumPhoto[] {
-  return items.map(({ photo, index }) => ({
-    src: thumbUrl(photo, 'medium'),
-    width: photo.width || 1000,
-    height: photo.height || 750,
-    key: String(photo.id),
-    _p: photo, _i: index,
-  }))
+  return items.map(({ photo, index }) => {
+    const w = photo.width || 1000, h = photo.height || 750
+    const aspect = w / h
+    // Responsive sources so big tiles load the sharp 1920px render, small tiles
+    // the 320/800px ones — fixes blur from upscaling a single medium thumbnail.
+    const srcSet = ([320, 800, 1920] as const).map(sw => ({
+      src: thumbUrl(photo, sw === 320 ? 'small' : sw === 800 ? 'medium' : 'large'),
+      width: sw, height: Math.round(sw / aspect),
+    }))
+    return { src: thumbUrl(photo, 'medium'), width: w, height: h, key: String(photo.id), srcSet, _p: photo, _i: index }
+  })
 }
 
 function Overlay({ photo, index, selectable, isSel, onFav, onToggle }: {
