@@ -1,9 +1,45 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
 import clsx from 'clsx'
+
+function UserBadge() {
+  const hasToken = !!localStorage.getItem('access_token')
+  const { data: me } = useQuery<{ name: string; role: string }>({
+    queryKey: ['me'],
+    queryFn: () => api.get('/auth/me').then(r => r.data),
+    enabled: hasToken,
+    retry: false,
+    staleTime: 300_000,
+  })
+  const logout = () => {
+    localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token')
+    window.location.href = '/login'
+  }
+  if (!me) {
+    return (
+      <a href="/login" className="nav-pill w-full text-left">
+        <LogIn size={18} className="shrink-0" /><span className="hidden md:block">Anmelden</span>
+      </a>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-1.5">
+      <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+        {me.name.charAt(0).toUpperCase()}
+      </div>
+      <div className="hidden md:block min-w-0 flex-1">
+        <p className="text-xs font-medium text-zinc-200 truncate leading-tight">{me.name}</p>
+        <p className="text-[10px] text-zinc-500 leading-tight">{me.role === 'admin' ? 'Administrator' : 'Benutzer'}</p>
+      </div>
+      <button onClick={logout} title="Abmelden" className="text-zinc-500 hover:text-red-400 shrink-0">
+        <LogOut size={15} />
+      </button>
+    </div>
+  )
+}
 
 function VersionBadge() {
   const { data } = useQuery<{ version: string }>({
@@ -85,6 +121,7 @@ export default function Layout() {
             }
             <span className="hidden md:block">{dark ? 'Helles Design' : 'Dunkles Design'}</span>
           </button>
+          <UserBadge />
           <VersionBadge />
         </div>
       </aside>

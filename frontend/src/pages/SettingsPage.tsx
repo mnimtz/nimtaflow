@@ -4,7 +4,7 @@ import {
   Plus, Trash2, RefreshCw, Check, X, FolderOpen,
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
-  Eye, Zap, Brain, Download,
+  Eye, Zap, Brain, Download, Shield, Lock, KeyRound,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -35,6 +35,7 @@ const SECTIONS = [
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
   { id: 'map',       icon: Map,       label: 'Karte' },
+  { id: 'users',     icon: Shield,    label: 'Benutzer & Login' },
   { id: 'logs',      icon: Terminal,  label: 'Logs' },
 ] as const
 
@@ -1234,6 +1235,117 @@ const LEVEL_COLORS: Record<string, string> = {
   ERROR: 'text-red-400',
 }
 
+type AppUser = { id: number; email: string; name: string; role: 'admin' | 'user'; is_active: boolean; last_login: string | null }
+
+function UsersSection() {
+  const qc = useQueryClient()
+  const [settings, setSettings] = useState<Settings>({})
+  const [pwFor, setPwFor] = useState<number | null>(null)
+  const [pw, setPw] = useState('')
+  const [add, setAdd] = useState({ email: '', name: '', password: '', role: 'user' })
+  const [showAdd, setShowAdd] = useState(false)
+
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const enforce = (settings['auth.enforce'] ?? 'false') === 'true'
+  const setEnforce = (v: boolean) => {
+    const next = { ...settings, 'auth.enforce': v ? 'true' : 'false' }
+    setSettings(next); api.put('/settings', next).then(() => qc.invalidateQueries({ queryKey: ['settings'] }))
+  }
+
+  const usersQuery = useQuery<AppUser[]>({ queryKey: ['users'], queryFn: () => api.get('/users').then(r => r.data), retry: false })
+  const inval = () => qc.invalidateQueries({ queryKey: ['users'] })
+  const createU = useMutation({ mutationFn: () => api.post('/users', add), onSuccess: () => { inval(); setShowAdd(false); setAdd({ email: '', name: '', password: '', role: 'user' }) } })
+  const patchU = useMutation({ mutationFn: ({ id, body }: { id: number; body: Partial<AppUser> }) => api.patch(`/users/${id}`, body), onSuccess: inval })
+  const delU = useMutation({ mutationFn: (id: number) => api.delete(`/users/${id}`), onSuccess: inval })
+  const setPwM = useMutation({ mutationFn: ({ id, password }: { id: number; password: string }) => api.post(`/users/${id}/password`, { password }), onSuccess: () => { setPwFor(null); setPw('') } })
+
+  const notAuthed = usersQuery.isError
+  const sel = 'px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
+  return (
+    <div>
+      <SectionHeader title="Benutzer & Login" desc="Konten verwalten und festlegen, ob für PhotoFlow ein Login nötig ist." />
+
+      {notAuthed ? (
+        <div className="max-w-xl p-4 rounded-xl border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">
+          <p className="flex items-center gap-2 font-medium"><Lock size={15} /> Als Administrator anmelden</p>
+          <p className="mt-1 text-amber-700 dark:text-amber-300/90">Die Benutzerverwaltung ist nur für angemeldete Admins sichtbar. Start-Login: <strong>admin@photoflow.local</strong> / <strong>Nimtz@1977</strong>.</p>
+          <a href="/login" className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"><KeyRound size={14} /> Zur Anmeldung</a>
+        </div>
+      ) : (
+        <div className="space-y-6 max-w-2xl">
+          {/* Login enforce */}
+          <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+            <div>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">Login erzwingen</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Wenn aktiv, ist die Web-Oberfläche nur nach Anmeldung nutzbar. (Die iOS-App ist nicht betroffen.)</p>
+            </div>
+            <Toggle value={enforce} onChange={setEnforce} />
+          </label>
+
+          {/* User list */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 divide-y divide-zinc-200 dark:divide-zinc-800">
+            {(usersQuery.data ?? []).map(u => (
+              <div key={u.id} className="p-3 flex flex-wrap items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">{u.name.charAt(0).toUpperCase()}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{u.name} {!u.is_active && <span className="text-xs text-zinc-500">(deaktiviert)</span>}</p>
+                  <p className="text-xs text-zinc-500 truncate">{u.email}</p>
+                </div>
+                <select className={sel} value={u.role} onChange={e => patchU.mutate({ id: u.id, body: { role: e.target.value as 'admin' | 'user' } })}>
+                  <option value="admin">Admin</option>
+                  <option value="user">Benutzer</option>
+                </select>
+                <button onClick={() => patchU.mutate({ id: u.id, body: { is_active: !u.is_active } })}
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
+                </button>
+                <button onClick={() => { setPwFor(pwFor === u.id ? null : u.id); setPw('') }}
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Passwort</button>
+                <button onClick={() => delU.mutate(u.id)} className="text-zinc-400 hover:text-red-500" title="Löschen"><Trash2 size={15} /></button>
+                {pwFor === u.id && (
+                  <div className="w-full flex gap-2 mt-1">
+                    <input type="text" value={pw} onChange={e => setPw(e.target.value)} placeholder="Neues Passwort (min. 6)"
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <button onClick={() => setPwM.mutate({ id: u.id, password: pw })} disabled={pw.length < 6}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Setzen</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Add user */}
+          {showAdd ? (
+            <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input value={add.email} onChange={e => setAdd(a => ({ ...a, email: e.target.value }))} placeholder="E-Mail" className={sel + ' w-full'} />
+                <input value={add.name} onChange={e => setAdd(a => ({ ...a, name: e.target.value }))} placeholder="Name" className={sel + ' w-full'} />
+                <input type="text" value={add.password} onChange={e => setAdd(a => ({ ...a, password: e.target.value }))} placeholder="Passwort (min. 6)" className={sel + ' w-full'} />
+                <select value={add.role} onChange={e => setAdd(a => ({ ...a, role: e.target.value }))} className={sel + ' w-full'}>
+                  <option value="user">Benutzer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+                <button onClick={() => createU.mutate()} disabled={createU.isPending || !add.email || !add.name || add.password.length < 6}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Anlegen</button>
+              </div>
+              {createU.isError && <p className="text-xs text-red-500">Anlegen fehlgeschlagen (E-Mail evtl. vergeben).</p>}
+            </div>
+          ) : (
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
+              <Plus size={15} /> Benutzer hinzufügen
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LogsSection() {
   const [feature, setFeature] = useState('all')
   const [level, setLevel] = useState('')
@@ -1361,6 +1473,7 @@ export default function SettingsPage() {
         {section === 'pipeline' && <PipelineSection />}
         {section === 'backup'   && <BackupSection />}
         {section === 'map'      && <MapSection />}
+        {section === 'users'    && <UsersSection />}
         {section === 'logs'     && <LogsSection />}
       </div>
     </div>

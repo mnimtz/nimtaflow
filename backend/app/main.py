@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db, _engine
@@ -64,6 +64,11 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE",
     # ── faces: ignore/hide ────────────────────────────────────────────────────
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS is_ignored BOOLEAN NOT NULL DEFAULT FALSE",
+    # ── users: defensive (in case the table predates these columns) ───────────
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ",
 ]
 
 
@@ -79,6 +84,21 @@ async def lifespan(app: FastAPI):
         # Lightweight column migrations (create_all never ALTERs existing tables).
         for stmt in _COLUMN_MIGRATIONS:
             await conn.execute(text(stmt))
+
+    # Seed an initial admin if there are no users yet (idempotent).
+    from app.core.database import get_db
+    from app.models.user import User, UserRole
+    from app.core.security import hash_password
+    from sqlalchemy import select, func as _func
+    async for db in get_db():
+        count = await db.scalar(select(_func.count()).select_from(User))
+        if not count:
+            db.add(User(
+                email="admin@photoflow.local", name="Admin",
+                hashed_password=hash_password("Nimtz@1977"), role=UserRole.admin,
+            ))
+            await db.commit()
+        break
     yield
     if _engine:
         await _engine.dispose()
@@ -102,18 +122,24 @@ app.add_middleware(
     expose_headers=["Content-Range", "Accept-Ranges", "Content-Length", "X-PhotoFlow-Version"],
 )
 
-# ── Legacy/web routes ────────────────────────────────────────────────────────
+# ── Auth (always open) + user management (admin-only, self-guarded) ──────────
+from app.api.routes import users as users_routes
+from app.core.auth_guard import enforce_auth
 app.include_router(auth.router, prefix="/api")
-app.include_router(photos.router, prefix="/api")
-app.include_router(people.router, prefix="/api")
-app.include_router(sources.router, prefix="/api")
-app.include_router(settings_api.router, prefix="/api")
-app.include_router(jobs.router, prefix="/api")
-app.include_router(fs.router, prefix="/api")
-app.include_router(ai_api.router, prefix="/api")
-app.include_router(logs.router, prefix="/api")
-app.include_router(backup.router, prefix="/api")
-app.include_router(albums.router, prefix="/api")
+app.include_router(users_routes.router, prefix="/api")
+
+# ── Web data routes — gated by enforce_auth (no-op until auth.enforce=true) ──
+_guard = [Depends(enforce_auth)]
+app.include_router(photos.router, prefix="/api", dependencies=_guard)
+app.include_router(people.router, prefix="/api", dependencies=_guard)
+app.include_router(sources.router, prefix="/api", dependencies=_guard)
+app.include_router(settings_api.router, prefix="/api", dependencies=_guard)
+app.include_router(jobs.router, prefix="/api", dependencies=_guard)
+app.include_router(fs.router, prefix="/api", dependencies=_guard)
+app.include_router(ai_api.router, prefix="/api", dependencies=_guard)
+app.include_router(logs.router, prefix="/api", dependencies=_guard)
+app.include_router(backup.router, prefix="/api", dependencies=_guard)
+app.include_router(albums.router, prefix="/api", dependencies=_guard)
 
 # ── iOS / mobile API v1 ──────────────────────────────────────────────────────
 app.include_router(v1_router.router, prefix="/api")
