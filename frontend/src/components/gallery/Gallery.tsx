@@ -111,7 +111,7 @@ export default function Gallery({ photos, layout = 'rows', rowHeight = 200, grou
         const ids = g.items.map(it => it.photo.id)
         const allSel = cb.selectable && ids.length > 0 && ids.every(id => cb.selected?.has(id))
         return (
-          <section key={g.key} style={{ contentVisibility: 'auto', containIntrinsicSize: `${Math.ceil(g.items.length / 5) * (rowHeight + 5) + 44}px` } as any}>
+          <section key={g.key} data-gkey={g.key} style={{ contentVisibility: 'auto', containIntrinsicSize: `${Math.ceil(g.items.length / 5) * (rowHeight + 5) + 44}px` } as any}>
             <div className="sticky top-0 z-20 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-2">
               <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 capitalize">{g.label}</h3>
               <span className="text-xs text-zinc-400">{g.items.length}</span>

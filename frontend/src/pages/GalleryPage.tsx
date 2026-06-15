@@ -4,6 +4,7 @@ import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minu
 import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
 import Gallery, { type LayoutMode } from '../components/gallery/Gallery'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
+import DateScrubber from '../components/gallery/DateScrubber'
 import FilterPanel, { DEFAULT_FILTERS, type Filters } from '../components/gallery/FilterPanel'
 import { Modal, useToast } from '../components/ui/dialogs'
 
@@ -103,6 +104,7 @@ export default function GalleryPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
   const [albumModal, setAlbumModal] = useState(false)
+  const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
   const [searchDraft, setSearchDraft] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastIndex, setLastIndex] = useState<number | null>(null)
@@ -337,7 +339,8 @@ export default function GalleryPage() {
       </div>
 
       {/* Gallery area */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={setScrollEl} className="relative flex-1 overflow-y-auto p-4">
+        {viewMode === 'grid' && groupBy !== 'none' && sort !== 'name' && sort !== 'added' && <DateScrubber scrollEl={scrollEl} />}
         {viewMode === 'grid' && (
           <>
             {allGridPhotos.length === 0 && !infiniteQuery.isLoading && (

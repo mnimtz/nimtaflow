@@ -88,9 +88,9 @@ export default function PeoplePage() {
   })
   const clusterMutation = useMutation({
     mutationFn: () => api.post('/people/cluster').then(r => r.data),
-    onSuccess: (d: { new_persons: number; clustered: number; assigned_to_existing: number }) => {
+    onSuccess: (d: { new_persons: number; clustered: number; assigned_to_existing: number; merged_clusters?: number }) => {
       refresh()
-      toast(`Clustering fertig: ${d.new_persons} neue Gruppe(n), ${d.assigned_to_existing} zugeordnet`, 'success')
+      toast(`Clustering: ${d.new_persons} neue Gruppe(n), ${d.assigned_to_existing} zugeordnet, ${d.merged_clusters ?? 0} zusammengeführt`, 'success')
     },
     onError: () => toast('Clustering fehlgeschlagen', 'error'),
   })

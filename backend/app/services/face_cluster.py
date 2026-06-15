@@ -17,6 +17,82 @@ from app.models.person import Person
 from app.models.face import Face
 
 
+async def consolidate_persons(db: AsyncSession, merge_eps: float) -> int:
+    """Merge person-clusters whose face centroids are very close — this folds the
+    fragments clustering inevitably produces (same person split across several
+    groups) into one, so the user doesn't have to merge them by hand.
+
+    Safety: two DIFFERENT named persons are NEVER merged (protects manual naming);
+    only unnamed↔unnamed and unnamed↔named merges happen. Named persons act as
+    the surviving anchor.
+    """
+    import numpy as np
+
+    def _norm(a):
+        n = np.linalg.norm(a, axis=-1, keepdims=True)
+        return a / np.clip(n, 1e-9, None)
+
+    rows = (await db.execute(
+        select(Face.person_id, Face.embedding).where(Face.person_id.isnot(None), Face.embedding.isnot(None))
+    )).all()
+    if not rows:
+        return 0
+    acc = defaultdict(list)
+    for pid, emb in rows:
+        acc[pid].append(emb)
+    pids = list(acc.keys())
+    if len(pids) < 2:
+        return 0
+    cents = {pid: _norm(np.mean(_norm(np.array(e, dtype="float32")), axis=0)) for pid, e in acc.items()}
+    names = dict((await db.execute(select(Person.id, Person.name).where(Person.id.in_(pids)))).all())
+    named = {p for p in pids if (names.get(p) or "").strip()}
+
+    parent = {p: p for p in pids}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        a_named, b_named = ra in named, rb in named
+        if a_named and not b_named:
+            parent[rb] = ra
+        elif b_named and not a_named:
+            parent[ra] = rb
+        else:
+            keep, drop = (ra, rb) if ra < rb else (rb, ra)
+            parent[drop] = keep
+
+    arr = np.stack([cents[p] for p in pids])
+    n = len(pids)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if pids[i] in named and pids[j] in named:
+                continue  # never merge two distinct named people
+            if 1.0 - float(np.dot(arr[i], arr[j])) < merge_eps:
+                union(pids[i], pids[j])
+
+    groups = defaultdict(list)
+    for p in pids:
+        groups[find(p)].append(p)
+    merged = 0
+    for root, members in groups.items():
+        others = [m for m in members if m != root]
+        if not others:
+            continue
+        await db.execute(update(Face).where(Face.person_id.in_(others)).values(person_id=root))
+        await db.execute(_del(Person).where(Person.id.in_(others)))
+        merged += len(others)
+    if merged:
+        await db.commit()
+    return merged
+
+
 async def cluster_unassigned(db: AsyncSession) -> dict:
     from app.services.settings_loader import load_settings
 
@@ -89,7 +165,9 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
             try:
                 import hdbscan
                 labels = hdbscan.HDBSCAN(
-                    min_cluster_size=min_size, metric="euclidean"
+                    min_cluster_size=min_size, metric="euclidean",
+                    # merge micro-clusters that sit within the same radius → fewer fragments
+                    cluster_selection_epsilon=float(eps), cluster_selection_method="eom",
                 ).fit_predict(Xr)  # vectors are L2-normalised → euclidean ≈ cosine
             except Exception:
                 labels = None
@@ -108,5 +186,9 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
             new_persons += 1
             clustered += len(face_ids)
     await db.commit()
+    # Consolidate fragments (same person split across clusters) automatically.
+    merge_thr = float(s.get("face.merge_threshold", "0.5") or 0.5)
+    merged = await consolidate_persons(db, max(0.05, 1.0 - merge_thr))
     return {"assigned_to_existing": assigned, "clustered": clustered,
-            "new_persons": new_persons, "unclustered": len(rows) - assigned - clustered}
+            "new_persons": new_persons, "merged_clusters": merged,
+            "unclustered": len(rows) - assigned - clustered}

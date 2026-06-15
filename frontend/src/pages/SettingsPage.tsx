@@ -1003,6 +1003,10 @@ function FacesSection() {
             <Label>Min. Größe (px)</Label>
             <Input value={settings['face.min_size_px'] ?? '40'} onChange={v => set('face.min_size_px', v)} placeholder="40" />
           </div>
+          <div>
+            <Label>Zusammenführen-Schwelle</Label>
+            <Input value={settings['face.merge_threshold'] ?? '0.5'} onChange={v => set('face.merge_threshold', v)} placeholder="0.5" />
+          </div>
         </div>
 
         <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
