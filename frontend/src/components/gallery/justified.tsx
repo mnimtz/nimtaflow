@@ -66,17 +66,21 @@ export function JustifiedRows({ items, containerWidth, rowHeight, gap, isLastGro
         const totalNatural = row.reduce((s, it) => s + it.width, 0)
         const totalGaps = gap * (row.length - 1)
         let scale = (containerWidth - totalGaps) / totalNatural
-        const lastRow = isLastGroup && ri === rows.length - 1
-        if (lastRow && scale > 1.15) scale = 1
+        // Last row of a group is usually under-full — never enlarge it (that would
+        // crop/zoom a lone photo to full width). Scaling height WITH width keeps
+        // every photo's true aspect ratio, so object-cover never distorts.
+        const lastRow = ri === rows.length - 1
+        if (lastRow) scale = Math.min(scale, 1)
+        const rowH = Math.round(rowHeight * scale)
         return (
-          <div key={ri} className="flex" style={{ gap, height: rowHeight }}>
+          <div key={ri} className="flex" style={{ gap, height: rowH }}>
             {row.map(({ photo, index, width }) => {
               const w = Math.floor(width * scale)
               const isSel = cb.selected?.has(photo.id) ?? false
               return (
                 <div key={photo.id}
                   className={`relative group overflow-hidden bg-gray-100 dark:bg-gray-800/80 rounded-xl cursor-pointer shrink-0 transition-shadow hover:shadow-lg hover:shadow-black/20 ${isSel ? 'ring-[3px] ring-indigo-500 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950' : ''}`}
-                  style={{ width: w, height: rowHeight }}
+                  style={{ width: w, height: rowH }}
                   onClick={e => { if (cb.selectable && anySelected) { cb.onToggleSelect?.(photo, index, (e as any).shiftKey); return } cb.onPhotoClick(index) }}>
                   <TileImage photo={photo} isSelected={isSel} />
                   <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ opacity: isSel ? 1 : undefined }} />
