@@ -68,11 +68,33 @@ class LocalVLMProvider(AIProvider):
             _vlm_cache[self.model_key] = ("florence", model.eval().to(device), proc, device, dtype)
         else:  # qwen2.5-vl
             from transformers import Qwen2_5_VLForConditionalGeneration
-            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                self.repo, torch_dtype=dtype
-            )
+            if device == "cuda":
+                # Qwen-3B fp16 weights (~7.5 GB) leave no room for inference
+                # activations on an 8 GB card → every generate() OOMs. 4-bit nf4
+                # shrinks the weights to ~2.5 GB so it actually runs. Needs
+                # bitsandbytes; falls back to fp16 if that import fails.
+                try:
+                    from transformers import BitsAndBytesConfig
+                    bnb = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_use_double_quant=True,
+                    )
+                    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                        self.repo, quantization_config=bnb, device_map={"": 0},
+                        torch_dtype=torch.float16,
+                    )
+                except Exception:
+                    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                        self.repo, torch_dtype=dtype
+                    ).to(device)
+            else:
+                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    self.repo, torch_dtype=dtype
+                ).to(device)
             proc = AutoProcessor.from_pretrained(self.repo)
-            _vlm_cache[self.model_key] = ("qwen", model.eval().to(device), proc, device, dtype)
+            _vlm_cache[self.model_key] = ("qwen", model.eval(), proc, device, dtype)
         return _vlm_cache[self.model_key]
 
     def _translate_de(self, text: str) -> str:
