@@ -79,6 +79,11 @@
 }
 .photo-enter { animation: fadeIn 240ms ease both; }
 
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 /* ── Sidebar nav pill ──────────────────────────── */
 .nav-pill {
   @apply relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150;
