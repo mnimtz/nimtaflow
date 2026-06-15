@@ -33,7 +33,9 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     algo = str(s.get("face.cluster_algo", "dbscan")).lower()
 
     rows = (await db.execute(
-        select(Face.id, Face.embedding).where(Face.person_id == None, Face.embedding.isnot(None))  # noqa: E711
+        select(Face.id, Face.embedding).where(
+            Face.person_id == None, Face.is_ignored == False, Face.embedding.isnot(None)  # noqa: E711,E712
+        )
     )).all()
     if len(rows) < min_size:
         return {"clustered": 0, "new_persons": 0, "unclustered": len(rows), "assigned_to_existing": 0}

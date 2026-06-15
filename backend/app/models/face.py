@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, DateTime, Integer, Float, ForeignKey, JSON
+from sqlalchemy import String, DateTime, Integer, Float, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -22,6 +22,9 @@ class Face(Base):
     confidence: Mapped[Optional[float]] = mapped_column(Float)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(512))
     detector: Mapped[Optional[str]] = mapped_column(String(64))
+    # Ignored/hidden face: excluded from the 'unbekannte Gesichter' list and from
+    # clustering (for the many faces of strangers you don't want to manage).
+    is_ignored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

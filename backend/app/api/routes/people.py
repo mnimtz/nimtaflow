@@ -283,9 +283,41 @@ async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/faces/unassigned")
-async def unassigned_faces(limit: int = Query(100, ge=1, le=500), db: AsyncSession = Depends(get_db)):
+async def unassigned_faces(limit: int = Query(200, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
-        select(Face.id, Face.photo_id, Face.confidence).where(Face.person_id == None).limit(limit)
+        select(Face.id, Face.photo_id, Face.confidence)
+        .where(Face.person_id == None, Face.is_ignored == False)  # noqa: E711,E712
+        .order_by(Face.confidence.desc().nullslast())
+        .limit(limit)
+    )).all()
+    return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
+
+
+class FaceIdsRequest(BaseModel):
+    face_ids: List[int]
+
+
+@router.post("/faces/ignore")
+async def ignore_faces(body: FaceIdsRequest, ignored: bool = True, db: AsyncSession = Depends(get_db)):
+    """Bulk hide/ignore (or restore) faces — for the many strangers' faces you
+    don't want to manage. Ignored faces drop out of the unassigned list and are
+    skipped by clustering. Also unassigns them from any person."""
+    if not body.face_ids:
+        return {"updated": 0}
+    values = {"is_ignored": ignored}
+    if ignored:
+        values["person_id"] = None
+    await db.execute(update(Face).where(Face.id.in_(body.face_ids)).values(**values))
+    await db.commit()
+    return {"updated": len(body.face_ids), "ignored": ignored}
+
+
+@router.get("/faces/ignored")
+async def ignored_faces(limit: int = Query(500, ge=1, le=2000), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(Face.id, Face.photo_id, Face.confidence)
+        .where(Face.is_ignored == True)  # noqa: E712
+        .order_by(Face.id.desc()).limit(limit)
     )).all()
     return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
 

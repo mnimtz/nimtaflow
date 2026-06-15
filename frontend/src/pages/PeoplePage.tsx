@@ -34,6 +34,7 @@ export default function PeoplePage() {
   const [showAdd, setShowAdd] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [assignFace, setAssignFace] = useState<FaceRef | null>(null)
+  const [showIgnored, setShowIgnored] = useState(false)
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
@@ -44,13 +45,31 @@ export default function PeoplePage() {
   })
   const { data: looseFaces = [] } = useQuery<FaceRef[]>({
     queryKey: ['unassigned-faces'],
-    queryFn: () => api.get('/people/faces/unassigned', { params: { limit: 200 } }).then(r => r.data),
+    queryFn: () => api.get('/people/faces/unassigned', { params: { limit: 500 } }).then(r => r.data),
+  })
+  const { data: ignoredFaces = [] } = useQuery<FaceRef[]>({
+    queryKey: ['ignored-faces'],
+    queryFn: () => api.get('/people/faces/ignored').then(r => r.data),
+    enabled: showIgnored,
   })
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['people'] })
     qc.invalidateQueries({ queryKey: ['unassigned-faces'] })
+    qc.invalidateQueries({ queryKey: ['ignored-faces'] })
   }
+
+  const [faceSel, setFaceSel] = useState<Set<number>>(new Set())
+  const toggleFace = (id: number) =>
+    setFaceSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const ignoreFaces = useMutation({
+    mutationFn: ({ ids, ignored }: { ids: number[]; ignored: boolean }) =>
+      api.post('/people/faces/ignore', { face_ids: ids }, { params: { ignored } }),
+    onSuccess: (_d, v) => {
+      refresh(); setFaceSel(new Set())
+      toast(`${v.ids.length} Gesicht(er) ${v.ignored ? 'ausgeblendet' : 'wieder eingeblendet'}`, 'success')
+    },
+  })
 
   const hideMutation = useMutation({
     mutationFn: ({ id, hidden }: { id: number; hidden: boolean }) =>
@@ -176,12 +195,49 @@ export default function PeoplePage() {
           )}
           {looseFaces.length > 0 && (
             <section>
-              <SectionHeader title="Einzelne Gesichter" count={looseFaces.length}
-                hint="Noch nicht gruppiert. Klicke ein Gesicht, um es einer Person zuzuordnen — oder nutze „Clustern“." />
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Einzelne Gesichter <span className="text-zinc-500 font-normal">({looseFaces.length})</span></h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">Häkchen zum Auswählen, Bild antippen zum Zuordnen. Unbekannte einfach auswählen und ausblenden.</p>
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <button onClick={() => setFaceSel(new Set(looseFaces.map(f => f.id)))}
+                    className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    Alle auswählen
+                  </button>
+                  {ignoredFaces.length > 0 || showIgnored ? (
+                    <button onClick={() => setShowIgnored(v => !v)}
+                      className={`px-2.5 py-1 rounded-lg border ${showIgnored ? 'border-indigo-500 text-indigo-500' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'} hover:bg-zinc-100 dark:hover:bg-zinc-800`}>
+                      Ausgeblendete
+                    </button>
+                  ) : null}
+                </div>
+              </div>
               <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-3">
                 {looseFaces.map(f => (
-                  <button key={f.id} onClick={() => setAssignFace(f)} title="Gesicht zuordnen"
-                    className="aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-700 hover:ring-indigo-500 hover:scale-105 transition-all">
+                  <FaceTile key={f.id} face={f} selected={faceSel.has(f.id)}
+                    onToggle={() => toggleFace(f.id)} onAssign={() => setAssignFace(f)} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {showIgnored && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Ausgeblendete Gesichter <span className="text-zinc-500 font-normal">({ignoredFaces.length})</span></h2>
+                {ignoredFaces.length > 0 && (
+                  <button onClick={() => ignoreFaces.mutate({ ids: ignoredFaces.map(f => f.id), ignored: false })}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    Alle wieder einblenden
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-3">
+                {ignoredFaces.map(f => (
+                  <button key={f.id} onClick={() => ignoreFaces.mutate({ ids: [f.id], ignored: false })}
+                    title="Wieder einblenden"
+                    className="relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-700 opacity-50 hover:opacity-100 hover:ring-emerald-500 transition-all">
                     <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
                   </button>
@@ -205,6 +261,26 @@ export default function PeoplePage() {
             <EyeOff size={14} /> Verbergen
           </button>
           <button onClick={clearSelection} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title="Auswahl aufheben">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Face selection action bar */}
+      {faceSel.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur">
+          <span className="text-sm text-zinc-300 px-2">{faceSel.size} Gesicht(er)</span>
+          <button onClick={() => ignoreFaces.mutate({ ids: [...faceSel], ignored: true })} disabled={ignoreFaces.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+            <EyeOff size={14} /> Ausblenden
+          </button>
+          {faceSel.size === 1 && (
+            <button onClick={() => { const id = [...faceSel][0]; const f = looseFaces.find(x => x.id === id); if (f) { setAssignFace(f); setFaceSel(new Set()) } }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800">
+              <UserPlus size={14} /> Zuordnen
+            </button>
+          )}
+          <button onClick={() => setFaceSel(new Set())} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title="Auswahl aufheben">
             <X size={16} />
           </button>
         </div>
@@ -235,6 +311,27 @@ function SectionHeader({ title, count, hint }: { title: string; count: number; h
     <div className="mb-4">
       <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{title} <span className="text-zinc-500 font-normal">({count})</span></h2>
       {hint && <p className="text-xs text-zinc-500 mt-0.5">{hint}</p>}
+    </div>
+  )
+}
+
+function FaceTile({ face, selected, onToggle, onAssign }: {
+  face: FaceRef; selected: boolean; onToggle: () => void; onAssign: () => void
+}) {
+  return (
+    <div className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 transition-all ${
+      selected ? 'ring-indigo-500' : 'ring-zinc-700 hover:ring-indigo-500/60'
+    }`}>
+      <img src={`/api/people/faces/${face.id}/crop`} onClick={onAssign}
+        className="w-full h-full object-cover cursor-pointer" title="Gesicht zuordnen"
+        onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
+      {/* always-visible select checkbox */}
+      <button onClick={e => { e.stopPropagation(); onToggle() }} title={selected ? 'Abwählen' : 'Auswählen'}
+        className={`absolute top-1 left-1 w-5 h-5 rounded-md flex items-center justify-center ring-2 ${
+          selected ? 'bg-indigo-500 text-white ring-indigo-400' : 'bg-black/60 text-white/50 ring-white/40'
+        }`}>
+        <Check size={12} />
+      </button>
     </div>
   )
 }

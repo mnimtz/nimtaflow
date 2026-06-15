@@ -62,6 +62,8 @@ _COLUMN_MIGRATIONS = [
     # ── persons: alias / hide ─────────────────────────────────────────────────
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS alias VARCHAR(256)",
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE",
+    # ── faces: ignore/hide ────────────────────────────────────────────────────
+    "ALTER TABLE faces ADD COLUMN IF NOT EXISTS is_ignored BOOLEAN NOT NULL DEFAULT FALSE",
 ]
 
 
