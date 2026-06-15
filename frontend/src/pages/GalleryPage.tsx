@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2 } from 'lucide-react'
+import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus } from 'lucide-react'
 import { api, thumbUrl, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
 import JustifiedGrid from '../components/gallery/JustifiedGrid'
 import TimelineView from '../components/gallery/TimelineView'
@@ -24,16 +24,7 @@ type MemoryGroup = {
 
 const ROW_HEIGHT = 200
 const PAGE_SIZE = 100
-
-function useRowHeight() {
-  const [h, setH] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 640 ? 120 : 200))
-  useEffect(() => {
-    const onResize = () => setH(window.innerWidth < 640 ? 120 : 200)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-  return h
-}
+const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 640
 
 function buildFilterParams(f: Filters) {
   const p: Record<string, string> = {}
@@ -117,7 +108,11 @@ export default function GalleryPage() {
   const [library, setLibrary] = useState<'library' | 'favorites' | 'archive' | 'trash'>('library')
   const [sort, setSort] = useState<'newest' | 'oldest' | 'added' | 'name'>('newest')
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE)
-  const rowHeight = useRowHeight()
+  const [zoom, setZoom] = useState<number>(() => Number(localStorage.getItem('gallery.zoom')) || (isMobile() ? 140 : 210))
+  const [groupBy, setGroupBy] = useState<'none' | 'day' | 'month'>(() => (localStorage.getItem('gallery.groupBy') as any) || 'day')
+  useEffect(() => { localStorage.setItem('gallery.zoom', String(zoom)) }, [zoom])
+  useEffect(() => { localStorage.setItem('gallery.groupBy', groupBy) }, [groupBy])
+  const rowHeight = zoom
   const qc = useQueryClient()
 
   const filterParams = { ...buildFilterParams(filters), view: library, sort }
@@ -293,6 +288,22 @@ export default function GalleryPage() {
 
         {viewMode === 'grid' && (
           <>
+            {/* Group by date */}
+            <div className="hidden sm:flex items-center gap-1.5" title="Nach Datum gruppieren">
+              <Calendar size={14} className="text-gray-400" />
+              <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)}
+                className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="day">Nach Tag</option>
+                <option value="month">Nach Monat</option>
+                <option value="none">Ohne Gruppen</option>
+              </select>
+            </div>
+            {/* Zoom / density */}
+            <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1" title="Bildgröße">
+              <button onClick={() => setZoom(z => Math.max(110, z - 30))} className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><Minus size={13} /></button>
+              <input type="range" min={110} max={360} step={10} value={zoom} onChange={e => setZoom(Number(e.target.value))} className="w-20 accent-indigo-500" />
+              <button onClick={() => setZoom(z => Math.min(360, z + 30))} className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><Plus size={13} /></button>
+            </div>
             <select value={sort} onChange={e => setSort(e.target.value as any)}
               title="Sortierung"
               className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -330,7 +341,8 @@ export default function GalleryPage() {
             <JustifiedGrid
               photos={allGridPhotos}
               rowHeight={rowHeight}
-              gap={4}
+              gap={5}
+              groupBy={(sort === 'name' || sort === 'added') ? 'none' : groupBy}
               onPhotoClick={(_, i) => setLightbox({ photos: allGridPhotos, index: i })}
               onFavoriteToggle={photo => favMutation.mutate(photo.id)}
               selectable
@@ -359,7 +371,7 @@ export default function GalleryPage() {
             {timelineQuery.data && (
               <TimelineView
                 groups={timelineQuery.data}
-                rowHeight={ROW_HEIGHT}
+                rowHeight={rowHeight}
                 onPhotoClick={(_, allPhotos, i) => setLightbox({ photos: allPhotos, index: i })}
                 onFavoriteToggle={photo => favMutation.mutate(photo.id)}
               />
