@@ -451,3 +451,60 @@ async def info_v1():
             "upload_formats": ["jpg", "jpeg", "png", "heic", "heif", "raw", "dng", "mp4", "mov", "m4v"],
         },
     }
+
+
+# ── People (iOS app) ──────────────────────────────────────────────────────────
+
+class PersonV1(BaseModel):
+    id: int
+    name: str
+    face_count: int
+    avatar_url: str
+
+
+@router.get("/people", response_model=List[PersonV1])
+async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSession = Depends(get_db)):
+    from app.models.person import Person
+    from app.models.face import Face
+    from sqlalchemy import func as _f
+    base = str(request.base_url).rstrip("/")
+    persons = (await db.execute(select(Person).where(Person.is_hidden == False).order_by(Person.name))).scalars().all()  # noqa: E712
+    counts = dict((await db.execute(
+        select(Face.person_id, _f.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id)
+    )).all())
+    out = []
+    for p in persons:
+        named = bool((p.name or "").strip())
+        if not named and not include_unnamed:
+            continue
+        out.append(PersonV1(id=p.id, name=p.name or "Unbekannt", face_count=counts.get(p.id, 0),
+                            avatar_url=f"{base}/api/people/{p.id}/avatar"))
+    return out
+
+
+@router.get("/people/{person_id}/photos", response_model=PhotoPageV1)
+async def person_photos_v1(person_id: int, request: Request,
+                           cursor: Optional[int] = Query(None), limit: int = Query(50, ge=1, le=200),
+                           db: AsyncSession = Depends(get_db)):
+    from app.models.face import Face
+    from sqlalchemy import func as _f
+    sub = select(Face.photo_id).where(Face.person_id == person_id)
+    q = select(Photo).where(Photo.id.in_(sub), Photo.status == PhotoStatus.done, Photo.is_trashed == False)  # noqa: E712
+    if cursor:
+        q = q.where(Photo.id < cursor)
+    rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    total = await db.scalar(select(_f.count()).select_from(
+        select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False).subquery()))  # noqa: E712
+    return PhotoPageV1(items=[_to_v1(p, request) for p in items],
+                       next_cursor=(items[-1].id if has_more and items else None),
+                       total=total or 0, has_more=has_more)
+
+
+# ── Relationships (iOS app) ───────────────────────────────────────────────────
+
+@router.get("/relationships")
+async def relationships_v1(db: AsyncSession = Depends(get_db)):
+    from app.api.routes.relationships import graph as _graph
+    return await _graph(db)

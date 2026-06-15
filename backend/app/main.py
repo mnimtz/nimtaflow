@@ -148,8 +148,8 @@ app.include_router(albums.router, prefix="/api", dependencies=_guard)
 from app.api.routes import relationships as relationships_routes
 app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard)
 
-# ── iOS / mobile API v1 ──────────────────────────────────────────────────────
-app.include_router(v1_router.router, prefix="/api")
+# ── iOS / mobile API v1 (also gated by enforce_auth) ─────────────────────────
+app.include_router(v1_router.router, prefix="/api", dependencies=_guard)
 
 
 @app.middleware("http")
