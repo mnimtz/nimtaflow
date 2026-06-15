@@ -37,8 +37,19 @@ def _thumb_path(cache_root: str, source: str, size: str, ext: str = "jpg") -> Pa
 def _open_image_any(photo_path: str) -> Optional[Image.Image]:
     """Open an image, falling back to exiftool's embedded preview for HEIC/RAW
     variants that Pillow/pillow-heif can't decode."""
+    is_heic = photo_path.lower().endswith((".heic", ".heif"))
     try:
-        return Image.open(photo_path)
+        img = Image.open(photo_path)
+        # Force a full decode now. Pillow/pillow-heif opens lazily and can return
+        # an object that only fails (or yields a wrong-sized sub-image) on load —
+        # for HEIC we'd rather fall through to heif-convert than cache that.
+        img.load()
+        if not is_heic:
+            return img
+        # Sanity-check HEIC: a decoded tile/preview is far smaller than the file's
+        # declared primary dimensions. If Pillow gave us something tiny, prefer heif-convert.
+        if min(img.size) >= 256:
+            return img
     except Exception:
         pass
     # HEIC/HEIF that Pillow can't decode (e.g. grid/tiled): use libheif's heif-convert
@@ -85,10 +96,14 @@ def _open_image_any(photo_path: str) -> Optional[Image.Image]:
     return None
 
 
-def generate_thumbnail(photo_path: str, cache_root: str, size: str = "medium") -> Optional[str]:
-    """Generate JPEG thumbnail; returns path or None on failure."""
+def generate_thumbnail(photo_path: str, cache_root: str, size: str = "medium", force: bool = False) -> Optional[str]:
+    """Generate JPEG thumbnail; returns path or None on failure.
+
+    force=True ignores (and overwrites) any cached file — used by reprocess so a
+    previously-cached wrong thumbnail (e.g. an old ffmpeg-tile crop) gets replaced.
+    """
     out = _thumb_path(cache_root, photo_path, size)
-    if out.exists():
+    if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -104,14 +119,16 @@ def generate_thumbnail(photo_path: str, cache_root: str, size: str = "medium") -
         return None
 
 
-def generate_webp_thumbnail(photo_path: str, cache_root: str, size: str = "medium") -> Optional[str]:
+def generate_webp_thumbnail(photo_path: str, cache_root: str, size: str = "medium", force: bool = False) -> Optional[str]:
     """Generate WebP thumbnail (smaller file, modern browsers)."""
     out = _thumb_path(cache_root, photo_path, size, "webp")
-    if out.exists():
+    if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
-        img = Image.open(photo_path)
+        img = _open_image_any(photo_path)
+        if img is None:
+            return None
         img = _fix_orientation(img)
         img.thumbnail(SIZES[size], Image.LANCZOS)
         if img.mode not in ("RGB", "RGBA"):
@@ -173,10 +190,11 @@ def generate_video_thumbnail(
     cache_root: str,
     size: str = "medium",
     at_second: Optional[float] = None,
+    force: bool = False,
 ) -> Optional[str]:
     """Extract a JPEG frame from a video at `at_second` (default: 10% mark)."""
     out = _thumb_path(cache_root, video_path + ":thumb", size)
-    if out.exists():
+    if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -212,6 +230,7 @@ def generate_video_preview_webp(
     fps: int = 6,
     width: int = 320,
     at_second: Optional[float] = None,
+    force: bool = False,
 ) -> Optional[str]:
     """Generate a lightweight animated WebP hover preview (silent, looping).
 
@@ -220,7 +239,7 @@ def generate_video_preview_webp(
     """
     h = _hash(video_path + ":preview")
     out = Path(cache_root) / "previews" / h[:2] / f"{h}.webp"
-    if out.exists():
+    if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
 

@@ -108,7 +108,9 @@ async def reprocess_source(source_id: int, redo_faces: bool = False, db: AsyncSe
     )).all()
     ids = [r[0] for r in rows]
     for pid in ids:
-        process_photo_task.delay(pid, None, redo_faces)
+        # reprocess always forces fresh thumbnails — overwrites any stale cached
+        # crop (e.g. old ffmpeg-tile HEIC thumbnails) instead of short-circuiting.
+        process_photo_task.delay(pid, None, redo_faces, True)
     return {"reprocessing": len(ids), "redo_faces": redo_faces}
 
 

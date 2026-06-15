@@ -113,7 +113,7 @@ def write_person_name_task(self, person_id: int):
 
 
 @celery_app.task(bind=True, name="process_photo")
-def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False):
+def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False, redo_thumbs: bool = False):
     async def _run_process():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo, PhotoStatus
@@ -163,14 +163,14 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                 # Generate all thumbnail sizes — videos need a frame extracted via ffmpeg
                 if photo.is_video:
                     for size in ("small", "medium", "large"):
-                        thumb = generate_video_thumbnail(photo.path, settings.cache_path, size)
+                        thumb = generate_video_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
                         if thumb:
                             setattr(photo, f"thumb_{size}", thumb)
                     if photo.duration_seconds is None:
                         photo.duration_seconds = video_duration(photo.path)
                     # animated hover preview (best-effort)
                     try:
-                        preview = generate_video_preview_webp(photo.path, settings.cache_path)
+                        preview = generate_video_preview_webp(photo.path, settings.cache_path, force=redo_thumbs)
                         if preview:
                             photo.video_preview_path = preview
                     except Exception:
@@ -181,7 +181,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         flog("video", "WARNING", f"Kein Frame extrahierbar: {photo.filename}")
                 else:
                     for size in ("small", "medium", "large"):
-                        thumb = generate_thumbnail(photo.path, settings.cache_path, size)
+                        thumb = generate_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
                         if thumb:
                             setattr(photo, f"thumb_{size}", thumb)
                     if not photo.thumb_small:

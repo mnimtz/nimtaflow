@@ -349,7 +349,7 @@ async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     )).all()
     ids = [r[0] for r in rows]
     for pid in ids:
-        process_photo_task.delay(pid)
+        process_photo_task.delay(pid, None, False, True)
     return {"reprocessing": len(ids)}
 
 
