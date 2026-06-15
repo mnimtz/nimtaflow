@@ -104,7 +104,13 @@ export default function RelationshipsPage() {
   })
   const derive = useMutation({
     mutationFn: () => api.post('/relationships/derive').then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['rel-graph'] }),
+    onSuccess: (data: { created?: number }) => {
+      qc.invalidateQueries({ queryKey: ['rel-graph'] })
+      const n = data?.created ?? 0
+      if (n > 0) alert(`${n} neue Verbindung(en) abgeleitet (Geschwister/Großeltern).`)
+      else alert('Keine neuen Verbindungen ableitbar.\n\nAbgeleitet werden Geschwister (gemeinsame Eltern) und Großeltern (Eltern eines Elternteils). Lege dafür zuerst „Elternteil"-Verbindungen an.')
+    },
+    onError: () => alert('Ableiten fehlgeschlagen.'),
   })
 
   const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])

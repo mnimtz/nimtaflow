@@ -18,6 +18,18 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     worker_prefetch_multiplier=1,
+    # Two queues so slow GPU work never starves fast work:
+    #   gpu → AI description/embedding + face detection (single-slot worker; the
+    #         8 GB card holds exactly one VLM copy)
+    #   cpu → scanning, thumbnails, clustering, metadata (parallel, no GPU)
+    task_routes={
+        "ai_photo":           {"queue": "gpu"},
+        "process_photo":      {"queue": "cpu"},
+        "scan_source":        {"queue": "cpu"},
+        "watch_sources":      {"queue": "cpu"},
+        "auto_cluster_faces": {"queue": "cpu"},
+        "write_person_name":  {"queue": "cpu"},
+    },
 )
 
 # Periodic folder watching — check every minute which sources are due for a re-scan.

@@ -28,6 +28,12 @@ class AIResult:
 class AIProvider(ABC):
     name: str = "base"
 
+    @property
+    def label(self) -> str:
+        """Human-readable provider+model for logs, e.g. 'local:qwen2.5-vl-3b'.
+        Defaults to the bare provider name; subclasses add the concrete model."""
+        return self.name
+
     @abstractmethod
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         ...

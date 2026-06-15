@@ -29,6 +29,10 @@ class GeminiProvider(AIProvider):
         self.embed_model = embed_model
         self._base = "https://generativelanguage.googleapis.com/v1beta"
 
+    @property
+    def label(self) -> str:
+        return f"gemini:{self.model}"
+
     @staticmethod
     def _extract_text(data: dict) -> str:
         """Safely pull the text out of a generateContent response.

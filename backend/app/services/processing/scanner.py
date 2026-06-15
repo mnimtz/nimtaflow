@@ -53,7 +53,22 @@ async def scan_source(
     root = Path(source.path)
     stats = {"new": 0, "skipped": 0, "errors": 0, "missing": 0, "restored": 0}
 
+    def _slog(level, msg):
+        try:
+            from app.services.feature_log import log as flog
+            flog("scanner", level, msg)
+        except Exception:
+            pass
+
+    _slog("INFO", f"Scan gestartet: {root} (rekursiv={source.recursive})")
+
     if not root.exists():
+        # Most common cause of "noch nicht gescannt": the path doesn't exist
+        # inside the container (wrong mount/typo). Make it visible.
+        _slog("ERROR", f"Pfad existiert nicht im Container: {root} — Mount/Schreibweise prüfen")
+        source.last_scan_at = datetime.now(timezone.utc)
+        source.last_scan_count = 0
+        await session.commit()
         return stats
 
     walk_fn = root.rglob("*") if source.recursive else root.iterdir()
@@ -122,6 +137,7 @@ async def scan_source(
         except Exception as e:
             await session.rollback()
             stats["errors"] += 1
+            _slog("WARNING", f"Datei übersprungen (Fehler): {entry.name}: {str(e)[:140]}")
 
     # ── Deletion detection ──────────────────────────────────────────────
     # Flag DB photos under this source root whose files vanished from disk;

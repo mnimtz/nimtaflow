@@ -35,6 +35,10 @@ class LocalVLMProvider(AIProvider):
         self.model_key = model_key if model_key in MODELS else "florence2-base"
         self.repo = MODELS[self.model_key]
 
+    @property
+    def label(self) -> str:
+        return f"local:{self.model_key}"
+
     # ── lazy loaders ──────────────────────────────────────────────────────────
     def _load_vlm(self):
         if self.model_key in _vlm_cache:
@@ -128,16 +132,34 @@ class LocalVLMProvider(AIProvider):
                     gen = model.generate(**inputs, max_new_tokens=256)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
-        except Exception:
+        except Exception as e:
+            # Surface *why* a description failed (OOM, bad file, …) instead of a
+            # silent empty string — the worker's "AI lieferte keine Beschreibung"
+            # warning otherwise hides the real cause.
+            try:
+                from app.services.feature_log import log as _flog
+                _flog("ai", "WARNING", f"VLM-Fehler ({self.model_key}): {type(e).__name__}: {str(e)[:200]}")
+            except Exception:
+                pass
             return ""
 
     async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
-        # Derive simple tags from the caption (keeps deps minimal & robust)
+        # Derive simple tags from the caption (keeps deps minimal & robust).
+        # Use the caption in the *requested* language so German stays German.
         try:
-            caption = await self.describe_image(image, "en")
+            caption = await self.describe_image(image, language)
             import re
-            words = re.findall(r"[a-zA-ZäöüÄÖÜ]{4,}", caption.lower())
-            stop = {"this", "that", "with", "from", "image", "photo", "shows", "there", "appears", "while", "their", "have", "very", "into", "over"}
+            words = re.findall(r"[a-zA-ZäöüÄÖÜßéèêàâ]{4,}", caption.lower())
+            stop = {
+                # English
+                "this", "that", "with", "from", "image", "photo", "shows", "there",
+                "appears", "while", "their", "have", "very", "into", "over",
+                # German
+                "und", "oder", "eine", "einen", "einem", "einer", "dieser", "diese",
+                "dieses", "wird", "sind", "auch", "sich", "dem", "den", "das", "der",
+                "die", "ein", "mit", "auf", "von", "für", "ist", "bild", "foto",
+                "zeigt", "sowie", "einige", "mehrere", "etwas", "sehr",
+            }
             seen, tags = set(), []
             for w in words:
                 if w not in stop and w not in seen:

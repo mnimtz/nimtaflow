@@ -236,6 +236,67 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                 # never cost us the thumbnail or stick the photo on a transient error.
                 await db.commit()
 
+            except Exception as e:
+                # Roll back the broken transaction before recording the error,
+                # otherwise the error-write itself fails and the row stays "processing".
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                fname = "?"
+                try:
+                    p2 = await db.get(Photo, photo_id)
+                    if p2:
+                        fname = p2.filename
+                        p2.status = PhotoStatus.error
+                        p2.error_message = str(e)[:500]
+                        await db.commit()
+                except Exception:
+                    pass
+                flog("system", "ERROR", f"Verarbeitung fehlgeschlagen: {fname}: {str(e)[:200]}")
+                if job_id:
+                    try:
+                        db.add(JobLog(job_id=job_id, photo_id=photo_id, level="ERROR", message=f"❌ {fname}: {e}"))
+                        await db.commit()
+                    except Exception:
+                        pass
+                return  # don't hand a broken photo to the AI stage
+
+            # Thumbnails are done & committed and the photo already shows in the
+            # gallery. Hand the slow GPU work (AI description, embedding, face
+            # detection) to the single-slot GPU queue so it never blocks scans
+            # or thumbnails for other photos.
+            ai_photo_task.delay(photo_id, job_id, redo_faces)
+
+    _run(_run_process())
+
+
+@celery_app.task(bind=True, name="ai_photo")
+def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False):
+    """GPU stage: AI description, tags, XMP, embedding and face detection.
+    Runs on the dedicated single-slot `gpu` worker so the one VLM copy that fits
+    the 8 GB card is never duplicated. Thumbnails already exist at this point."""
+    async def _run_ai():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo, PhotoStatus
+        from app.models.job import JobLog
+        from app.models.tag import Tag, PhotoTag
+        from app.services.processing.thumbnails import open_image_for_ai
+        from app.services.ai.manager import AIManager
+        from app.services.feature_log import log as flog
+        from app.core.config import get_settings
+        from sqlalchemy import select
+        import time
+
+        init_db()
+        settings = get_settings()  # noqa: F841 (kept for parity / future use)
+
+        async for db in get_db():
+            photo = await db.get(Photo, photo_id)
+            if not photo:
+                return
+            start = time.time()
+            try:
                 # AI processing — load provider config from DB settings (non-fatal)
                 photo.ai_error = False  # cleared on success; set in except below
                 ai_settings = {}  # ensure defined even if load_settings below throws (face block reads it)
@@ -437,7 +498,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         await db.commit()
                 except Exception:
                     pass
-                flog("system", "ERROR", f"Verarbeitung fehlgeschlagen: {fname}: {str(e)[:200]}")
+                flog("system", "ERROR", f"AI-Verarbeitung fehlgeschlagen: {fname}: {str(e)[:200]}")
                 if job_id:
                     try:
                         db.add(JobLog(job_id=job_id, photo_id=photo_id, level="ERROR", message=f"❌ {fname}: {e}"))
@@ -445,4 +506,4 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     except Exception:
                         pass
 
-    _run(_run_process())
+    _run(_run_ai())

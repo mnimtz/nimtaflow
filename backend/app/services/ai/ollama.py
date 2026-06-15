@@ -14,6 +14,10 @@ class OllamaProvider(AIProvider):
         self.vision_model = vision_model
         self.embed_model = embed_model
 
+    @property
+    def label(self) -> str:
+        return f"ollama:{self.vision_model}"
+
     def _image_to_b64(self, image: Image.Image) -> str:
         buf = io.BytesIO()
         image.save(buf, format="JPEG", quality=85)
