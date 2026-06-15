@@ -20,6 +20,11 @@ def _is_unrestricted(user: Optional[User]) -> bool:
     return user is None or user.role == UserRole.admin or not (user.access_config or {})
 
 
+def _esc(s: str) -> str:
+    """Escape LIKE wildcards so a path with '_' or '%' isn't treated as a pattern."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def photo_conditions(user: Optional[User]) -> List:
     """SQLAlchemy WHERE clauses restricting a photo query to what `user` may see."""
     if _is_unrestricted(user):
@@ -32,10 +37,10 @@ def photo_conditions(user: Optional[User]) -> List:
         conds.append(Photo.taken_at <= cfg["visible_until"])
     wl = [p for p in (cfg.get("folder_whitelist") or []) if p]
     if wl:
-        conds.append(or_(*[Photo.path.like(f"{p.rstrip('/')}/%") for p in wl]))
+        conds.append(or_(*[Photo.path.like(f"{_esc(p.rstrip('/'))}/%", escape="\\") for p in wl]))
     for p in (cfg.get("folder_blacklist") or []):
         if p:
-            conds.append(~Photo.path.like(f"{p.rstrip('/')}/%"))
+            conds.append(~Photo.path.like(f"{_esc(p.rstrip('/'))}/%", escape="\\"))
     pids = cfg.get("visible_person_ids")
     if pids:  # null/empty = all
         conds.append(Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(pids))))

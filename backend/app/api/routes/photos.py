@@ -57,7 +57,7 @@ def _base_query(
     if media_type == "video":
         q = q.where(Photo.is_video == True)
     elif media_type == "photo":
-        q = q.where(Photo.is_video == False, Photo.mime_type.not_like("image/raw%"))
+        q = q.where(Photo.is_video == False, or_(Photo.mime_type.is_(None), Photo.mime_type.not_like("image/raw%")))
     elif media_type == "raw":
         q = q.where(Photo.mime_type.like("image/raw%"))
     if person_id:
@@ -94,7 +94,7 @@ async def list_photos(
     for c in photo_conditions(user):
         q = q.where(c)
 
-    if lat and lng and radius_km:
+    if lat is not None and lng is not None and radius_km:
         lat_delta = radius_km / 111.0
         lng_delta = radius_km / (111.0 * max(abs(lat), 0.01))
         q = q.where(

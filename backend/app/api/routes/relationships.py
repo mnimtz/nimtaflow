@@ -64,7 +64,8 @@ async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
         outgoing = r.from_person_id == person_id
         oid = r.to_person_id if outgoing else r.from_person_id
         t = r.rel_type.value
-        label = FWD[t] if (outgoing or not r.directed) else INV.get(t, FWD[t])
+        is_directed = r.rel_type in DIRECTED
+        label = FWD[t] if (outgoing or not is_directed) else INV.get(t, FWD[t])
         out.append({
             "id": r.id, "other_id": oid, "other_name": names.get(oid) or "Unbekannt",
             "type": t, "category": CATEGORY[r.rel_type], "label": label, "outgoing": outgoing,

@@ -75,11 +75,19 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite }: 
 }) {
   const [cur, setCur] = useState(index)
   const [info, setInfo] = useState(false)
+  // Track favorite state locally so the heart updates immediately (the `photos`
+  // array is a snapshot frozen when the lightbox opened).
+  const [favs, setFavs] = useState<Set<number>>(() => new Set(photos.filter(p => p.is_favorite).map(p => p.id)))
+  const toggleFav = (p: Photo) => {
+    onFavorite?.(p)
+    setFavs(s => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n })
+  }
+  const isFav = (p?: Photo) => !!p && favs.has(p.id)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'i') { setInfo(v => !v) }
-      if (e.key === 'f' && onFavorite && photos[cur]) onFavorite(photos[cur])
+      if (e.key === 'f' && photos[cur]) toggleFav(photos[cur])
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -95,8 +103,8 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite }: 
     </button>
   )
   const favBtn = onFavorite ? (
-    <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && onFavorite(photos[cur])} title="Favorit (f)">
-      <Heart className="yarl__icon" fill={photos[cur]?.is_favorite ? 'currentColor' : 'none'} color={photos[cur]?.is_favorite ? '#f87171' : undefined} />
+    <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && toggleFav(photos[cur])} title="Favorit (f)">
+      <Heart className="yarl__icon" fill={isFav(photos[cur]) ? 'currentColor' : 'none'} color={isFav(photos[cur]) ? '#f87171' : undefined} />
     </button>
   ) : null
 

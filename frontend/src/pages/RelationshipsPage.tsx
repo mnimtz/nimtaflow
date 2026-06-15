@@ -205,8 +205,10 @@ export default function RelationshipsPage() {
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CAT_COLOR[e.category] }} />
                         <span className="text-zinc-500 text-xs">{label}</span>
                         <span className="text-zinc-800 dark:text-zinc-200 truncate flex-1">{other?.name}</span>
-                        <button onClick={() => openPhotos(`/relationships/together/${sel}/${other?.id}`)}
-                          title="Gemeinsame Fotos" className="text-zinc-400 hover:text-indigo-500"><ImageIcon size={14} /></button>
+                        {other && (
+                          <button onClick={() => openPhotos(`/relationships/together/${sel}/${other.id}`)}
+                            title="Gemeinsame Fotos" className="text-zinc-400 hover:text-indigo-500"><ImageIcon size={14} /></button>
+                        )}
                         <button onClick={() => del.mutate(e.id)} className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500"><Trash2 size={13} /></button>
                       </li>
                     )

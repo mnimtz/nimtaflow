@@ -117,10 +117,14 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
     min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))
     algo = str(s.get("face.cluster_algo", "dbscan")).lower()
+    engine = str(s.get("face.engine", "facenet")).lower()
 
+    # Only cluster faces from the active engine — facenet (VGGFace2) and InsightFace
+    # (ArcFace) embeddings live in incompatible spaces and must never be mixed.
     rows = (await db.execute(
         select(Face.id, Face.embedding).where(
-            Face.person_id == None, Face.is_ignored == False, Face.embedding.isnot(None)  # noqa: E711,E712
+            Face.person_id == None, Face.is_ignored == False, Face.embedding.isnot(None),  # noqa: E711,E712
+            Face.detector == engine,
         )
     )).all()
     if len(rows) < min_size:
@@ -139,7 +143,8 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
 
     # 1) Grow existing people.
     existing = (await db.execute(
-        select(Face.person_id, Face.embedding).where(Face.person_id.isnot(None), Face.embedding.isnot(None))
+        select(Face.person_id, Face.embedding).where(
+            Face.person_id.isnot(None), Face.embedding.isnot(None), Face.detector == engine)
     )).all()
     centroids = {}
     if existing:

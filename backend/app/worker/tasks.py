@@ -238,6 +238,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
 
                 # AI processing — load provider config from DB settings (non-fatal)
                 photo.ai_error = False  # cleared on success; set in except below
+                ai_settings = {}  # ensure defined even if load_settings below throws (face block reads it)
                 try:
                     from app.services.settings_loader import load_settings
                     from app.services.ai.manager import build_video_settings
