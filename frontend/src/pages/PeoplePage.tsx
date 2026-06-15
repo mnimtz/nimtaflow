@@ -293,6 +293,25 @@ function PersonDetail({ person, onBack, onDeleted }: {
     queryFn: () => api.get(`/people/${person.id}/photos?limit=100`).then(r => r.data),
   })
 
+  const { data: faces = [] } = useQuery<{ id: number; photo_id: number }[]>({
+    queryKey: ['person-faces', person.id],
+    queryFn: () => api.get(`/people/${person.id}/faces`).then(r => r.data),
+  })
+
+  const setCover = useMutation({
+    mutationFn: (faceId: number) => api.post(`/people/${person.id}/profile-face/${faceId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['people'] }),
+  })
+  const removeFace = useMutation({
+    mutationFn: (faceId: number) => api.delete(`/people/faces/${faceId}/unassign`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['person-faces', person.id] })
+      qc.invalidateQueries({ queryKey: ['person-photos', person.id] })
+      qc.invalidateQueries({ queryKey: ['people'] })
+      qc.invalidateQueries({ queryKey: ['unassigned-faces'] })
+    },
+  })
+
   const updateMutation = useMutation({
     mutationFn: (body: Record<string, string>) => api.patch(`/people/${person.id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['people'] }); setEditing(false) },
@@ -382,6 +401,29 @@ function PersonDetail({ person, onBack, onDeleted }: {
           )}
         </div>
       </div>
+
+      {faces.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+            Gesichter ({faces.length})
+          </h2>
+          <div className="flex gap-2 flex-wrap">
+            {faces.map(f => (
+              <div key={f.id} className="group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-1 ring-zinc-700">
+                <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
+                  onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                  <button onClick={() => setCover.mutate(f.id)} title="Als Titelbild setzen"
+                    className="w-6 h-6 rounded-full bg-white/90 text-zinc-900 text-xs flex items-center justify-center hover:bg-white">★</button>
+                  <button onClick={() => { if (confirm('Dieses Gesicht gehört nicht zu dieser Person?')) removeFace.mutate(f.id) }}
+                    title="Ist nicht diese Person"
+                    className="w-6 h-6 rounded-full bg-red-500/90 text-white text-xs flex items-center justify-center hover:bg-red-500">✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
         Fotos ({photosData?.total ?? photos.length})

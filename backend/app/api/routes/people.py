@@ -197,6 +197,16 @@ async def person_photos(
     return {"total": total or 0, "page": page, "limit": limit, "items": items}
 
 
+@router.get("/{person_id}/faces")
+async def person_faces(person_id: int, db: AsyncSession = Depends(get_db)):
+    """List the individual faces assigned to a person (for the faces strip)."""
+    rows = (await db.execute(
+        select(Face.id, Face.photo_id, Face.confidence)
+        .where(Face.person_id == person_id).order_by(Face.confidence.desc().nullslast())
+    )).all()
+    return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
+
+
 # ── Face management ───────────────────────────────────────────────────────────
 
 @router.post("/faces/{face_id}/assign/{person_id}")
