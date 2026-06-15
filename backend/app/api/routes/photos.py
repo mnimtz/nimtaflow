@@ -192,6 +192,15 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     )).all()
     by_status = {str(getattr(r[0], "value", r[0])): r[1] for r in status_rows}
 
+    # Pipeline stage coverage (how far each photo got through processing)
+    from app.models.face import Face
+    live = [Photo.is_trashed == False]  # noqa: E712
+    thumbed = await db.scalar(select(func.count()).where(*live, Photo.thumb_small.isnot(None)))
+    described = await db.scalar(select(func.count()).where(*live, Photo.description.isnot(None), Photo.description != ""))
+    embedded = await db.scalar(select(func.count()).where(*live, Photo.embedding.isnot(None)))
+    ai_failed = await db.scalar(select(func.count()).where(*live, Photo.ai_error == True))  # noqa: E712
+    with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
+
     return {
         "total": total or 0,
         "videos": videos or 0,
@@ -201,6 +210,10 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "date_min": min_date.isoformat() if min_date else None,
         "date_max": max_date.isoformat() if max_date else None,
         "by_status": by_status,
+        "coverage": {
+            "thumbnailed": thumbed or 0, "described": described or 0,
+            "embedded": embedded or 0, "with_faces": with_faces or 0, "ai_error": ai_failed or 0,
+        },
     }
 
 
@@ -327,6 +340,23 @@ async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     ids = [r[0] for r in rows]
     for pid in ids:
         process_photo_task.delay(pid, None, False, True)
+    return {"reprocessing": len(ids)}
+
+
+@router.post("/reprocess-missing-ai")
+async def reprocess_missing_ai(db: AsyncSession = Depends(get_db)):
+    """Re-queue done photos that have no embedding yet (AI never ran / was off) —
+    'KI nachholen' so search & AI albums work for them."""
+    from app.worker.tasks import process_photo_task
+    rows = (await db.execute(
+        select(Photo.id).where(
+            Photo.status == PhotoStatus.done, Photo.is_trashed == False,  # noqa: E712
+            Photo.embedding.is_(None), Photo.is_video == False,  # noqa: E712
+        )
+    )).all()
+    ids = [r[0] for r in rows]
+    for pid in ids:
+        process_photo_task.delay(pid)
     return {"reprocessing": len(ids)}
 
 

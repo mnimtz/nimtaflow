@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Pause, Square, RefreshCw, CheckCircle, XCircle, SkipForward, Users, Tag, FileText, DollarSign } from 'lucide-react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { RefreshCw, CheckCircle, XCircle, SkipForward, Users, Sparkles, Brain, DollarSign, AlertTriangle } from 'lucide-react'
 import { api, Job } from '../lib/api'
+
+type Stats = { total?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }
 
 export default function PipelinePage() {
   const { data: jobs = [], refetch } = useQuery<Job[]>({
@@ -10,12 +12,22 @@ export default function PipelinePage() {
     refetchInterval: 3000,
   })
 
-  const { data: stats } = useQuery<{ by_status?: Record<string, number> }>({
+  const { data: stats, refetch: refetchStats } = useQuery<Stats>({
     queryKey: ['photo-stats'],
     queryFn: () => api.get('/photos/stats').then((r) => r.data),
     refetchInterval: 3000,
   })
   const st = stats?.by_status ?? {}
+  const cov = stats?.coverage ?? {}
+  const total = stats?.total ?? 0
+  const [busy, setBusy] = useState('')
+
+  const act = useMutation({
+    mutationFn: ({ url }: { url: string }) => api.post(url).then(r => r.data),
+    onSuccess: (d: any) => { setBusy(''); refetch(); refetchStats(); alert(`${d?.reprocessing ?? d?.new_persons ?? d?.clustered ?? 'OK'} — Aktion gestartet.`) },
+    onError: () => setBusy(''),
+  })
+  const doAct = (key: string, url: string) => { setBusy(key); act.mutate({ url }) }
 
   const activeJob = jobs.find((j) => j.status === 'running' || j.status === 'queued')
   const recentJobs = jobs.filter((j) => j.status !== 'running' && j.status !== 'queued').slice(0, 10)
@@ -47,6 +59,41 @@ export default function PipelinePage() {
         ))}
       </div>
 
+      {/* Stage coverage */}
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-5">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Verarbeitungs-Abdeckung <span className="text-gray-400 font-normal">({total.toLocaleString('de')} Fotos)</span></h2>
+        <div className="space-y-3">
+          {([
+            { k: 'thumbnailed', label: 'Thumbnails', icon: CheckCircle, cls: 'bg-emerald-500' },
+            { k: 'described', label: 'KI-Beschreibung', icon: Brain, cls: 'bg-violet-500' },
+            { k: 'embedded', label: 'Suchindex (Embedding)', icon: Sparkles, cls: 'bg-indigo-500' },
+            { k: 'with_faces', label: 'Gesichter erkannt', icon: Users, cls: 'bg-sky-500' },
+          ] as const).map(r => {
+            const v = cov[r.k] ?? 0
+            const pct = total ? Math.round((v / total) * 100) : 0
+            return (
+              <div key={r.k} className="flex items-center gap-3">
+                <r.icon size={15} className="text-gray-400 shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-300 w-44 shrink-0">{r.label}</span>
+                <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`h-full ${r.cls} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-xs tabular-nums text-gray-500 w-24 text-right shrink-0">{v.toLocaleString('de')} · {pct}%</span>
+              </div>
+            )
+          })}
+          {(cov.ai_error ?? 0) > 0 && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 pt-1"><AlertTriangle size={13} /> {cov.ai_error} Fotos mit KI-Fehler (z. B. Provider überlastet) — „KI nachholen" oder „Fehler erneut".</p>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-gray-200 dark:border-gray-800">
+          <ActBtn label="Fehler erneut" busy={busy === 'failed'} onClick={() => doAct('failed', '/photos/reprocess-failed')} />
+          <ActBtn label="KI nachholen" busy={busy === 'ai'} onClick={() => doAct('ai', '/photos/reprocess-missing-ai')} />
+          <ActBtn label="Gesichter clustern" busy={busy === 'cluster'} onClick={() => doAct('cluster', '/people/cluster')} />
+        </div>
+      </div>
+
       {activeJob ? <ActiveJobCard job={activeJob} /> : (
         <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 text-center text-gray-500 dark:text-gray-400 text-sm">
           Keine aktive Verarbeitung — starte die Pipeline um Fotos zu verarbeiten.
@@ -64,6 +111,15 @@ export default function PipelinePage() {
 
       <LiveLog />
     </div>
+  )
+}
+
+function ActBtn({ label, busy, onClick }: { label: string; busy: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} disabled={busy}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50">
+      <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> {label}
+    </button>
   )
 }
 
