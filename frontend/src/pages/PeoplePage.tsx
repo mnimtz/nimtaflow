@@ -4,7 +4,7 @@ import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
   Check, Search, Star, Sparkles,
 } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
 import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
@@ -444,7 +444,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
       <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
         {photos.map((photo, i) => (
           <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer" onClick={() => setLightboxIndex(i)}>
-            <img src={`/api/photos/${photo.id}/thumbnail?size=small`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+            <img src={thumbUrl(photo as any, 'small')} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
             {(photo as any).is_video && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="bg-black/50 rounded-full p-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg></div>

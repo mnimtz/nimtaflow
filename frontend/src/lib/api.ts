@@ -45,12 +45,25 @@ export type Photo = {
   status: string
   thumb_small: string | null
   thumb_medium: string | null
+  processed_at?: string | null
   is_video: boolean
   duration_seconds: number | null
   is_favorite: boolean
   is_archived: boolean
   is_trashed: boolean
   user_rating: number | null
+}
+
+/** Thumbnail URL with a cache-bust token.
+ * The endpoint serves with max-age=1y, so without a version a regenerated
+ * thumbnail (e.g. after reprocess) would never be re-fetched by the browser.
+ * `processed_at` changes on every (re)process, so the URL changes with it. */
+export function thumbUrl(
+  photo: { id: number; processed_at?: string | null },
+  size: 'small' | 'medium' | 'large' = 'medium',
+): string {
+  const v = photo.processed_at ? Date.parse(photo.processed_at) : 0
+  return `/api/photos/${photo.id}/thumbnail?size=${size}&v=${v}`
 }
 
 export type TimelineGroup = {

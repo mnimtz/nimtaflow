@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Masonry from 'react-masonry-css'
-import { Photo } from '../../lib/api'
+import { Photo, thumbUrl } from '../../lib/api'
 
 const BREAKPOINTS = {
   default: 6,
@@ -52,9 +52,7 @@ export default function PhotoGrid({ photos, onSelect, onLoadMore, hasMore, loadi
 }
 
 function PhotoTile({ photo, onClick }: { photo: Photo; onClick: () => void }) {
-  const src = photo.thumb_medium
-    ? `/api/photos/${photo.id}/thumbnail?size=medium`
-    : `/api/photos/${photo.id}/thumbnail?size=small`
+  const src = thumbUrl(photo, photo.thumb_medium ? 'medium' : 'small')
 
   const aspectRatio = photo.width && photo.height ? photo.height / photo.width : 0.75
 

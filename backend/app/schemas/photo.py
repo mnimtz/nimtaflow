@@ -16,6 +16,7 @@ class PhotoBase(BaseModel):
     status: PhotoStatus
     thumb_small: Optional[str]
     thumb_medium: Optional[str]
+    processed_at: Optional[datetime] = None  # used as a thumbnail cache-bust token
     is_video: bool = False
     duration_seconds: Optional[float] = None
     is_favorite: bool = False

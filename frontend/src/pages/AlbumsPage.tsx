@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, thumbUrl } from '../lib/api'
 import { format } from 'date-fns'
 import { de } from 'date-fns/locale'
 
@@ -123,7 +123,7 @@ function AlbumCard({ album, onClick, onDelete, onRefresh }: {
       <div className="aspect-square bg-zinc-800 flex items-center justify-center">
         {album.cover_photo_id ? (
           <img
-            src={`/api/photos/${album.cover_photo_id}/thumbnail?size=medium`}
+            src={thumbUrl({ id: album.cover_photo_id }, 'medium')}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -364,7 +364,7 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
           {photos.map(photo => (
             <div key={photo.id} className="aspect-square rounded-md overflow-hidden bg-zinc-800">
               <img
-                src={`/api/photos/${photo.id}/thumbnail?size=small`}
+                src={thumbUrl(photo, 'small')}
                 className="w-full h-full object-cover hover:scale-105 transition-transform"
                 loading="lazy"
               />

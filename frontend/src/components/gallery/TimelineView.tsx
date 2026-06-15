@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { Heart, Play } from 'lucide-react'
-import type { Photo, TimelineGroup } from '../../lib/api'
+import { thumbUrl, type Photo, type TimelineGroup } from '../../lib/api'
 
 type Props = {
   groups: TimelineGroup[]
@@ -36,7 +36,7 @@ function PhotoThumb({ photo, onClick, onFavorite }: {
       onClick={onClick}
     >
       <img
-        src={`/api/photos/${photo.id}/thumbnail?size=medium`}
+        src={thumbUrl(photo, 'medium')}
         alt={photo.filename}
         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         loading="lazy"

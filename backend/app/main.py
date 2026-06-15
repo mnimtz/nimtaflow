@@ -46,6 +46,7 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_missing BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS missing_at TIMESTAMPTZ",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS video_preview_path VARCHAR(512)",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_error BOOLEAN NOT NULL DEFAULT FALSE",
     # ── photo_sources: watching ───────────────────────────────────────────────
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",

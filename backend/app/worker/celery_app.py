@@ -27,4 +27,9 @@ celery_app.conf.beat_schedule = {
         "task": "watch_sources",
         "schedule": 60.0,
     },
+    # Auto-group unassigned faces so they don't pile up individually.
+    "auto-cluster-faces": {
+        "task": "auto_cluster_faces",
+        "schedule": 300.0,
+    },
 }

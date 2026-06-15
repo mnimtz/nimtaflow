@@ -69,6 +69,30 @@ def watch_sources_task(self):
     return _run(_check())
 
 
+@celery_app.task(bind=True, name="auto_cluster_faces")
+def auto_cluster_faces_task(self):
+    """Beat task: periodically group unassigned faces into (unnamed) people, so
+    detected faces don't pile up individually in the 'Gesichter' list. Honours
+    the same thresholds as the manual 'Clustern' button; opt-out via
+    face.auto_cluster = false."""
+    async def _run_cluster():
+        from app.core.database import init_db, get_db
+        from app.services.settings_loader import load_settings
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            if str(s.get("face.auto_cluster", "true")).lower() == "false":
+                return {"skipped": "disabled"}
+            try:
+                from app.services.face_cluster import cluster_unassigned
+                res = await cluster_unassigned(db)
+            except ImportError:
+                return {"skipped": "no sklearn"}
+            return res
+
+    return _run(_run_cluster())
+
+
 @celery_app.task(bind=True, name="write_person_name")
 def write_person_name_task(self, person_id: int):
     """Write a person's name into their photos as XMP:PersonInImage (best-effort),
@@ -192,6 +216,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                 await db.commit()
 
                 # AI processing — load provider config from DB settings (non-fatal)
+                photo.ai_error = False  # cleared on success; set in except below
                 try:
                     from app.services.settings_loader import load_settings
                     from app.services.ai.manager import build_video_settings
@@ -291,6 +316,8 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                 except Exception as ai_err:
                     await db.rollback()
                     photo = await db.get(Photo, photo_id)
+                    if photo:
+                        photo.ai_error = True  # persisted by the final commit below
                     flog("ai", "WARNING", f"AI übersprungen (Thumbnail bleibt): {photo.filename if photo else photo_id}: {str(ai_err)[:160]}")
 
                 # ── Face detection (local, best-effort) ───────────────────────

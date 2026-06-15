@@ -4,7 +4,7 @@ import {
   X, ChevronLeft, ChevronRight, Heart, Download, Info,
   MapPin, Camera, Aperture, Trash2, Calendar, Star, Pencil, Save, Loader2,
 } from 'lucide-react'
-import { api, type Photo } from '../../lib/api'
+import { api, thumbUrl, type Photo } from '../../lib/api'
 import VideoPlayer from './VideoPlayer'
 
 type PhotoDetail = Photo & {
@@ -207,7 +207,7 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
               key={photo.id}
               /* Display the large JPEG thumbnail — browsers can't render HEIC
                  originals. The real original stays available via the download button. */
-              src={`/api/photos/${photo.id}/thumbnail?size=large`}
+              src={thumbUrl(photo, 'large')}
               alt={photo.filename}
               className="max-h-full max-w-full object-contain select-none"
               draggable={false}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Heart, Play, Star, Check } from 'lucide-react'
-import type { Photo } from '../../lib/api'
+import { thumbUrl, type Photo } from '../../lib/api'
 
 /** Tile image with a skeleton shimmer until it loads + video hover preview. */
 function TileImage({ photo, isSelected }: { photo: Photo; isSelected: boolean }) {
@@ -14,7 +14,7 @@ function TileImage({ photo, isSelected }: { photo: Photo; isSelected: boolean })
     >
       {!loaded && <div className="absolute inset-0 animate-pulse bg-gray-200 dark:bg-gray-700/60" />}
       <img
-        src={`/api/photos/${photo.id}/thumbnail?size=medium`}
+        src={thumbUrl(photo, 'medium')}
         alt={photo.filename}
         onLoad={() => setLoaded(true)}
         className={`w-full h-full object-cover transition-all duration-300 ${loaded ? 'opacity-100' : 'opacity-0'} ${

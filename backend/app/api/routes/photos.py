@@ -342,10 +342,14 @@ class BatchAction(_BM):
 
 @router.post("/reprocess-failed")
 async def reprocess_failed(db: AsyncSession = Depends(get_db)):
-    """Re-queue all photos that errored or never finished (error/pending/processing)."""
+    """Re-queue all photos that errored, never finished, or whose AI step failed
+    (e.g. a transient Gemini 503) while the thumbnail succeeded."""
     from app.worker.tasks import process_photo_task
     rows = (await db.execute(
-        select(Photo.id).where(Photo.status.in_([PhotoStatus.error, PhotoStatus.pending, PhotoStatus.processing]))
+        select(Photo.id).where(
+            (Photo.status.in_([PhotoStatus.error, PhotoStatus.pending, PhotoStatus.processing]))
+            | (Photo.ai_error == True)  # noqa: E712
+        )
     )).all()
     ids = [r[0] for r in rows]
     for pid in ids:

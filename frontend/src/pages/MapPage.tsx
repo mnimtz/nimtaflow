@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import { Layers, Navigation } from 'lucide-react'
-import { api, Photo } from '../lib/api'
+import { api, Photo, thumbUrl } from '../lib/api'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -147,7 +147,7 @@ export default function MapPage() {
                 <Popup>
                   <div className="text-center">
                     <img
-                      src={`/api/photos/${photo.id}/thumbnail?size=small`}
+                      src={thumbUrl(photo, 'small')}
                       alt={photo.filename}
                       className="w-36 h-36 object-cover rounded mb-1.5"
                     />

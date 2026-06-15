@@ -81,6 +81,9 @@ class Photo(Base):
     status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    # AI step failed (e.g. provider 503) while the rest of processing succeeded —
+    # lets us re-queue just-AI-failed photos without a full folder reprocess.
+    ai_error: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     # ── Thumbnails ────────────────────────────────────────────────────────────
     thumb_small: Mapped[Optional[str]] = mapped_column(String(512))

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { LayoutGrid, Clock, Sparkles, Search, X, Heart, Archive, Trash2 } from 'lucide-react'
-import { api, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
+import { api, thumbUrl, type Photo, type TimelineGroup, type PhotoStats } from '../lib/api'
 import JustifiedGrid from '../components/gallery/JustifiedGrid'
 import TimelineView from '../components/gallery/TimelineView'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
@@ -93,7 +93,7 @@ function MemoriesView({ onPhotoClick }: { onPhotoClick: (photos: Photo[], i: num
                 onClick={() => onPhotoClick(group.photos, i)}
               >
                 <img
-                  src={`/api/photos/${photo.id}/thumbnail?size=medium`}
+                  src={thumbUrl(photo, 'medium')}
                   alt={photo.filename}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
