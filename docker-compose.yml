@@ -43,6 +43,7 @@ services:
       CACHE_PATH: /cache
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
 
   worker:
     build: ./backend
@@ -65,6 +66,7 @@ services:
       CACHE_PATH: /cache
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
       # Persistent model cache (HuggingFace) so downloads survive rebuilds
       HF_HOME: /models
       HF_HUB_CACHE: /models/hub
@@ -87,6 +89,7 @@ services:
       CACHE_PATH: /cache
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
 
   frontend:
     build: ./frontend

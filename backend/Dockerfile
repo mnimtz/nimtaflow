@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     exiftool \
     gosu \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

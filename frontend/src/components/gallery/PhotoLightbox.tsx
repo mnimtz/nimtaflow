@@ -251,7 +251,11 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
         ">
           <div className="p-4 space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-white font-semibold text-sm">Details</h3>
+              <div className="min-w-0">
+                <h3 className="text-white font-semibold text-sm">Details</h3>
+                <p className="text-[11px] text-gray-400 font-mono truncate" title={(detail as any)?.path || photo.filename}>{photo.filename}</p>
+                {(detail as any)?.path && <p className="text-[10px] text-gray-600 font-mono break-all">{(detail as any).path}</p>}
+              </div>
               <div className="flex items-center gap-1">
                 {!editing ? (
                   <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors">

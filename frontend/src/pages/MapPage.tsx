@@ -45,13 +45,8 @@ const LAYERS = {
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     attribution: '&copy; CARTO',
   },
-  wiki: {
-    label: 'Wikimedia',
-    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png',
-    attribution: '&copy; Wikimedia',
-  },
 } as const
-type LayerKey = keyof typeof LAYERS
+type LayerKey = string
 
 /** Fit the map to all photo markers once they load. */
 function FitBounds({ points }: { points: [number, number][] }) {
@@ -80,9 +75,19 @@ export default function MapPage() {
   })
   const streetView = (settings?.['map.streetview'] ?? 'true') !== 'false'
 
+  // runtime layer set incl. optional MapTiler (needs API key)
+  const mtKey = settings?.['map.maptiler_key']
+  const layers: Record<string, { label: string; url: string; attribution: string }> = {
+    ...LAYERS,
+    ...(mtKey ? {
+      maptiler: { label: 'MapTiler', url: `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${mtKey}`, attribution: '&copy; MapTiler & OpenStreetMap' },
+      maptiler_sat: { label: 'MapTiler Satellit', url: `https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${mtKey}`, attribution: '&copy; MapTiler' },
+    } : {}),
+  }
+
   useEffect(() => {
-    const def = settings?.['map.default_layer'] as LayerKey | undefined
-    if (def && def in LAYERS) setLayer(def)
+    const def = settings?.['map.default_layer']
+    if (def && def in layers) setLayer(def)
   }, [settings])
 
   const withGps = useMemo(() => (data ?? []).filter((p) => p.latitude && p.longitude), [data])
@@ -96,7 +101,7 @@ export default function MapPage() {
           <span className="text-sm text-gray-500 dark:text-gray-400">{withGps.length} Fotos mit GPS</span>
           <div className="flex items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5">
             <Layers size={13} className="text-gray-400 ml-1.5 mr-0.5" />
-            {(Object.keys(LAYERS) as LayerKey[]).map((k) => (
+            {Object.keys(layers).map((k) => (
               <button
                 key={k}
                 onClick={() => setLayer(k)}
@@ -106,7 +111,7 @@ export default function MapPage() {
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                 }`}
               >
-                {LAYERS[k].label}
+                {layers[k].label}
               </button>
             ))}
           </div>
@@ -124,7 +129,7 @@ export default function MapPage() {
           </div>
         ) : (
           <MapContainer center={[51.1657, 10.4515]} zoom={5} className="h-full w-full">
-            <TileLayer key={layer} attribution={LAYERS[layer].attribution} url={LAYERS[layer].url} />
+            <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
             <FitBounds points={points} />
             {withGps.map((photo) => (
               <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]}>

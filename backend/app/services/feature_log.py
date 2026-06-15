@@ -7,6 +7,12 @@ import os
 import pathlib
 from datetime import datetime, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo(os.getenv("TZ", "Europe/Berlin"))
+except Exception:
+    _TZ = timezone.utc
+
 _VALID = {"scanner", "ai", "video", "faces", "system"}
 
 _LOG_DIR = pathlib.Path(os.getenv("CONFIG_PATH", "/config")) / "logs"
@@ -29,7 +35,7 @@ def log(feature: str, level: str, message: str) -> None:
         if f.exists() and f.stat().st_size > _MAX_BYTES:
             tail = f.read_text(errors="replace").splitlines()[-5000:]
             f.write_text("\n".join(tail) + "\n")
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.now(_TZ).strftime("%Y-%m-%d %H:%M:%S")
         with f.open("a") as fh:
             fh.write(f"{ts} [{level.upper()}] {message}\n")
     except Exception:

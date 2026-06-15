@@ -736,10 +736,10 @@ function AISection() {
             onChange={e => set('xmp.write_mode', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="off">Aus — nur in der PhotoFlow-DB</option>
-            <option value="file">Nur ins Bild (EXIF/IPTC/XMP eingebettet)</option>
-            <option value="file_sidecar">Ins Bild + zusätzlich .xmp-Sidecar</option>
-            <option value="sidecar">Nur .xmp-Sidecar (Original unberührt)</option>
+            <option value="off">Nur in die PhotoFlow-DB</option>
+            <option value="file">DB + ins Bild (EXIF/IPTC/XMP eingebettet)</option>
+            <option value="file_sidecar">DB + ins Bild + .xmp-Sidecar</option>
+            <option value="sidecar">DB + .xmp-Sidecar (Original unberührt)</option>
           </select>
           <p className="text-xs text-zinc-400 mt-1.5">
             Schreibt <code>dc:description</code>/<code>IPTC:Caption</code> + Schlagwörter.
@@ -1161,9 +1161,9 @@ function MapSection() {
         </div>
 
         <div>
-          <Label>Mapbox Access Token (optional)</Label>
-          <Input value={settings['map.mapbox_token'] ?? ''} onChange={v => set('map.mapbox_token', v)} type="password" placeholder="pk.ey… (für Mapbox-Ebenen)" />
-          <p className="text-xs text-zinc-400 mt-1">Optional: aktiviert Mapbox-Premium-Ebenen. Leer lassen für die freien Ebenen.</p>
+          <Label>MapTiler API-Key (optional)</Label>
+          <Input value={settings['map.maptiler_key'] ?? ''} onChange={v => set('map.maptiler_key', v)} type="password" placeholder="dein MapTiler-Key" />
+          <p className="text-xs text-zinc-400 mt-1">Aktiviert zusätzlich die Ebenen „MapTiler" und „MapTiler Satellit" (kostenloser Key auf maptiler.com). Leer lassen = nur freie Ebenen.</p>
         </div>
 
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
