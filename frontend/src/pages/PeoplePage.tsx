@@ -29,6 +29,7 @@ const GRID = 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:g
 export default function PeoplePage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showHidden, setShowHidden] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
   const [selection, setSelection] = useState<Set<number>>(new Set())
   const [showAdd, setShowAdd] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
@@ -75,7 +76,7 @@ export default function PeoplePage() {
 
   const toggleSelect = (id: number) =>
     setSelection(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const clearSelection = () => setSelection(new Set())
+  const clearSelection = () => { setSelection(new Set()); setSelectMode(false) }
 
   const bulkHide = async (hidden: boolean) => {
     await Promise.all([...selection].map(id => api.post(`/people/${id}/hide`, null, { params: { hidden } })))
@@ -99,8 +100,8 @@ export default function PeoplePage() {
       key={p.id}
       person={p}
       selected={selection.has(p.id)}
-      selectionActive={selection.size > 0}
-      onOpen={() => setSelectedId(p.id)}
+      selectMode={selectMode}
+      onOpen={() => { if (selectMode) toggleSelect(p.id); else setSelectedId(p.id) }}
       onToggleSelect={() => toggleSelect(p.id)}
       onToggleHidden={() => hideMutation.mutate({ id: p.id, hidden: !p.is_hidden })}
       onRenamed={() => qc.invalidateQueries({ queryKey: ['people'] })}
@@ -119,6 +120,18 @@ export default function PeoplePage() {
           <p className="text-sm text-zinc-400">{known.length} benannt · {unknown.length} unbekannt</p>
         </div>
         <div className="flex gap-2">
+          {selectMode ? (
+            <button onClick={clearSelection}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-500 text-indigo-300 text-sm hover:bg-zinc-800">
+              <X size={15} /> Fertig
+            </button>
+          ) : (
+            <button onClick={() => setSelectMode(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800"
+              title="Mehrere Personen auswählen, um sie zusammenzuführen oder zu verbergen">
+              <GitMerge size={15} /><span className="hidden sm:inline">Auswählen / Zusammenführen</span><span className="sm:hidden">Auswählen</span>
+            </button>
+          )}
           <button onClick={() => setShowHidden(v => !v)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-zinc-800 ${showHidden ? 'border-indigo-500 text-indigo-300' : 'border-zinc-700 text-zinc-400'}`}
             title={showHidden ? 'Verborgene ausblenden' : 'Verborgene anzeigen'}>
@@ -135,6 +148,12 @@ export default function PeoplePage() {
           </button>
         </div>
       </div>
+
+      {selectMode && (
+        <div className="mb-4 px-3 py-2 rounded-lg bg-indigo-900/20 border border-indigo-700/40 text-sm text-indigo-200">
+          Wähle Personen aus (antippen). Mit <strong>2 oder mehr</strong> kannst du sie unten <strong>zusammenführen</strong> oder verbergen.
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
@@ -220,10 +239,10 @@ function SectionHeader({ title, count, hint }: { title: string; count: number; h
   )
 }
 
-function PersonCard({ person, selected, selectionActive, onOpen, onToggleSelect, onToggleHidden, onDelete, onRenamed }: {
+function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onToggleHidden, onDelete, onRenamed }: {
   person: Person
   selected: boolean
-  selectionActive: boolean
+  selectMode: boolean
   onOpen: () => void
   onToggleSelect: () => void
   onToggleHidden: () => void
@@ -243,27 +262,29 @@ function PersonCard({ person, selected, selectionActive, onOpen, onToggleSelect,
 
   return (
     <div className="group relative flex flex-col items-center">
-      {/* selection checkbox */}
-      <button
-        onClick={e => { e.stopPropagation(); onToggleSelect() }}
-        className={`absolute top-1 left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-          selected ? 'bg-indigo-500 text-white' : 'bg-black/50 text-transparent opacity-0 group-hover:opacity-100 hover:text-white'
-        }`}
-        title={selected ? 'Abwählen' : 'Auswählen'}
-      >
-        <Check size={14} />
-      </button>
+      {/* selection checkbox — always visible in select mode */}
+      {selectMode && (
+        <button
+          onClick={e => { e.stopPropagation(); onToggleSelect() }}
+          className={`absolute top-1 left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center ring-2 ${
+            selected ? 'bg-indigo-500 text-white ring-indigo-400' : 'bg-black/60 text-white/40 ring-white/40'
+          }`}
+          title={selected ? 'Abwählen' : 'Auswählen'}
+        >
+          <Check size={14} />
+        </button>
+      )}
 
-      {/* actions */}
-      {!selectionActive && (
-        <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* per-card actions — visible (not hover-only) outside select mode */}
+      {!selectMode && (
+        <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
           <button onClick={e => { e.stopPropagation(); onToggleHidden() }}
-            className="w-6 h-6 rounded-full bg-black/50 text-zinc-300 hover:text-indigo-300 flex items-center justify-center"
-            title={person.is_hidden ? 'Wieder anzeigen' : 'Verbergen'}>
+            className="w-6 h-6 rounded-full bg-black/60 text-zinc-200 hover:text-indigo-300 flex items-center justify-center"
+            title={person.is_hidden ? 'Wieder einblenden' : 'Verbergen / Ignorieren'}>
             {person.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />}
           </button>
           <button onClick={e => { e.stopPropagation(); onDelete() }}
-            className="w-6 h-6 rounded-full bg-black/50 text-zinc-300 hover:text-red-400 flex items-center justify-center" title="Löschen">
+            className="w-6 h-6 rounded-full bg-black/60 text-zinc-200 hover:text-red-400 flex items-center justify-center" title="Löschen">
             <Trash2 size={12} />
           </button>
         </div>
