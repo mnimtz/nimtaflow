@@ -41,6 +41,23 @@ def _open_image_any(photo_path: str) -> Optional[Image.Image]:
         return Image.open(photo_path)
     except Exception:
         pass
+    # HEIC/HEIF that Pillow can't decode (e.g. grid/tiled): use libheif's heif-convert
+    # which assembles the full image correctly (avoids the wrong "zoomed tile" crop).
+    if photo_path.lower().endswith((".heic", ".heif")):
+        try:
+            import shutil as _sh, subprocess, tempfile, os as _os
+            hc = _sh.which("heif-convert")
+            if hc:
+                tmp = tempfile.mktemp(suffix=".jpg")
+                r = subprocess.run([hc, "-q", "92", photo_path, tmp], capture_output=True, timeout=40)
+                if r.returncode == 0 and _os.path.exists(tmp) and _os.path.getsize(tmp) > 1000:
+                    img = Image.open(tmp).copy()
+                    _os.remove(tmp)
+                    return img
+                if _os.path.exists(tmp):
+                    _os.remove(tmp)
+        except Exception:
+            pass
     # fallback: extract embedded preview via exiftool
     try:
         import shutil as _sh, subprocess, io

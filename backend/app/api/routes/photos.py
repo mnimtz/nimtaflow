@@ -142,16 +142,27 @@ async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: Asyn
     tokens = [t for t in _re.findall(r"[\wäöüÄÖÜß]{3,}", q.lower())
               if t not in {"der", "die", "das", "ein", "eine", "mit", "und", "beim", "der", "den", "von", "auf", "im", "in"}]
     dist = Photo.embedding.cosine_distance(vec)
-    conds = [Photo.status == PhotoStatus.done, Photo.is_missing == False,
-             Photo.is_trashed == False, Photo.embedding.isnot(None)]
+    base = [Photo.status == PhotoStatus.done, Photo.is_missing == False,
+            Photo.is_trashed == False, Photo.embedding.isnot(None)]
+    photos = []
     if tokens:
-        text_or = [Photo.description.ilike(f"%{t}%") for t in tokens] + \
-                  [Photo.keywords.ilike(f"%{t}%") for t in tokens]
-        conds.append(or_(*text_or, dist < min(max_dist, 0.5)))  # term hit OR very close
-    else:
-        conds.append(dist < max_dist)
-    qy = select(Photo).where(*conds).order_by(dist).limit(limit)
-    photos = (await db.execute(qy)).scalars().all()
+        # Keep only tokens that actually occur somewhere (so a synonym we don't
+        # have, e.g. "Junge" when the caption says "Kind", doesn't kill the query).
+        present = []
+        for t in tokens:
+            hit = await db.scalar(select(Photo.id).where(
+                or_(Photo.description.ilike(f"%{t}%"), Photo.keywords.ilike(f"%{t}%"))).limit(1))
+            if hit:
+                present.append(t)
+        if present:
+            # ALL present tokens must match (AND) → exact-ish results
+            and_conds = [or_(Photo.description.ilike(f"%{t}%"), Photo.keywords.ilike(f"%{t}%")) for t in present]
+            qy = select(Photo).where(*base, *and_conds).order_by(dist).limit(limit)
+            photos = (await db.execute(qy)).scalars().all()
+    if not photos:
+        # fallback: closest semantic matches within the distance threshold
+        qy = select(Photo).where(*base, dist < max_dist).order_by(dist).limit(limit)
+        photos = (await db.execute(qy)).scalars().all()
     return PhotoListResponse(total=len(photos), page=1, limit=limit, items=photos)
 
 

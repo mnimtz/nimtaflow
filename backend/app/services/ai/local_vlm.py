@@ -124,7 +124,7 @@ class LocalVLMProvider(AIProvider):
         except Exception:
             return ""
 
-    async def generate_tags(self, image: Image.Image) -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
         # Derive simple tags from the caption (keeps deps minimal & robust)
         try:
             caption = await self.describe_image(image, "en")

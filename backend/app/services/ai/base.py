@@ -33,7 +33,7 @@ class AIProvider(ABC):
         ...
 
     @abstractmethod
-    async def generate_tags(self, image: Image.Image) -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
         ...
 
     @abstractmethod

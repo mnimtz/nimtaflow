@@ -214,7 +214,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         elif provider == "none":
                             flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
 
-                        tags, _ = await ai.generate_tags(img)
+                        tags, _ = await ai.generate_tags(img, lang)
                         for tag_name in tags[:20]:
                             tag_name = (tag_name or "").strip()[:120]  # column is VARCHAR(128)
                             if not tag_name:
