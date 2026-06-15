@@ -395,7 +395,7 @@ function PersonDetail({ person, onBack, onDeleted }: {
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               loading="lazy"
             />
-            {photo.is_video && (
+            {(photo as any).is_video && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="bg-black/50 rounded-full p-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
               </div>
@@ -408,7 +408,7 @@ function PersonDetail({ person, onBack, onDeleted }: {
       )}
 
       {lightboxIndex !== null && (
-        <PhotoLightbox photos={photos} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+        <PhotoLightbox photos={photos as any} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
       )}
     </div>
   )
