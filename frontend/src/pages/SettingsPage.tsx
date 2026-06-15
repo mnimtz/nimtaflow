@@ -1167,6 +1167,9 @@ function MapSection() {
             <option value="light">Hell (CARTO)</option>
             <option value="voyager">Voyager (CARTO)</option>
             <option value="topo">Topo (OpenTopoMap)</option>
+            <option value="google">Google</option>
+            <option value="google_sat">Google Satellit</option>
+            <option value="google_hybrid">Google Hybrid</option>
             <option value="maptiler">MapTiler (Key nötig)</option>
             <option value="maptiler_sat">MapTiler Satellit (Key nötig)</option>
           </select>
