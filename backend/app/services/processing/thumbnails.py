@@ -141,7 +141,9 @@ def _to_rgb(img: Image.Image) -> Image.Image:
 
 def open_image_for_ai(photo_path: str, max_size: int = 1024) -> Optional[Image.Image]:
     try:
-        img = Image.open(photo_path)
+        img = _open_image_any(photo_path)  # HEIC/grid-safe (heif-convert/ffmpeg fallback)
+        if img is None:
+            return None
         img = _fix_orientation(img)
         img.thumbnail((max_size, max_size), Image.LANCZOS)
         return _to_rgb(img)

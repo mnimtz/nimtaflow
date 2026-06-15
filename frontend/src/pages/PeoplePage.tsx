@@ -65,7 +65,15 @@ export default function PeoplePage() {
     queryFn: () => api.get('/people/faces/unassigned', { params: { limit: 200 } }).then(r => r.data),
   })
   const newPersonFromFace = useMutation({
-    mutationFn: (faceId: number) => api.post(`/people/faces/${faceId}/new-person`),
+    mutationFn: async (faceId: number) => {
+      const name = window.prompt('Name für diese Person (leer lassen = später benennen):', '')
+      const res = await api.post(`/people/faces/${faceId}/new-person`)
+      const pid = res.data?.person_id
+      if (name && name.trim() && pid) {
+        await api.patch(`/people/${pid}`, { name: name.trim() })  // also writes name into the photos
+      }
+      return res.data
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['people'] })
       qc.invalidateQueries({ queryKey: ['unassigned-faces'] })
