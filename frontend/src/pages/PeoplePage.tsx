@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { differenceInYears } from 'date-fns'
+import PhotoLightbox from '../components/gallery/PhotoLightbox'
 
 interface Person {
   id: number
@@ -303,6 +304,7 @@ function PersonDetail({ person, onBack, onDeleted }: {
   })
 
   const photos: Photo[] = photosData?.items || []
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
@@ -382,19 +384,32 @@ function PersonDetail({ person, onBack, onDeleted }: {
       </div>
 
       <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-        Fotos ({photos.length})
+        Fotos ({photosData?.total ?? photos.length})
       </h2>
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1">
-        {photos.map(photo => (
-          <div key={photo.id} className="aspect-square rounded overflow-hidden bg-zinc-800">
+      <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
+        {photos.map((photo, i) => (
+          <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer"
+            onClick={() => setLightboxIndex(i)}>
             <img
               src={`/api/photos/${photo.id}/thumbnail?size=small`}
-              className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               loading="lazy"
             />
+            {photo.is_video && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-black/50 rounded-full p-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
+              </div>
+            )}
           </div>
         ))}
       </div>
+      {photos.length === 0 && (
+        <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>
+      )}
+
+      {lightboxIndex !== null && (
+        <PhotoLightbox photos={photos} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+      )}
     </div>
   )
 }
