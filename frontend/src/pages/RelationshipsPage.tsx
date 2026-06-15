@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, X, Network } from 'lucide-react'
+import { Plus, Trash2, X, Network, Image as ImageIcon } from 'lucide-react'
 import { api } from '../lib/api'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 
 interface GNode { id: number; name: string; named: boolean; face_count: number }
 interface GEdge { id: number; from: number; to: number; type: string; category: string; directed: boolean }
@@ -27,6 +28,12 @@ export default function RelationshipsPage() {
   const dragRef = useRef<number | null>(null)
   const [sel, setSel] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [lb, setLb] = useState<any[] | null>(null)
+  const openPhotos = async (url: string) => {
+    const d = await api.get(url).then(r => r.data)
+    const items = d.items || d
+    if (items && items.length) setLb(items); else setLb([])
+  }
 
   // (re)seed positions when the node set changes
   useEffect(() => {
@@ -180,8 +187,12 @@ export default function RelationshipsPage() {
                 <div className="w-9 h-9 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 relative">
                   <img src={`/api/people/${selNode.id}/avatar`} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                 </div>
-                <p className="font-semibold text-zinc-900 dark:text-white truncate">{selNode.name}</p>
+                <p className="font-semibold text-zinc-900 dark:text-white truncate flex-1">{selNode.name}</p>
               </div>
+              <button onClick={() => openPhotos(`/people/${sel}/photos?limit=200`)}
+                className="w-full mb-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
+                <ImageIcon size={15} /> Fotos ansehen ({selNode.face_count})
+              </button>
               {selEdges.length === 0 ? (
                 <p className="text-sm text-zinc-500">Noch keine Verbindungen. Lege oben eine an.</p>
               ) : (
@@ -194,6 +205,8 @@ export default function RelationshipsPage() {
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CAT_COLOR[e.category] }} />
                         <span className="text-zinc-500 text-xs">{label}</span>
                         <span className="text-zinc-800 dark:text-zinc-200 truncate flex-1">{other?.name}</span>
+                        <button onClick={() => openPhotos(`/relationships/together/${sel}/${other?.id}`)}
+                          title="Gemeinsame Fotos" className="text-zinc-400 hover:text-indigo-500"><ImageIcon size={14} /></button>
                         <button onClick={() => del.mutate(e.id)} className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500"><Trash2 size={13} /></button>
                       </li>
                     )
@@ -209,6 +222,12 @@ export default function RelationshipsPage() {
 
       {showAdd && <AddRelationModal nodes={nodes} preselect={sel} onClose={() => setShowAdd(false)}
         onSaved={() => { qc.invalidateQueries({ queryKey: ['rel-graph'] }); setShowAdd(false) }} />}
+      {lb && lb.length > 0 && <GalleryLightbox photos={lb as any} index={0} onClose={() => setLb(null)} />}
+      {lb && lb.length === 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => setLb(null)}>
+          <div className="px-4 py-3 rounded-xl bg-zinc-900 text-zinc-200 text-sm">Keine gemeinsamen Fotos gefunden.</div>
+        </div>
+      )}
     </div>
   )
 }

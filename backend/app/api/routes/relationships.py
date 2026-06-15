@@ -72,6 +72,19 @@ async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
     return sorted(out, key=lambda e: e["label"])
 
 
+@router.get("/together/{a_id}/{b_id}")
+async def photos_together(a_id: int, b_id: int, limit: int = 200, db: AsyncSession = Depends(get_db)):
+    """Photos in which BOTH persons appear (faces of each on the same photo)."""
+    from app.models.photo import Photo
+    from app.schemas.photo import PhotoBase
+    fa = select(Face.photo_id).where(Face.person_id == a_id)
+    fb = select(Face.photo_id).where(Face.person_id == b_id)
+    q = (select(Photo).where(Photo.id.in_(fa), Photo.id.in_(fb), Photo.is_trashed == False)  # noqa: E712
+         .order_by(Photo.taken_at.desc()).limit(limit))
+    photos = (await db.execute(q)).scalars().all()
+    return {"count": len(photos), "items": [PhotoBase.model_validate(p, from_attributes=True) for p in photos]}
+
+
 @router.post("/derive")
 async def derive_relationships(db: AsyncSession = Depends(get_db)):
     """Infer obvious relationships from parent links: siblings (share a parent)

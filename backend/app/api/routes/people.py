@@ -206,12 +206,16 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
         return None
 
     if person.profile_face_id:
-        res = await _try(await db.get(Face, person.profile_face_id))
-        if res:
-            return res
+        pf = await db.get(Face, person.profile_face_id)
+        # Only use the profile face if it still belongs to this person (a merge or
+        # reassignment can leave a stale profile_face_id pointing elsewhere).
+        if pf and pf.person_id == person_id:
+            res = await _try(pf)
+            if res:
+                return res
 
     res = await _try((await db.execute(
-        select(Face).where(Face.person_id == person_id).limit(1)
+        select(Face).where(Face.person_id == person_id).order_by(Face.confidence.desc().nullslast()).limit(1)
     )).scalar_one_or_none())
     if res:
         return res
