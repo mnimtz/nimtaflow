@@ -33,8 +33,6 @@ torch==2.2.2
 torchvision==0.17.2
 transformers==4.49.0
 accelerate==1.0.1
-# 4-bit (nf4) quantization so Qwen2.5-VL-3B fits an 8 GB card (~2.5 GB vs 7.5 GB)
-bitsandbytes==0.43.1
 einops==0.8.0
 timm==1.0.11
 sentencepiece==0.2.0

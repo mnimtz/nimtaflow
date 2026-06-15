@@ -21,6 +21,9 @@ COPY requirements.txt .
 # pre-install them before resolving the full requirements set.
 RUN pip install --no-cache-dir "numpy==1.26.4" "cython<3.1"
 RUN pip install --no-cache-dir -r requirements.txt
+# 4-bit (nf4) quantization so Qwen2.5-VL-3B fits the 8 GB card (~2.5 GB vs 7.5 GB).
+# Separate layer → the big requirements install above stays cached.
+RUN pip install --no-cache-dir "bitsandbytes==0.43.1"
 
 FROM deps AS final
 COPY . .
