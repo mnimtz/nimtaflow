@@ -95,6 +95,10 @@ export default function RelationshipsPage() {
     mutationFn: (id: number) => api.delete(`/relationships/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rel-graph'] }),
   })
+  const derive = useMutation({
+    mutationFn: () => api.post('/relationships/derive').then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rel-graph'] }),
+  })
 
   const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
   const selNode = sel != null ? byId.get(sel) : null
@@ -107,9 +111,16 @@ export default function RelationshipsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2"><Network size={22} /> Beziehungen</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Familien- & Freundes-Netzwerk · {nodes.length} Personen, {edges.length} Verbindungen</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-          <Plus size={15} /> Verbindung
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => derive.mutate()} disabled={derive.isPending}
+            className="px-3.5 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+            title="Geschwister & Großeltern automatisch aus Eltern-Verbindungen ableiten">
+            {derive.isPending ? 'Leite ab…' : 'Verwandtschaft ableiten'}
+          </button>
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
+            <Plus size={15} /> Verbindung
+          </button>
+        </div>
       </div>
 
       {/* Legend */}

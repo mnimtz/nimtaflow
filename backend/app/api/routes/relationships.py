@@ -45,12 +45,70 @@ async def graph(db: AsyncSession = Depends(get_db)):
 
 @router.get("/person/{person_id}")
 async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
+    """Relationships of one person, resolved with the other person's name and a
+    label from THIS person's perspective (for the person detail page)."""
     rels = (await db.execute(
         select(PersonRelationship).where(
             or_(PersonRelationship.from_person_id == person_id, PersonRelationship.to_person_id == person_id)
         )
     )).scalars().all()
-    return [_edge(r) for r in rels]
+    other_ids = {(r.to_person_id if r.from_person_id == person_id else r.from_person_id) for r in rels}
+    names = dict((await db.execute(select(Person.id, Person.name).where(Person.id.in_(other_ids or {0})))).all())
+    # human label from this person's point of view
+    INV = {"parent": "Kind", "grandparent": "Enkel/in"}
+    FWD = {"parent": "Elternteil", "grandparent": "Großelternteil", "partner": "Partner",
+           "sibling": "Geschwister", "relative": "Verwandt", "friend": "Freund/in",
+           "colleague": "Kollege/in", "other": "Verbindung"}
+    out = []
+    for r in rels:
+        outgoing = r.from_person_id == person_id
+        oid = r.to_person_id if outgoing else r.from_person_id
+        t = r.rel_type.value
+        label = FWD[t] if (outgoing or not r.directed) else INV.get(t, FWD[t])
+        out.append({
+            "id": r.id, "other_id": oid, "other_name": names.get(oid) or "Unbekannt",
+            "type": t, "category": CATEGORY[r.rel_type], "label": label, "outgoing": outgoing,
+        })
+    return sorted(out, key=lambda e: e["label"])
+
+
+@router.post("/derive")
+async def derive_relationships(db: AsyncSession = Depends(get_db)):
+    """Infer obvious relationships from parent links: siblings (share a parent)
+    and grandparents (parent of a parent). Idempotent."""
+    from collections import defaultdict
+    rels = (await db.execute(select(PersonRelationship))).scalars().all()
+    existing = {(r.from_person_id, r.to_person_id, r.rel_type) for r in rels}
+    children = defaultdict(set)   # parent -> {children}
+    parents = defaultdict(set)    # child -> {parents}
+    for r in rels:
+        if r.rel_type == RelationType.parent:
+            children[r.from_person_id].add(r.to_person_id)
+            parents[r.to_person_id].add(r.from_person_id)
+
+    def _has(a, b, t):
+        return (a, b, t) in existing or (t not in DIRECTED and (b, a, t) in existing)
+
+    new = []
+    # siblings: any two children of the same parent
+    for kids in children.values():
+        kl = sorted(kids)
+        for i in range(len(kl)):
+            for j in range(i + 1, len(kl)):
+                if not _has(kl[i], kl[j], RelationType.sibling):
+                    new.append(PersonRelationship(from_person_id=kl[i], to_person_id=kl[j], rel_type=RelationType.sibling))
+                    existing.add((kl[i], kl[j], RelationType.sibling))
+    # grandparents: parent of a parent
+    for child, ps in parents.items():
+        for p in ps:
+            for gp in parents.get(p, set()):
+                if gp != child and not _has(gp, child, RelationType.grandparent):
+                    new.append(PersonRelationship(from_person_id=gp, to_person_id=child, rel_type=RelationType.grandparent))
+                    existing.add((gp, child, RelationType.grandparent))
+    for r in new:
+        db.add(r)
+    await db.commit()
+    return {"created": len(new)}
 
 
 @router.post("")

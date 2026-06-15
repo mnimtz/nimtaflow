@@ -538,6 +538,8 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
         </div>
       </div>
 
+      <RelationshipsPanel personId={personId} personName={person.name || 'Unbekannt'} />
+
       {faces.length > 0 && (
         <div className="mb-8">
           <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Gesichter ({faces.length})</h2>
@@ -575,6 +577,89 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
       {photos.length === 0 && <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>}
 
       {lightboxIndex !== null && <PhotoLightbox photos={photos as any} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />}
+    </div>
+  )
+}
+
+const REL_TYPES: [string, string][] = [
+  ['parent', 'Elternteil von'], ['grandparent', 'Großelternteil von'],
+  ['partner', 'Partner'], ['sibling', 'Geschwister'], ['relative', 'Verwandt'],
+  ['friend', 'Freund/in'], ['colleague', 'Kollege/in'], ['other', 'Verbindung'],
+]
+const REL_DOT: Record<string, string> = { family: 'bg-emerald-500', social: 'bg-sky-500', other: 'bg-zinc-400' }
+
+function RelationshipsPanel({ personId, personName }: { personId: number; personName: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [adding, setAdding] = useState(false)
+  const [type, setType] = useState('parent')
+  const [otherId, setOtherId] = useState<number | ''>('')
+
+  const { data: settings } = useQuery<Record<string, string>>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000 })
+  const on = (settings?.['features.relationships'] ?? 'false') === 'true'
+  const { data: rels = [] } = useQuery<any[]>({ queryKey: ['rels', personId], queryFn: () => api.get(`/relationships/person/${personId}`).then(r => r.data), enabled: on })
+  const { data: people = [] } = useQuery<Person[]>({ queryKey: ['people'], queryFn: () => api.get('/people').then(r => r.data), enabled: on })
+
+  const inval = () => { qc.invalidateQueries({ queryKey: ['rels', personId] }); qc.invalidateQueries({ queryKey: ['rel-graph'] }) }
+  const add = useMutation({
+    mutationFn: () => api.post('/relationships', { from_person_id: personId, to_person_id: otherId, rel_type: type }),
+    onSuccess: () => { inval(); setAdding(false); setOtherId(''); toast('Verbindung hinzugefügt', 'success') },
+  })
+  const del = useMutation({ mutationFn: (id: number) => api.delete(`/relationships/${id}`), onSuccess: inval })
+  const makeAlbum = useMutation({
+    mutationFn: () => {
+      const ids = Array.from(new Set([personId, ...rels.map(r => r.other_id)]))
+      return api.post('/albums', { name: `Familie ${personName}`, album_type: 'smart', smart_criteria: { person_ids: ids, person_match: 'any' } })
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Smart-Album „Familie …" erstellt', 'success') },
+  })
+
+  if (!on) return null
+  const sel = 'px-2.5 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center gap-3 mb-3">
+        <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Beziehungen ({rels.length})</h2>
+        <button onClick={() => setAdding(v => !v)} className="text-xs text-indigo-500 hover:text-indigo-400 font-medium">+ Verbindung</button>
+        {rels.length > 0 && (
+          <button onClick={() => makeAlbum.mutate()} className="ml-auto text-xs text-zinc-500 hover:text-indigo-400">Familien-Album erstellen</button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <span className="text-sm text-zinc-500">{personName} ist</span>
+          <select value={type} onChange={e => setType(e.target.value)} className={sel}>
+            {REL_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select value={otherId} onChange={e => setOtherId(Number(e.target.value))} className={`${sel} min-w-[10rem]`}>
+            <option value="">— Person —</option>
+            {people.filter(p => p.id !== personId && (p.name || '').trim()).sort((a, b) => a.name.localeCompare(b.name)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={() => add.mutate()} disabled={!otherId || add.isPending}
+            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Hinzufügen</button>
+        </div>
+      )}
+
+      {rels.length === 0 ? (
+        <p className="text-sm text-zinc-500">Noch keine Verbindungen. Lege über „+ Verbindung“ Familie, Freunde oder Kollegen an.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {rels.map(r => (
+            <div key={r.id} className="group flex items-center gap-2 pl-1 pr-2 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+              <span className="relative w-7 h-7 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                <img src={`/api/people/${r.other_id}/avatar`} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              </span>
+              <span className="text-sm text-zinc-800 dark:text-zinc-200">{r.other_name}</span>
+              <span className="flex items-center gap-1 text-xs text-zinc-400"><span className={`w-1.5 h-1.5 rounded-full ${REL_DOT[r.category]}`} />{r.label}</span>
+              <button onClick={async () => { if (await confirm({ title: 'Verbindung entfernen?', danger: true, confirmLabel: 'Entfernen' })) del.mutate(r.id) }}
+                className="text-zinc-300 hover:text-red-500 ml-0.5"><X size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
