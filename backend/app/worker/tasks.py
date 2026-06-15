@@ -243,6 +243,27 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     from app.services.settings_loader import load_settings
                     from app.services.ai.manager import build_video_settings
                     ai_settings = await load_settings(db)
+                    # Per-folder AI override: the source whose path is the longest
+                    # prefix of this photo can force a provider or disable AI ('off').
+                    skip_ai = False
+                    try:
+                        from app.models.source import PhotoSource
+                        srcs = (await db.execute(
+                            select(PhotoSource.path, PhotoSource.ai_provider).where(PhotoSource.ai_provider.isnot(None))
+                        )).all()
+                        best = None
+                        for spath, prov in srcs:
+                            pref = spath.rstrip("/")
+                            if photo.path == pref or photo.path.startswith(pref + "/"):
+                                if best is None or len(pref) > len(best[0]):
+                                    best = (pref, prov)
+                        if best:
+                            if best[1] == "off":
+                                skip_ai = True
+                            else:
+                                ai_settings = {**ai_settings, "ai.provider": best[1], "video.ai_provider": "same"}
+                    except Exception:
+                        pass
                     # Videos use the separate video.* provider (e.g. moondream/ollama)
                     eff_settings = build_video_settings(ai_settings) if photo.is_video else ai_settings
                     ai = AIManager(eff_settings)
@@ -250,7 +271,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     # Videos: describe from the extracted frame; else the photo
                     img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path) if photo.is_video \
                         else open_image_for_ai(photo.path)
-                    if img:
+                    if img and not skip_ai:
                         lang = ai_settings.get("ai.language", "de")
                         custom_prompt = ai_settings.get("ai.prompt.video" if photo.is_video else "ai.prompt.image") or None
                         description, provider = await ai.describe_image(img, lang, custom_prompt)

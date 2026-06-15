@@ -12,6 +12,7 @@ class SourceCreate(BaseModel):
     exclusion_patterns: Optional[str] = "@eaDir,#recycle,@Thumb,.DS_Store"
     scan_interval_minutes: int = 0
     detect_deletions: bool = True
+    ai_provider: Optional[str] = None
 
 
 class SourceUpdate(BaseModel):
@@ -22,6 +23,7 @@ class SourceUpdate(BaseModel):
     exclusion_patterns: Optional[str] = None
     scan_interval_minutes: Optional[int] = None
     detect_deletions: Optional[bool] = None
+    ai_provider: Optional[str] = None
 
 
 class SourceOut(BaseModel):
@@ -35,6 +37,7 @@ class SourceOut(BaseModel):
     locked: bool
     scan_interval_minutes: int
     detect_deletions: bool
+    ai_provider: Optional[str]
     last_scan_at: Optional[datetime]
     last_scan_count: Optional[int]
     created_at: datetime

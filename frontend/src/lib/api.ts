@@ -103,6 +103,7 @@ export type Source = {
   locked: boolean
   scan_interval_minutes: number
   detect_deletions: boolean
+  ai_provider: string | null
   last_scan_at: string | null
   last_scan_count: number | null
 }

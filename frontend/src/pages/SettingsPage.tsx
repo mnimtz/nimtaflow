@@ -319,6 +319,21 @@ function SourcesSection() {
                   />
                   Gelöschte Dateien erkennen
                 </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">KI:</label>
+                  <select
+                    value={s.ai_provider ?? ''}
+                    onChange={e => patch.mutate({ id: s.id, ai_provider: (e.target.value || null) } as any)}
+                    title="Welche KI für diesen Ordner genutzt wird"
+                    className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Global (Standard)</option>
+                    <option value="gemini">Gemini (Cloud)</option>
+                    <option value="local">Embedded (lokal)</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="off">Keine KI</option>
+                  </select>
+                </div>
                 <button
                   onClick={() => { if (confirm('Alle Dateien dieses Ordners neu verarbeiten (Thumbnails + AI + Gesichter)?')) reprocess.mutate({ id: s.id, redoFaces: true }) }}
                   className="ml-auto text-xs text-indigo-500 hover:underline"

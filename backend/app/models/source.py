@@ -21,6 +21,9 @@ class PhotoSource(Base):
     scan_interval_minutes: Mapped[int] = mapped_column(Integer, default=0)
     # Detect & flag files removed from disk on each scan
     detect_deletions: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Per-folder AI provider override: null = use global, 'off' = no AI,
+    # else 'gemini' | 'local' | 'ollama'.
+    ai_provider: Mapped[Optional[str]] = mapped_column(String(32))
 
     last_scan_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_scan_count: Mapped[Optional[int]] = mapped_column(Integer)

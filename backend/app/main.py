@@ -50,6 +50,7 @@ _COLUMN_MIGRATIONS = [
     # ── photo_sources: watching ───────────────────────────────────────────────
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS ai_provider VARCHAR(32)",
     # ── albums: smart/ai types ────────────────────────────────────────────────
     "DO $$ BEGIN CREATE TYPE albumtype AS ENUM ('manual','smart','ai'); EXCEPTION WHEN duplicate_object THEN NULL; END $$",
     """ALTER TABLE albums
