@@ -1118,9 +1118,25 @@ function MapSection() {
     <div>
       <SectionHeader title="Karte" desc="Kartendarstellung der Fotos mit GPS-Daten." />
       <div className="space-y-5 max-w-xl">
-        <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-1">Verfügbare Kartenebenen (kostenlos, ohne API-Key)</p>
-          <p className="text-xs text-zinc-400">Standard (OSM) · Satellit (Esri) · Dunkel/Hell/Voyager (CARTO) · Topo (OpenTopoMap) · Wikimedia — umschaltbar direkt auf der Karte.</p>
+        <div>
+          <Label>Standard-Kartenebene</Label>
+          <select value={settings['map.default_layer'] ?? 'osm'} onChange={e => set('map.default_layer', e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="osm">Standard (OpenStreetMap)</option>
+            <option value="satellite">Satellit (Esri)</option>
+            <option value="dark">Dunkel (CARTO)</option>
+            <option value="light">Hell (CARTO)</option>
+            <option value="voyager">Voyager (CARTO)</option>
+            <option value="topo">Topo (OpenTopoMap)</option>
+            <option value="wiki">Wikimedia</option>
+          </select>
+          <p className="text-xs text-zinc-400 mt-1">Alle Ebenen sind kostenlos & ohne API-Key. Auf der Karte jederzeit umschaltbar.</p>
+        </div>
+
+        <div>
+          <Label>Mapbox Access Token (optional)</Label>
+          <Input value={settings['map.mapbox_token'] ?? ''} onChange={v => set('map.mapbox_token', v)} type="password" placeholder="pk.ey… (für Mapbox-Ebenen)" />
+          <p className="text-xs text-zinc-400 mt-1">Optional: aktiviert Mapbox-Premium-Ebenen. Leer lassen für die freien Ebenen.</p>
         </div>
 
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">

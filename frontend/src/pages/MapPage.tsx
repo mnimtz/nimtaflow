@@ -80,6 +80,11 @@ export default function MapPage() {
   })
   const streetView = (settings?.['map.streetview'] ?? 'true') !== 'false'
 
+  useEffect(() => {
+    const def = settings?.['map.default_layer'] as LayerKey | undefined
+    if (def && def in LAYERS) setLayer(def)
+  }, [settings])
+
   const withGps = useMemo(() => (data ?? []).filter((p) => p.latitude && p.longitude), [data])
   const points = useMemo(() => withGps.map((p) => [p.latitude!, p.longitude!] as [number, number]), [withGps])
 

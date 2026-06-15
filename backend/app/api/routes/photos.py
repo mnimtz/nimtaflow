@@ -196,6 +196,11 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     min_date = await db.scalar(select(func.min(Photo.taken_at)).where(Photo.is_trashed == False))
     max_date = await db.scalar(select(func.max(Photo.taken_at)).where(Photo.is_trashed == False))
 
+    status_rows = (await db.execute(
+        select(Photo.status, func.count()).group_by(Photo.status)
+    )).all()
+    by_status = {str(getattr(r[0], "value", r[0])): r[1] for r in status_rows}
+
     return {
         "total": total or 0,
         "videos": videos or 0,
@@ -204,6 +209,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "cameras": [{"model": r[0], "count": r[1]} for r in cameras],
         "date_min": min_date.isoformat() if min_date else None,
         "date_max": max_date.isoformat() if max_date else None,
+        "by_status": by_status,
     }
 
 

@@ -56,6 +56,12 @@ def extract_exif(path: str) -> ExifData:
             if raw:
                 exif = {TAGS.get(k, k): v for k, v in raw.items()}
 
+                # Orientation 5-8 means the image is rotated 90/270° — the stored
+                # pixel size is then transposed vs. how it's displayed. Swap so the
+                # grid lays out the correct aspect ratio (fixes wrong crops).
+                if exif.get("Orientation") in (5, 6, 7, 8) and result.width and result.height:
+                    result.width, result.height = result.height, result.width
+
                 if "DateTimeOriginal" in exif:
                     try:
                         result.taken_at = datetime.strptime(exif["DateTimeOriginal"], "%Y:%m:%d %H:%M:%S")

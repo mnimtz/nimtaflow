@@ -104,6 +104,8 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                 try:
                     from app.services.processing.exif import extract_exif
                     ex = extract_exif(photo.path)
+                    if ex.width and ex.height:
+                        photo.width, photo.height = ex.width, ex.height  # orientation-corrected
                     if photo.latitude is None and ex.latitude is not None:
                         photo.latitude, photo.longitude, photo.altitude = ex.latitude, ex.longitude, ex.altitude
                     if photo.taken_at is None and ex.taken_at is not None:

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Play, Pause, Square, RefreshCw, CheckCircle, XCircle, SkipForward, Users, Tag, FileText, DollarSign } from 'lucide-react'
+import { Pause, Square, RefreshCw, CheckCircle, XCircle, SkipForward, Users, Tag, FileText, DollarSign } from 'lucide-react'
 import { api, Job } from '../lib/api'
 
 export default function PipelinePage() {
@@ -10,6 +10,13 @@ export default function PipelinePage() {
     refetchInterval: 3000,
   })
 
+  const { data: stats } = useQuery<{ by_status?: Record<string, number> }>({
+    queryKey: ['photo-stats'],
+    queryFn: () => api.get('/photos/stats').then((r) => r.data),
+    refetchInterval: 3000,
+  })
+  const st = stats?.by_status ?? {}
+
   const activeJob = jobs.find((j) => j.status === 'running' || j.status === 'queued')
   const recentJobs = jobs.filter((j) => j.status !== 'running' && j.status !== 'queued').slice(0, 10)
 
@@ -18,12 +25,26 @@ export default function PipelinePage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Verarbeitungs-Pipeline</h1>
         <button
-          onClick={() => api.post('/sources/1/scan').then(() => refetch())}
+          onClick={() => api.post('/sources/scan-all').then(() => refetch())}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
         >
-          <Play size={16} />
-          Pipeline starten
+          <RefreshCw size={16} />
+          Alle Ordner scannen
         </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {([
+          { k: 'pending', label: 'Wartend', cls: 'text-amber-500' },
+          { k: 'processing', label: 'In Arbeit', cls: 'text-indigo-500' },
+          { k: 'done', label: 'Fertig', cls: 'text-emerald-500' },
+          { k: 'error', label: 'Fehler', cls: 'text-red-500' },
+        ] as const).map(s => (
+          <div key={s.k} className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-4">
+            <p className={`text-2xl font-bold tabular-nums ${s.cls}`}>{st[s.k] ?? 0}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{s.label}</p>
+          </div>
+        ))}
       </div>
 
       {activeJob ? <ActiveJobCard job={activeJob} /> : (

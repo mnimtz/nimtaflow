@@ -93,6 +93,17 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
     return {"deleted_photos": len(photo_ids), "deleted_files": removed_files}
 
 
+@router.post("/scan-all")
+async def scan_all(db: AsyncSession = Depends(get_db)):
+    """Trigger a scan for every enabled source."""
+    from app.worker.tasks import scan_source_task
+    rows = (await db.execute(select(PhotoSource.id).where(PhotoSource.enabled == True))).all()  # noqa: E712
+    ids = [r[0] for r in rows]
+    for sid in ids:
+        scan_source_task.delay(sid)
+    return {"scanning": ids}
+
+
 @router.post("/verify")
 async def verify_library(delete: bool = True, db: AsyncSession = Depends(get_db)):
     """Check every indexed photo against the filesystem. Entries whose original
