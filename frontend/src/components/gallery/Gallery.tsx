@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { RowsPhotoAlbum, MasonryPhotoAlbum } from 'react-photo-album'
 import 'react-photo-album/rows.css'
 import 'react-photo-album/masonry.css'
@@ -20,27 +19,17 @@ function toAlbum(items: Indexed[]): AlbumPhoto[] {
   }))
 }
 
-function HoverImage({ photo, imgProps }: { photo: Photo; imgProps: any }) {
-  const [hover, setHover] = useState(false)
-  const { style, className, ...rest } = imgProps
-  return (
-    <div className="absolute inset-0" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <img {...rest} loading="lazy" draggable={false} className="w-full h-full object-cover" />
-      {photo.is_video && hover && (
-        <img src={`/api/photos/${photo.id}/preview`} alt="" draggable={false}
-          className="absolute inset-0 w-full h-full object-cover"
-          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-      )}
-    </div>
-  )
-}
-
 function Overlay({ photo, index, selectable, isSel, onFav, onToggle }: {
   photo: Photo; index: number; selectable?: boolean; isSel: boolean
   onFav?: (p: Photo) => void; onToggle?: (p: Photo, i: number, shift: boolean) => void
 }) {
   return (
     <>
+      {photo.is_video && (
+        <img src={`/api/photos/${photo.id}/preview`} alt="" draggable={false}
+          className="pf-show absolute inset-0 w-full h-full object-cover pointer-events-none"
+          loading="lazy" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+      )}
       <div className={`absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/40 to-transparent pointer-events-none ${isSel ? '' : 'pf-show'}`} />
       {selectable && (
         <button onClick={e => { e.stopPropagation(); onToggle?.(photo, index, (e as any).shiftKey) }} title="Auswählen"
@@ -94,7 +83,6 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
       else cb.onPhotoClick(i)
     },
     render: {
-      image: (props: any, ctx: any) => <HoverImage photo={(ctx.photo as AlbumPhoto)._p} imgProps={props} />,
       extras: (_: any, ctx: any) => {
         const p = (ctx.photo as AlbumPhoto)._p, i = (ctx.photo as AlbumPhoto)._i
         return <Overlay photo={p} index={i} selectable={cb.selectable} isSel={cb.selected?.has(p.id) ?? false} onFav={cb.onFavoriteToggle} onToggle={cb.onToggleSelect} />
