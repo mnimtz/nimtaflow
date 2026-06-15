@@ -49,7 +49,10 @@ services:
   worker:
     build: ./backend
     image: photoflow-app:latest
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-4}"]
+    # GPU work serializes through one model copy: a single 8 GB card can hold
+    # exactly one 3B VLM. Prefork with >1 worker would load N copies → OOM
+    # (SIGKILL). Keep concurrency at 1 for GPU-bound AI/face processing.
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-1}"]
     restart: unless-stopped
     runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
     volumes:
