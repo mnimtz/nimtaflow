@@ -41,6 +41,10 @@ class LocalVLMProvider(AIProvider):
             return _vlm_cache[self.model_key]
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
+        # Use the GPU in fp16 when available (huge speed-up; fp16 also lets the
+        # 3B Qwen fit in the RTX 2080's 8 GB). CPU stays fp32.
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
         if self.model_key == "florence2-base":
             # work around Florence-2's hard flash_attn import on CPU
             from unittest.mock import patch
@@ -53,17 +57,17 @@ class LocalVLMProvider(AIProvider):
 
             with patch.object(dmu, "get_imports", _no_flash):
                 model = AutoModelForCausalLM.from_pretrained(
-                    self.repo, trust_remote_code=True, torch_dtype=torch.float32
+                    self.repo, trust_remote_code=True, torch_dtype=dtype
                 )
                 proc = AutoProcessor.from_pretrained(self.repo, trust_remote_code=True)
-            _vlm_cache[self.model_key] = ("florence", model.eval(), proc)
+            _vlm_cache[self.model_key] = ("florence", model.eval().to(device), proc, device, dtype)
         else:  # qwen2.5-vl
             from transformers import Qwen2_5_VLForConditionalGeneration
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                self.repo, torch_dtype=torch.float32
+                self.repo, torch_dtype=dtype
             )
             proc = AutoProcessor.from_pretrained(self.repo)
-            _vlm_cache[self.model_key] = ("qwen", model.eval(), proc)
+            _vlm_cache[self.model_key] = ("qwen", model.eval().to(device), proc, device, dtype)
         return _vlm_cache[self.model_key]
 
     def _translate_de(self, text: str) -> str:
@@ -85,7 +89,7 @@ class LocalVLMProvider(AIProvider):
     # ── interface ───────────────────────────────────────────────────────────
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         try:
-            kind, model, proc = self._load_vlm()
+            kind, model, proc, device, dtype = self._load_vlm()
             import torch
             image = image.convert("RGB")
             if kind == "florence":
@@ -94,8 +98,8 @@ class LocalVLMProvider(AIProvider):
                 inputs = proc(text=task, images=image, return_tensors="pt")
                 with torch.no_grad():
                     ids = model.generate(
-                        input_ids=inputs["input_ids"],
-                        pixel_values=inputs["pixel_values"],
+                        input_ids=inputs["input_ids"].to(device),
+                        pixel_values=inputs["pixel_values"].to(device, dtype),
                         max_new_tokens=256, num_beams=3, do_sample=False,
                     )
                 text = proc.batch_decode(ids, skip_special_tokens=True)[0]
@@ -117,6 +121,9 @@ class LocalVLMProvider(AIProvider):
                 from qwen_vl_utils import process_vision_info
                 img_inputs, vid_inputs = process_vision_info(messages)
                 inputs = proc(text=[text], images=img_inputs, videos=vid_inputs, padding=True, return_tensors="pt")
+                inputs = inputs.to(device)
+                if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
+                    inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
                 with torch.no_grad():
                     gen = model.generate(**inputs, max_new_tokens=256)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
