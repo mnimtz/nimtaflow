@@ -46,10 +46,19 @@ async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = D
     person = await db.get(Person, person_id)
     if not person:
         raise HTTPException(404)
-    for k, v in data.model_dump(exclude_unset=True).items():
+    fields = data.model_dump(exclude_unset=True)
+    name_changed = "name" in fields and (fields["name"] or "").strip()
+    for k, v in fields.items():
         setattr(person, k, v)
     await db.commit()
     await db.refresh(person)
+    # Write the person's name into their photos (XMP:PersonInImage) for re-import.
+    if name_changed:
+        try:
+            from app.worker.tasks import write_person_name_task
+            write_person_name_task.delay(person_id)
+        except Exception:
+            pass
     return person
 
 
@@ -157,7 +166,7 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
 
 # ── Person photos ──────────────────────────────────────────────────────────────
 
-@router.get("/{person_id}/photos")
+@router.get("/{person_id}/photos", response_model=None)
 async def person_photos(
     person_id: int,
     page: int = 1,
@@ -184,7 +193,8 @@ async def person_photos(
         .join(Face, Face.photo_id == Photo.id)
         .where(Face.person_id == person_id, Photo.is_trashed == False)
     )
-    return {"total": total or 0, "page": page, "limit": limit, "items": photos}
+    items = [PhotoBase.model_validate(p, from_attributes=True) for p in photos]
+    return {"total": total or 0, "page": page, "limit": limit, "items": items}
 
 
 # ── Face management ───────────────────────────────────────────────────────────

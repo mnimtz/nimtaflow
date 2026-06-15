@@ -272,10 +272,11 @@ function PersonDetail({ person, onBack, onDeleted }: {
   onBack: () => void
   onDeleted: () => void
 }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(!(person.name || '').trim())
   const [name, setName] = useState(person.name)
   const [alias, setAlias] = useState(person.alias || '')
   const [notes, setNotes] = useState(person.notes || '')
+  const [birthdate, setBirthdate] = useState(person.birthdate || '')
   const qc = useQueryClient()
 
   const { data: photosData } = useQuery({
@@ -317,9 +318,14 @@ function PersonDetail({ person, onBack, onDeleted }: {
               <input value={name} onChange={e => setName(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="Name" />
-              <input value={alias} onChange={e => setAlias(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Alias / Spitzname" />
+              <div className="flex gap-2">
+                <input value={alias} onChange={e => setAlias(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Spitzname" />
+                <input type="date" value={birthdate ? String(birthdate).slice(0,10) : ''} onChange={e => setBirthdate(e.target.value)}
+                  className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  title="Geburtsdatum" />
+              </div>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder="Notizen" />
@@ -329,8 +335,8 @@ function PersonDetail({ person, onBack, onDeleted }: {
                   Abbrechen
                 </button>
                 <button
-                  onClick={() => updateMutation.mutate({ name, alias, notes })}
-                  disabled={updateMutation.isPending}
+                  onClick={() => updateMutation.mutate({ name, alias, notes, birthdate })}
+                  disabled={updateMutation.isPending || !name.trim()}
                   className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-50">
                   Speichern
                 </button>
@@ -339,13 +345,22 @@ function PersonDetail({ person, onBack, onDeleted }: {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-white">{person.name}</h1>
-                <button onClick={() => setEditing(true)} className="text-zinc-500 hover:text-zinc-300">
+                <h1 className={`text-2xl font-bold ${person.name ? 'text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
+                <button onClick={() => setEditing(true)} className="text-zinc-500 hover:text-zinc-300" title="Bearbeiten">
                   <Pencil size={15} />
                 </button>
               </div>
-              {person.alias && <p className="text-zinc-400 text-sm">{person.alias}</p>}
-              <p className="text-zinc-500 text-sm mt-1">{person.face_count} Fotos</p>
+              {!person.name && (
+                <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">+ Namen vergeben</button>
+              )}
+              {person.alias && <p className="text-zinc-400 text-sm">„{person.alias}"</p>}
+              <div className="flex items-center gap-3 text-zinc-500 text-sm mt-1">
+                <span>{photosData?.total ?? person.face_count} Fotos</span>
+                {person.birthdate && (
+                  <span>· geb. {new Date(person.birthdate).toLocaleDateString('de')}
+                    {` (${differenceInYears(new Date(), new Date(person.birthdate))} J.)`}</span>
+                )}
+              </div>
               {person.notes && <p className="text-zinc-400 text-sm mt-2 italic">{person.notes}</p>}
               <button
                 onClick={() => { if (window.confirm(`"${person.name}" wirklich löschen?`)) deleteMutation.mutate() }}

@@ -69,6 +69,49 @@ def watch_sources_task(self):
     return _run(_check())
 
 
+@celery_app.task(bind=True, name="write_person_name")
+def write_person_name_task(self, person_id: int):
+    """Write a person's name into their photos as XMP:PersonInImage (best-effort),
+    so the tagging survives a re-import into Lightroom/digiKam/Immich."""
+    async def _main():
+        import shutil, subprocess
+        from app.core.database import init_db, get_db
+        from app.models.person import Person
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        exe = shutil.which("exiftool")
+        if not exe:
+            return {"written": 0}
+        async for db in get_db():
+            person = await db.get(Person, person_id)
+            if not person or not (person.name or "").strip():
+                return {"written": 0}
+            name = person.name.strip()
+            rows = (await db.execute(
+                select(Photo.path).join(Face, Face.photo_id == Photo.id)
+                .where(Face.person_id == person_id).distinct()
+            )).all()
+            written = 0
+            for (path,) in rows:
+                try:
+                    r = subprocess.run(
+                        [exe, "-overwrite_original",
+                         f"-XMP:PersonInImage+={name}", f"-XMP-iptcExt:PersonInImage+={name}",
+                         path],
+                        capture_output=True, timeout=30,
+                    )
+                    if r.returncode == 0:
+                        written += 1
+                except Exception:
+                    pass
+            flog("faces", "INFO", f"Name '{name}' in {written} Foto(s) geschrieben (XMP:PersonInImage)")
+            return {"written": written}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="process_photo")
 def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False):
     async def _run_process():
