@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     tzdata \
     libheif-examples \
+    postgresql-client \
     build-essential \
     cmake \
     && rm -rf /var/lib/apt/lists/*

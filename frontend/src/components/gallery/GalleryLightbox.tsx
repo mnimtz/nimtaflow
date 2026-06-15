@@ -141,8 +141,9 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
   )
 }
 
-export default function GalleryLightbox({ photos, index, onClose, onFavorite }: {
+export default function GalleryLightbox({ photos, index, onClose, onFavorite, hasMore, onLoadMore }: {
   photos: Photo[]; index: number; onClose: () => void; onFavorite?: (photo: Photo) => void
+  hasMore?: boolean; onLoadMore?: () => void
 }) {
   const [cur, setCur] = useState(index)
   const [info, setInfo] = useState(false)
@@ -183,14 +184,19 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite }: 
     <>
       <Lightbox
         open index={index} close={onClose} slides={slides as any}
-        on={{ view: ({ index: i }) => setCur(i) }}
+        on={{ view: ({ index: i }) => {
+          setCur(i)
+          // Pull the next page as the user nears the end of what's loaded, so
+          // browsing covers the whole library instead of looping a few photos.
+          if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
+        } }}
         plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
         toolbar={{ buttons: [favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
         captions={{ descriptionTextAlign: 'center' }}
-        carousel={{ finite: false, preload: 2 }}
+        carousel={{ finite: true, preload: 2 }}
         styles={{ container: { backgroundColor: 'rgba(0,0,0,0.94)' } }}
         animation={{ fade: 250, swipe: 300 }}
       />

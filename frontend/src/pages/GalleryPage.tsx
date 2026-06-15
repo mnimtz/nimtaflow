@@ -102,7 +102,7 @@ function MemoriesView({ onPhotoClick }: { onPhotoClick: (photos: Photo[], i: num
 export default function GalleryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
-  const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
+  const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number; live?: boolean } | null>(null)
   const [albumModal, setAlbumModal] = useState(false)
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
   const [searchDraft, setSearchDraft] = useState('')
@@ -354,7 +354,7 @@ export default function GalleryPage() {
               layout={layout}
               rowHeight={rowHeight}
               groupBy={(sort === 'name' || sort === 'added') ? 'none' : groupBy}
-              onPhotoClick={i => setLightbox({ photos: allGridPhotos, index: i })}
+              onPhotoClick={i => setLightbox({ photos: allGridPhotos, index: i, live: true })}
               onFavoriteToggle={photo => favMutation.mutate(photo.id)}
               selectable
               selected={selected}
@@ -433,10 +433,12 @@ export default function GalleryPage() {
       {/* Lightbox */}
       {lightbox && (
         <GalleryLightbox
-          photos={lightbox.photos}
+          photos={lightbox.live ? allGridPhotos : lightbox.photos}
           index={lightbox.index}
           onClose={() => setLightbox(null)}
           onFavorite={p => favMutation.mutate(p.id)}
+          hasMore={lightbox.live ? infiniteQuery.hasNextPage : false}
+          onLoadMore={lightbox.live ? () => infiniteQuery.fetchNextPage() : undefined}
         />
       )}
     </div>

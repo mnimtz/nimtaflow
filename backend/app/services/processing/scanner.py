@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.photo import Photo, PhotoStatus
 from app.models.source import PhotoSource
@@ -134,6 +135,13 @@ async def scan_source(
             stats["new"] += 1
             new_photo_ids.append(photo.id)
 
+        except IntegrityError:
+            # Another scan (overlapping/nested source, parallel cpu worker) already
+            # inserted this exact path between our check and insert. Idempotent →
+            # treat as skipped, not an error. No log spam.
+            await session.rollback()
+            stats["skipped"] += 1
+            continue
         except Exception as e:
             await session.rollback()
             stats["errors"] += 1

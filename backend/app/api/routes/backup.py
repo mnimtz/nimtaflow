@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from app.services.backup import (
     run_full_backup, list_backups, prune_backups, rclone_sync,
+    restore_database, restore_archive, verify_database_dump, BACKUP_DIR,
 )
 from app.services.hw_accel import detect_hw
 
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/backup", tags=["backup"])
 
 _DB_URL = os.getenv("DATABASE_URL", "")
 _CONFIG = os.getenv("CONFIG_PATH", "/config")
+_CACHE = os.getenv("CACHE_PATH", "/cache")
 
 
 @router.post("/run")
@@ -39,6 +41,39 @@ async def download_backup(filename: str):
     if not path.exists() or not path.name.endswith(".gz"):
         raise HTTPException(404, "Backup not found")
     return FileResponse(str(path), filename=filename)
+
+
+def _safe_backup_file(filename: str):
+    """Resolve a filename to a path inside BACKUP_DIR (no traversal)."""
+    p = (BACKUP_DIR / filename).resolve()
+    if BACKUP_DIR.resolve() not in p.parents or not p.exists():
+        raise HTTPException(404, "Backup not found")
+    return p
+
+
+@router.post("/verify")
+async def verify_backup(filename: str):
+    """Non-destructive check that a db_*.sql.gz dump is actually restorable
+    (restores into a scratch DB, counts photos, drops it). Proves the backup."""
+    p = _safe_backup_file(filename)
+    if not p.name.startswith("db_"):
+        raise HTTPException(400, "Verify only applies to a db_*.sql.gz dump")
+    return await verify_database_dump(_DB_URL, str(p))
+
+
+@router.post("/restore/db")
+async def restore_db(filename: str):
+    """DESTRUCTIVE: restore the live database from a db_*.sql.gz dump."""
+    p = _safe_backup_file(filename)
+    return await restore_database(_DB_URL, str(p))
+
+
+@router.post("/restore/files")
+async def restore_files(filename: str):
+    """Restore a config_*/cache_*.tar.gz back into /config or /cache."""
+    p = _safe_backup_file(filename)
+    dest = _CACHE if p.name.startswith("cache_") else _CONFIG
+    return await restore_archive(str(p), dest)
 
 
 @router.delete("/prune")
