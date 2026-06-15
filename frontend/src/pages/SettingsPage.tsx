@@ -4,7 +4,7 @@ import {
   Plus, Trash2, RefreshCw, Check, X, FolderOpen,
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
-  Eye, Zap, Brain, Download, Shield, Lock, KeyRound,
+  Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -29,6 +29,7 @@ const DEFAULT_VIDEO_PROMPT = 'Beschreibe diese Videoszene sachlich in 2-3 Sätze
 const SECTIONS = [
   { id: 'sources',   icon: HardDrive, label: 'Foto-Quellen' },
   { id: 'gallery',   icon: Layers,    label: 'Galerie' },
+  { id: 'features',  icon: Network,   label: 'Funktionen' },
   { id: 'ai',        icon: Brain,     label: 'Bilder-AI' },
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
@@ -1235,6 +1236,32 @@ const LEVEL_COLORS: Record<string, string> = {
   ERROR: 'text-red-400',
 }
 
+function FeaturesSection() {
+  const qc = useQueryClient()
+  const [settings, setSettings] = useState<Settings>({})
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const setBool = (k: string, v: boolean) => {
+    const next = { ...settings, [k]: v ? 'true' : 'false' }
+    setSettings(next); api.put('/settings', next).then(() => qc.invalidateQueries({ queryKey: ['settings'] }))
+  }
+  const Row = ({ k, title, desc }: { k: string; title: string; desc: string }) => (
+    <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div className="pr-4"><p className="text-sm text-zinc-700 dark:text-zinc-300">{title}</p><p className="text-xs text-zinc-500 mt-0.5">{desc}</p></div>
+      <Toggle value={(settings[k] ?? 'false') === 'true'} onChange={v => setBool(k, v)} />
+    </label>
+  )
+  return (
+    <div>
+      <SectionHeader title="Funktionen" desc="Optionale Bereiche der App ein- oder ausblenden." />
+      <div className="space-y-3 max-w-xl">
+        <Row k="features.relationships" title="Beziehungen / Stammbaum" desc="Familien- & Freundes-Netzwerk in der Seitenleiste. Personen verknüpfen und als Graph anzeigen." />
+        <Row k="map.globe_default" title="Karte als 3D-Globus öffnen" desc="Standardansicht der Karte ist die 3D-Weltkugel statt der flachen Karte." />
+      </div>
+    </div>
+  )
+}
+
 type AppUser = { id: number; email: string; name: string; role: 'admin' | 'user'; is_active: boolean; last_login: string | null; access_config?: Record<string, any> | null }
 
 function UsersSection() {
@@ -1504,6 +1531,7 @@ export default function SettingsPage() {
       <div className="flex-1 overflow-auto p-6">
         {section === 'sources'  && <SourcesSection />}
         {section === 'gallery'  && <GallerySection />}
+        {section === 'features' && <FeaturesSection />}
         {section === 'ai'       && <AISection />}
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}

@@ -7,8 +7,10 @@ from .user import User, UserRole
 from .job import Job, JobLog, JobStatus
 from .settings import Setting
 from .source import PhotoSource
+from .relationship import PersonRelationship, RelationType
 
 __all__ = [
+    "PersonRelationship", "RelationType",
     "Photo", "PhotoStatus",
     "Face", "Person",
     "Album", "AlbumPhoto",

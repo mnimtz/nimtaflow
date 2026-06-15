@@ -4,6 +4,7 @@ import GalleryPage from './pages/GalleryPage'
 import SearchPage from './pages/SearchPage'
 import AlbumsPage from './pages/AlbumsPage'
 import PeoplePage from './pages/PeoplePage'
+import RelationshipsPage from './pages/RelationshipsPage'
 import MapPage from './pages/MapPage'
 import PipelinePage from './pages/PipelinePage'
 import SettingsPage from './pages/SettingsPage'
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/albums" element={<AlbumsPage />} />
         <Route path="/people" element={<PeoplePage />} />
+        <Route path="/relationships" element={<RelationshipsPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
         <Route path="/settings" element={<SettingsPage />} />

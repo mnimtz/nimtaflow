@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn, Network } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -75,10 +75,17 @@ export default function Layout() {
     queryKey: ['me'], queryFn: () => api.get('/auth/me').then(r => r.data),
     enabled: hasToken, retry: false, staleTime: 300_000,
   })
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
+  })
+  const relationsOn = (settings?.['features.relationships'] ?? 'false') === 'true'
   // Gate nav by per-user access_config (admins + unauthenticated see everything).
   const allow = (flag: string) =>
     !me || me.role === 'admin' || (me.access_config?.[flag] ?? true)
-  const visibleNav = nav.filter(n =>
+  const fullNav = relationsOn
+    ? [...nav.slice(0, 4), { to: '/relationships', icon: Network, label: 'Beziehungen' }, ...nav.slice(4)]
+    : nav
+  const visibleNav = fullNav.filter(n =>
     (n.to !== '/map' || allow('allow_map')) &&
     (n.to !== '/pipeline' || (me ? me.role === 'admin' || me.access_config?.allow_pipeline : true)),
   )
