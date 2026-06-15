@@ -26,6 +26,12 @@ interface FaceRef { id: number; photo_id: number; confidence?: number }
 
 const GRID = 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-x-4 gap-y-6'
 
+// Shared, theme-aware control styles (chic + light/dark + touch-friendly)
+const BTN_PRIMARY = 'flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 active:scale-[0.98] transition shadow-sm'
+const BTN_GHOST = 'flex items-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-[0.98] transition'
+const BTN_GHOST_ACTIVE = 'flex items-center gap-2 px-3.5 py-2 rounded-xl border border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 text-sm hover:bg-indigo-100 dark:hover:bg-indigo-950/50 active:scale-[0.98] transition'
+const INPUT = 'w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
 export default function PeoplePage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showHidden, setShowHidden] = useState(false)
@@ -133,43 +139,40 @@ export default function PeoplePage() {
 
   return (
     <div className="p-4 max-w-7xl mx-auto pb-24">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Personen</h1>
-          <p className="text-sm text-zinc-400">{known.length} benannt · {unknown.length} unbekannt</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Personen</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{known.length} benannt · {unknown.length} unbekannt</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {selectMode ? (
-            <button onClick={clearSelection}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-500 text-indigo-300 text-sm hover:bg-zinc-800">
+            <button onClick={clearSelection} className={`${BTN_PRIMARY}`}>
               <X size={15} /> Fertig
             </button>
           ) : (
-            <button onClick={() => setSelectMode(true)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800"
+            <button onClick={() => setSelectMode(true)} className={BTN_GHOST}
               title="Mehrere Personen auswählen, um sie zusammenzuführen oder zu verbergen">
               <GitMerge size={15} /><span className="hidden sm:inline">Auswählen / Zusammenführen</span><span className="sm:hidden">Auswählen</span>
             </button>
           )}
           <button onClick={() => setShowHidden(v => !v)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-zinc-800 ${showHidden ? 'border-indigo-500 text-indigo-300' : 'border-zinc-700 text-zinc-400'}`}
+            className={showHidden ? BTN_GHOST_ACTIVE : BTN_GHOST}
             title={showHidden ? 'Verborgene ausblenden' : 'Verborgene anzeigen'}>
             {showHidden ? <EyeOff size={15} /> : <Eye size={15} />}<span className="hidden sm:inline">Verborgene</span>
           </button>
           <button onClick={() => clusterMutation.mutate()} disabled={clusterMutation.isPending}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm hover:bg-zinc-800 disabled:opacity-50"
+            className={`${BTN_GHOST} disabled:opacity-50`}
             title="Unzugeordnete Gesichter automatisch gruppieren">
-            <Sparkles size={15} />{clusterMutation.isPending ? 'Clustere…' : 'Clustern'}
+            <Sparkles size={15} /><span className="hidden sm:inline">{clusterMutation.isPending ? 'Clustere…' : 'Clustern'}</span>
           </button>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
+          <button onClick={() => setShowAdd(true)} className={BTN_PRIMARY}>
             <UserPlus size={15} /><span className="hidden sm:inline">Hinzufügen</span>
           </button>
         </div>
       </div>
 
       {selectMode && (
-        <div className="mb-4 px-3 py-2 rounded-lg bg-indigo-900/20 border border-indigo-700/40 text-sm text-indigo-200">
+        <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-sm text-indigo-700 dark:text-indigo-300">
           Wähle Personen aus (antippen). Mit <strong>2 oder mehr</strong> kannst du sie unten <strong>zusammenführen</strong> oder verbergen.
         </div>
       )}
@@ -250,7 +253,7 @@ export default function PeoplePage() {
 
       {/* Selection action bar */}
       {selection.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur max-w-[calc(100vw-1.5rem)]">
           <span className="text-sm text-zinc-300 px-2">{selection.size} ausgewählt</span>
           <button onClick={() => setMergeOpen(true)} disabled={selection.size < 2}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -268,7 +271,7 @@ export default function PeoplePage() {
 
       {/* Face selection action bar */}
       {faceSel.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur max-w-[calc(100vw-1.5rem)]">
           <span className="text-sm text-zinc-300 px-2">{faceSel.size} Gesicht(er)</span>
           <button onClick={() => ignoreFaces.mutate({ ids: [...faceSel], ignored: true })} disabled={ignoreFaces.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
@@ -409,7 +412,7 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
           onChange={e => setName(e.target.value)}
           onBlur={() => { if (name.trim() && name !== person.name) rename.mutate(name.trim()); else setEditing(false) }}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setName(person.name); setEditing(false) } }}
-          className="w-full px-2 py-1 text-center text-sm rounded-md bg-zinc-800 border border-indigo-500 text-white focus:outline-none"
+          className="w-full px-2 py-1 text-center text-sm rounded-md bg-zinc-50 dark:bg-zinc-800 border border-indigo-500 text-zinc-900 dark:text-white focus:outline-none"
           placeholder="Name…"
         />
       ) : person.name ? (
@@ -495,7 +498,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-1 text-zinc-400 hover:text-white text-sm mb-6">
+      <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm mb-6">
         <ArrowLeft size={16} /> Zurück
       </button>
 
@@ -513,7 +516,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
             <>
               <div className="flex items-center gap-2">
                 <h1 className={`text-2xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
-                <button onClick={() => setEditing(true)} className="text-zinc-500 hover:text-zinc-200" title="Bearbeiten"><Pencil size={16} /></button>
+                <button onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200" title="Bearbeiten"><Pencil size={16} /></button>
               </div>
               {!person.name && <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">+ Namen vergeben</button>}
               {person.alias && <p className="text-zinc-400 text-sm mt-0.5">„{person.alias}“</p>}
@@ -539,7 +542,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
 
       {faces.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">Gesichter ({faces.length})</h2>
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Gesichter ({faces.length})</h2>
           <div className="flex gap-2 flex-wrap">
             {faces.map(f => (
               <div key={f.id} className={`group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-1 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-700'}`}>
@@ -558,7 +561,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">Fotos ({total})</h2>
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Fotos ({total})</h2>
       <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
         {photos.map((photo, i) => (
           <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer" onClick={() => setLightboxIndex(i)}>
@@ -585,7 +588,7 @@ function EditPersonForm({ person, onCancel, onSave, saving }: {
   const [alias, setAlias] = useState(person.alias || '')
   const [notes, setNotes] = useState(person.notes || '')
   const [birthdate, setBirthdate] = useState(person.birthdate ? String(person.birthdate).slice(0, 10) : '')
-  const input = 'w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  const input = INPUT
   return (
     <div className="space-y-2">
       <input value={name} onChange={e => setName(e.target.value)} className={input} placeholder="Name" />
@@ -595,7 +598,7 @@ function EditPersonForm({ person, onCancel, onSave, saving }: {
       </div>
       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${input} resize-none`} placeholder="Notizen" />
       <div className="flex gap-2">
-        <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-zinc-700 text-sm text-zinc-400 hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
         <button onClick={() => onSave({ name, alias, notes, birthdate: birthdate || null })} disabled={saving || !name.trim()}
           className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Speichern</button>
       </div>
@@ -624,28 +627,28 @@ function MergeModal({ people, onClose, onMerged }: {
 
   return (
     <Modal open onClose={onClose} title={`${people.length} Personen zusammenführen`}>
-      <p className="text-sm text-zinc-400 mb-3">Wähle die Person, die <strong className="text-zinc-200">behalten</strong> wird. Alle Gesichter der anderen werden zu ihr verschoben.</p>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3">Wähle die Person, die <strong className="text-zinc-700 dark:text-zinc-200">behalten</strong> wird. Alle Gesichter der anderen werden zu ihr verschoben.</p>
       <div className="space-y-1.5 max-h-64 overflow-y-auto mb-4">
         {people.map(p => (
           <button key={p.id} onClick={() => { setTargetId(p.id); if (p.name) setName(p.name) }}
-            className={`w-full flex items-center gap-3 p-2 rounded-lg border text-left transition-colors ${targetId === p.id ? 'border-indigo-500 bg-indigo-900/20' : 'border-zinc-800 hover:bg-zinc-800/50'}`}>
+            className={`w-full flex items-center gap-3 p-2 rounded-lg border text-left transition-colors ${targetId === p.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
             <div className="relative w-10 h-10 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center">
               <span className="absolute text-sm text-zinc-600">{(p.name || '?').charAt(0).toUpperCase()}</span>
               <img src={`/api/people/${p.id}/avatar`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-sm truncate ${p.name ? 'text-white' : 'text-zinc-500 italic'}`}>{p.name || 'Unbekannt'}</p>
+              <p className={`text-sm truncate ${p.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{p.name || 'Unbekannt'}</p>
               <p className="text-xs text-zinc-500">{p.face_count} Fotos</p>
             </div>
             {targetId === p.id && <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500 text-white font-medium">behalten</span>}
           </button>
         ))}
       </div>
-      <label className="block text-xs text-zinc-400 mb-1">Name nach dem Zusammenführen</label>
+      <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Name nach dem Zusammenführen</label>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (optional)"
-        className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        className="w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
       <div className="flex gap-2 justify-end">
-        <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
         <button onClick={() => merge.mutate()} disabled={merge.isPending}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           <GitMerge size={14} /> Zusammenführen
@@ -685,11 +688,11 @@ function FaceAssignModal({ face, people, onClose, onDone }: {
       <div className="flex gap-4 mb-4">
         <img src={`/api/people/faces/${face.id}/crop`} className="w-24 h-24 rounded-xl object-cover bg-zinc-800 ring-1 ring-zinc-700 flex-shrink-0" />
         <div className="flex-1">
-          <label className="block text-xs text-zinc-400 mb-1">Neue Person aus diesem Gesicht</label>
+          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Neue Person aus diesem Gesicht</label>
           <div className="flex gap-2">
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)"
               onKeyDown={e => { if (e.key === 'Enter') createNew.mutate() }}
-              className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="flex-1 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             <button onClick={() => createNew.mutate()} disabled={createNew.isPending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
               <UserPlus size={14} /> Neu
@@ -699,23 +702,23 @@ function FaceAssignModal({ face, people, onClose, onDone }: {
       </div>
 
       <div className="border-t border-zinc-800 pt-4">
-        <label className="block text-xs text-zinc-400 mb-1">…oder zu vorhandener Person</label>
+        <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">…oder zu vorhandener Person</label>
         <div className="relative mb-2">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Person suchen…"
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
         <div className="max-h-52 overflow-y-auto space-y-1">
           {filtered.length === 0 ? (
             <p className="text-sm text-zinc-500 py-2 text-center">Keine benannten Personen.</p>
           ) : filtered.map(p => (
             <button key={p.id} onClick={() => assign.mutate(p.id)} disabled={assign.isPending}
-              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800 text-left disabled:opacity-50">
+              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left disabled:opacity-50">
               <div className="relative w-9 h-9 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center">
                 <span className="absolute text-xs text-zinc-600">{p.name.charAt(0).toUpperCase()}</span>
                 <img src={`/api/people/${p.id}/avatar`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
               </div>
-              <span className="text-sm text-white flex-1 truncate">{p.name}</span>
+              <span className="text-sm text-zinc-900 dark:text-white flex-1 truncate">{p.name}</span>
               <span className="text-xs text-zinc-500">{p.face_count}</span>
             </button>
           ))}
@@ -730,7 +733,7 @@ function AddPersonModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [name, setName] = useState('')
   const [alias, setAlias] = useState('')
   const [birthdate, setBirthdate] = useState('')
-  const input = 'w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  const input = INPUT
   const mutation = useMutation({
     mutationFn: () => api.post('/people', { name, alias: alias || undefined, birthdate: birthdate || undefined }),
     onSuccess: () => { onCreated(); onClose() },
@@ -741,12 +744,12 @@ function AddPersonModal({ onClose, onCreated }: { onClose: () => void; onCreated
         <input required placeholder="Name *" value={name} onChange={e => setName(e.target.value)} className={input} />
         <input placeholder="Alias / Spitzname" value={alias} onChange={e => setAlias(e.target.value)} className={input} />
         <div>
-          <label className="block text-xs text-zinc-400 mb-1">Geburtsdatum (optional)</label>
+          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Geburtsdatum (optional)</label>
           <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className={input} />
         </div>
         <p className="text-xs text-zinc-500">Tipp: Personen entstehen normalerweise automatisch aus erkannten Gesichtern. Manuell angelegte Personen haben zunächst keine Fotos.</p>
         <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-zinc-700 text-sm text-zinc-400 hover:bg-zinc-800">Abbrechen</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
           <button type="submit" disabled={mutation.isPending || !name.trim()}
             className="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
             {mutation.isPending ? 'Erstelle…' : 'Hinzufügen'}

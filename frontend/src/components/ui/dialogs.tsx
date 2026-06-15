@@ -33,13 +33,13 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className={`w-full ${maxWidth} rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl`}
+        className={`w-full ${maxWidth} max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl`}
         onClick={e => e.stopPropagation()}
       >
         {title !== undefined && (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-            <h2 className="text-base font-semibold text-white">{title}</h2>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h2>
+            <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -139,13 +139,13 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
           <div className="flex gap-3">
             {c.danger && <AlertTriangle size={22} className="text-red-400 flex-shrink-0 mt-0.5" />}
             <div className="flex-1">
-              <h3 className="text-base font-semibold text-white mb-1">{c.title}</h3>
-              {c.message && <div className="text-sm text-zinc-400">{c.message}</div>}
+              <h3 className="text-base font-semibold text-zinc-900 dark:text-white mb-1">{c.title}</h3>
+              {c.message && <div className="text-sm text-zinc-600 dark:text-zinc-400">{c.message}</div>}
             </div>
           </div>
           <div className="flex gap-2 justify-end mt-5">
             <button onClick={() => closeConfirm(c.id, false)}
-              className="px-3.5 py-1.5 rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800">
+              className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
               {c.cancelLabel || 'Abbrechen'}
             </button>
             <button onClick={() => closeConfirm(c.id, true)}
