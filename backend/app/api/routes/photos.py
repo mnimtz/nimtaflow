@@ -127,50 +127,9 @@ async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: Asyn
     if not q.strip():
         return PhotoListResponse(total=0, page=1, limit=limit, items=[])
     from app.services.settings_loader import load_settings
-    from app.services.ai.manager import AIManager
+    from app.services.photo_search import search_photos
     s = await load_settings(db)
-    ai = AIManager(s)
-    vec, provider = await ai.embed_text(q.strip())
-    if not vec:
-        raise HTTPException(400, "Kein Embedding-Provider aktiv/erreichbar. In Foto-AI konfigurieren.")
-    # match the stored 768-dim space (some providers return more → truncate+renormalize)
-    if len(vec) > 768:
-        import math
-        vec = vec[:768]
-        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-        vec = [x / norm for x in vec]
-    if len(vec) != 768:
-        raise HTTPException(400, f"Embedding-Dimension {len(vec)} passt nicht zur DB (768).")
-    # Hybrid: keyword match (description/keywords) OR a strict semantic distance.
-    # Pure semantic over a tiny library returns everything; requiring a term hit
-    # (or a very close vector) makes results exact-ish. Slider tunes the vector part.
-    import re as _re
-    max_dist = float(s.get("search.max_distance", "0.78") or 0.78)
-    tokens = [t for t in _re.findall(r"[\wäöüÄÖÜß]{3,}", q.lower())
-              if t not in {"der", "die", "das", "ein", "eine", "mit", "und", "beim", "der", "den", "von", "auf", "im", "in"}]
-    dist = Photo.embedding.cosine_distance(vec)
-    base = [Photo.status == PhotoStatus.done, Photo.is_missing == False,
-            Photo.is_trashed == False, Photo.embedding.isnot(None),
-            *photo_conditions(user)]
-    photos = []
-    if tokens:
-        # Keep only tokens that actually occur somewhere (so a synonym we don't
-        # have, e.g. "Junge" when the caption says "Kind", doesn't kill the query).
-        present = []
-        for t in tokens:
-            hit = await db.scalar(select(Photo.id).where(
-                or_(Photo.description.ilike(f"%{t}%"), Photo.keywords.ilike(f"%{t}%"))).limit(1))
-            if hit:
-                present.append(t)
-        if present:
-            # ALL present tokens must match (AND) → exact-ish results
-            and_conds = [or_(Photo.description.ilike(f"%{t}%"), Photo.keywords.ilike(f"%{t}%")) for t in present]
-            qy = select(Photo).where(*base, *and_conds).order_by(dist).limit(limit)
-            photos = (await db.execute(qy)).scalars().all()
-    if not photos:
-        # fallback: closest semantic matches within the distance threshold
-        qy = select(Photo).where(*base, dist < max_dist).order_by(dist).limit(limit)
-        photos = (await db.execute(qy)).scalars().all()
+    photos = await search_photos(db, q, s, limit=limit, extra_conditions=photo_conditions(user))
     return PhotoListResponse(total=len(photos), page=1, limit=limit, items=photos)
 
 

@@ -306,27 +306,11 @@ async def _populate_ai_album_bg(album_id: int, prompt: str):
         if not album:
             return
 
-        # Strategy 1: embedding similarity (if embeddings available)
-        # Strategy 2: filter by description ILIKE keywords from prompt
-        # We implement strategy 2 as the always-available fallback.
-        keywords = [w.strip().lower() for w in prompt.replace(",", " ").split() if len(w) > 3]
-
-        if not keywords:
-            return
-
-        from sqlalchemy import or_
-        conditions = [Photo.description.ilike(f"%{kw}%") for kw in keywords]
-        q = (
-            select(Photo)
-            .where(
-                Photo.status == PhotoStatus.done,
-                Photo.is_trashed == False,
-                or_(*conditions),
-            )
-            .order_by(Photo.taken_at.desc())
-            .limit(200)
-        )
-        photos = (await db.execute(q)).scalars().all()
+        # Semantic + keyword + tag + person search on the freetext prompt.
+        from app.services.settings_loader import load_settings
+        from app.services.photo_search import search_photos
+        s = await load_settings(db)
+        photos = await search_photos(db, prompt, s, limit=300)
 
         await db.execute(delete(AlbumPhoto).where(AlbumPhoto.album_id == album_id))
         for i, p in enumerate(photos):
