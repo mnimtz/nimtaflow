@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, create_refresh_token, decode_token
 from app.models.user import User
-from app.schemas.user import UserOut, TokenResponse
+from app.schemas.user import UserOut, UserDetail, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -54,6 +54,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     return user
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=UserDetail)
 async def me(current_user: User = Depends(get_current_user)):
     return current_user

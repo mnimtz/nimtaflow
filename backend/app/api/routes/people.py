@@ -6,6 +6,7 @@ from sqlalchemy import select, func, update, delete as sql_delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional
 from app.models.person import Person
 from app.models.face import Face
 from app.schemas.person import PersonCreate, PersonUpdate, PersonOut, PersonDetail
@@ -226,6 +227,7 @@ async def person_photos(
     page: int = 1,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    _acc_user=Depends(current_user_optional),
 ):
     person = await db.get(Person, person_id)
     if not person:
@@ -233,11 +235,12 @@ async def person_photos(
 
     from app.models.photo import Photo
     from app.schemas.photo import PhotoBase
+    from app.core.access import photo_conditions
 
     q = (
         select(Photo)
         .join(Face, Face.photo_id == Photo.id)
-        .where(Face.person_id == person_id, Photo.is_trashed == False)
+        .where(Face.person_id == person_id, Photo.is_trashed == False, *photo_conditions(_acc_user))
         .order_by(Photo.taken_at.desc())
         .offset((page - 1) * limit).limit(limit)
     )
@@ -245,7 +248,7 @@ async def person_photos(
     total = await db.scalar(
         select(func.count(func.distinct(Photo.id)))
         .join(Face, Face.photo_id == Photo.id)
-        .where(Face.person_id == person_id, Photo.is_trashed == False)
+        .where(Face.person_id == person_id, Photo.is_trashed == False, *photo_conditions(_acc_user))
     )
     items = [PhotoBase.model_validate(p, from_attributes=True) for p in photos]
     return {"total": total or 0, "page": page, "limit": limit, "items": items}

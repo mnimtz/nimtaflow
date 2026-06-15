@@ -45,6 +45,16 @@ async def enforce_auth(
     return user
 
 
+async def current_user_optional(
+    token: Optional[str] = Depends(_optional_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """Resolve the logged-in user from the token, or None — without consulting the
+    enforce setting. Used to apply per-user access_config restrictions whenever a
+    (restricted) user is logged in, regardless of global enforcement."""
+    return await _user_from_token(token, db)
+
+
 async def require_admin(
     token: Optional[str] = Depends(_optional_scheme),
     db: AsyncSession = Depends(get_db),

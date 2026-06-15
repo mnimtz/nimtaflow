@@ -7,7 +7,10 @@ from datetime import date
 import os, subprocess, pathlib, mimetypes
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional
+from app.core.access import photo_conditions, can_see_photo, feature_allowed
 from app.models.photo import Photo, PhotoStatus
+from app.models.user import User
 from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup
 
 router = APIRouter(prefix="/photos", tags=["photos"])
@@ -85,8 +88,11 @@ async def list_photos(
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps, view)
+    for c in photo_conditions(user):
+        q = q.where(c)
 
     if lat and lng and radius_km:
         lat_delta = radius_km / 111.0
@@ -113,7 +119,8 @@ async def list_photos(
 
 
 @router.get("/search/semantic", response_model=PhotoListResponse)
-async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: AsyncSession = Depends(get_db)):
+async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
     """Natural-language semantic search over photo embeddings (pgvector cosine).
     Embeds the query with the configured embedding provider and returns the
     closest photos. Requires photos to have embeddings (AI processing done)."""
@@ -143,7 +150,8 @@ async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: Asyn
               if t not in {"der", "die", "das", "ein", "eine", "mit", "und", "beim", "der", "den", "von", "auf", "im", "in"}]
     dist = Photo.embedding.cosine_distance(vec)
     base = [Photo.status == PhotoStatus.done, Photo.is_missing == False,
-            Photo.is_trashed == False, Photo.embedding.isnot(None)]
+            Photo.is_trashed == False, Photo.embedding.isnot(None),
+            *photo_conditions(user)]
     photos = []
     if tokens:
         # Keep only tokens that actually occur somewhere (so a synonym we don't
@@ -177,9 +185,12 @@ async def get_timeline(
     favorites: bool = False,
     limit_per_group: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     """Returns photos grouped by day, newest first, for timeline view."""
     q = _base_query(db, search, date_from, date_to, person_id, None, camera, media_type, favorites)
+    for c in photo_conditions(user):
+        q = q.where(c)
     q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
     all_photos = (await db.execute(q)).scalars().all()
 
@@ -256,9 +267,12 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{photo_id}")
-async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
     if not photo:
+        raise HTTPException(404, "Photo not found")
+    if not can_see_photo(photo, user):
         raise HTTPException(404, "Photo not found")
 
     from sqlalchemy import inspect as sa_inspect
@@ -475,9 +489,10 @@ async def update_meta(photo_id: int, body: MetaUpdate, db: AsyncSession = Depend
 
 
 @router.get("/{photo_id}/thumbnail")
-async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = Depends(get_db)):
+async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = Depends(get_db),
+                        user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     thumb = getattr(photo, f"thumb_{size}", None) or photo.thumb_medium or photo.thumb_small
     if not thumb or not os.path.exists(thumb):
@@ -498,19 +513,23 @@ async def get_video_preview(photo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{photo_id}/original")
-async def get_original(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def get_original(photo_id: int, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
+    if not feature_allowed(user, "allow_download"):
+        raise HTTPException(403, "Download nicht erlaubt")
     mime = photo.mime_type or mimetypes.guess_type(photo.path)[0] or "application/octet-stream"
     return FileResponse(photo.path, media_type=mime, filename=photo.filename)
 
 
 @router.get("/{photo_id}/video/stream")
-async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     """Stream video directly or serve transcoded WebM."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video:
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
     # Prefer pre-transcoded WebM

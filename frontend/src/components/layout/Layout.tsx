@@ -66,8 +66,22 @@ const nav = [
   { to: '/pipeline', icon: Activity, label: 'Pipeline' },
 ]
 
+type Me = { role: string; access_config?: Record<string, any> | null }
+
 export default function Layout() {
   const { dark, toggle } = useTheme()
+  const hasToken = !!localStorage.getItem('access_token')
+  const { data: me } = useQuery<Me>({
+    queryKey: ['me'], queryFn: () => api.get('/auth/me').then(r => r.data),
+    enabled: hasToken, retry: false, staleTime: 300_000,
+  })
+  // Gate nav by per-user access_config (admins + unauthenticated see everything).
+  const allow = (flag: string) =>
+    !me || me.role === 'admin' || (me.access_config?.[flag] ?? true)
+  const visibleNav = nav.filter(n =>
+    (n.to !== '/map' || allow('allow_map')) &&
+    (n.to !== '/pipeline' || (me ? me.role === 'admin' || me.access_config?.allow_pipeline : true)),
+  )
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-100 dark:bg-zinc-950">
@@ -86,7 +100,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 flex flex-col gap-0.5 overflow-y-auto">
-          {nav.map(({ to, icon: Icon, label }) => (
+          {visibleNav.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to}>
               {({ isActive }) => (
                 <div className={clsx(
@@ -133,7 +147,7 @@ export default function Layout() {
 
       {/* ── Mobile bottom nav ─────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-900 border-t border-white/5 flex">
-        {[...nav, { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
+        {[...visibleNav, { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} className="flex-1">
             {({ isActive }) => (
               <div className={clsx(

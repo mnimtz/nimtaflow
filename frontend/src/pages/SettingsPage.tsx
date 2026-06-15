@@ -1235,13 +1235,15 @@ const LEVEL_COLORS: Record<string, string> = {
   ERROR: 'text-red-400',
 }
 
-type AppUser = { id: number; email: string; name: string; role: 'admin' | 'user'; is_active: boolean; last_login: string | null }
+type AppUser = { id: number; email: string; name: string; role: 'admin' | 'user'; is_active: boolean; last_login: string | null; access_config?: Record<string, any> | null }
 
 function UsersSection() {
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
   const [pwFor, setPwFor] = useState<number | null>(null)
   const [pw, setPw] = useState('')
+  const [accFor, setAccFor] = useState<number | null>(null)
+  const [acc, setAcc] = useState<Record<string, any>>({})
   const [add, setAdd] = useState({ email: '', name: '', password: '', role: 'user' })
   const [showAdd, setShowAdd] = useState(false)
 
@@ -1301,6 +1303,10 @@ function UsersSection() {
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
                   {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
                 </button>
+                {u.role !== 'admin' && (
+                  <button onClick={() => { setAccFor(accFor === u.id ? null : u.id); setAcc(u.access_config || {}) }}
+                    className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Zugriff</button>
+                )}
                 <button onClick={() => { setPwFor(pwFor === u.id ? null : u.id); setPw('') }}
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Passwort</button>
                 <button onClick={() => delU.mutate(u.id)} className="text-zinc-400 hover:text-red-500" title="Löschen"><Trash2 size={15} /></button>
@@ -1310,6 +1316,37 @@ function UsersSection() {
                       className="flex-1 px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     <button onClick={() => setPwM.mutate({ id: u.id, password: pw })} disabled={pw.length < 6}
                       className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Setzen</button>
+                  </div>
+                )}
+                {accFor === u.id && (
+                  <div className="w-full mt-2 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Sichtbar ab (Datum)</label>
+                        <input type="date" value={acc.visible_from || ''} onChange={e => setAcc(a => ({ ...a, visible_from: e.target.value || undefined }))} className={sel + ' w-full'} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Sichtbar bis (Datum)</label>
+                        <input type="date" value={acc.visible_until || ''} onChange={e => setAcc(a => ({ ...a, visible_until: e.target.value || undefined }))} className={sel + ' w-full'} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Nur diese Personen-IDs (kommagetrennt, leer = alle)</label>
+                      <input type="text" value={(acc.visible_person_ids || []).join(',')}
+                        onChange={e => setAcc(a => ({ ...a, visible_person_ids: e.target.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) }))}
+                        placeholder="z.B. 19,20" className={sel + ' w-full'} />
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {([['allow_download', 'Download'], ['allow_map', 'Karte'], ['allow_pipeline', 'Pipeline']] as const).map(([k, lbl]) => (
+                        <label key={k} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+                          <input type="checkbox" checked={acc[k] ?? true} onChange={e => setAcc(a => ({ ...a, [k]: e.target.checked }))} className="accent-indigo-500" /> {lbl}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <button onClick={() => patchU.mutate({ id: u.id, body: { access_config: acc } as any })}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">Zugriff speichern</button>
+                    </div>
                   </div>
                 )}
               </div>
