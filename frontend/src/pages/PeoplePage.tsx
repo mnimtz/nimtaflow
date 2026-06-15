@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X } from 'lucide-react'
+import { UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff } from 'lucide-react'
 import { api } from '../lib/api'
 import { differenceInYears } from 'date-fns'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
@@ -14,6 +14,7 @@ interface Person {
   profile_face_id?: number
   notes?: string
   face_count: number
+  is_hidden?: boolean
   created_at: string
 }
 
@@ -28,11 +29,18 @@ export default function PeoplePage() {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null)
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSource, setMergeSource] = useState<Person | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
   const qc = useQueryClient()
 
   const { data: people = [], isLoading } = useQuery<Person[]>({
-    queryKey: ['people'],
-    queryFn: () => api.get('/people').then(r => r.data),
+    queryKey: ['people', showHidden],
+    queryFn: () => api.get('/people', { params: { include_hidden: showHidden } }).then(r => r.data),
+  })
+
+  const hideMutation = useMutation({
+    mutationFn: ({ id, hidden }: { id: number; hidden: boolean }) =>
+      api.post(`/people/${id}/hide`, null, { params: { hidden } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['people'] }),
   })
 
   const deleteMutation = useMutation({
@@ -112,6 +120,13 @@ export default function PeoplePage() {
           ) : (
             <>
               <button
+                onClick={() => setShowHidden(v => !v)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-zinc-800 ${showHidden ? 'border-indigo-500 text-indigo-300' : 'border-zinc-700 text-zinc-400'}`}
+                title={showHidden ? 'Verborgene Personen ausblenden' : 'Verborgene Personen anzeigen'}
+              >
+                {showHidden ? <EyeOff size={15} /> : <Eye size={15} />} Verborgene
+              </button>
+              <button
                 onClick={() => clusterMutation.mutate()}
                 disabled={clusterMutation.isPending}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm hover:bg-zinc-800 disabled:opacity-50"
@@ -167,6 +182,7 @@ export default function PeoplePage() {
               onDelete={() => {
                 if (window.confirm(`"${p.name || 'Unbekannt'}" wirklich löschen?`)) deleteMutation.mutate(p.id)
               }}
+              onToggleHidden={() => hideMutation.mutate({ id: p.id, hidden: !p.is_hidden })}
             />
           )
           const gridCls = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
@@ -208,12 +224,13 @@ export default function PeoplePage() {
   )
 }
 
-function PersonCard({ person, mergeMode, mergeSource, onClick, onDelete }: {
+function PersonCard({ person, mergeMode, mergeSource, onClick, onDelete, onToggleHidden }: {
   person: Person
   mergeMode: boolean
   mergeSource: Person | null
   onClick: () => void
   onDelete: () => void
+  onToggleHidden: () => void
 }) {
   const age = person.birthdate ? differenceInYears(new Date(), new Date(person.birthdate)) : null
   const isSource = mergeSource?.id === person.id
@@ -247,13 +264,27 @@ function PersonCard({ person, mergeMode, mergeSource, onClick, onDelete }: {
       {age !== null && <p className="text-xs text-zinc-500 mt-0.5">{age} J.</p>}
       <p className="text-xs text-zinc-600 mt-1">{person.face_count} Fotos</p>
 
+      {person.is_hidden && (
+        <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] bg-zinc-700 text-zinc-300 font-medium flex items-center gap-1">
+          <EyeOff size={10} /> verborgen
+        </div>
+      )}
       {!mergeMode && (
-        <button
-          onClick={e => { e.stopPropagation(); onDelete() }}
-          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-red-400"
-        >
-          <Trash2 size={13} />
-        </button>
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={e => { e.stopPropagation(); onToggleHidden() }}
+            className="p-1 rounded text-zinc-500 hover:text-indigo-300"
+            title={person.is_hidden ? 'Wieder anzeigen' : 'Verbergen'}
+          >
+            {person.is_hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onDelete() }}
+            className="p-1 rounded text-zinc-500 hover:text-red-400"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
       )}
       {isSource && (
         <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-xs bg-amber-500 text-amber-950 font-bold">
@@ -320,6 +351,12 @@ function PersonDetail({ person, onBack, onDeleted }: {
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/people/${person.id}`),
     onSuccess: onDeleted,
+  })
+
+  const [hidden, setHidden] = useState(!!person.is_hidden)
+  const hideMutation = useMutation({
+    mutationFn: (h: boolean) => api.post(`/people/${person.id}/hide`, null, { params: { hidden: h } }),
+    onSuccess: (_d, h) => { setHidden(h); qc.invalidateQueries({ queryKey: ['people'] }) },
   })
 
   const photos: Photo[] = photosData?.items || []
@@ -391,12 +428,21 @@ function PersonDetail({ person, onBack, onDeleted }: {
                 )}
               </div>
               {person.notes && <p className="text-zinc-400 text-sm mt-2 italic">{person.notes}</p>}
-              <button
-                onClick={() => { if (window.confirm(`"${person.name}" wirklich löschen?`)) deleteMutation.mutate() }}
-                className="mt-3 flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
-              >
-                <Trash2 size={12} /> Person löschen
-              </button>
+              <div className="mt-3 flex items-center gap-4">
+                <button
+                  onClick={() => hideMutation.mutate(!hidden)}
+                  disabled={hideMutation.isPending}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-indigo-300 disabled:opacity-50"
+                >
+                  {hidden ? <Eye size={12} /> : <EyeOff size={12} />} {hidden ? 'Wieder anzeigen' : 'Verbergen'}
+                </button>
+                <button
+                  onClick={() => { if (window.confirm(`"${person.name}" wirklich löschen?`)) deleteMutation.mutate() }}
+                  className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
+                >
+                  <Trash2 size={12} /> Person löschen
+                </button>
+              </div>
             </>
           )}
         </div>

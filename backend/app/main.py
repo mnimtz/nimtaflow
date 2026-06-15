@@ -58,8 +58,9 @@ _COLUMN_MIGRATIONS = [
         ADD COLUMN IF NOT EXISTS ai_last_evaluated TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ DEFAULT NOW()""",
     "ALTER TABLE album_photos ADD COLUMN IF NOT EXISTS ai_score FLOAT",
-    # ── persons: alias ────────────────────────────────────────────────────────
+    # ── persons: alias / hide ─────────────────────────────────────────────────
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS alias VARCHAR(256)",
+    "ALTER TABLE persons ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE",
 ]
 
 

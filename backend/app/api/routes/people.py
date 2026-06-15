@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete as sql_delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -14,8 +14,11 @@ router = APIRouter(prefix="/people", tags=["people"])
 
 
 @router.get("", response_model=List[PersonDetail])
-async def list_people(db: AsyncSession = Depends(get_db)):
-    persons = (await db.execute(select(Person).order_by(Person.name))).scalars().all()
+async def list_people(include_hidden: bool = False, db: AsyncSession = Depends(get_db)):
+    q = select(Person).order_by(Person.name)
+    if not include_hidden:
+        q = q.where(Person.is_hidden == False)  # noqa: E712
+    persons = (await db.execute(q)).scalars().all()
     result = []
     for p in persons:
         face_count = await db.scalar(select(func.count()).where(Face.person_id == p.id))
@@ -109,6 +112,57 @@ async def merge_persons(body: MergeRequest, db: AsyncSession = Depends(get_db)):
     await db.delete(source)
     await db.commit()
     return {"ok": True, "faces_moved": moved, "target_id": target.id}
+
+
+class MergeMultiRequest(BaseModel):
+    target_id: int
+    source_ids: List[int]
+    keep_name: Optional[str] = None
+
+
+@router.post("/merge-multi")
+async def merge_multiple(body: MergeMultiRequest, db: AsyncSession = Depends(get_db)):
+    """Merge several selected persons into one target (multiselect in the UI).
+    All faces of every source move to target; the sources are deleted."""
+    target = await db.get(Person, body.target_id)
+    if not target:
+        raise HTTPException(404, "Target person not found")
+    sources = [sid for sid in body.source_ids if sid != body.target_id]
+    if not sources:
+        raise HTTPException(400, "No other persons to merge")
+
+    moved = await db.scalar(
+        select(func.count()).where(Face.person_id.in_(sources))
+    ) or 0
+    await db.execute(
+        update(Face).where(Face.person_id.in_(sources)).values(person_id=body.target_id)
+    )
+    if body.keep_name:
+        target.name = body.keep_name
+    if not target.profile_face_id:
+        # inherit a profile face from the first source that has one
+        for s in await db.execute(select(Person).where(Person.id.in_(sources))):
+            sp = s[0]
+            if sp.profile_face_id:
+                target.profile_face_id = sp.profile_face_id
+                break
+    await db.execute(sql_delete(Person).where(Person.id.in_(sources)))
+    await db.commit()
+    return {"ok": True, "faces_moved": moved, "merged": len(sources), "target_id": target.id}
+
+
+# ── Hide / unhide ─────────────────────────────────────────────────────────────
+
+@router.post("/{person_id}/hide")
+async def set_person_hidden(person_id: int, hidden: bool = True, db: AsyncSession = Depends(get_db)):
+    """Hide a person from the main People grid (Immich-style) without deleting
+    them — their faces stay assigned, so re-clustering won't re-surface them."""
+    person = await db.get(Person, person_id)
+    if not person:
+        raise HTTPException(404)
+    person.is_hidden = hidden
+    await db.commit()
+    return {"ok": True, "is_hidden": hidden}
 
 
 # ── Profile / display image ───────────────────────────────────────────────────

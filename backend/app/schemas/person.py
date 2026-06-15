@@ -18,6 +18,7 @@ class PersonUpdate(BaseModel):
     notes: Optional[str] = None
     relationship_type: Optional[str] = None
     profile_face_id: Optional[int] = None
+    is_hidden: Optional[bool] = None
 
 
 class PersonOut(BaseModel):
@@ -27,6 +28,7 @@ class PersonOut(BaseModel):
     birthdate: Optional[date]
     relationship_type: Optional[str]
     profile_face_id: Optional[int]
+    is_hidden: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
