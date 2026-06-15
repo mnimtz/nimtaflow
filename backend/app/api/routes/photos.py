@@ -31,7 +31,9 @@ def _base_query(
     has_gps: Optional[bool] = None,
     view: str = "library",  # library | favorites | archive | trash
 ):
-    q = select(Photo).where(Photo.status == PhotoStatus.done, Photo.is_missing == False)
+    # Show a photo as soon as it HAS a thumbnail — don't make it wait for the
+    # (possibly slow) AI/face stage to mark it 'done'. So new imports appear fast.
+    q = select(Photo).where(Photo.thumb_small.isnot(None), Photo.is_missing == False)
     if view == "trash":
         q = q.where(Photo.is_trashed == True)
     elif view == "archive":

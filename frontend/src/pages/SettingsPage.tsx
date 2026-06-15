@@ -1382,6 +1382,20 @@ function UsersSection() {
                         onChange={e => setAcc(a => ({ ...a, visible_person_ids: e.target.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) }))}
                         placeholder="z.B. 19,20" className={sel + ' w-full'} />
                     </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Nur diese Ordner (ein Pfad pro Zeile, leer = alle)</label>
+                        <textarea rows={2} value={(acc.folder_whitelist || []).join('\n')}
+                          onChange={e => setAcc(a => ({ ...a, folder_whitelist: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
+                          placeholder="/photos/Familie" className={sel + ' w-full resize-none'} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Diese Ordner ausblenden (ein Pfad pro Zeile)</label>
+                        <textarea rows={2} value={(acc.folder_blacklist || []).join('\n')}
+                          onChange={e => setAcc(a => ({ ...a, folder_blacklist: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
+                          placeholder="/photos/Privat" className={sel + ' w-full resize-none'} />
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-3">
                       {([['allow_download', 'Download'], ['allow_map', 'Karte'], ['allow_pipeline', 'Pipeline']] as const).map(([k, lbl]) => (
                         <label key={k} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
