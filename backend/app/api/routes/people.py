@@ -223,6 +223,14 @@ async def cluster_faces(db: AsyncSession = Depends(get_db)):
     that don't cluster (noise) stay unassigned (= 'Gesichter'/unbekannt).
     Already-assigned faces are left untouched (preserves manual work)."""
     from app.services.settings_loader import load_settings
+    from sqlalchemy import delete as _del
+    # remove orphaned auto-persons (empty name + no faces, e.g. after reprocess)
+    await db.execute(_del(Person).where(
+        Person.name == "",
+        ~Person.id.in_(select(Face.person_id).where(Face.person_id.isnot(None)))
+    ))
+    await db.commit()
+
     s = await load_settings(db)
     threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
     min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))

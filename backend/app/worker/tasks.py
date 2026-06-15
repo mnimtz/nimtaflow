@@ -240,13 +240,15 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                     try:
                         from app.services.face_detect import detect_faces, available as faces_available
                         from app.models.face import Face
-                        from sqlalchemy import delete as _del
-                        if faces_available():
+                        from sqlalchemy import func as _func
+                        # Skip if this photo already has faces — re-detecting on every
+                        # reprocess would wipe Face IDs and break person clusters.
+                        existing = await db.scalar(select(_func.count()).where(Face.photo_id == photo_id))
+                        if faces_available() and not existing:
                             face_img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
                             if face_img is not None:
                                 min_conf = float(ai_settings.get("face.min_confidence", "0.9") or 0.9)
                                 faces = detect_faces(face_img, min_conf=min_conf)
-                                await db.execute(_del(Face).where(Face.photo_id == photo_id))
                                 for f in faces:
                                     db.add(Face(
                                         photo_id=photo_id,
