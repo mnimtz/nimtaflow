@@ -11,9 +11,12 @@ except PermissionError:
     _CACHE.mkdir(parents=True, exist_ok=True)
 
 
-def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 160) -> Optional[str]:
+def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 256) -> Optional[str]:
     """Crop face from photo and save as JPEG. Returns path or None on error."""
-    out = _CACHE / f"p{person_id}_f{face_id}.jpg"
+    # _v2: square crops now fill the frame (ImageOps.fit) instead of grey-padding,
+    # so circular avatars show only face pixels. New suffix forces a regen of any
+    # old letterboxed crops.
+    out = _CACHE / f"p{person_id}_f{face_id}_v2.jpg"
     if out.exists():
         return str(out)
 
@@ -47,14 +50,12 @@ def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: i
         y2 = min(h, y2 + pad_y)
 
         crop = img.crop((x1, y1, x2, y2))
-        crop.thumbnail((size, size), Image.LANCZOS)
 
-        # Square-pad
-        sq = Image.new("RGB", (size, size), (200, 200, 200))
-        ox = (size - crop.width) // 2
-        oy = (size - crop.height) // 2
-        sq.paste(crop, (ox, oy))
-        sq.save(str(out), "JPEG", quality=85)
+        # Fill a square frame (object-cover): scale + center-crop the longer side
+        # so the face fills the whole avatar — no grey letterbox bars.
+        from PIL import ImageOps
+        sq = ImageOps.fit(crop, (size, size), Image.LANCZOS, centering=(0.5, 0.5))
+        sq.save(str(out), "JPEG", quality=88)
         return str(out)
     except Exception:
         return None

@@ -225,9 +225,20 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                                 continue
                             tag = await db.scalar(select(Tag).where(Tag.name == tag_name))
                             if not tag:
-                                tag = Tag(name=tag_name)
-                                db.add(tag)
-                                await db.flush()
+                                # Concurrency-safe get-or-create: parallel workers can
+                                # race on the same tag name (unique ix_tags_name). Insert
+                                # inside a SAVEPOINT so a UniqueViolation only rolls back
+                                # this insert (not the whole AI tx), then re-select.
+                                from sqlalchemy.exc import IntegrityError as _IntegrityError
+                                try:
+                                    async with db.begin_nested():
+                                        tag = Tag(name=tag_name)
+                                        db.add(tag)
+                                        await db.flush()
+                                except _IntegrityError:
+                                    tag = await db.scalar(select(Tag).where(Tag.name == tag_name))
+                                if not tag:
+                                    continue
                             existing_pt = await db.scalar(
                                 select(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.tag_id == tag.id)
                             )
