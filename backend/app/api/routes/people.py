@@ -213,3 +213,50 @@ async def unassigned_faces(limit: int = Query(50, ge=1, le=200), db: AsyncSessio
         select(Face).where(Face.person_id == None).limit(limit)
     )
     return result.scalars().all()
+
+
+@router.post("/cluster")
+async def cluster_faces(db: AsyncSession = Depends(get_db)):
+    """Group still-unassigned face embeddings into people via DBSCAN (cosine).
+    Each new cluster becomes an unnamed Person (rename/merge in the UI). Faces
+    that don't cluster (noise) stay unassigned (= 'Gesichter'/unbekannt).
+    Already-assigned faces are left untouched (preserves manual work)."""
+    from app.services.settings_loader import load_settings
+    s = await load_settings(db)
+    threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
+    min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))
+
+    rows = (await db.execute(
+        select(Face.id, Face.embedding).where(Face.person_id == None, Face.embedding.isnot(None))
+    )).all()
+    if len(rows) < min_size:
+        return {"clustered": 0, "new_persons": 0, "unclustered": len(rows)}
+
+    try:
+        import numpy as np
+        from sklearn.cluster import DBSCAN
+    except Exception:
+        raise HTTPException(500, "scikit-learn nicht verfügbar")
+
+    ids = [r[0] for r in rows]
+    X = np.array([r[1] for r in rows], dtype="float32")
+    # cosine distance; eps = 1 - similarity threshold
+    labels = DBSCAN(eps=max(0.05, 1.0 - threshold), min_samples=min_size, metric="cosine").fit_predict(X)
+
+    clusters: dict = {}
+    for fid, lbl in zip(ids, labels):
+        if lbl == -1:
+            continue
+        clusters.setdefault(int(lbl), []).append(fid)
+
+    new_persons = 0
+    clustered = 0
+    for _, face_ids in clusters.items():
+        person = Person(name="", profile_face_id=face_ids[0])
+        db.add(person)
+        await db.flush()
+        await db.execute(update(Face).where(Face.id.in_(face_ids)).values(person_id=person.id))
+        new_persons += 1
+        clustered += len(face_ids)
+    await db.commit()
+    return {"clustered": clustered, "new_persons": new_persons, "unclustered": len(rows) - clustered}

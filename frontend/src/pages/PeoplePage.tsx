@@ -49,6 +49,17 @@ export default function PeoplePage() {
     },
   })
 
+  const clusterMutation = useMutation({
+    mutationFn: () => api.post('/people/cluster').then(r => r.data),
+    onSuccess: (d: { new_persons: number; clustered: number }) => {
+      qc.invalidateQueries({ queryKey: ['people'] })
+      alert(`Clustering fertig: ${d.new_persons} neue Gruppe(n) aus ${d.clustered} Gesichtern.`)
+    },
+  })
+
+  const known = people.filter(p => (p.name || '').trim())
+  const unknown = people.filter(p => !(p.name || '').trim())
+
   if (selectedPerson) {
     return (
       <PersonDetail
@@ -80,6 +91,14 @@ export default function PeoplePage() {
           ) : (
             <>
               <button
+                onClick={() => clusterMutation.mutate()}
+                disabled={clusterMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm hover:bg-zinc-800 disabled:opacity-50"
+                title="Unzugeordnete Gesichter zu Personen gruppieren"
+              >
+                <Users size={15} /> {clusterMutation.isPending ? 'Clustere…' : 'Clustern'}
+              </button>
+              <button
                 onClick={() => setMergeMode(true)}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm hover:bg-zinc-800"
               >
@@ -109,8 +128,8 @@ export default function PeoplePage() {
       ) : people.length === 0 ? (
         <EmptyPeople />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {people.map(p => (
+        (() => {
+          const renderCard = (p: Person) => (
             <PersonCard
               key={p.id}
               person={p}
@@ -120,16 +139,32 @@ export default function PeoplePage() {
                 if (!mergeMode) { setSelectedPerson(p); return }
                 if (!mergeSource) { setMergeSource(p); return }
                 if (mergeSource.id === p.id) { setMergeSource(null); return }
-                if (window.confirm(`"${mergeSource.name}" in "${p.name}" zusammenführen?\n\nAlle Gesichter werden "${p.name}" zugewiesen, "${mergeSource.name}" wird gelöscht.`)) {
+                if (window.confirm(`"${mergeSource.name || 'Unbekannt'}" in "${p.name || 'Unbekannt'}" zusammenführen?`)) {
                   mergeMutation.mutate({ source_id: mergeSource.id, target_id: p.id })
                 }
               }}
               onDelete={() => {
-                if (window.confirm(`"${p.name}" wirklich löschen?`)) deleteMutation.mutate(p.id)
+                if (window.confirm(`"${p.name || 'Unbekannt'}" wirklich löschen?`)) deleteMutation.mutate(p.id)
               }}
             />
-          ))}
-        </div>
+          )
+          const gridCls = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+          return (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-300 mb-3">Bekannte Personen <span className="text-zinc-500">({known.length})</span></h2>
+                {known.length ? <div className={gridCls}>{known.map(renderCard)}</div>
+                  : <p className="text-sm text-zinc-500">Noch keine benannt. Klicke eine unbekannte Person an und gib ihr einen Namen.</p>}
+              </div>
+              {unknown.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-300 mb-3">Unbekannte Personen <span className="text-zinc-500">({unknown.length})</span></h2>
+                  <div className={gridCls}>{unknown.map(renderCard)}</div>
+                </div>
+              )}
+            </div>
+          )
+        })()
       )}
 
       {showAdd && <AddPersonModal onClose={() => setShowAdd(false)} />}
@@ -161,7 +196,7 @@ function PersonCard({ person, mergeMode, mergeSource, onClick, onDelete }: {
     >
       <div className="relative w-16 h-16 rounded-full overflow-hidden bg-zinc-800 mb-3 ring-2 ring-zinc-700 group-hover:ring-indigo-500/40 transition-all flex items-center justify-center">
         <span className="text-xl font-bold text-zinc-500 absolute">
-          {person.name.charAt(0).toUpperCase()}
+          {(person.name || '?').charAt(0).toUpperCase()}
         </span>
         <img
           src={`/api/people/${person.id}/avatar`}
@@ -170,7 +205,8 @@ function PersonCard({ person, mergeMode, mergeSource, onClick, onDelete }: {
         />
       </div>
 
-      <p className="text-sm font-semibold text-white text-center truncate w-full">{person.name}</p>
+      <p className={`text-sm font-semibold text-center truncate w-full ${person.name ? 'text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbekannt'}</p>
+      <p className="text-[11px] text-zinc-500">{person.face_count} Foto{person.face_count === 1 ? '' : 's'}</p>
       {person.alias && <p className="text-xs text-zinc-500 truncate w-full text-center">{person.alias}</p>}
       {age !== null && <p className="text-xs text-zinc-500 mt-0.5">{age} J.</p>}
       <p className="text-xs text-zinc-600 mt-1">{person.face_count} Fotos</p>
