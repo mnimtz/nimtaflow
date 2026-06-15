@@ -216,6 +216,17 @@ function SourcesSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
   })
 
+  const reprocess = useMutation({
+    mutationFn: ({ id, redoFaces }: { id: number; redoFaces: boolean }) =>
+      api.post(`/sources/${id}/reprocess`, null, { params: { redo_faces: redoFaces } }).then(r => r.data),
+    onSuccess: (d: { reprocessing: number }) => alert(`${d.reprocessing} Dateien werden neu verarbeitet (Thumbnails + AI${'' }).`),
+  })
+
+  const reprocessFailed = useMutation({
+    mutationFn: () => api.post('/photos/reprocess-failed').then(r => r.data),
+    onSuccess: (d: { reprocessing: number }) => alert(`${d.reprocessing} fehlerhafte/unfertige Dateien werden erneut verarbeitet.`),
+  })
+
   const [verifyResult, setVerifyResult] = useState<string | null>(null)
   const verify = useMutation({
     mutationFn: () => api.post('/sources/verify').then(r => r.data),
@@ -306,6 +317,12 @@ function SourcesSection() {
                   />
                   Gelöschte Dateien erkennen
                 </label>
+                <button
+                  onClick={() => { if (confirm('Alle Dateien dieses Ordners neu verarbeiten (Thumbnails + AI + Gesichter)?')) reprocess.mutate({ id: s.id, redoFaces: true }) }}
+                  className="ml-auto text-xs text-indigo-500 hover:underline"
+                >
+                  ↻ Neu verarbeiten
+                </button>
               </div>
             </div>
           )
@@ -347,13 +364,23 @@ function SourcesSection() {
               und Gesichter von Dateien/Ordnern, die es nicht mehr gibt.
             </p>
           </div>
-          <button
-            onClick={() => { if (confirm('Bibliothek überprüfen und verwaiste Einträge (gelöschte Dateien) entfernen?')) { setVerifyResult(null); verify.mutate() } }}
-            disabled={verify.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors shrink-0"
-          >
-            <RefreshCw size={14} className={verify.isPending ? 'animate-spin' : ''} /> Jetzt überprüfen
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => reprocessFailed.mutate()}
+              disabled={reprocessFailed.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors"
+              title="Fehlerhafte oder unfertige Dateien erneut verarbeiten"
+            >
+              <RefreshCw size={14} className={reprocessFailed.isPending ? 'animate-spin' : ''} /> Fehler erneut
+            </button>
+            <button
+              onClick={() => { if (confirm('Bibliothek überprüfen und verwaiste Einträge (gelöschte Dateien) entfernen?')) { setVerifyResult(null); verify.mutate() } }}
+              disabled={verify.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw size={14} className={verify.isPending ? 'animate-spin' : ''} /> Jetzt überprüfen
+            </button>
+          </div>
         </div>
         {verifyResult && <p className="text-xs text-emerald-500 mt-2">✓ {verifyResult}</p>}
       </div>

@@ -93,6 +93,25 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
     return {"deleted_photos": len(photo_ids), "deleted_files": removed_files}
 
 
+@router.post("/{source_id}/reprocess")
+async def reprocess_source(source_id: int, redo_faces: bool = False, db: AsyncSession = Depends(get_db)):
+    """Re-run thumbnails + AI (and optionally re-detect faces) for all photos
+    of a source — 'erneut ausführen' on folder level."""
+    from app.models.photo import Photo
+    from app.worker.tasks import process_photo_task
+    source = await db.get(PhotoSource, source_id)
+    if not source:
+        raise HTTPException(404)
+    prefix = source.path.rstrip("/")
+    rows = (await db.execute(
+        select(Photo.id).where((Photo.path == prefix) | (Photo.path.startswith(prefix + "/")))
+    )).all()
+    ids = [r[0] for r in rows]
+    for pid in ids:
+        process_photo_task.delay(pid, None, redo_faces)
+    return {"reprocessing": len(ids), "redo_faces": redo_faces}
+
+
 @router.post("/scan-all")
 async def scan_all(db: AsyncSession = Depends(get_db)):
     """Trigger a scan for every enabled source."""

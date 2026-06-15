@@ -324,6 +324,19 @@ class BatchAction(_BM):
     action: str  # favorite | unfavorite | archive | unarchive | trash | untrash
 
 
+@router.post("/reprocess-failed")
+async def reprocess_failed(db: AsyncSession = Depends(get_db)):
+    """Re-queue all photos that errored or never finished (error/pending/processing)."""
+    from app.worker.tasks import process_photo_task
+    rows = (await db.execute(
+        select(Photo.id).where(Photo.status.in_([PhotoStatus.error, PhotoStatus.pending, PhotoStatus.processing]))
+    )).all()
+    ids = [r[0] for r in rows]
+    for pid in ids:
+        process_photo_task.delay(pid)
+    return {"reprocessing": len(ids)}
+
+
 @router.post("/batch")
 async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
     """Apply an action to many photos at once (selection bar in the gallery)."""

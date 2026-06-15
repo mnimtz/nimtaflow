@@ -70,7 +70,7 @@ def watch_sources_task(self):
 
 
 @celery_app.task(bind=True, name="process_photo")
-def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
+def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False):
     async def _run_process():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo, PhotoStatus
@@ -244,6 +244,10 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None):
                         # Skip if this photo already has faces — re-detecting on every
                         # reprocess would wipe Face IDs and break person clusters.
                         existing = await db.scalar(select(_func.count()).where(Face.photo_id == photo_id))
+                        if redo_faces and existing:
+                            from sqlalchemy import delete as _del
+                            await db.execute(_del(Face).where(Face.photo_id == photo_id))
+                            existing = 0
                         if faces_available() and not existing:
                             face_img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
                             if face_img is not None:
