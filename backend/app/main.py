@@ -85,20 +85,24 @@ async def lifespan(app: FastAPI):
         for stmt in _COLUMN_MIGRATIONS:
             await conn.execute(text(stmt))
 
-    # Seed an initial admin if there are no users yet (idempotent).
-    from app.core.database import get_db
-    from app.models.user import User, UserRole
-    from app.core.security import hash_password
-    from sqlalchemy import select, func as _func
-    async for db in get_db():
-        count = await db.scalar(select(_func.count()).select_from(User))
-        if not count:
-            db.add(User(
-                email="admin@photoflow.local", name="Admin",
-                hashed_password=hash_password("Nimtz@1977"), role=UserRole.admin,
-            ))
-            await db.commit()
-        break
+    # Seed an initial admin if there are no users yet (idempotent, non-fatal).
+    try:
+        from app.core.database import get_db
+        from app.models.user import User, UserRole
+        from app.core.security import hash_password
+        from sqlalchemy import select, func as _func
+        async for db in get_db():
+            count = await db.scalar(select(_func.count()).select_from(User))
+            if not count:
+                db.add(User(
+                    email="admin@photoflow.local", name="Admin",
+                    hashed_password=hash_password("Nimtz@1977"), role=UserRole.admin,
+                ))
+                await db.commit()
+            break
+    except Exception as e:
+        import logging
+        logging.getLogger("photoflow").error(f"Admin-Seeding übersprungen: {e}")
     yield
     if _engine:
         await _engine.dispose()
