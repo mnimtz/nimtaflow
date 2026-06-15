@@ -116,7 +116,7 @@ export default function PeoplePage() {
     <div className="p-4 max-w-7xl mx-auto pb-24">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-white">Personen</h1>
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Personen</h1>
           <p className="text-sm text-zinc-400">{known.length} benannt · {unknown.length} unbekannt</p>
         </div>
         <div className="flex gap-2">
@@ -233,7 +233,7 @@ export default function PeoplePage() {
 function SectionHeader({ title, count, hint }: { title: string; count: number; hint?: string }) {
   return (
     <div className="mb-4">
-      <h2 className="text-sm font-semibold text-zinc-200">{title} <span className="text-zinc-500 font-normal">({count})</span></h2>
+      <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{title} <span className="text-zinc-500 font-normal">({count})</span></h2>
       {hint && <p className="text-xs text-zinc-500 mt-0.5">{hint}</p>}
     </div>
   )
@@ -316,7 +316,7 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
           placeholder="Name…"
         />
       ) : person.name ? (
-        <button onClick={() => setEditing(true)} className="text-sm font-medium text-white text-center truncate w-full hover:text-indigo-300" title="Umbenennen">
+        <button onClick={() => setEditing(true)} className="text-sm font-medium text-zinc-900 dark:text-white text-center truncate w-full hover:text-indigo-500 dark:hover:text-indigo-300" title="Umbenennen">
           {person.name}
         </button>
       ) : (
@@ -335,7 +335,7 @@ function EmptyPeople() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <Users size={48} className="text-zinc-700 mb-4" />
-      <h3 className="text-lg font-semibold text-white mb-2">Noch keine Personen</h3>
+      <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">Noch keine Personen</h3>
       <p className="text-sm text-zinc-500 max-w-xs">
         Starte die KI-Pipeline für automatische Gesichtserkennung oder füge Personen manuell hinzu.
       </p>
@@ -415,7 +415,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <h1 className={`text-2xl font-bold truncate ${person.name ? 'text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
+                <h1 className={`text-2xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
                 <button onClick={() => setEditing(true)} className="text-zinc-500 hover:text-zinc-200" title="Bearbeiten"><Pencil size={16} /></button>
               </div>
               {!person.name && <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">+ Namen vergeben</button>}
