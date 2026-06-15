@@ -281,9 +281,12 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                             flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description}")
                         elif provider == "none":
                             flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
+                        else:
+                            flog("ai", "WARNING", f"AI lieferte keine Beschreibung ({provider}): {photo.filename}")
 
                         tags, _ = await ai.generate_tags(img, lang)
                         if tags:
+                            flog("ai", "INFO", f"Tags ({provider}): {photo.filename} — {', '.join(tags[:20])}")
                             # replace previous AI tags (e.g. old English ones) for this photo
                             from sqlalchemy import delete as _deltag
                             await db.execute(_deltag(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.source == "ai"))

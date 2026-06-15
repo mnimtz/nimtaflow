@@ -5,9 +5,13 @@
   admin explicitly turns login on (and the separate /v1 iOS API is unaffected).
 - require_admin: always requires an authenticated admin (for user management),
   regardless of the enforce setting.
+
+Token is accepted from the `Authorization: Bearer` header OR a `pf_token` cookie,
+because <img>/AsyncImage requests (thumbnails, avatars, face crops) can't send a
+custom header — the cookie lets them authenticate under enforce mode.
 """
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +21,10 @@ from app.models.user import User, UserRole
 
 # auto_error=False → missing token doesn't 401 by itself; we decide per setting.
 _optional_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def _extract_token(request: Request, header_token: Optional[str]) -> Optional[str]:
+    return header_token or request.cookies.get("pf_token")
 
 
 async def _user_from_token(token: Optional[str], db: AsyncSession) -> Optional[User]:
@@ -32,6 +40,7 @@ async def _user_from_token(token: Optional[str], db: AsyncSession) -> Optional[U
 
 
 async def enforce_auth(
+    request: Request,
     token: Optional[str] = Depends(_optional_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
@@ -39,27 +48,28 @@ async def enforce_auth(
     s = await load_settings(db)
     if str(s.get("auth.enforce", "false")).lower() != "true":
         return None  # login not enforced yet — allow through
-    user = await _user_from_token(token, db)
+    user = await _user_from_token(_extract_token(request, token), db)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login erforderlich")
     return user
 
 
 async def current_user_optional(
+    request: Request,
     token: Optional[str] = Depends(_optional_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
-    """Resolve the logged-in user from the token, or None — without consulting the
-    enforce setting. Used to apply per-user access_config restrictions whenever a
-    (restricted) user is logged in, regardless of global enforcement."""
-    return await _user_from_token(token, db)
+    """Resolve the logged-in user from header or cookie token, or None — without
+    consulting the enforce setting (used for per-user access_config filtering)."""
+    return await _user_from_token(_extract_token(request, token), db)
 
 
 async def require_admin(
+    request: Request,
     token: Optional[str] = Depends(_optional_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    user = await _user_from_token(token, db)
+    user = await _user_from_token(_extract_token(request, token), db)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login erforderlich")
     if user.role != UserRole.admin:

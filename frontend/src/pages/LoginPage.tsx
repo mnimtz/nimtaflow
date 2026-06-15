@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, syncAuthCookie } from '../lib/api'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -20,6 +20,7 @@ export default function LoginPage() {
       const res = await api.post('/auth/login', form)
       localStorage.setItem('access_token', res.data.access_token)
       localStorage.setItem('refresh_token', res.data.refresh_token)
+      syncAuthCookie()
       navigate('/')
     } catch {
       setError('Ungültige E-Mail oder Passwort')

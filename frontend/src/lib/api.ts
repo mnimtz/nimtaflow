@@ -4,6 +4,15 @@ export const api = axios.create({
   baseURL: '/api',
 })
 
+// Mirror the access token into a cookie so <img>/AsyncImage requests (thumbnails,
+// avatars, face crops) authenticate too — they can't send an Authorization header.
+export function syncAuthCookie() {
+  const t = localStorage.getItem('access_token')
+  if (t) document.cookie = `pf_token=${t}; path=/; max-age=2592000; SameSite=Lax`
+  else document.cookie = 'pf_token=; path=/; max-age=0'
+}
+syncAuthCookie()
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -20,11 +29,13 @@ api.interceptors.response.use(
           const res = await axios.post('/api/auth/refresh', null, { params: { refresh_token: refresh } })
           localStorage.setItem('access_token', res.data.access_token)
           localStorage.setItem('refresh_token', res.data.refresh_token)
+          syncAuthCookie()
           error.config.headers.Authorization = `Bearer ${res.data.access_token}`
           return api.request(error.config)
         } catch {
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
+          syncAuthCookie()
           window.location.href = '/login'
         }
       }

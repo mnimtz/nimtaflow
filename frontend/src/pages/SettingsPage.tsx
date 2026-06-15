@@ -1290,6 +1290,9 @@ function UsersSection() {
   const [pw, setPw] = useState('')
   const [accFor, setAccFor] = useState<number | null>(null)
   const [acc, setAcc] = useState<Record<string, any>>({})
+  const [editFor, setEditFor] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
   const [add, setAdd] = useState({ email: '', name: '', password: '', role: 'user' })
   const [showAdd, setShowAdd] = useState(false)
 
@@ -1353,9 +1356,21 @@ function UsersSection() {
                   <button onClick={() => { setAccFor(accFor === u.id ? null : u.id); setAcc(u.access_config || {}) }}
                     className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Zugriff</button>
                 )}
+                <button onClick={() => { setEditFor(editFor === u.id ? null : u.id); setEditName(u.name); setEditEmail(u.email) }}
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bearbeiten</button>
                 <button onClick={() => { setPwFor(pwFor === u.id ? null : u.id); setPw('') }}
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Passwort</button>
                 <button onClick={() => delU.mutate(u.id)} className="text-zinc-400 hover:text-red-500" title="Löschen"><Trash2 size={15} /></button>
+                {editFor === u.id && (
+                  <div className="w-full flex flex-wrap gap-2 mt-1">
+                    <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Name"
+                      className="flex-1 min-w-[8rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
+                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="E-Mail"
+                      className="flex-1 min-w-[10rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
+                    <button onClick={() => { patchU.mutate({ id: u.id, body: { name: editName, email: editEmail } as any }); setEditFor(null) }}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">Speichern</button>
+                  </div>
+                )}
                 {pwFor === u.id && (
                   <div className="w-full flex gap-2 mt-1">
                     <input type="text" value={pw} onChange={e => setPw(e.target.value)} placeholder="Neues Passwort (min. 6)"
