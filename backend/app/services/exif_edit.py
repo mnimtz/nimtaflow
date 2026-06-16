@@ -80,6 +80,43 @@ async def write_description(path: str, description: str, overwrite: bool = True)
     }, make_backup=not overwrite)
 
 
+async def ensure_capture_date(path: str) -> Optional[str]:
+    """If the file has NO DateTimeOriginal, copy its filesystem date into the EXIF
+    capture-date tags. Photos without a capture date otherwise have no stable
+    date at all (and a re-import elsewhere would fall back to "now"). Returns the
+    date string written ("YYYY:MM:DD HH:MM:SS"), or None if it already had one /
+    on failure. Uses -P so writing does NOT itself bump the filesystem mtime.
+    Never overwrites an existing DateTimeOriginal."""
+    if not _EXIFTOOL:
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        if out.decode(errors="replace").strip():
+            return None  # capture date already present — leave it untouched
+        # Copy the filesystem mod-date into the EXIF capture-date tags.
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-P", "-overwrite_original",
+            "-DateTimeOriginal<FileModifyDate", "-CreateDate<FileModifyDate",
+            "-XMP:DateTimeOriginal<FileModifyDate", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        return out.decode(errors="replace").strip() or None
+    except Exception:
+        return None
+
+
 async def write_rating(path: str, rating: int) -> bool:
     """Write XMP rating (0-5) to file."""
     return await write_exif(path, {

@@ -225,7 +225,16 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     if (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
         try:
             if xmp_mode in ("file", "file_sidecar"):
-                from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+                from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
+                # If the file has no capture date, derive one from its filesystem
+                # date BEFORE we touch it (and mirror it into the DB).
+                set_date = await _ecd(photo.path)
+                if set_date and photo.taken_at is None:
+                    try:
+                        photo.taken_at = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
+                        flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt (remote): {photo.filename} → {set_date}")
+                    except Exception:
+                        pass
                 if body.description:
                     await _wd(photo.path, body.description, overwrite=True)
                 if clean:

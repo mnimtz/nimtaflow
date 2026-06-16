@@ -242,7 +242,7 @@ def backfill_xmp_task(self):
         from app.models.tag import Tag, PhotoTag
         from app.services.settings_loader import load_settings
         from app.services.feature_log import log as flog
-        from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+        from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
         from app.services.xmp_sidecar import write_sidecar
         from sqlalchemy import select
         init_db()
@@ -265,6 +265,12 @@ def backfill_xmp_task(self):
                 )).scalars()]
                 try:
                     if mode in ("file", "file_sidecar"):
+                        set_date = await _ecd(photo.path)
+                        if set_date and photo.taken_at is None:
+                            try:
+                                photo.taken_at = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
+                            except Exception:
+                                pass
                         if photo.description:
                             await _wd(photo.path, photo.description, overwrite=True)
                         if kw:
@@ -539,7 +545,15 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         if (description or kw) and xmp_mode in ("file", "file_sidecar", "sidecar"):
                             try:
                                 if xmp_mode in ("file", "file_sidecar"):
-                                    from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+                                    from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
+                                    # No capture date? Derive one from the file date before editing.
+                                    set_date = await _ecd(photo.path)
+                                    if set_date and photo.taken_at is None:
+                                        try:
+                                            photo.taken_at = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
+                                            flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt: {photo.filename} → {set_date}")
+                                        except Exception:
+                                            pass
                                     if description:
                                         await _wd(photo.path, description, overwrite=True)
                                     if kw:
