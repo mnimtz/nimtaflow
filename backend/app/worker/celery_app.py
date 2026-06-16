@@ -25,7 +25,9 @@ celery_app.conf.update(
     task_routes={
         "ai_photo":           {"queue": "gpu"},
         "process_photo":      {"queue": "cpu"},
-        "scan_source":        {"queue": "cpu"},
+        # Dedicated queue + worker so a scan indexes immediately instead of
+        # queueing behind a long process_photo (thumbnail) backlog on "cpu".
+        "scan_source":        {"queue": "scan"},
         "watch_sources":      {"queue": "cpu"},
         "auto_cluster_faces": {"queue": "cpu"},
         "write_person_name":  {"queue": "cpu"},

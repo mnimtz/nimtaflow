@@ -136,6 +136,34 @@ services:
       # Run as root so the XMP backfill task can modify the root-owned library.
       PHOTOFLOW_USER: root
 
+  # Dedicated scan worker (concurrency 1, own "scan" queue) so re-indexing a
+  # folder starts immediately and never waits behind the thumbnail backlog on
+  # worker-cpu. Light: just walks the tree + makes small thumbnails.
+  worker-scan:
+    build: ./backend
+    image: photoflow-app:latest
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "scan", "--loglevel=${LOG_LEVEL:-info}", "-c", "1"]
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - photoflow-cache:/cache
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      PHOTOFLOW_USER: root
+
   beat:
     build: ./backend
     image: photoflow-app:latest
