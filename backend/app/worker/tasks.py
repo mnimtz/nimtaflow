@@ -69,6 +69,41 @@ def watch_sources_task(self):
     return _run(_check())
 
 
+@celery_app.task(bind=True, name="reclaim_ai")
+def reclaim_ai_task(self):
+    """Fallback for the remote-worker flow: ai_photo yields its job when a remote
+    GPU worker is alive. If remote is enabled but no worker has checked in, those
+    photos would sit pending — so re-queue them locally. No-op when remote is off
+    (the normal pipeline already covers it) or a worker is alive (it'll claim)."""
+    async def _run():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.settings_loader import load_settings
+        from app.api.routes.remote import remote_worker_alive
+        from sqlalchemy import select, or_
+        from datetime import timedelta
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            if str(s.get("remote.enabled", "false")).lower() != "true":
+                return {"skipped": "remote off"}
+            if await remote_worker_alive() > 0:
+                return {"skipped": "worker alive"}
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=300)
+            q = select(Photo.id).where(
+                Photo.is_video == False,                    # noqa: E712
+                Photo.description.is_(None),
+                Photo.ai_error == False,                    # noqa: E712
+                Photo.thumb_large.isnot(None),
+                or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff),
+            ).limit(200)
+            ids = [r[0] for r in (await db.execute(q)).all()]
+            for pid in ids:
+                ai_photo_task.delay(pid)
+            return {"requeued": len(ids)}
+    return _run(_run())
+
+
 @celery_app.task(bind=True, name="auto_cluster_faces")
 def auto_cluster_faces_task(self):
     """Beat task: periodically group unassigned faces into (unnamed) people, so
@@ -296,6 +331,21 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
             if not photo:
                 return
             start = time.time()
+
+            # If a remote GPU worker is enabled and currently alive, yield this
+            # job: leave the photo pending (description stays NULL) so the remote
+            # claims it via /api/remote/claim. If no worker is alive, fall through
+            # and process locally (so 'enabled but nobody connected' still works).
+            try:
+                from app.services.settings_loader import load_settings as _ls
+                _s = await _ls(db)
+                if str(_s.get("remote.enabled", "false")).lower() == "true":
+                    from app.api.routes.remote import remote_worker_alive
+                    if await remote_worker_alive() > 0:
+                        return  # remote will pick it up
+            except Exception:
+                pass
+
             try:
                 # AI processing — load provider config from DB settings (non-fatal)
                 photo.ai_error = False  # cleared on success; set in except below

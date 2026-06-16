@@ -1,0 +1,35 @@
+# Remote GPU worker — run this on a machine with a good GPU to accelerate a
+# REMOTE PhotoFlow server's initial processing. It reuses the same image + the
+# already-downloaded models; it only talks HTTP to the server (no DB/storage).
+#
+#   PHOTOFLOW_SERVER=http://<server>:8090 PHOTOFLOW_REMOTE_TOKEN=<token> \
+#     docker compose -f docker-compose.remote-worker.yml up -d --build
+services:
+  remote-worker:
+    build: ./backend
+    image: photoflow-app:latest
+    command: ["python", "-m", "app.remote_worker.agent"]
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      PHOTOFLOW_SERVER: ${PHOTOFLOW_SERVER:?set the server URL}
+      PHOTOFLOW_REMOTE_TOKEN: ${PHOTOFLOW_REMOTE_TOKEN:?set the remote token}
+      WORKER_NAME: ${WORKER_NAME:-gpu-worker}
+      POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      FACE_DEVICE: cuda
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+      TORCH_HOME: /models/torch
+      INSIGHTFACE_HOME: /models/insightface
+    volumes:
+      - photoflow-models:/models
+
+volumes:
+  # Reuse the models already downloaded by the main stack on this host.
+  photoflow-models:
+    external: true
+    name: photoflow_photoflow-models

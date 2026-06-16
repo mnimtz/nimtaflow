@@ -34,6 +34,8 @@ class Photo(Base):
     # Face-aware crop centre (0..1) so the grid doesn't cut off heads.
     focus_x: Mapped[Optional[float]] = mapped_column(Float)
     focus_y: Mapped[Optional[float]] = mapped_column(Float)
+    # When a remote GPU worker has leased this photo's AI job (re-claimable if stale).
+    ai_claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     orientation: Mapped[Optional[int]] = mapped_column(Integer)
     color_space: Mapped[Optional[str]] = mapped_column(String(32))
 

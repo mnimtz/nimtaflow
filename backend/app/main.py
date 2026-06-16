@@ -133,6 +133,10 @@ from app.core.auth_guard import enforce_auth
 app.include_router(auth.router, prefix="/api")
 app.include_router(users_routes.router, prefix="/api")
 
+# ── Remote worker API (own shared-token auth, NOT user-guarded) ──────────────
+from app.api.routes import remote as remote_routes
+app.include_router(remote_routes.router, prefix="/api")
+
 # ── Web data routes — gated by enforce_auth (no-op until auth.enforce=true) ──
 _guard = [Depends(enforce_auth)]
 app.include_router(photos.router, prefix="/api", dependencies=_guard)

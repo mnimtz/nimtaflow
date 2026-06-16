@@ -34,6 +34,7 @@ const SECTIONS = [
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
+  { id: 'remote',    icon: Network,   label: 'Remote-Worker' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
   { id: 'map',       icon: Map,       label: 'Karte' },
   { id: 'users',     icon: Shield,    label: 'Benutzer & Login' },
@@ -1019,6 +1020,83 @@ function PipelineSection() {
   }
 }
 
+function RemoteWorkerSection() {
+  const qc = useQueryClient()
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const sQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  useEffect(() => { if (sQ.data) setSettings(sQ.data) }, [sQ.data])
+  const { data: status } = useQuery<{ enabled: boolean; has_token: boolean; pending: number; workers: { name: string; last_seen: number }[] }>({
+    queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 5000,
+  })
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['remote-status'] }) },
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+  const enabled = (settings['remote.enabled'] ?? 'false') === 'true'
+  const token = settings['remote.token'] ?? ''
+  const genToken = () => {
+    const t = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join('')
+    set('remote.token', t)
+  }
+  const now = Math.floor(Date.now() / 1000)
+  const cmd = `PHOTOFLOW_SERVER=http://${window.location.hostname}:${window.location.port || 8090} \\\n  PHOTOFLOW_REMOTE_TOKEN=${token || '<TOKEN>'} \\\n  docker compose -f docker-compose.remote-worker.yml up -d --build`
+
+  return (
+    <div>
+      <SectionHeader title="Remote-Worker" desc="Eine GPU auf einem anderen Rechner zur Beschleunigung der KI-Erstverarbeitung dazuschalten (über HTTP, kein geteilter Speicher)." />
+      <div className="space-y-6 max-w-2xl">
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">Remote-Worker aktivieren</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Wenn aktiv und ein Worker verbunden ist, werden KI-Jobs an ihn ausgelagert statt lokal (CPU) gerechnet.</p>
+          </div>
+          <Toggle value={enabled} onChange={v => set('remote.enabled', v ? 'true' : 'false')} />
+        </label>
+
+        <div>
+          <Label>Zugriffs-Token (geteiltes Geheimnis)</Label>
+          <div className="flex gap-2">
+            <input value={token} onChange={e => set('remote.token', e.target.value)} placeholder="noch keins"
+              className="flex-1 px-3 py-2 text-sm font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100" />
+            <button onClick={genToken} className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Generieren</button>
+          </div>
+        </div>
+
+        <button onClick={() => save.mutate(settings)} disabled={save.isPending}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {saved ? '✓ Gespeichert' : 'Speichern'}
+        </button>
+
+        {/* Live status */}
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Status</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? 'aktiv' : 'inaktiv'}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-2xl font-bold tabular-nums text-amber-500">{status?.pending ?? 0}</span><p className="text-xs text-zinc-400">KI-Jobs offen</p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-indigo-500">{status?.workers?.length ?? 0}</span><p className="text-xs text-zinc-400">verbundene Worker</p></div>
+          </div>
+          {(status?.workers?.length ?? 0) > 0 && (
+            <ul className="text-xs text-zinc-500 space-y-1">
+              {status!.workers.map(w => <li key={w.name}>● <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b> — zuletzt vor {Math.max(0, now - w.last_seen)}s</li>)}
+            </ul>
+          )}
+        </div>
+
+        {/* Agent command */}
+        <div>
+          <Label>Worker auf dem GPU-Rechner starten</Label>
+          <p className="text-xs text-zinc-400 mb-2">Auf der Maschine mit der GPU (gleiches Repo, Image vorhanden): Token oben speichern, dann:</p>
+          <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FacesSection() {
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
@@ -1662,6 +1740,7 @@ export default function SettingsPage() {
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}
         {section === 'pipeline' && <PipelineSection />}
+        {section === 'remote'   && <RemoteWorkerSection />}
         {section === 'backup'   && <BackupSection />}
         {section === 'map'      && <MapSection />}
         {section === 'users'    && <UsersSection />}

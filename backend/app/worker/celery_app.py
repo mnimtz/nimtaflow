@@ -44,4 +44,9 @@ celery_app.conf.beat_schedule = {
         "task": "auto_cluster_faces",
         "schedule": 300.0,
     },
+    # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
+    "reclaim-ai": {
+        "task": "reclaim_ai",
+        "schedule": 120.0,
+    },
 }
