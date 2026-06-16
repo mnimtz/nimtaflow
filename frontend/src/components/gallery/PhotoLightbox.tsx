@@ -69,6 +69,8 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
     queryKey: ['photo-detail', photo?.id],
     queryFn: () => api.get(`/photos/${photo.id}`).then(r => r.data),
     enabled: !!photo,
+    // refetch on open so a photo viewed before AI finished shows its result later
+    staleTime: 0, refetchOnMount: 'always',
   })
 
   useEffect(() => {

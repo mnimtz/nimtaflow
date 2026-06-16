@@ -24,7 +24,13 @@ function fmtDur(s?: number) { if (!s) return null; const m = Math.floor(s / 60),
 function fmtDate(v?: string) { return v ? new Date(v).toLocaleString('de', { dateStyle: 'medium', timeStyle: 'short' }) : null }
 
 function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void }) {
-  const { data: p } = useQuery<any>({ queryKey: ['photo-detail', photoId], queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data) })
+  // staleTime:0 + refetchOnMount so a photo opened before AI finished shows its
+  // description/tags/faces once reopened (was caching the empty first response).
+  const { data: p } = useQuery<any>({
+    queryKey: ['photo-detail', photoId],
+    queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data),
+    staleTime: 0, refetchOnMount: 'always',
+  })
   if (!p) return null
   const Row = ({ icon: Icon, label, children }: any) => (
     <div className="flex items-start gap-2 text-sm text-zinc-200">

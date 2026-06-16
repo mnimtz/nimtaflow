@@ -1180,15 +1180,17 @@ function RemoteWorkerSection() {
           )}
         </div>
 
-        {/* Live remote-worker log */}
-        <RemoteWorkerLog />
-
         {/* Agent command */}
         <div>
           <Label>Worker auf dem GPU-Rechner starten</Label>
           <p className="text-xs text-zinc-400 mb-2">Auf der Maschine mit der GPU (PhotoFlow-Repo unter <code>/opt/photoflow</code> vorhanden): oben Token speichern, dann im Terminal ausführen. Stoppen mit <code>docker compose -p photoflow-remote -f docker-compose.remote-worker.yml down</code>.</p>
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
         </div>
+      </div>
+
+      {/* Live remote-worker log — full width, outside the form column */}
+      <div className="mt-8">
+        <RemoteWorkerLog />
       </div>
     </div>
   )
@@ -1212,7 +1214,7 @@ function RemoteWorkerLog() {
         {lines.length === 0 ? (
           <p className="text-zinc-500">Noch keine Remote-Aktivität. Sobald ein Worker Fotos verarbeitet, erscheinen hier die Einträge (Dauer pro Foto, Beschreibung).</p>
         ) : lines.map((e, i) => (
-          <div key={i} className={e.level === 'WARNING' || e.level === 'ERROR' ? 'text-amber-400' : 'text-emerald-300'}>
+          <div key={i} className={`whitespace-pre-wrap break-words py-0.5 ${e.level === 'WARNING' || e.level === 'ERROR' ? 'text-amber-400' : 'text-emerald-300'}`}>
             <span className="text-zinc-600">{(e.ts || '').slice(11, 19)} </span>{e.message}
           </div>
         ))}

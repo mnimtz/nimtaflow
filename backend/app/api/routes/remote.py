@@ -194,13 +194,13 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         photo.description = body.description
         photo.description_model = (body.provider or "remote")[:120]
         flog("ai", "INFO", f"Beschreibung ({body.provider}): {photo.filename} — {body.description}")
-        flog("remote", "INFO",
-             f"[{worker}] #{photo_id} {photo.filename} in {dur} ({body.provider}) — {body.description[:80]}")
 
     # tags (replace previous AI tags)
+    n_tags = 0
     if body.tags:
         await db.execute(sql_delete(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.source == "ai"))
-        for name in [t.strip()[:120] for t in body.tags[:20] if t.strip()]:
+        clean = [t.strip()[:120] for t in body.tags[:20] if t.strip()]
+        for name in clean:
             tag = await db.scalar(select(Tag).where(Tag.name == name))
             if not tag:
                 from sqlalchemy.exc import IntegrityError
@@ -211,6 +211,9 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                     tag = await db.scalar(select(Tag).where(Tag.name == name))
             if tag and not await db.scalar(select(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.tag_id == tag.id)):
                 db.add(PhotoTag(photo_id=photo_id, tag_id=tag.id, source="ai"))
+        n_tags = len(clean)
+        if clean:
+            flog("ai", "INFO", f"Tags ({body.provider}): {photo.filename} — {', '.join(clean)}")
 
     # embedding (fit pgvector 768)
     if body.embedding:
@@ -223,6 +226,7 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
             photo.embedding = emb
 
     # faces (only if none yet — don't wipe existing person links)
+    n_faces = 0
     if body.faces:
         existing = await db.scalar(select(func.count()).where(Face.photo_id == photo_id))
         if not existing:
@@ -235,11 +239,19 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
             cys = [f.bbox_y + f.bbox_h / 2 for f in body.faces]
             photo.focus_x = min(1.0, max(0.0, sum(cxs) / len(cxs)))
             photo.focus_y = min(1.0, max(0.0, sum(cys) / len(cys)))
-            flog("faces", "INFO", f"{len(body.faces)} Gesicht(er) (remote): {photo.filename}")
+            n_faces = len(body.faces)
+            flog("faces", "INFO", f"{n_faces} Gesicht(er) (remote): {photo.filename}")
 
     photo.ai_claimed_at = None
     photo.processed_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # One consolidated line per finished photo for the live Remote-Worker log:
+    # duration + what was produced + final status. (Description, tag list and
+    # faces also land in their own ai/faces logs above.)
+    flog("remote", "INFO",
+         f"[{worker}] #{photo_id} {photo.filename} ✓ {dur} · {n_tags} Tags · {n_faces} Gesichter · "
+         f"status=done — {(body.description or '')[:140]}")
     return {"ok": True}
 
 
