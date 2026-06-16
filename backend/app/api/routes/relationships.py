@@ -8,7 +8,10 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.person import Person
 from app.models.face import Face
-from app.models.relationship import PersonRelationship, RelationType, DIRECTED, CATEGORY
+from app.models.relationship import (
+    PersonRelationship, RELATION_TYPES, DIRECTED, CATEGORY, LABEL, INVERSE_LABEL,
+    PARENT_TYPES, CATEGORY_LABELS, meta,
+)
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 
@@ -16,14 +19,15 @@ router = APIRouter(prefix="/relationships", tags=["relationships"])
 class RelCreate(BaseModel):
     from_person_id: int
     to_person_id: int
-    rel_type: RelationType
+    rel_type: str
     note: Optional[str] = None
 
 
 def _edge(r: PersonRelationship) -> dict:
     return {
         "id": r.id, "from": r.from_person_id, "to": r.to_person_id,
-        "type": r.rel_type.value, "category": CATEGORY[r.rel_type],
+        "type": r.rel_type, "label": LABEL.get(r.rel_type, r.rel_type),
+        "category": CATEGORY.get(r.rel_type, "other"),
         "directed": r.rel_type in DIRECTED, "note": r.note,
     }
 
@@ -54,21 +58,17 @@ async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
     )).scalars().all()
     other_ids = {(r.to_person_id if r.from_person_id == person_id else r.from_person_id) for r in rels}
     names = dict((await db.execute(select(Person.id, Person.name).where(Person.id.in_(other_ids or {0})))).all())
-    # human label from this person's point of view
-    INV = {"parent": "Kind", "grandparent": "Enkel/in"}
-    FWD = {"parent": "Elternteil", "grandparent": "Großelternteil", "partner": "Partner",
-           "sibling": "Geschwister", "relative": "Verwandt", "friend": "Freund/in",
-           "colleague": "Kollege/in", "other": "Verbindung"}
+    # human label from THIS person's point of view
     out = []
     for r in rels:
         outgoing = r.from_person_id == person_id
         oid = r.to_person_id if outgoing else r.from_person_id
-        t = r.rel_type.value
-        is_directed = r.rel_type in DIRECTED
-        label = FWD[t] if (outgoing or not is_directed) else INV.get(t, FWD[t])
+        t = r.rel_type
+        is_directed = t in DIRECTED
+        label = LABEL.get(t, t) if (outgoing or not is_directed) else INVERSE_LABEL.get(t, LABEL.get(t, t))
         out.append({
             "id": r.id, "other_id": oid, "other_name": names.get(oid) or "Unbekannt",
-            "type": t, "category": CATEGORY[r.rel_type], "label": label, "outgoing": outgoing,
+            "type": t, "category": CATEGORY.get(t, "other"), "label": label, "outgoing": outgoing,
         })
     return sorted(out, key=lambda e: e["label"])
 
@@ -96,9 +96,14 @@ async def derive_relationships(db: AsyncSession = Depends(get_db)):
     children = defaultdict(set)   # parent -> {children}
     parents = defaultdict(set)    # child -> {parents}
     for r in rels:
-        if r.rel_type == RelationType.parent:
+        # Treat parent/father/mother all as a parent→child link, and child/son/
+        # daughter as the reverse, so derivation works whatever was entered.
+        if r.rel_type in PARENT_TYPES:
             children[r.from_person_id].add(r.to_person_id)
             parents[r.to_person_id].add(r.from_person_id)
+        elif r.rel_type in {"child", "son", "daughter"}:
+            children[r.to_person_id].add(r.from_person_id)
+            parents[r.from_person_id].add(r.to_person_id)
 
     def _has(a, b, t):
         return (a, b, t) in existing or (t not in DIRECTED and (b, a, t) in existing)
@@ -109,16 +114,16 @@ async def derive_relationships(db: AsyncSession = Depends(get_db)):
         kl = sorted(kids)
         for i in range(len(kl)):
             for j in range(i + 1, len(kl)):
-                if not _has(kl[i], kl[j], RelationType.sibling):
-                    new.append(PersonRelationship(from_person_id=kl[i], to_person_id=kl[j], rel_type=RelationType.sibling))
-                    existing.add((kl[i], kl[j], RelationType.sibling))
+                if not _has(kl[i], kl[j], "sibling"):
+                    new.append(PersonRelationship(from_person_id=kl[i], to_person_id=kl[j], rel_type="sibling"))
+                    existing.add((kl[i], kl[j], "sibling"))
     # grandparents: parent of a parent
     for child, ps in parents.items():
         for p in ps:
             for gp in parents.get(p, set()):
-                if gp != child and not _has(gp, child, RelationType.grandparent):
-                    new.append(PersonRelationship(from_person_id=gp, to_person_id=child, rel_type=RelationType.grandparent))
-                    existing.add((gp, child, RelationType.grandparent))
+                if gp != child and not _has(gp, child, "grandparent"):
+                    new.append(PersonRelationship(from_person_id=gp, to_person_id=child, rel_type="grandparent"))
+                    existing.add((gp, child, "grandparent"))
     for r in new:
         db.add(r)
     await db.commit()
@@ -127,6 +132,8 @@ async def derive_relationships(db: AsyncSession = Depends(get_db)):
 
 @router.post("")
 async def create_relationship(body: RelCreate, db: AsyncSession = Depends(get_db)):
+    if body.rel_type not in RELATION_TYPES:
+        raise HTTPException(400, f"Unbekannter Beziehungstyp: {body.rel_type}")
     if body.from_person_id == body.to_person_id:
         raise HTTPException(400, "Eine Person kann nicht mit sich selbst verknüpft werden.")
     for pid in (body.from_person_id, body.to_person_id):
@@ -164,4 +171,9 @@ async def delete_relationship(rel_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/types")
 async def relationship_types():
-    return [{"value": t.value, "category": CATEGORY[t], "directed": t in DIRECTED} for t in RelationType]
+    """Grouped, labelled relationship types for the picker."""
+    return [
+        {"value": k, "label": v[0], "inverse_label": v[1], "category": v[2],
+         "category_label": CATEGORY_LABELS.get(v[2], v[2]), "directed": v[3]}
+        for k, v in RELATION_TYPES.items()
+    ]

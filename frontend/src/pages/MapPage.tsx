@@ -5,6 +5,7 @@ import { Layers, Navigation, Globe2, Map as MapIcon } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
 
 const GlobeView = lazy(() => import('./GlobeView'))
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -80,6 +81,7 @@ function FitBounds({ points }: { points: [number, number][] }) {
 export default function MapPage() {
   const [layer, setLayer] = useState<LayerKey>('osm')
   const [view3d, setView3d] = useState(false)
+  const [lbIndex, setLbIndex] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
@@ -157,6 +159,7 @@ export default function MapPage() {
           <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">Globus wird geladen…</div>}>
             <GlobeView
               points={withGps.map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
+              onPoint={(id) => { const i = withGps.findIndex(p => p.id === id); if (i >= 0) setLbIndex(i) }}
             />
           </Suspense>
         ) : (
@@ -190,6 +193,14 @@ export default function MapPage() {
           </MapContainer>
         )}
       </div>
+
+      {lbIndex != null && (
+        <GalleryLightbox
+          photos={withGps}
+          index={lbIndex}
+          onClose={() => setLbIndex(null)}
+        />
+      )}
     </div>
   )
 }
