@@ -46,7 +46,7 @@ async def enforce_auth(
 ) -> Optional[User]:
     from app.services.settings_loader import load_settings
     s = await load_settings(db)
-    if str(s.get("auth.enforce", "false")).lower() != "true":
+    if str(s.get("auth.enforce", "true")).lower() != "true":
         return None  # login not enforced yet — allow through
     user = await _user_from_token(_extract_token(request, token), db)
     if not user:
@@ -75,7 +75,7 @@ async def require_admin(
     from app.services.settings_loader import load_settings
     s = await load_settings(db)
     user = await _user_from_token(_extract_token(request, token), db)
-    if str(s.get("auth.enforce", "false")).lower() != "true":
+    if str(s.get("auth.enforce", "true")).lower() != "true":
         return user  # login not enforced — allow through (open app)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login erforderlich")

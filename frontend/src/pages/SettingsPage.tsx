@@ -1565,7 +1565,7 @@ function UsersSection() {
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
-  const enforce = (settings['auth.enforce'] ?? 'false') === 'true'
+  const enforce = (settings['auth.enforce'] ?? 'true') === 'true'
   const setEnforce = (v: boolean) => {
     const next = { ...settings, 'auth.enforce': v ? 'true' : 'false' }
     setSettings(next); api.put('/settings', next).then(() => qc.invalidateQueries({ queryKey: ['settings'] }))

@@ -1,4 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api } from './lib/api'
+import SetupPage from './pages/SetupPage'
 import Layout from './components/layout/Layout'
 import GalleryPage from './pages/GalleryPage'
 import SearchPage from './pages/SearchPage'
@@ -12,6 +15,16 @@ import ProfilePage from './pages/ProfilePage'
 import LoginPage from './pages/LoginPage'
 
 export default function App() {
+  // Fresh install → first-run setup screen (create the initial admin).
+  const { data: status, isLoading } = useQuery<{ needs_setup: boolean; enforce: boolean }>({
+    queryKey: ['auth-status'],
+    queryFn: () => api.get('/auth/status').then(r => r.data),
+    retry: false, staleTime: 60_000,
+  })
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-400">Lädt…</div>
+  }
+  if (status?.needs_setup) return <SetupPage />
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

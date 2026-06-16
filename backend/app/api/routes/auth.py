@@ -1,16 +1,61 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from datetime import datetime, timezone
+from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.security import verify_password, create_access_token, create_refresh_token, decode_token
-from app.models.user import User
+from app.core.security import verify_password, hash_password, create_access_token, create_refresh_token, decode_token
+from app.models.user import User, UserRole
 from app.schemas.user import UserOut, UserDetail, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@router.get("/status")
+async def auth_status(db: AsyncSession = Depends(get_db)):
+    """Tells the UI whether a first admin must be created (fresh install) and
+    whether login is enforced (default: ON)."""
+    from app.services.settings_loader import load_settings
+    count = await db.scalar(select(func.count()).select_from(User))
+    s = await load_settings(db)
+    return {
+        "needs_setup": (count or 0) == 0,
+        "enforce": str(s.get("auth.enforce", "true")).lower() == "true",
+    }
+
+
+class SetupRequest(BaseModel):
+    email: str
+    name: str = "Admin"
+    password: str
+
+
+@router.post("/setup", response_model=TokenResponse)
+async def setup(body: SetupRequest, db: AsyncSession = Depends(get_db)):
+    """Create the FIRST admin on a fresh install (only works while there are no
+    users). Auto-logs in by returning tokens."""
+    if await db.scalar(select(func.count()).select_from(User)):
+        raise HTTPException(409, "Einrichtung bereits abgeschlossen — bitte anmelden.")
+    if not _EMAIL_RE.match((body.email or "").strip()):
+        raise HTTPException(400, "Bitte eine gültige E-Mail angeben.")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Passwort zu kurz (min. 6 Zeichen).")
+    user = User(email=body.email.strip(), name=(body.name.strip() or "Admin"),
+                hashed_password=hash_password(body.password), role=UserRole.admin)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return TokenResponse(
+        access_token=create_access_token(str(user.id)),
+        refresh_token=create_refresh_token(str(user.id)),
+        token_type="bearer",
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
