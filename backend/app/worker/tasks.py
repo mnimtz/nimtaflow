@@ -377,10 +377,16 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
 
                 # Generate all thumbnail sizes — videos need a frame extracted via ffmpeg
                 if photo.is_video:
+                    import time as _vt
+                    _v0 = _vt.time()
+                    flog("video", "INFO", f"Verarbeitung gestartet: {photo.filename}")
                     for size in ("small", "medium", "large"):
-                        thumb = generate_video_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
-                        if thumb:
-                            setattr(photo, f"thumb_{size}", thumb)
+                        try:
+                            thumb = generate_video_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
+                            if thumb:
+                                setattr(photo, f"thumb_{size}", thumb)
+                        except Exception as ve:
+                            flog("video", "WARNING", f"Frame-Extraktion ({size}) fehlgeschlagen: {photo.filename}: {str(ve)[:120]}")
                     if photo.duration_seconds is None:
                         photo.duration_seconds = video_duration(photo.path)
                     # Real dimensions (rotation-aware) so the gallery lays videos out
@@ -389,16 +395,21 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     if vw and vh:
                         photo.width, photo.height = vw, vh
                     # animated hover preview (best-effort)
+                    preview_ok = False
                     try:
                         preview = generate_video_preview_webp(photo.path, settings.cache_path, force=redo_thumbs)
                         if preview:
-                            photo.video_preview_path = preview
-                    except Exception:
-                        pass
+                            photo.video_preview_path = preview; preview_ok = True
+                    except Exception as ve:
+                        flog("video", "WARNING", f"Hover-Vorschau fehlgeschlagen: {photo.filename}: {str(ve)[:120]}")
+                    dur = photo.duration_seconds
                     if photo.thumb_small:
-                        flog("video", "INFO", f"Thumbnail + Vorschau erstellt: {photo.filename}")
+                        flog("video", "INFO",
+                             f"Frames erstellt: {photo.filename} — Länge {f'{dur:.0f}s' if dur else '?'}, "
+                             f"{vw or '?'}×{vh or '?'}, Hover-Vorschau {'ja' if preview_ok else 'nein'}, "
+                             f"in {_vt.time() - _v0:.1f}s")
                     else:
-                        flog("video", "WARNING", f"Kein Frame extrahierbar: {photo.filename}")
+                        flog("video", "ERROR", f"Kein Frame extrahierbar (ffmpeg) — Video wird übersprungen: {photo.filename}")
                 else:
                     for size in ("small", "medium", "large"):
                         thumb = generate_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
@@ -530,6 +541,8 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                             photo.description = description
                             photo.description_model = (provider or "")[:120]
                             flog("ai", "INFO", f"Beschreibung ({provider}): {photo.filename} — {description}")
+                            if photo.is_video:
+                                flog("video", "INFO", f"KI-Beschreibung ({provider}): {photo.filename} — {description[:120]}")
                         elif provider == "none":
                             flog("ai", "WARNING", f"Kein AI-Provider aktiv/erreichbar für {photo.filename}")
                         else:

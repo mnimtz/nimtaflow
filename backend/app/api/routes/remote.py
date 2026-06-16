@@ -197,6 +197,8 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         photo.description = body.description
         photo.description_model = (body.provider or "remote")[:120]
         flog("ai", "INFO", f"Beschreibung ({body.provider}): {photo.filename} — {body.description}")
+        if photo.is_video:
+            flog("video", "INFO", f"KI-Beschreibung (remote, {dur}): {photo.filename} — {body.description[:120]}")
 
     # tags (replace previous AI tags)
     n_tags = 0
