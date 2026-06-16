@@ -39,7 +39,7 @@ class AIProvider(ABC):
         ...
 
     @abstractmethod
-    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
         ...
 
     @abstractmethod

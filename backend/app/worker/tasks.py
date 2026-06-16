@@ -216,7 +216,7 @@ def write_person_name_task(self, person_id: int):
             for (path,) in rows:
                 try:
                     r = subprocess.run(
-                        [exe, "-overwrite_original",
+                        [exe, "-P", "-overwrite_original",
                          f"-XMP:PersonInImage+={name}", f"-XMP-iptcExt:PersonInImage+={name}",
                          path],
                         capture_output=True, timeout=30,
@@ -498,7 +498,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         else:
                             flog("ai", "WARNING", f"AI lieferte keine Beschreibung ({provider}): {photo.filename}")
 
-                        tags, _ = await ai.generate_tags(img, lang)
+                        tags, _ = await ai.generate_tags(img, lang, (ai_settings.get("ai.prompt.tags") or "").strip() or None)
                         if tags:
                             flog("ai", "INFO", f"Tags ({provider}): {photo.filename} — {', '.join(tags[:20])}")
                             # replace previous AI tags (e.g. old English ones) for this photo

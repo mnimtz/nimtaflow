@@ -40,7 +40,7 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
     prompt = job.get("prompt")
 
     desc = await prov.describe_image(img, lang, prompt)
-    tags = await prov.generate_tags(img, lang) if desc else []
+    tags = await prov.generate_tags(img, lang, job.get("tag_prompt")) if desc else []
     emb = await prov.embed_text(desc) if desc else []
 
     faces = []

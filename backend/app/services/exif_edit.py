@@ -48,6 +48,12 @@ async def write_exif(path: str, tags: Dict[str, Any], make_backup: bool = True) 
         raise ExifEditError("exiftool not found")
 
     args = [_EXIFTOOL]
+    # -P: preserve the filesystem modification date. Without it exiftool sets
+    # FileModifyDate to "now", which would become the photo's date for any file
+    # lacking an EXIF capture date (scanner/Immich fall back to file mtime). We
+    # only ever write the caller's tags (description/caption/keywords/…) and
+    # NEVER DateTimeOriginal/CreateDate, so the real capture date is untouched.
+    args.append("-P")
     if not make_backup:
         args.append("-overwrite_original")
     for k, v in tags.items():

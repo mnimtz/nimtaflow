@@ -184,7 +184,26 @@ class LocalVLMProvider(AIProvider):
             except Exception:
                 pass
 
-    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
+        # If a tag prompt is configured AND the model can follow free prompts
+        # (Qwen, not Florence), ask the VLM directly for a keyword list. This is
+        # a SECOND model pass (≈ doubles GPU time per photo) — opt-in via the
+        # 'ai.prompt.tags' setting. Otherwise derive tags cheaply from the caption.
+        if prompt and self.model_key.startswith("qwen"):
+            try:
+                raw = await self.describe_image(image, language, prompt)
+                # split on commas/newlines/semicolons; drop sentences & junk
+                import re
+                parts = re.split(r"[,\n;•\-–]+", raw)
+                tags, seen = [], set()
+                for p in parts:
+                    t = p.strip().strip(".").lower()
+                    if 2 <= len(t) <= 40 and len(t.split()) <= 3 and t not in seen:
+                        seen.add(t); tags.append(t)
+                if tags:
+                    return tags[:15]
+            except Exception:
+                pass  # fall through to caption-derived tags
         # Derive simple tags from the caption (keeps deps minimal & robust).
         # Use the caption in the *requested* language so German stays German.
         try:

@@ -81,12 +81,14 @@ class GeminiProvider(AIProvider):
         prompt = prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
         return await self._generate(_image_to_b64(image), prompt)
 
-    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
         lang = {"de": "auf Deutsch", "en": "in English", "fr": "en français", "es": "en español"}.get(language, "auf Deutsch")
         text = await self._generate(
             _image_to_b64(image),
-            f"Liste bis zu 15 beschreibende Schlagwörter {lang} für dieses Foto. "
-            f"Nur eine kommagetrennte Liste, keine Erklärungen.",
+            prompt or (
+                f"Liste bis zu 15 beschreibende Schlagwörter {lang} für dieses Foto. "
+                f"Nur eine kommagetrennte Liste, keine Erklärungen."
+            ),
         )
         return [t.strip().lower() for t in text.split(",") if t.strip()]
 

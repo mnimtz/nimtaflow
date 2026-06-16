@@ -23,6 +23,7 @@ type Settings = Record<string, string>
 
 const DEFAULT_IMAGE_PROMPT = 'Beschreibe dieses Foto sachlich in 2-3 Sätzen auf Deutsch. Nenne Personen, Ort, Aktivität und Stimmung.'
 const DEFAULT_VIDEO_PROMPT = 'Beschreibe diese Videoszene sachlich in 2-3 Sätzen auf Deutsch. Nenne Personen, Ort, Aktivität und Stimmung.'
+const DEFAULT_TAGS_PROMPT = 'Nenne 5–12 prägnante Schlagwörter (Substantive) zu diesem Bild, kommagetrennt, ohne Sätze, ohne Füllwörter. Beispiel: Strand, Sonnenuntergang, Boot, Meer.'
 
 // ─── Layout helpers ──────────────────────────────────────────────────────────
 
@@ -732,6 +733,26 @@ function AISection() {
             <p className="text-[11px] text-zinc-400">Geht an Gemini/OpenAI/Ollama/Qwen. (Florence-2 nutzt feste Tasks.)</p>
             <button type="button" onClick={() => set('ai.prompt.image', DEFAULT_IMAGE_PROMPT)}
               className="text-[11px] text-indigo-500 hover:underline">Standard</button>
+          </div>
+        </div>
+
+        {/* Tags prompt (optional) */}
+        <div>
+          <Label>Prompt für Schlagwörter / Tags (optional)</Label>
+          <textarea
+            value={settings['ai.prompt.tags'] ?? ''}
+            onChange={e => set('ai.prompt.tags', e.target.value)}
+            rows={2}
+            placeholder={'Leer lassen = Tags aus der Beschreibung (schnell). Beispiel: ' + DEFAULT_TAGS_PROMPT}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+          />
+          <div className="flex justify-between items-center mt-1">
+            <p className="text-[11px] text-zinc-400">
+              Leer = Tags aus der Beschreibung (kostenlos). Gesetzt = der VLM erzeugt echte Schlagwörter per
+              eigenem Durchlauf — <b>verdoppelt die GPU-Zeit pro Foto</b>. (Qwen/Gemini/Ollama; Florence ignoriert.)
+            </p>
+            <button type="button" onClick={() => set('ai.prompt.tags', DEFAULT_TAGS_PROMPT)}
+              className="text-[11px] text-indigo-500 hover:underline whitespace-nowrap ml-2">Vorlage</button>
           </div>
         </div>
 

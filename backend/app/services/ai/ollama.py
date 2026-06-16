@@ -40,14 +40,14 @@ class OllamaProvider(AIProvider):
             resp.raise_for_status()
             return resp.json()["response"].strip()
 
-    async def generate_tags(self, image: Image.Image, language: str = "de") -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
         lang = {"de": "auf Deutsch", "en": "in English", "fr": "en français"}.get(language, "auf Deutsch")
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.vision_model,
-                    "prompt": f"Liste bis zu 15 beschreibende Schlagwörter {lang} für dieses Foto. Nur eine kommagetrennte Liste.",
+                    "prompt": prompt or f"Liste bis zu 15 beschreibende Schlagwörter {lang} für dieses Foto. Nur eine kommagetrennte Liste.",
                     "images": [self._image_to_b64(image)],
                     "stream": False,
                 },
