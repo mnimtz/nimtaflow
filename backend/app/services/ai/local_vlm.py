@@ -172,7 +172,8 @@ class LocalVLMProvider(AIProvider):
 
     # ── interface ───────────────────────────────────────────────────────────
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
-                             max_new_tokens: int = 512, frames: Optional[List[Image.Image]] = None) -> str:
+                             max_new_tokens: int = 512, frames: Optional[List[Image.Image]] = None,
+                             repetition_penalty: float = 1.0) -> str:
         try:
             kind, model, proc, device, dtype = self._load_vlm()
             import torch
@@ -245,12 +246,13 @@ class LocalVLMProvider(AIProvider):
                 if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
                     inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
                 with torch.no_grad():
-                    # Plain greedy. NB: do NOT add repetition_penalty here — on
-                    # this multilingual model it pushes generation off common
-                    # German tokens and into Chinese mid-sentence. The raised
-                    # max_new_tokens gives headroom so a 2-4 sentence German
-                    # description completes (greedy stops at EOS anyway).
-                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens)
+                    # repetition_penalty defaults to 1.0 (off) for DESCRIPTIONS —
+                    # on this multilingual model a penalty pushes prose into
+                    # Chinese mid-sentence. The TAG pass passes >1.0 on purpose:
+                    # for a discrete keyword list it breaks loops (e.g. the
+                    # "babyschutzschal/-band/-…" runaway) without the prose risk.
+                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens,
+                                         repetition_penalty=repetition_penalty)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
         except Exception as e:
@@ -283,7 +285,7 @@ class LocalVLMProvider(AIProvider):
             try:
                 # Bigger budget: structured/JSON tag prompts are long and would
                 # otherwise be truncated mid-output at the default 256 tokens.
-                raw = await self.describe_image(image, language, prompt, max_new_tokens=640)
+                raw = await self.describe_image(image, language, prompt, max_new_tokens=640, repetition_penalty=1.3)
                 cand = _extract_tag_candidates(raw)
                 tags, seen = [], set()
                 for c in cand:

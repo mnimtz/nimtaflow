@@ -43,7 +43,10 @@ def _base_query(
     else:  # library
         q = q.where(Photo.is_trashed == False, Photo.is_archived == False)
     if search:
-        q = q.where(Photo.description.ilike(f"%{search}%"))
+        # Match the AI description OR the filename, so typing "IMG_6801.JPG"
+        # (or any partial filename) finds the photo directly.
+        like = f"%{search.strip()}%"
+        q = q.where(or_(Photo.description.ilike(like), Photo.filename.ilike(like)))
     if date_from:
         q = q.where(Photo.taken_at >= date_from)
     if date_to:
