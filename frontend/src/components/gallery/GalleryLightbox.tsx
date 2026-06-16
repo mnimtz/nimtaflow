@@ -165,9 +165,12 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
     return () => window.removeEventListener('keydown', onKey)
   }, [cur, photos, onFavorite])
 
+  // Fall back to generous dimensions when EXIF width/height are missing —
+  // otherwise yet-another-react-lightbox renders the image at its tiny natural
+  // (thumbnail) size instead of scaling it to fill the viewport.
   const slides = photos.map(p => p.is_video
     ? { type: 'video' as const, poster: thumbUrl(p, 'large'), width: p.width || 1280, height: p.height || 720, sources: [{ src: `/api/photos/${p.id}/video/stream`, type: 'video/mp4' }], description: p.filename }
-    : { src: thumbUrl(p, 'large'), width: p.width || undefined, height: p.height || undefined, description: p.filename, download: { url: `/api/photos/${p.id}/original`, filename: p.filename } })
+    : { src: thumbUrl(p, 'large'), width: p.width || 1600, height: p.height || 1200, description: p.filename, download: { url: `/api/photos/${p.id}/original`, filename: p.filename } })
 
   const infoBtn = (
     <button key="info" type="button" className="yarl__button" onClick={() => setInfo(v => !v)} title="Informationen (i)">
@@ -183,7 +186,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   return (
     <>
       <Lightbox
-        open index={index} close={onClose} slides={slides as any}
+        open index={cur} close={onClose} slides={slides as any}
         on={{ view: ({ index: i }) => {
           setCur(i)
           // Pull the next page as the user nears the end of what's loaded, so

@@ -155,8 +155,14 @@ async def album_photos(
     total = await db.scalar(
         select(func.count()).where(AlbumPhoto.album_id == album_id)
     )
-    from app.schemas.photo import PhotoBase
-    return {"total": total or 0, "page": page, "limit": limit, "items": photos}
+    # Use the gallery schema (PhotoBase) so serialization is clean — returning
+    # raw ORM rows here pulled in the pgvector `embedding` and broke the response,
+    # leaving smart albums looking empty despite a correct photo count.
+    from app.schemas.photo import PhotoListResponse, PhotoBase
+    return PhotoListResponse(
+        total=total or 0, page=page, limit=limit,
+        items=[PhotoBase.model_validate(p) for p in photos],
+    )
 
 
 @router.post("/{album_id}/photos", status_code=201)
