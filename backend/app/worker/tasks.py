@@ -230,6 +230,66 @@ def write_person_name_task(self, person_id: int):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="backfill_xmp")
+def backfill_xmp_task(self):
+    """Write the existing DB AI description + tags INTO the image files for every
+    described photo (honours xmp.write_mode). One-off repair for photos that were
+    processed by the remote worker before it wrote files itself, or after turning
+    xmp.write_mode on. Idempotent — exiftool overwrites."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.tag import Tag, PhotoTag
+        from app.services.settings_loader import load_settings
+        from app.services.feature_log import log as flog
+        from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+        from app.services.xmp_sidecar import write_sidecar
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            mode = str(s.get("xmp.write_mode", "off")).lower()
+            if mode not in ("file", "file_sidecar", "sidecar"):
+                flog("ai", "WARNING", "Backfill übersprungen: xmp.write_mode=off")
+                return {"skipped": "xmp.write_mode=off"}
+            rows = (await db.execute(
+                select(Photo).where(Photo.description.isnot(None), Photo.is_missing == False)  # noqa: E712
+                .order_by(Photo.id)
+            )).scalars().all()
+            flog("ai", "INFO", f"XMP-Backfill gestartet: {len(rows)} beschriebene Fotos (Modus={mode})")
+            done, failed = 0, 0
+            for photo in rows:
+                kw = [t for t in (await db.execute(
+                    select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
+                    .where(PhotoTag.photo_id == photo.id)
+                )).scalars()]
+                try:
+                    if mode in ("file", "file_sidecar"):
+                        if photo.description:
+                            await _wd(photo.path, photo.description, overwrite=True)
+                        if kw:
+                            await _wk(photo.path, kw)
+                    if mode in ("file_sidecar", "sidecar"):
+                        xmp_path = write_sidecar(
+                            photo.path, description=photo.description, title=photo.title,
+                            keywords=kw or None, latitude=photo.latitude, longitude=photo.longitude,
+                            city=photo.city, country=photo.country,
+                        )
+                        photo.xmp_sidecar_written = True
+                        photo.xmp_sidecar_path = xmp_path
+                    done += 1
+                    if done % 50 == 0:
+                        await db.commit()
+                        flog("ai", "INFO", f"XMP-Backfill: {done}/{len(rows)} geschrieben …")
+                except Exception as e:
+                    failed += 1
+                    flog("ai", "WARNING", f"XMP-Backfill-Fehler: {photo.filename}: {str(e)[:120]}")
+            await db.commit()
+            flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
+            return {"written": done, "failed": failed}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="process_photo")
 def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False, redo_thumbs: bool = False):
     async def _run_process():

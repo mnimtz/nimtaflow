@@ -378,6 +378,17 @@ async def reprocess_missing_ai(db: AsyncSession = Depends(get_db)):
     return {"reprocessing": len(ids)}
 
 
+@router.post("/backfill-xmp")
+async def backfill_xmp(db: AsyncSession = Depends(get_db)):
+    """Write existing DB descriptions + tags INTO the image files (honours
+    xmp.write_mode). Repairs photos processed by the remote worker before it
+    wrote files, or after enabling XMP. Runs as one background task."""
+    from app.worker.tasks import backfill_xmp_task
+    n = await db.scalar(select(func.count()).where(Photo.description.isnot(None)))
+    backfill_xmp_task.delay()
+    return {"queued": True, "described_photos": n or 0}
+
+
 @router.post("/batch")
 async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
     """Apply an action to many photos at once (selection bar in the gallery)."""

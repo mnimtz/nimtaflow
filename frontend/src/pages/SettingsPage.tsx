@@ -777,10 +777,33 @@ function AISection() {
             „Ins Bild" verändert die Originaldatei (mit Backup bei der ersten Änderung), „Sidecar" legt eine
             <code>.xmp</code> daneben. Kompatibel mit Lightroom, digiKam, Immich.
           </p>
+          <BackfillXmpButton />
         </div>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
+    </div>
+  )
+}
+
+function BackfillXmpButton() {
+  const [msg, setMsg] = useState('')
+  const m = useMutation({
+    mutationFn: () => api.post('/photos/backfill-xmp').then(r => r.data),
+    onSuccess: (d: any) => setMsg(`Läuft im Hintergrund für ${d.described_photos} beschriebene Fotos — Fortschritt im AI-Log.`),
+    onError: () => setMsg('Fehler beim Starten.'),
+  })
+  return (
+    <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+      <button onClick={() => m.mutate()} disabled={m.isPending}
+        className="px-3 py-2 rounded-lg border border-indigo-300 dark:border-indigo-700 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50">
+        {m.isPending ? 'Startet …' : 'Vorhandene Beschreibungen jetzt in die Dateien schreiben'}
+      </button>
+      <p className="text-[11px] text-zinc-400 mt-1.5">
+        Einmaliger Nachtrag: schreibt bereits erzeugte Beschreibungen + Tags aus der DB in die Bilddateien
+        (nötig für Fotos, die der Remote-Worker verarbeitet hat, bevor das Datei-Schreiben aktiv war).
+      </p>
+      {msg && <p className="text-[11px] text-emerald-500 mt-1">{msg}</p>}
     </div>
   )
 }

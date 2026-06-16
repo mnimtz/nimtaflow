@@ -162,7 +162,7 @@ async def _record_worker_stat(worker: str, duration: Optional[float]):
 async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_db),
                  x_remote_token: Optional[str] = Header(None)):
     """Write back what the remote worker computed (mirrors the local ai_photo step)."""
-    await _require_token(db, x_remote_token)
+    s = await _require_token(db, x_remote_token)
     from app.models.tag import Tag, PhotoTag
     from app.models.face import Face
     from app.services.feature_log import log as flog
@@ -197,6 +197,7 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
 
     # tags (replace previous AI tags)
     n_tags = 0
+    clean: List[str] = []
     if body.tags:
         await db.execute(sql_delete(PhotoTag).where(PhotoTag.photo_id == photo_id, PhotoTag.source == "ai"))
         clean = [t.strip()[:120] for t in body.tags[:20] if t.strip()]
@@ -214,6 +215,36 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         n_tags = len(clean)
         if clean:
             flog("ai", "INFO", f"Tags ({body.provider}): {photo.filename} — {', '.join(clean)}")
+
+    # Write the AI result INTO the file / sidecar — mirrors the local ai_photo
+    # step. The remote worker is storage-free; the SERVER owns the /photos mount,
+    # so we do the exiftool write here (xmp.write_mode: off|file|file_sidecar|sidecar).
+    wrote_file = False
+    xmp_mode = str(s.get("xmp.write_mode", "off")).lower()
+    if (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
+        try:
+            if xmp_mode in ("file", "file_sidecar"):
+                from app.services.exif_edit import write_description as _wd, write_keywords as _wk
+                if body.description:
+                    await _wd(photo.path, body.description, overwrite=True)
+                if clean:
+                    await _wk(photo.path, clean)
+                wrote_file = True
+                flog("ai", "INFO", f"Beschreibung in Datei geschrieben (remote): {photo.filename}")
+            if xmp_mode in ("file_sidecar", "sidecar"):
+                from app.services.xmp_sidecar import write_sidecar
+                xmp_path = write_sidecar(
+                    photo.path, description=body.description, title=photo.title,
+                    keywords=clean or None,
+                    latitude=photo.latitude, longitude=photo.longitude,
+                    city=photo.city, country=photo.country,
+                )
+                photo.xmp_sidecar_written = True
+                photo.xmp_sidecar_path = xmp_path
+                wrote_file = True
+                flog("ai", "INFO", f"XMP-Sidecar geschrieben (remote): {photo.filename}")
+        except Exception as xe:
+            flog("ai", "WARNING", f"Metadaten-Schreiben fehlgeschlagen (remote): {photo.filename}: {str(xe)[:120]}")
 
     # embedding (fit pgvector 768)
     if body.embedding:
@@ -249,9 +280,10 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     # One consolidated line per finished photo for the live Remote-Worker log:
     # duration + what was produced + final status. (Description, tag list and
     # faces also land in their own ai/faces logs above.)
+    file_note = "✎ XMP" if wrote_file else ("kein XMP" if xmp_mode == "off" else "XMP-Fehler")
     flog("remote", "INFO",
          f"[{worker}] #{photo_id} {photo.filename} ✓ {dur} · {n_tags} Tags · {n_faces} Gesichter · "
-         f"status=done — {(body.description or '')[:140]}")
+         f"{file_note} · status=done — {(body.description or '')[:140]}")
     return {"ok": True}
 
 
