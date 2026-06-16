@@ -14,7 +14,11 @@ from app.models.source import PhotoSource
 from .exif import extract_exif
 from .thumbnails import generate_thumbnail
 
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".mts", ".3gp"}
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".mts", ".3gp",
+    # AVCHD camcorder + DVD + older formats (all ffmpeg-decodable)
+    ".m2ts", ".m2t", ".ts", ".vob", ".mpg", ".mpeg", ".wmv", ".flv", ".ogv", ".mod",
+}
 
 SUPPORTED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp",
