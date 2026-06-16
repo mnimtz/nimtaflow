@@ -94,10 +94,21 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # describes the extracted frame (thumb_large).
     model = (s.get("remote.model") or "").strip() or s.get("ai.local.model", "florence2-base")
     prompt_key = "ai.prompt.video" if photo.is_video else "ai.prompt.image"
+    # For videos: hand the worker several frames evenly spread across the whole
+    # duration (adaptive count) instead of a single 10%-mark frame, so Qwen sees
+    # the whole video. Qwen-only (Florence can't do multi-frame) — others fall
+    # back to the single image_url.
+    frame_urls = []
+    if photo.is_video and str(model).startswith("qwen"):
+        from app.services.processing.thumbnails import video_frame_plan
+        n = video_frame_plan(photo.duration_seconds)
+        if n > 1:
+            frame_urls = [f"/api/remote/frame/{photo.id}/{i}" for i in range(n)]
     return {
         "photo_id": photo.id,
         "is_video": bool(photo.is_video),
         "image_url": f"/api/remote/image/{photo.id}",
+        "frame_urls": frame_urls,
         "language": s.get("ai.language", "de"),
         "prompt": s.get(prompt_key) or None,
         "tag_prompt": (s.get("ai.prompt.tags") or "").strip() or None,
@@ -122,6 +133,28 @@ async def image(photo_id: int, db: AsyncSession = Depends(get_db),
     if not thumb or not os.path.exists(thumb):
         raise HTTPException(404, "Kein Bild verfügbar")
     return FileResponse(thumb, media_type="image/jpeg")
+
+
+@router.get("/frame/{photo_id}/{idx}")
+async def video_frame(photo_id: int, idx: int, db: AsyncSession = Depends(get_db),
+                      x_remote_token: Optional[str] = Header(None)):
+    """Serve the idx-th of N evenly-spaced frames of a video (for multi-frame AI).
+    Frame timestamp = (idx+0.5) * duration / N — extracted on demand, no cache."""
+    from fastapi.responses import Response
+    from app.services.processing.thumbnails import video_frame_plan, extract_video_frame_bytes, video_duration
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+    dur = photo.duration_seconds or video_duration(photo.path) or 0
+    n = max(1, video_frame_plan(dur))
+    if dur <= 0 or idx >= n:
+        raise HTTPException(404, "Frame außerhalb des Bereichs")
+    ts = (idx + 0.5) * dur / n
+    data = extract_video_frame_bytes(photo.path, ts)
+    if not data:
+        raise HTTPException(404, "Frame nicht extrahierbar")
+    return Response(content=data, media_type="image/jpeg")
 
 
 class FaceIn(BaseModel):

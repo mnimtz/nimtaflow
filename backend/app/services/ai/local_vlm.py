@@ -172,7 +172,7 @@ class LocalVLMProvider(AIProvider):
 
     # ── interface ───────────────────────────────────────────────────────────
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
-                             max_new_tokens: int = 512) -> str:
+                             max_new_tokens: int = 512, frames: Optional[List[Image.Image]] = None) -> str:
         try:
             kind, model, proc, device, dtype = self._load_vlm()
             import torch
@@ -213,10 +213,30 @@ class LocalVLMProvider(AIProvider):
                     f"Beschreibe dieses Foto sachlich in 2-3 Sätzen {lang_word}. "
                     f"Nenne Personen, Ort, Aktivität und Stimmung. Antworte ausschließlich {lang_word}."
                 )
-                messages = [{"role": "user", "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": user_text},
-                ]}]
+                if frames:
+                    # Multi-frame video mode: downscale each frame hard (≤448 px)
+                    # so up to 16 frames still fit the 8 GB card, and pass them as
+                    # a video so Qwen reasons over the whole clip.
+                    vframes = []
+                    for fr in frames:
+                        fr = fr.convert("RGB")
+                        if max(fr.size) > 448:
+                            fr.thumbnail((448, 448), Image.LANCZOS)
+                        vframes.append(fr)
+                    vid_text = user_text
+                    if not prompt:
+                        vid_text = (f"Dies sind Einzelbilder aus einem Video (zeitlich geordnet). "
+                                    f"Beschreibe das Video als Ganzes sachlich in 2-4 Sätzen {lang_word} — "
+                                    f"Personen, Ort, Handlung/Ablauf, Stimmung. Antworte ausschließlich {lang_word}.")
+                    messages = [{"role": "user", "content": [
+                        {"type": "video", "video": vframes},
+                        {"type": "text", "text": vid_text},
+                    ]}]
+                else:
+                    messages = [{"role": "user", "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": user_text},
+                    ]}]
                 text = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                 from qwen_vl_utils import process_vision_info
                 img_inputs, vid_inputs = process_vision_info(messages)

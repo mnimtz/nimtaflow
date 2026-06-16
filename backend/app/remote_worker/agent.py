@@ -34,12 +34,30 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
     r.raise_for_status()
     img = Image.open(io.BytesIO(r.content)).convert("RGB")
 
+    # Video: fetch the evenly-sampled frames so Qwen sees the whole clip, not
+    # just the 10%-mark thumbnail. Falls back to the single frame if none load.
+    frames = None
+    furls = job.get("frame_urls") or []
+    if furls:
+        frames = []
+        for fu in furls:
+            try:
+                fr = await client.get(SERVER + fu, headers=HEAD, timeout=60)
+                if fr.status_code == 200 and fr.content:
+                    frames.append(Image.open(io.BytesIO(fr.content)).convert("RGB"))
+            except Exception as e:
+                print(f"[agent] frame fetch failed {fu}: {type(e).__name__}")
+        if frames:
+            print(f"[agent] #{pid} video: {len(frames)} frames")
+        else:
+            frames = None
+
     from app.services.ai.local_vlm import LocalVLMProvider
     prov = LocalVLMProvider(job.get("model", "florence2-base"))
     lang = job.get("language", "de")
     prompt = job.get("prompt")
 
-    desc = await prov.describe_image(img, lang, prompt)
+    desc = await prov.describe_image(img, lang, prompt, frames=frames)
     # Pass the description we just generated so tag extraction reuses it instead
     # of running a second full VLM pass (~halves per-photo time when no JSON tag
     # prompt is set). With a tag_prompt, generate_tags does its own keyword pass.

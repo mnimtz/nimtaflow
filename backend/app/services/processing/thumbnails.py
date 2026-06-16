@@ -251,6 +251,32 @@ def generate_video_thumbnail(
     return None
 
 
+def video_frame_plan(duration_sec: Optional[float]) -> int:
+    """Adaptive frame count for video AI: ~1 frame per 45 s, min 4, max 16. A
+    10 s clip → 4, a 5-min clip → ~7, a 60-min video → 16 frames spread evenly
+    across the WHOLE length (not just the first 2.5 min like a fixed interval)."""
+    if not duration_sec or duration_sec < 8:
+        return 1
+    return max(4, min(16, round(duration_sec / 45)))
+
+
+def extract_video_frame_bytes(video_path: str, at_second: float, max_edge: int = 1024) -> Optional[bytes]:
+    """Extract one JPEG frame at `at_second` as in-memory bytes (no cache file).
+    Serves evenly-sampled frames to the remote worker for multi-frame video AI."""
+    try:
+        r = subprocess.run(
+            [_FFMPEG, "-y", "-ss", str(max(0.0, at_second)), "-i", video_path,
+             "-frames:v", "1", "-vf", f"scale='min({max_edge},iw)':-2",
+             "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "pipe:1"],
+            capture_output=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout and len(r.stdout) > 500:
+            return r.stdout
+    except Exception:
+        pass
+    return None
+
+
 def generate_video_preview_webp(
     video_path: str,
     cache_root: str,
