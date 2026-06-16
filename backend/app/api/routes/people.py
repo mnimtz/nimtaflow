@@ -200,7 +200,11 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
         if not photo:
             return None
         bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
-        crop_path = crop_face(photo.path, bbox, person_id, face.id)
+        # Crop from the (SSD-cached) large thumbnail, not the full original on the
+        # HDD — bbox is relative (0-1) so it maps to any size; avoids a slow HEIC
+        # decode per face on first load.
+        src = photo.thumb_large or photo.thumb_medium or photo.path
+        crop_path = crop_face(src, bbox, person_id, face.id)
         if crop_path and os.path.exists(crop_path):
             return FileResponse(crop_path, media_type="image/jpeg")
         return None
@@ -386,7 +390,8 @@ async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db)):
     if not photo:
         raise HTTPException(404)
     bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
-    path = crop_face(photo.path, bbox, 0, face_id)
+    src = photo.thumb_large or photo.thumb_medium or photo.path  # crop from SSD thumb, not HDD original
+    path = crop_face(src, bbox, 0, face_id)
     if path and os.path.exists(path):
         return FileResponse(path, media_type="image/jpeg")
     raise HTTPException(404, "crop failed")
