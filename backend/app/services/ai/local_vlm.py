@@ -206,7 +206,13 @@ class LocalVLMProvider(AIProvider):
                 return caption
             else:  # qwen — multilingual, honours a custom prompt directly
                 lang_word = {"de": "auf Deutsch", "en": "in English", "fr": "en français", "es": "en español"}.get(language, "auf Deutsch")
-                user_text = prompt or f"Beschreibe dieses Bild {lang_word} in 1-2 Sätzen, sachlich."
+                # The fallback (used only when no ai.prompt.image is configured)
+                # must be detailed + explicitly single-language: a terse prompt
+                # lets this multilingual model code-switch into Chinese mid-text.
+                user_text = prompt or (
+                    f"Beschreibe dieses Foto sachlich in 2-3 Sätzen {lang_word}. "
+                    f"Nenne Personen, Ort, Aktivität und Stimmung. Antworte ausschließlich {lang_word}."
+                )
                 messages = [{"role": "user", "content": [
                     {"type": "image", "image": image},
                     {"type": "text", "text": user_text},
