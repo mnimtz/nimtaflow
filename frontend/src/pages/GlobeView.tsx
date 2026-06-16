@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import Globe from 'react-globe.gl'
 
 export interface GlobePoint { lat: number; lng: number; label: string; id: number }
@@ -10,14 +10,19 @@ export default function GlobeView({ points, onPoint }: {
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const globeRef = useRef<any>(null)
-  const [size, setSize] = useState({ w: 800, h: 600 })
+  // null until measured → don't init the WebGL canvas at a 0/stale size, which
+  // left the globe black until a manual refresh.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!wrap.current) return
-    const ro = new ResizeObserver(entries => {
-      const r = entries[0].contentRect
-      setSize({ w: Math.floor(r.width), h: Math.floor(r.height) })
-    })
+    const measure = () => {
+      const r = wrap.current!.getBoundingClientRect()
+      if (r.width > 0 && r.height > 0) setSize({ w: Math.floor(r.width), h: Math.floor(r.height) })
+    }
+    measure()                                   // synchronous first measure
+    requestAnimationFrame(measure)              // and once more after layout settles
+    const ro = new ResizeObserver(measure)
     ro.observe(wrap.current)
     return () => ro.disconnect()
   }, [])
@@ -45,7 +50,7 @@ export default function GlobeView({ points, onPoint }: {
 
   return (
     <div ref={wrap} className="absolute inset-0 bg-[#0b1020]">
-      <Globe
+      {size && <Globe
         ref={globeRef}
         onGlobeReady={tuneControls}
         width={size.w}
@@ -64,7 +69,7 @@ export default function GlobeView({ points, onPoint }: {
         onPointClick={(p: any) => flyTo(p as GlobePoint)}
         atmosphereColor="#6366f1"
         atmosphereAltitude={0.18}
-      />
+      />}
     </div>
   )
 }
