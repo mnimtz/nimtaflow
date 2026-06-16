@@ -68,8 +68,15 @@ async def require_admin(
     request: Request,
     token: Optional[str] = Depends(_optional_scheme),
     db: AsyncSession = Depends(get_db),
-) -> User:
+) -> Optional[User]:
+    """Require an admin — but only once login is enforced. When `auth.enforce`
+    is off the whole app is open (single-user mode), so admin-only endpoints
+    must NOT force a login (otherwise the UI bounces to /login with no reason)."""
+    from app.services.settings_loader import load_settings
+    s = await load_settings(db)
     user = await _user_from_token(_extract_token(request, token), db)
+    if str(s.get("auth.enforce", "false")).lower() != "true":
+        return user  # login not enforced — allow through (open app)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login erforderlich")
     if user.role != UserRole.admin:
