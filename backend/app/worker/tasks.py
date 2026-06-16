@@ -75,7 +75,7 @@ def reclaim_ai_task(self):
     GPU worker is alive. If remote is enabled but no worker has checked in, those
     photos would sit pending — so re-queue them locally. No-op when remote is off
     (the normal pipeline already covers it) or a worker is alive (it'll claim)."""
-    async def _run():
+    async def _run_reclaim():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
         from app.services.settings_loader import load_settings
@@ -101,7 +101,7 @@ def reclaim_ai_task(self):
             for pid in ids:
                 ai_photo_task.delay(pid)
             return {"requeued": len(ids)}
-    return _run(_run())
+    return _run(_run_reclaim())
 
 
 @celery_app.task(bind=True, name="scheduled_backup")
@@ -109,7 +109,7 @@ def scheduled_backup_task(self):
     """Run an automatic full backup when due (Settings → Backup: schedule).
     Self-paced: compares the newest db backup's age to the chosen interval, so
     the hourly beat tick only actually backs up daily/weekly."""
-    async def _run():
+    async def _run_backup():
         import os
         import datetime as _dt
         from app.core.database import init_db, get_db
@@ -144,7 +144,7 @@ def scheduled_backup_task(self):
             except Exception as e:
                 flog("system", "ERROR", f"Geplantes Backup fehlgeschlagen: {str(e)[:200]}")
                 return {"error": str(e)[:200]}
-    return _run(_run())
+    return _run(_run_backup())
 
 
 @celery_app.task(bind=True, name="auto_cluster_faces")
