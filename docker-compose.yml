@@ -45,6 +45,8 @@ services:
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
+      # Run as root so XMP write-back can modify the root-owned photo library.
+      PHOTOFLOW_USER: root
 
   worker:
     build: ./backend
@@ -93,6 +95,8 @@ services:
       FACE_DEVICE: cpu
       # Reduce CUDA fragmentation OOMs ("tried to allocate 44 MiB, 8 MiB free").
       PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      # Run as root so local AI XMP write-back can modify the root-owned library.
+      PHOTOFLOW_USER: root
 
   # CPU worker: scanning, thumbnails, clustering, metadata. No GPU, runs in
   # parallel (concurrency 4) so a long AI backlog on the gpu worker never stalls
@@ -129,6 +133,8 @@ services:
       OMP_NUM_THREADS: "4"
       OPENBLAS_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
+      # Run as root so the XMP backfill task can modify the root-owned library.
+      PHOTOFLOW_USER: root
 
   beat:
     build: ./backend
