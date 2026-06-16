@@ -535,7 +535,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         else:
                             flog("ai", "WARNING", f"AI lieferte keine Beschreibung ({provider}): {photo.filename}")
 
-                        tags, _ = await ai.generate_tags(img, lang, (ai_settings.get("ai.prompt.tags") or "").strip() or None)
+                        tags, _ = await ai.generate_tags(img, lang, (ai_settings.get("ai.prompt.tags") or "").strip() or None, caption=description)
                         if tags:
                             flog("ai", "INFO", f"Tags ({provider}): {photo.filename} — {', '.join(tags[:20])}")
                             # replace previous AI tags (e.g. old English ones) for this photo
@@ -650,7 +650,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         if engine_available(face_engine) and not existing:
                             face_img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
                             if face_img is not None:
-                                min_conf = float(ai_settings.get("face.min_confidence", "0.9") or 0.9)
+                                min_conf = float(ai_settings.get("face.min_confidence", "0.5") or 0.5)
                                 min_size_px = float(ai_settings.get("face.min_size_px", "40") or 0)
                                 faces = detect_faces_engine(face_img, min_conf, face_engine, min_size_px)
                                 for f in faces:

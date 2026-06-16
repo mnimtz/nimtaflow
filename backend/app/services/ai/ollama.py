@@ -40,7 +40,8 @@ class OllamaProvider(AIProvider):
             resp.raise_for_status()
             return resp.json()["response"].strip()
 
-    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
+                            caption: Optional[str] = None) -> List[str]:
         lang = {"de": "auf Deutsch", "en": "in English", "fr": "en français"}.get(language, "auf Deutsch")
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(

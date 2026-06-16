@@ -83,11 +83,12 @@ class AIManager:
         result = await provider.describe_image(image, language, prompt)
         return result, provider.label
 
-    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> tuple[List[str], str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
+                            caption: Optional[str] = None) -> tuple[List[str], str]:
         provider = await self._get_active()
         if not provider:
             return [], "none"
-        tags = await provider.generate_tags(image, language, prompt)
+        tags = await provider.generate_tags(image, language, prompt, caption)
         return tags, provider.label
 
     async def embed_text(self, text: str) -> tuple[Optional[List[float]], str]:

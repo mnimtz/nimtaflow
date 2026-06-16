@@ -253,7 +253,8 @@ class LocalVLMProvider(AIProvider):
             except Exception:
                 pass
 
-    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> List[str]:
+    async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
+                            caption: Optional[str] = None) -> List[str]:
         # If a tag prompt is configured AND the model can follow free prompts
         # (Qwen, not Florence), ask the VLM directly for a keyword list. This is
         # a SECOND model pass (≈ doubles GPU time per photo) — opt-in via the
@@ -274,9 +275,12 @@ class LocalVLMProvider(AIProvider):
             except Exception:
                 pass  # fall through to caption-derived tags
         # Derive simple tags from the caption (keeps deps minimal & robust).
-        # Use the caption in the *requested* language so German stays German.
+        # REUSE the caption the caller already generated — re-running the VLM here
+        # would be a second full pass (~doubles per-photo time). Only generate a
+        # fresh caption if none was passed in.
         try:
-            caption = await self.describe_image(image, language)
+            if not caption:
+                caption = await self.describe_image(image, language)
             import re
             words = re.findall(r"[a-zA-ZäöüÄÖÜßéèêàâ]{4,}", caption.lower())
             stop = {
