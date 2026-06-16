@@ -242,12 +242,20 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                 wrote_file = True
                 flog("ai", "INFO", f"Beschreibung in Datei geschrieben (remote): {photo.filename}")
             if xmp_mode in ("file_sidecar", "sidecar"):
-                from app.services.xmp_sidecar import write_sidecar
+                from app.services.xmp_sidecar import write_sidecar, file_capture_date
+                # Capture date for the sidecar: EXIF date if known, else the file
+                # date (read-only) — and mirror that into the DB so PhotoFlow
+                # shows a date too. Original stays byte-identical.
+                cap = photo.taken_at or file_capture_date(photo.path)
+                if cap and photo.taken_at is None:
+                    photo.taken_at = cap
+                    flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt (Sidecar): {photo.filename} → {cap}")
                 xmp_path = write_sidecar(
                     photo.path, description=body.description, title=photo.title,
                     keywords=clean or None,
                     latitude=photo.latitude, longitude=photo.longitude,
                     city=photo.city, country=photo.country,
+                    capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
                 )
                 photo.xmp_sidecar_written = True
                 photo.xmp_sidecar_path = xmp_path

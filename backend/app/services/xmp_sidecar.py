@@ -6,10 +6,21 @@ without touching the original file.
 
 Only activated when the 'write_xmp_sidecars' setting is enabled.
 """
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+
+def file_capture_date(path: str) -> Optional[datetime]:
+    """Filesystem modification time as a naive datetime — used as a fallback
+    capture date for files without an EXIF DateTimeOriginal. Read-only; never
+    modifies the original."""
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path))
+    except Exception:
+        return None
 
 _NS = {
     "x":    "adobe:ns:meta/",
@@ -43,8 +54,13 @@ def write_sidecar(
     longitude: Optional[float] = None,
     city: Optional[str] = None,
     country: Optional[str] = None,
+    capture_date: Optional[str] = None,
 ) -> str:
-    """Write an XMP sidecar and return its path."""
+    """Write an XMP sidecar and return its path.
+
+    capture_date: ISO-8601 string for exif:DateTimeOriginal (+ photoshop date).
+    Lets sidecar mode carry a capture date without ever touching the original —
+    incl. the "no EXIF date → use the file date" fallback the caller resolves."""
     photo = Path(photo_path)
     xmp_path = photo.with_suffix(".xmp")
 
@@ -56,6 +72,8 @@ def write_sidecar(
 
     # XMP core
     desc.set(_ns("xmp", "MetadataDate"), datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
+    if capture_date:
+        desc.set(_ns("exif", "DateTimeOriginal"), capture_date)
     if rating is not None:
         desc.set(_ns("xmp", "Rating"), str(max(0, min(5, rating))))
 

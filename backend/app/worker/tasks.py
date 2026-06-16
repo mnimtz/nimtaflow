@@ -276,10 +276,15 @@ def backfill_xmp_task(self):
                         if kw:
                             await _wk(photo.path, kw)
                     if mode in ("file_sidecar", "sidecar"):
+                        from app.services.xmp_sidecar import file_capture_date
+                        cap = photo.taken_at or file_capture_date(photo.path)
+                        if cap and photo.taken_at is None:
+                            photo.taken_at = cap
                         xmp_path = write_sidecar(
                             photo.path, description=photo.description, title=photo.title,
                             keywords=kw or None, latitude=photo.latitude, longitude=photo.longitude,
                             city=photo.city, country=photo.country,
+                            capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
                         )
                         photo.xmp_sidecar_written = True
                         photo.xmp_sidecar_path = xmp_path
@@ -560,7 +565,11 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                         await _wk(photo.path, kw)
                                     flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
                                 if xmp_mode in ("file_sidecar", "sidecar"):
-                                    from app.services.xmp_sidecar import write_sidecar
+                                    from app.services.xmp_sidecar import write_sidecar, file_capture_date
+                                    cap = photo.taken_at or file_capture_date(photo.path)
+                                    if cap and photo.taken_at is None:
+                                        photo.taken_at = cap
+                                        flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt (Sidecar): {photo.filename} → {cap}")
                                     xmp_path = write_sidecar(
                                         photo.path,
                                         description=description,
@@ -568,6 +577,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                         keywords=kw or None,
                                         latitude=photo.latitude, longitude=photo.longitude,
                                         city=photo.city, country=photo.country,
+                                        capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
                                     )
                                     photo.xmp_sidecar_written = True
                                     photo.xmp_sidecar_path = xmp_path
