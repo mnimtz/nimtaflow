@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, DateTime, Integer, BigInteger, Float, Boolean, Text, Enum, ForeignKey, Index
+from sqlalchemy import String, DateTime, Integer, BigInteger, Float, Boolean, Text, Enum, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -36,6 +36,8 @@ class Photo(Base):
     focus_y: Mapped[Optional[float]] = mapped_column(Float)
     # When a remote GPU worker has leased this photo's AI job (re-claimable if stale).
     ai_claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Bumped by a DB trigger on every UPDATE → drives iOS incremental /sync.
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
     orientation: Mapped[Optional[int]] = mapped_column(Integer)
     color_space: Mapped[Optional[str]] = mapped_column(String(32))
 

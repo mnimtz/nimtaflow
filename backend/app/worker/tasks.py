@@ -104,6 +104,49 @@ def reclaim_ai_task(self):
     return _run(_run())
 
 
+@celery_app.task(bind=True, name="scheduled_backup")
+def scheduled_backup_task(self):
+    """Run an automatic full backup when due (Settings → Backup: schedule).
+    Self-paced: compares the newest db backup's age to the chosen interval, so
+    the hourly beat tick only actually backs up daily/weekly."""
+    async def _run():
+        import os
+        import datetime as _dt
+        from app.core.database import init_db, get_db
+        from app.services.settings_loader import load_settings
+        from app.services.backup import run_full_backup, list_backups, prune_backups
+        from app.services.feature_log import log as flog
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            sched = str(s.get("backup.schedule", "off")).lower()
+            if sched not in ("daily", "weekly"):
+                return {"skipped": "disabled"}
+            interval_h = 24 if sched == "daily" else 168
+            newest = next((f["created_at"] for f in list_backups() if f["type"] == "db"), None)
+            if newest:
+                try:
+                    age = (_dt.datetime.now() - _dt.datetime.fromisoformat(newest)).total_seconds()
+                    if age < interval_h * 3600 - 600:  # 10-min grace
+                        return {"skipped": "not due"}
+                except Exception:
+                    pass
+            keep = int(float(s.get("backup.keep_days", "30") or 30))
+            remote = (s.get("backup.rclone_remote") or "").strip() or None
+            try:
+                res = await run_full_backup(os.getenv("DATABASE_URL"), os.getenv("CONFIG_PATH", "/config"),
+                                            remote, os.getenv("CACHE_PATH", "/cache"))
+                deleted = prune_backups(keep)
+                ok = res["db"]["ok"] and res["cache"]["ok"] and res["config"]["ok"]
+                flog("system", "INFO" if ok else "WARNING",
+                     f"Geplantes Backup ({sched}): db={res['db']['ok']} thumbs={res['cache']['ok']} config={res['config']['ok']}, {deleted} alte entfernt")
+                return {"ran": True, "ok": ok, "pruned": deleted}
+            except Exception as e:
+                flog("system", "ERROR", f"Geplantes Backup fehlgeschlagen: {str(e)[:200]}")
+                return {"error": str(e)[:200]}
+    return _run(_run())
+
+
 @celery_app.task(bind=True, name="auto_cluster_faces")
 def auto_cluster_faces_task(self):
     """Beat task: periodically group unassigned faces into (unnamed) people, so

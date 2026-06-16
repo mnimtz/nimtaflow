@@ -199,17 +199,20 @@ async def sync_v1(
             raise HTTPException(400, "Invalid since format. Use ISO-8601.")
 
     acl = photo_conditions(user)
-    q = select(Photo).where(Photo.status == PhotoStatus.done, *acl)
+    # Key off updated_at (bumped by a DB trigger on every change) so favorites,
+    # ratings, descriptions, trashing etc. all surface in incremental sync —
+    # not just newly-imported photos (indexed_at never changes).
+    q = select(Photo).where(Photo.status == PhotoStatus.done, Photo.is_trashed == False, *acl)  # noqa: E712
     if since_dt:
-        q = q.where(Photo.indexed_at >= since_dt)
-    q = q.order_by(Photo.indexed_at.desc()).limit(limit)
+        q = q.where(Photo.updated_at >= since_dt)
+    q = q.order_by(Photo.updated_at.desc()).limit(limit)
 
     changed = (await db.execute(q)).scalars().all()
 
-    # Trashed since (simple: return trashed IDs updated recently)
-    trash_q = select(Photo.id).where(Photo.is_trashed == True)
+    # Photos trashed since `since` → the client removes them locally.
+    trash_q = select(Photo.id).where(Photo.is_trashed == True)  # noqa: E712
     if since_dt:
-        trash_q = trash_q.where(Photo.indexed_at >= since_dt)
+        trash_q = trash_q.where(Photo.updated_at >= since_dt)
     deleted_ids = list((await db.execute(trash_q)).scalars().all())
 
     return SyncResultV1(

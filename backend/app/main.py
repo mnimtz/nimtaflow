@@ -61,6 +61,11 @@ _COLUMN_MIGRATIONS = [
     # ── users: self-service profile ───────────────────────────────────────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(32)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(512)",
+    # ── photos: updated_at + trigger (drives iOS incremental sync) ────────────
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+    "CREATE OR REPLACE FUNCTION pf_touch_updated_at() RETURNS trigger AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql",
+    "DROP TRIGGER IF EXISTS pf_photos_updated_at ON photos",
+    "CREATE TRIGGER pf_photos_updated_at BEFORE UPDATE ON photos FOR EACH ROW EXECUTE FUNCTION pf_touch_updated_at()",
     # ── relationships: rel_type is now a free string (was a native enum) ──────
     """DO $$ BEGIN
         IF (SELECT data_type FROM information_schema.columns
@@ -182,7 +187,8 @@ app.include_router(jobs.router, prefix="/api", dependencies=_guard)
 app.include_router(fs.router, prefix="/api", dependencies=_guard)
 app.include_router(ai_api.router, prefix="/api", dependencies=_guard)
 app.include_router(logs.router, prefix="/api", dependencies=_guard)
-app.include_router(backup.router, prefix="/api", dependencies=_guard)
+from app.core.auth_guard import require_admin as _require_admin
+app.include_router(backup.router, prefix="/api", dependencies=[Depends(_require_admin)])
 app.include_router(albums.router, prefix="/api", dependencies=_guard)
 from app.api.routes import relationships as relationships_routes
 app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard)

@@ -49,4 +49,9 @@ celery_app.conf.beat_schedule = {
         "task": "reclaim_ai",
         "schedule": 120.0,
     },
+    # Automatic backups — hourly tick; the task only runs when actually due.
+    "scheduled-backup": {
+        "task": "scheduled_backup",
+        "schedule": 3600.0,
+    },
 }
