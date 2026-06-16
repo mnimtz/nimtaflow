@@ -103,6 +103,8 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         "model": model,
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
         "faces_enabled": str(s.get("faces.enabled", "true")).lower() != "false" and not photo.is_video,
+        "min_face_px": float(s.get("face.min_size_px", "40") or 0),
+        "min_conf": float(s.get("face.min_confidence", "0.9") or 0.9),
     }
 
 

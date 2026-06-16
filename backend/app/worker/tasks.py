@@ -498,7 +498,8 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                             face_img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
                             if face_img is not None:
                                 min_conf = float(ai_settings.get("face.min_confidence", "0.9") or 0.9)
-                                faces = detect_faces_engine(face_img, min_conf, face_engine)
+                                min_size_px = float(ai_settings.get("face.min_size_px", "40") or 0)
+                                faces = detect_faces_engine(face_img, min_conf, face_engine, min_size_px)
                                 for f in faces:
                                     db.add(Face(
                                         photo_id=photo_id,

@@ -47,7 +47,12 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
         try:
             from app.services import face_detect_insightface as fi
             if fi.available():
-                for f in fi.detect_faces(img, 0.5):
+                min_px = float(job.get("min_face_px", 0) or 0)
+                min_conf = float(job.get("min_conf", 0.5) or 0.5)
+                W, H = img.size
+                for f in fi.detect_faces(img, min_conf):
+                    if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
+                        continue  # skip tiny/background faces (junk-cluster source)
                     faces.append({
                         "bbox_x": f.bbox_x, "bbox_y": f.bbox_y, "bbox_w": f.bbox_w, "bbox_h": f.bbox_h,
                         "confidence": f.confidence, "embedding": f.embedding,

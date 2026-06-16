@@ -223,19 +223,33 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 @router.get("/memories")
 async def get_memories(db: AsyncSession = Depends(get_db)):
-    """Photos from exactly 1, 2, 3... years ago today."""
+    """Photos from exactly 1, 2, 3... years ago today. Optionally limited to
+    photos containing selected people (Settings → Erinnerungen)."""
     from datetime import datetime, timezone, timedelta
+    from app.services.settings_loader import load_settings
+    settings = await load_settings(db)
+    pid_raw = (settings.get("memories.person_ids") or "").strip()
+    person_ids = [int(x) for x in pid_raw.replace(" ", "").split(",") if x.strip().isdigit()]
+    person_cond = []
+    if person_ids:
+        from app.models.face import Face
+        person_cond = [Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(person_ids)))]
+
     today = datetime.now(timezone.utc)
     memories = []
     for years_ago in range(1, 11):
-        target = today.replace(year=today.year - years_ago)
+        try:
+            target = today.replace(year=today.year - years_ago)
+        except ValueError:  # Feb 29 → Feb 28
+            target = today.replace(year=today.year - years_ago, day=28)
         start = target - timedelta(days=1)
         end = target + timedelta(days=1)
         photos = (await db.execute(
             select(Photo)
-            .where(Photo.taken_at.between(start, end), Photo.is_trashed == False, Photo.status == PhotoStatus.done)
+            .where(Photo.taken_at.between(start, end), Photo.is_trashed == False,  # noqa: E712
+                   Photo.status == PhotoStatus.done, *person_cond)
             .order_by(Photo.taken_at)
-            .limit(20)
+            .limit(30)
         )).scalars().all()
         if photos:
             memories.append({"years_ago": years_ago, "date": target.date().isoformat(), "photos": photos})

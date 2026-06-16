@@ -4,7 +4,7 @@ import {
   Plus, Trash2, RefreshCw, Check, X, FolderOpen,
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
-  Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network,
+  Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -33,6 +33,7 @@ const SECTIONS = [
   { id: 'ai',        icon: Brain,     label: 'Bilder-AI' },
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
+  { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'remote',    icon: Network,   label: 'Remote-Worker' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
@@ -1020,6 +1021,52 @@ function PipelineSection() {
   }
 }
 
+function MemoriesSettingsSection() {
+  const qc = useQueryClient()
+  const [ids, setIds] = useState<number[]>([])
+  const [saved, setSaved] = useState(false)
+  const { data: people = [] } = useQuery<{ id: number; name: string; face_count: number; avatar_url?: string }[]>({
+    queryKey: ['people'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 60_000,
+  })
+  const { data: settings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  useEffect(() => {
+    const raw = settings?.['memories.person_ids'] || ''
+    setIds(raw.split(',').map(s => parseInt(s)).filter(n => !isNaN(n)))
+  }, [settings])
+  const save = useMutation({
+    mutationFn: () => api.put('/settings', { 'memories.person_ids': ids.join(',') }),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const toggle = (id: number) => setIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+
+  return (
+    <div>
+      <SectionHeader title="Erinnerungen" desc="„Heute vor 1, 2, … Jahren" in der Galerie. Optional nur Fotos mit bestimmten Personen zeigen." />
+      <div className="space-y-4 max-w-2xl">
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">{ids.length === 0 ? 'Alle Fotos' : `Nur Fotos mit ${ids.length} ausgewählten Person(en)`}</p>
+        <div className="flex flex-wrap gap-2">
+          {[...people].sort((a, b) => b.face_count - a.face_count).map(p => (
+            <button key={p.id} onClick={() => toggle(p.id)}
+              className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors ${ids.includes(p.id)
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
+              <span className="w-5 h-5 rounded-full overflow-hidden bg-zinc-300 dark:bg-zinc-700 flex items-center justify-center text-[9px]">
+                {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : (p.name?.[0] ?? '?')}
+              </span>
+              {p.name} <span className="opacity-60">{p.face_count}</span>
+            </button>
+          ))}
+          {people.length === 0 && <p className="text-sm text-zinc-400">Noch keine Personen — erst Gesichter clustern.</p>}
+        </div>
+        <button onClick={() => save.mutate()} disabled={save.isPending}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {saved ? '✓ Gespeichert' : 'Speichern'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function RemoteWorkerSection() {
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
@@ -1185,10 +1232,15 @@ function FacesSection() {
             <Input value={settings['face.min_size_px'] ?? '40'} onChange={v => set('face.min_size_px', v)} placeholder="40" />
           </div>
           <div>
+            <Label>Min. Gesichter/Person</Label>
+            <Input value={settings['face.min_cluster_size'] ?? '3'} onChange={v => set('face.min_cluster_size', v)} placeholder="3" />
+          </div>
+          <div>
             <Label>Zusammenführen-Schwelle</Label>
             <Input value={settings['face.merge_threshold'] ?? '0.5'} onChange={v => set('face.merge_threshold', v)} placeholder="0.5" />
           </div>
         </div>
+        <p className="text-xs text-zinc-400">Gegen tausende Mini-Gesichter: <b>Min. Größe</b> filtert winzige Hintergrund-Gesichter schon bei der Erkennung weg, <b>Min. Gesichter/Person</b> verhindert 1–2-Foto-„Personen" (Reste bleiben unter „Gesichter", werden aber nicht zu Personen).</p>
 
         <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-2">
@@ -1750,6 +1802,7 @@ export default function SettingsPage() {
         {section === 'ai'       && <AISection />}
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}
+        {section === 'memories' && <MemoriesSettingsSection />}
         {section === 'pipeline' && <PipelineSection />}
         {section === 'remote'   && <RemoteWorkerSection />}
         {section === 'backup'   && <BackupSection />}

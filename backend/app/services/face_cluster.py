@@ -115,7 +115,7 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
 
     s = await load_settings(db)
     threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
-    min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))
+    min_size = max(2, int(float(s.get("face.min_cluster_size", "3") or 3)))
     algo = str(s.get("face.cluster_algo", "dbscan")).lower()
     engine = str(s.get("face.engine", "facenet")).lower()
 

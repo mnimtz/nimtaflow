@@ -79,14 +79,26 @@ def engine_available(engine: str) -> bool:
     return available()
 
 
-def detect_faces_engine(image: Image.Image, min_conf: float, engine: str) -> List[DetectedFace]:
+def _filter_small(faces, image, min_size_px: float):
+    """Drop tiny faces (distant/background) — the main source of thousands of
+    junk single-face clusters. min_size_px is measured on the analysed image."""
+    if not min_size_px or min_size_px <= 0:
+        return faces
+    W, H = image.size
+    return [f for f in faces if f.bbox_h * H >= min_size_px and f.bbox_w * W >= min_size_px]
+
+
+def detect_faces_engine(image: Image.Image, min_conf: float, engine: str, min_size_px: float = 0) -> List[DetectedFace]:
     """Detect with the requested engine, falling back to facenet if the
     requested one isn't installed/loadable (so a half-built image still works)."""
+    faces = None
     if engine == "insightface":
         try:
             from app.services import face_detect_insightface as fi
             if fi.available():
-                return fi.detect_faces(image, min_conf)
+                faces = fi.detect_faces(image, min_conf)
         except Exception:
-            pass
-    return detect_faces(image, min_conf)
+            faces = None
+    if faces is None:
+        faces = detect_faces(image, min_conf)
+    return _filter_small(faces, image, min_size_px)
