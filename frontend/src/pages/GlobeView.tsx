@@ -114,5 +114,13 @@ export default function GlobeView({ points, onPoint }: {
     } as any)
   }, [points])
 
-  return <div ref={wrap} className="absolute inset-0" />
+  // Outer div owns the absolute-fill; the inner map container gets an explicit
+  // 100%×100% size. (MapLibre's own CSS forces `.maplibregl-map{position:relative}`,
+  // which overrode a Tailwind `absolute inset-0` on the container itself and
+  // collapsed it to height 0 → blank globe, no tiles.)
+  return (
+    <div className="absolute inset-0">
+      <div ref={wrap} style={{ width: '100%', height: '100%' }} />
+    </div>
+  )
 }
