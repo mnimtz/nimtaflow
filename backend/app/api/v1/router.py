@@ -22,6 +22,9 @@ from sqlalchemy import select, and_
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional
+from app.core.access import photo_conditions, can_see_photo, feature_allowed
+from app.models.user import User, UserRole
 from app.models.photo import Photo, PhotoStatus
 from app.schemas.photo import PhotoBase
 
@@ -120,12 +123,15 @@ async def list_photos_v1(
     archived: bool = False,
     trashed: bool = False,
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     """Cursor-paginated photo list. Stable under concurrent uploads."""
+    acl = photo_conditions(user)
     q = select(Photo).where(
         Photo.status == PhotoStatus.done,
         Photo.is_trashed == trashed,
         Photo.is_archived == archived,
+        *acl,
     )
     if favorites:
         q = q.where(Photo.is_favorite == True)
@@ -143,8 +149,16 @@ async def list_photos_v1(
     items = rows[:limit]
     next_cursor = items[-1].id if has_more and items else None
 
-    # Total count (no cursor filter)
-    total_q = select(Photo).where(Photo.status == PhotoStatus.done, Photo.is_trashed == trashed)
+    # Total count (no cursor filter, same access + facets)
+    total_q = select(Photo).where(
+        Photo.status == PhotoStatus.done, Photo.is_trashed == trashed, Photo.is_archived == archived, *acl,
+    )
+    if favorites:
+        total_q = total_q.where(Photo.is_favorite == True)  # noqa: E712
+    if media_type == "video":
+        total_q = total_q.where(Photo.is_video == True)  # noqa: E712
+    elif media_type == "photo":
+        total_q = total_q.where(Photo.is_video == False)  # noqa: E712
     total = await db.scalar(select(__import__("sqlalchemy").func.count()).select_from(total_q.subquery()))
 
     return PhotoPageV1(
@@ -158,9 +172,10 @@ async def list_photos_v1(
 # ── Single photo ──────────────────────────────────────────────────────────────
 
 @router.get("/photos/{photo_id}", response_model=PhotoV1)
-async def get_photo_v1(photo_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+async def get_photo_v1(photo_id: int, request: Request, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo or photo.is_trashed:
+    if not photo or photo.is_trashed or not can_see_photo(photo, user):
         raise HTTPException(404)
     return _to_v1(photo, request)
 
@@ -173,6 +188,7 @@ async def sync_v1(
     since: Optional[str] = Query(None, description="ISO-8601 datetime, e.g. 2026-01-01T00:00:00Z"),
     limit: int = Query(500, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     """Return photos changed/added since `since`. iOS app calls this on wake."""
     since_dt: Optional[datetime] = None
@@ -182,7 +198,8 @@ async def sync_v1(
         except ValueError:
             raise HTTPException(400, "Invalid since format. Use ISO-8601.")
 
-    q = select(Photo).where(Photo.status == PhotoStatus.done)
+    acl = photo_conditions(user)
+    q = select(Photo).where(Photo.status == PhotoStatus.done, *acl)
     if since_dt:
         q = q.where(Photo.indexed_at >= since_dt)
     q = q.order_by(Photo.indexed_at.desc()).limit(limit)
@@ -272,11 +289,14 @@ async def stream_video_v1(
     request: Request,
     range: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     """HTTP Range-aware video stream. iOS AVPlayer requires Range support."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video:
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
+    if not feature_allowed(user, "allow_download"):
+        raise HTTPException(403, "Download nicht erlaubt")
 
     video_path = photo.video_webm_path or photo.path
     if not os.path.exists(video_path):
@@ -411,13 +431,14 @@ async def search_v1(
     q: str = Query(..., min_length=1),
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
     """Smart search — same engine as the web: semantic (embeddings) + keywords +
     tags + person names + relationship phrases ("Bilder meiner Ehefrau")."""
     from app.services.photo_search import search_photos
     from app.services.settings_loader import load_settings
     settings = await load_settings(db)
-    photos = await search_photos(db, q, settings, limit=limit)
+    photos = await search_photos(db, q, settings, limit=limit, extra_conditions=photo_conditions(user))
     return PhotoPageV1(
         items=[_to_v1(p, request) for p in photos],
         next_cursor=None,
@@ -461,12 +482,19 @@ class PersonV1(BaseModel):
 
 
 @router.get("/people", response_model=List[PersonV1])
-async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSession = Depends(get_db)):
+async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
     from app.models.person import Person
     from app.models.face import Face
     from sqlalchemy import func as _f
     base = str(request.base_url).rstrip("/")
-    persons = (await db.execute(select(Person).where(Person.is_hidden == False).order_by(Person.name))).scalars().all()  # noqa: E712
+    pq = select(Person).where(Person.is_hidden == False).order_by(Person.name)  # noqa: E712
+    # If the user is restricted to specific people, only list those.
+    if user is not None and user.role != UserRole.admin:
+        vis = (user.access_config or {}).get("visible_person_ids")
+        if vis:
+            pq = pq.where(Person.id.in_(vis))
+    persons = (await db.execute(pq)).scalars().all()
     counts = dict((await db.execute(
         select(Face.person_id, _f.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id)
     )).all())
@@ -483,18 +511,20 @@ async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSes
 @router.get("/people/{person_id}/photos", response_model=PhotoPageV1)
 async def person_photos_v1(person_id: int, request: Request,
                            cursor: Optional[int] = Query(None), limit: int = Query(50, ge=1, le=200),
-                           db: AsyncSession = Depends(get_db)):
+                           db: AsyncSession = Depends(get_db),
+                           user: Optional[User] = Depends(current_user_optional)):
     from app.models.face import Face
     from sqlalchemy import func as _f
+    acl = photo_conditions(user)
     sub = select(Face.photo_id).where(Face.person_id == person_id)
-    q = select(Photo).where(Photo.id.in_(sub), Photo.status == PhotoStatus.done, Photo.is_trashed == False)  # noqa: E712
+    q = select(Photo).where(Photo.id.in_(sub), Photo.status == PhotoStatus.done, Photo.is_trashed == False, *acl)  # noqa: E712
     if cursor:
         q = q.where(Photo.id < cursor)
     rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
     has_more = len(rows) > limit
     items = rows[:limit]
     total = await db.scalar(select(_f.count()).select_from(
-        select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False).subquery()))  # noqa: E712
+        select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl).subquery()))  # noqa: E712
     return PhotoPageV1(items=[_to_v1(p, request) for p in items],
                        next_cursor=(items[-1].id if has_more and items else None),
                        total=total or 0, has_more=has_more)
