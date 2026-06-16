@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, BookImage, Sparkles, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -100,14 +100,8 @@ export default function Layout() {
       {/* ── Sidebar ──────────────────────────────── */}
       <aside className="hidden md:flex w-[220px] flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 border-r border-white/5 shrink-0 select-none">
         {/* Logo */}
-        <div className="h-14 flex items-center px-3 md:px-4 gap-3 border-b border-white/5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
-            <Zap size={15} className="text-white" fill="white" />
-          </div>
-          <div className="hidden md:block">
-            <p className="text-white font-semibold text-sm leading-none">PhotoFlow</p>
-            <p className="text-zinc-500 text-[10px] mt-0.5">Bilderverwaltung</p>
-          </div>
+        <div className="h-14 flex items-center px-3 md:px-4 border-b border-white/5">
+          <img src="/photoflow-logo.png" alt="PhotoFlow" className="h-9 w-auto object-contain" />
         </div>
 
         {/* Nav */}

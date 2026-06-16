@@ -27,6 +27,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir "bitsandbytes==0.43.1"
 
 FROM deps AS final
+
+# Intel Quick Sync (QSV) runtime for hardware video transcoding on Intel iGPUs
+# (e.g. Iris Xe). Late layer so the heavy pip layers above stay cached. Enables
+# contrib/non-free for the iHD driver. Harmless/unused on non-Intel hosts;
+# needs /dev/dri passed into the container. Best-effort (never fails the build).
+RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+    apt-get update && apt-get install -y --no-install-recommends \
+      intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 va-driver-all vainfo \
+    || apt-get install -y --no-install-recommends intel-media-va-driver libvpl2 vainfo || true; \
+    rm -rf /var/lib/apt/lists/* || true
+
 COPY . .
 
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app

@@ -71,35 +71,35 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     except Exception:
         pass
 
+    include_videos = str(s.get("remote.include_videos", "true")).lower() != "false"
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TTL)
-    q = (
-        select(Photo).where(
-            Photo.is_video == False,                       # noqa: E712
-            Photo.description.is_(None),
-            Photo.ai_error == False,                       # noqa: E712
-            Photo.thumb_large.isnot(None),                 # need a displayable JPEG
-            or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff),
-        )
-        .order_by(Photo.id)
-        .limit(1)
-    )
-    photo = (await db.execute(q)).scalars().first()
+    conds = [
+        Photo.description.is_(None),
+        Photo.ai_error == False,                           # noqa: E712
+        Photo.thumb_large.isnot(None),                     # need a displayable JPEG/frame
+        or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff),
+    ]
+    if not include_videos:
+        conds.insert(0, Photo.is_video == False)           # noqa: E712
+    photo = (await db.execute(select(Photo).where(*conds).order_by(Photo.id).limit(1))).scalars().first()
     if not photo:
         return {"photo_id": None}
     photo.ai_claimed_at = datetime.now(timezone.utc)
     await db.commit()
     # The remote worker can run a heavier model than the local host is capable
-    # of: prefer `remote.model` (chosen in Settings → Remote-Worker), fall back
-    # to the local image model.
+    # of: prefer `remote.model` (Settings → Remote-Worker). For videos the agent
+    # describes the extracted frame (thumb_large).
     model = (s.get("remote.model") or "").strip() or s.get("ai.local.model", "florence2-base")
+    prompt_key = "ai.prompt.video" if photo.is_video else "ai.prompt.image"
     return {
         "photo_id": photo.id,
+        "is_video": bool(photo.is_video),
         "image_url": f"/api/remote/image/{photo.id}",
         "language": s.get("ai.language", "de"),
-        "prompt": s.get("ai.prompt.image") or None,
+        "prompt": s.get(prompt_key) or None,
         "model": model,
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
-        "faces_enabled": str(s.get("faces.enabled", "true")).lower() != "false",
+        "faces_enabled": str(s.get("faces.enabled", "true")).lower() != "false" and not photo.is_video,
     }
 
 
@@ -212,7 +212,8 @@ async def status(db: AsyncSession = Depends(get_db)):
     s = await load_settings(db)
     pending = await db.scalar(
         select(func.count()).where(
-            Photo.is_video == False, Photo.description.is_(None), Photo.ai_error == False  # noqa: E712
+            Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+            Photo.thumb_large.isnot(None),
         )
     )
     workers = []

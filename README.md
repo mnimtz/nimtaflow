@@ -105,6 +105,34 @@ celery-beat ─▶ watch_sources (60s) ─▶ re-scan due sources       │  wor
 - **worker-cpu** (concurrency 4, no GPU): scanning, thumbnails, clustering, metadata.
 - **worker** (concurrency 1, `runtime: nvidia`): the VLM + face detection — exactly one 3B model copy fits the 8 GB card.
 
+## 🛰️ Remote GPU worker
+
+Offload the heavy AI (description, tags, embedding, faces — photos **and** video
+frames) from a weak host to a machine with a GPU. The worker is **generic and
+storage-free**: it only receives a JPEG over HTTP and returns JSON, so it needs
+no database, no file/NFS access, and runs in any environment.
+
+**Same image, different mode** — there is no special worker image. On the GPU box:
+
+```bash
+# on the server (Settings → Remote-Worker): enable, generate a token,
+# optionally pick a heavier "Remote-Modell" (e.g. Qwen) than the host can run.
+# then, on the GPU machine (repo + Docker present):
+PHOTOFLOW_SERVER=http://<server>:8090 PHOTOFLOW_REMOTE_TOKEN=<token> \
+  docker compose -f docker-compose.remote-worker.yml up -d --build
+```
+
+- **Where to configure:** everything is set on the **server** (Settings →
+  Remote-Worker): on/off, shared token, and the model the worker should use.
+  The agent itself only needs the server URL + token.
+- **Model independence:** `remote.model` lets the worker run a stronger model
+  (Qwen on the GPU) even if the server host can only do Florence/CPU.
+- **Smart hand-off:** when remote is enabled and a worker is alive, the local AI
+  step yields its jobs to the worker; if the worker disappears, a fallback
+  re-queues them locally so nothing stalls.
+- **What stays local:** thumbnails and video **transcoding** (they need the file)
+  — use Intel **Quick Sync** (`/dev/dri` passthrough) or NVENC on the host.
+
 ## 🚀 Run
 
 ```bash
