@@ -47,7 +47,8 @@ async def write_exif(path: str, tags: Dict[str, Any], make_backup: bool = True) 
     if not _EXIFTOOL:
         raise ExifEditError("exiftool not found")
 
-    args = [_EXIFTOOL]
+    args = [_EXIFTOOL, "-m"]  # -m: ignore minor warnings (e.g. IPTC/EXIF length
+    #     limits) so they never block the write — XMP still receives the full text.
     # -P: preserve the filesystem modification date. Without it exiftool sets
     # FileModifyDate to "now", which would become the photo's date for any file
     # lacking an EXIF capture date (scanner/Immich fall back to file mtime). We
@@ -72,11 +73,17 @@ async def write_exif(path: str, tags: Dict[str, Any], make_backup: bool = True) 
 
 
 async def write_description(path: str, description: str, overwrite: bool = True) -> bool:
-    """Write AI or user description to XMP:Description + IPTC:Caption."""
+    """Write AI or user description to XMP:Description (+ IPTC/EXIF mirrors).
+
+    XMP:Description is the authoritative field and has NO length limit — the full
+    description is always embedded there. IPTC:Caption-Abstract has a 2000-byte
+    standard limit and EXIF:ImageDescription is a legacy ASCII field; both get the
+    full text too (write_exif passes -m so a length warning never blocks the
+    write — XMP still gets everything)."""
     return await write_exif(path, {
         "XMP:Description": description,
         "IPTC:Caption-Abstract": description,
-        "EXIF:ImageDescription": description[:200],  # EXIF is limited
+        "EXIF:ImageDescription": description,
     }, make_backup=not overwrite)
 
 
