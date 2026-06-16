@@ -21,16 +21,42 @@ def scan_source_task(self, source_id: int):
         from app.models.source import PhotoSource
         from app.services.processing.scanner import scan_source
         from app.core.config import get_settings
+        from app.services.feature_log import log as flog
 
         init_db()
         settings = get_settings()
 
-        async for db in get_db():
-            source = await db.get(PhotoSource, source_id)
-            if not source:
-                return {"error": "Source not found"}
-            stats = await scan_source(source, db, settings.cache_path)
-            return stats
+        # Single-flight per source: a full-library scan runs for hours/days, but
+        # watch_sources only learns it finished once last_scan_at is set at the
+        # END. Without a lock it re-triggers every 60 s → dozens of overlapping
+        # scans that starve the cpu workers (no process_photo → no big thumbs/AI).
+        # Redis NX lock with a long TTL; auto-expires if the worker dies.
+        lock_key = f"scan:lock:{source_id}"
+        r = None
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(get_settings().redis_url)
+            got = await r.set(lock_key, "1", nx=True, ex=6 * 3600)
+            if not got:
+                await r.aclose()
+                flog("scanner", "INFO", f"Scan übersprungen (läuft bereits) für Quelle {source_id}")
+                return {"skipped": "already running"}
+        except Exception:
+            r = None  # Redis unavailable → proceed without the lock rather than block
+
+        try:
+            async for db in get_db():
+                source = await db.get(PhotoSource, source_id)
+                if not source:
+                    return {"error": "Source not found"}
+                stats = await scan_source(source, db, settings.cache_path)
+                return stats
+        finally:
+            if r is not None:
+                try:
+                    await r.delete(lock_key); await r.aclose()
+                except Exception:
+                    pass
 
     return _run(_run_scan())
 
