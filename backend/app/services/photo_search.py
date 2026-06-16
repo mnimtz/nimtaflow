@@ -33,6 +33,68 @@ def _tokens(q: str) -> List[str]:
     return [t for t in re.findall(r"[\wäöüÄÖÜß]{3,}", q.lower()) if t not in _STOP]
 
 
+# Relationship words → the role label(s) (as in RELATION_TYPES) the *other*
+# person has from the reference person's perspective. Lets "Bilder meiner
+# Ehefrau" / "Fotos von meinem Kollegen" resolve to actual people via the graph.
+_REL_TERMS: dict[tuple, set] = {
+    ("ehefrau",): {"Ehefrau"},
+    ("ehemann",): {"Ehemann"},
+    ("frau",): {"Ehefrau", "Partner/in"},
+    ("mann",): {"Ehemann", "Partner/in"},
+    ("partner", "partnerin"): {"Partner/in", "Ehefrau", "Ehemann"},
+    ("kollege", "kollegin", "kollegen"): {"Kollege/in"},
+    ("chef", "chefin", "vorgesetzte", "vorgesetzter", "vorgesetzten"): {"Vorgesetzte/r"},
+    ("mitarbeiter", "mitarbeiterin"): {"Mitarbeiter/in"},
+    ("bruder",): {"Bruder", "Geschwister"},
+    ("schwester",): {"Schwester", "Geschwister"},
+    ("geschwister",): {"Geschwister", "Bruder", "Schwester"},
+    ("vater", "papa"): {"Vater", "Elternteil"},
+    ("mutter", "mama"): {"Mutter", "Elternteil"},
+    ("eltern",): {"Elternteil", "Vater", "Mutter"},
+    ("sohn",): {"Sohn", "Kind"},
+    ("tochter",): {"Tochter", "Kind"},
+    ("kind", "kinder"): {"Kind", "Sohn", "Tochter"},
+    ("opa", "großvater", "grossvater"): {"Großvater", "Großelternteil"},
+    ("oma", "großmutter", "grossmutter"): {"Großmutter", "Großelternteil"},
+    ("enkel", "enkelin"): {"Enkel/in"},
+    ("onkel",): {"Onkel"},
+    ("tante",): {"Tante"},
+    ("neffe",): {"Neffe"},
+    ("nichte",): {"Nichte"},
+    ("cousin", "cousine"): {"Cousin/e"},
+    ("freund", "freundin", "freunde"): {"Freund/in", "Beste/r Freund/in"},
+    ("nachbar", "nachbarin"): {"Nachbar/in"},
+    ("bekannte", "bekannter", "bekannten"): {"Bekannte/r"},
+}
+
+
+def _match_relation_roles(q: str) -> Optional[set]:
+    words = set(re.findall(r"[a-zäöüß]+", q.lower()))
+    roles: set = set()
+    for terms, r in _REL_TERMS.items():
+        if any(t in words for t in terms):
+            roles |= r
+    return roles or None
+
+
+async def resolve_relationship_people(db: AsyncSession, ref_person_id: int, roles: set) -> set:
+    """Person ids that have one of `roles` relative to ref_person (via the graph)."""
+    from app.models.relationship import PersonRelationship, LABEL, INVERSE_LABEL
+    rels = (await db.execute(select(PersonRelationship).where(or_(
+        PersonRelationship.from_person_id == ref_person_id,
+        PersonRelationship.to_person_id == ref_person_id,
+    )))).scalars().all()
+    out: set = set()
+    for r in rels:
+        if r.to_person_id == ref_person_id:
+            role, other = LABEL.get(r.rel_type, ""), r.from_person_id   # other is LABEL of ref
+        else:
+            role, other = INVERSE_LABEL.get(r.rel_type, ""), r.to_person_id  # other is INVERSE of ref
+        if role in roles:
+            out.add(other)
+    return out
+
+
 async def search_photos(db: AsyncSession, query: str, settings: dict,
                         limit: int = 60, extra_conditions: Optional[list] = None) -> List[Photo]:
     q = (query or "").strip()
@@ -91,6 +153,19 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
             frows = (await db.execute(select(Face.photo_id).where(Face.person_id.in_(pids)))).all()
             for (pid,) in frows:
                 kw[pid] += 2  # a named-person match is a strong signal
+
+    # ── relationship phrases ("meine ehefrau", "mein kollege") → people ───────
+    try:
+        roles = _match_relation_roles(q)
+        self_id = settings.get("relationships.self_person_id")
+        if roles and self_id:
+            related = await resolve_relationship_people(db, int(self_id), roles)
+            if related:
+                frows = (await db.execute(select(Face.photo_id).where(Face.person_id.in_(related)))).all()
+                for (pid,) in frows:
+                    kw[pid] += 3  # explicit relationship resolution is the strongest signal
+    except Exception:
+        pass
 
     # ── combine & rank ────────────────────────────────────────────────────────
     scores: dict = {}

@@ -111,6 +111,14 @@ export default function RelationshipsPage() {
     },
     onError: () => alert('Ableiten fehlgeschlagen.'),
   })
+  const { data: appSettings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
+  })
+  const selfId = appSettings?.['relationships.self_person_id'] || ''
+  const setSelf = useMutation({
+    mutationFn: (id: string) => api.put('/settings', { 'relationships.self_person_id': id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+  })
 
   const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
   const selNode = sel != null ? byId.get(sel) : null
@@ -124,7 +132,15 @@ export default function RelationshipsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2"><Network size={22} /> Beziehungen</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Familien- & Freundes-Netzwerk · {nodes.length} Personen, {edges.length} Verbindungen</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400" title="Bezugsperson für die Suche nach „meiner Ehefrau / meinem Kollegen …"">
+            Ich bin:
+            <select value={selfId} onChange={e => setSelf.mutate(e.target.value)}
+              className="px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs max-w-[10rem]">
+              <option value="">— niemand —</option>
+              {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+          </label>
           <button onClick={() => derive.mutate()} disabled={derive.isPending}
             className="px-3.5 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
             title="Geschwister & Großeltern automatisch aus Eltern-Verbindungen ableiten">
