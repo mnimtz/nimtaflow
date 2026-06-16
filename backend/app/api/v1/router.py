@@ -412,14 +412,12 @@ async def search_v1(
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """Text search across description, location, camera."""
-    stmt = select(Photo).where(
-        Photo.status == PhotoStatus.done,
-        Photo.is_trashed == False,
-        Photo.description.ilike(f"%{q}%"),
-    ).order_by(Photo.taken_at.desc()).limit(limit)
-
-    photos = (await db.execute(stmt)).scalars().all()
+    """Smart search — same engine as the web: semantic (embeddings) + keywords +
+    tags + person names + relationship phrases ("Bilder meiner Ehefrau")."""
+    from app.services.photo_search import search_photos
+    from app.services.settings_loader import load_settings
+    settings = await load_settings(db)
+    photos = await search_photos(db, q, settings, limit=limit)
     return PhotoPageV1(
         items=[_to_v1(p, request) for p in photos],
         next_cursor=None,

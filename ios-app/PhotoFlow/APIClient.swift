@@ -79,6 +79,10 @@ final class APIClient: ObservableObject {
         if let mediaType { p += "&media_type=\(mediaType)" }
         return try await get(p, as: PhotoPage.self)
     }
+    func search(_ q: String) async throws -> PhotoPage {
+        let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? ""
+        return try await get("api/v1/search?limit=80&q=\(enc)", as: PhotoPage.self)
+    }
     func people() async throws -> [PersonV1] { try await get("api/v1/people", as: [PersonV1].self) }
     func personPhotos(_ id: Int, cursor: Int?) async throws -> PhotoPage {
         var p = "api/v1/people/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
