@@ -28,6 +28,7 @@ HEAD = {"X-Remote-Token": TOKEN}
 
 
 async def _process(client: httpx.AsyncClient, job: dict) -> str:
+    t0 = time.time()
     pid = job["photo_id"]
     r = await client.get(SERVER + job["image_url"], headers=HEAD, timeout=60)
     r.raise_for_status()
@@ -67,6 +68,8 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
         "faces": faces,
         "provider": f"remote:{prov.label}",
         "error": None if desc else "no description",
+        "worker": NAME,
+        "duration": round(time.time() - t0, 1),
     }
     await client.post(f"{SERVER}/api/remote/result/{pid}", json=payload, headers=HEAD, timeout=180)
     return desc or ""

@@ -137,6 +137,25 @@ class ResultIn(BaseModel):
     faces: List[FaceIn] = []
     provider: str = "remote"
     error: Optional[str] = None
+    worker: Optional[str] = None
+    duration: Optional[float] = None   # seconds the worker spent on this photo
+
+
+async def _record_worker_stat(worker: str, duration: Optional[float]):
+    """Track per-worker throughput in Redis for the live status/ETA display."""
+    try:
+        r = await _redis()
+        key = f"remote:wstats:{worker}"
+        n = int(await r.hincrby(key, "jobs", 1))
+        if duration is not None:
+            prev = await r.hget(key, "avg")
+            prev = float(prev) if prev else float(duration)
+            avg = duration if n <= 1 else 0.7 * prev + 0.3 * float(duration)
+            await r.hset(key, mapping={"last_dur": float(duration), "avg": round(avg, 2)})
+        await r.set(f"remote:worker:{worker}", str(int(time.time())), ex=HEARTBEAT_TTL)  # refresh heartbeat
+        await r.aclose()
+    except Exception:
+        pass
 
 
 @router.post("/result/{photo_id}")
@@ -157,18 +176,26 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     # filter on status==done.
     photo.status = PhotoStatus.done
 
+    worker = (body.worker or "worker")[:60]
+    dur = f"{body.duration:.1f}s" if body.duration is not None else "?"
+    if body.worker is not None:
+        await _record_worker_stat(worker, body.duration)
+
     if body.error and not body.description:
         photo.ai_error = True
         photo.ai_claimed_at = None
         photo.processed_at = datetime.now(timezone.utc)
         await db.commit()
         flog("ai", "WARNING", f"Remote-Fehler ({body.provider}): {photo.filename}: {body.error[:160]}")
+        flog("remote", "WARNING", f"[{worker}] #{photo_id} {photo.filename} fehlgeschlagen nach {dur}: {body.error[:120]}")
         return {"ok": True, "stored": "error"}
 
     if body.description:
         photo.description = body.description
         photo.description_model = (body.provider or "remote")[:120]
         flog("ai", "INFO", f"Beschreibung ({body.provider}): {photo.filename} — {body.description}")
+        flog("remote", "INFO",
+             f"[{worker}] #{photo_id} {photo.filename} in {dur} ({body.provider}) — {body.description[:80]}")
 
     # tags (replace previous AI tags)
     if body.tags:
@@ -227,19 +254,47 @@ async def status(db: AsyncSession = Depends(get_db)):
             Photo.thumb_large.isnot(None),
         )
     )
+    now = int(time.time())
     workers = []
+    durs = []
     try:
         r = await _redis()
         for k in await r.keys("remote:worker:*"):
             ts = await r.get(k)
             name = k.decode().split(":")[-1] if isinstance(k, bytes) else str(k).split(":")[-1]
-            workers.append({"name": name, "last_seen": int(ts) if ts else 0})
+            st = await r.hgetall(f"remote:wstats:{name}")
+            st = {(kk.decode() if isinstance(kk, bytes) else kk):
+                  (vv.decode() if isinstance(vv, bytes) else vv) for kk, vv in (st or {}).items()}
+            avg = float(st["avg"]) if st.get("avg") else None
+            last_dur = float(st["last_dur"]) if st.get("last_dur") else None
+            jobs = int(st["jobs"]) if st.get("jobs") else 0
+            if avg:
+                durs.append(avg)
+            workers.append({
+                "name": name,
+                "last_seen": int(ts) if ts else 0,
+                "idle_s": now - int(ts) if ts else None,
+                "jobs": jobs,
+                "last_dur": last_dur,
+                "avg_dur": avg,
+            })
         await r.aclose()
     except Exception:
         pass
+
+    # ETA: spread the pending queue across the alive workers using their mean
+    # per-photo time. With N workers each doing ~avg s/photo, throughput is
+    # N/avg photos per second → remaining = pending * avg / N.
+    eta_seconds = None
+    avg_dur = round(sum(durs) / len(durs), 1) if durs else None
+    if pending and avg_dur and len(durs) > 0:
+        eta_seconds = int(pending * avg_dur / len(durs))
+
     return {
         "enabled": str(s.get("remote.enabled", "false")).lower() == "true",
         "has_token": bool((s.get("remote.token") or "").strip()),
         "pending": pending or 0,
         "workers": workers,
+        "avg_dur": avg_dur,
+        "eta_seconds": eta_seconds,
     }

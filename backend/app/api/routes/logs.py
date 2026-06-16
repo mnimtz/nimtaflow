@@ -20,6 +20,7 @@ FEATURES = {
     "video": "video.log",
     "faces": "faces.log",
     "system": "system.log",
+    "remote": "remote.log",
 }
 
 

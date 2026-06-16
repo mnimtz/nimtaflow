@@ -13,7 +13,7 @@ try:
 except Exception:
     _TZ = timezone.utc
 
-_VALID = {"scanner", "ai", "video", "faces", "system"}
+_VALID = {"scanner", "ai", "video", "faces", "system", "remote"}
 
 _LOG_DIR = pathlib.Path(os.getenv("CONFIG_PATH", "/config")) / "logs"
 try:

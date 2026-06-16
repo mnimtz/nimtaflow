@@ -1067,14 +1067,27 @@ function MemoriesSettingsSection() {
   )
 }
 
+function fmtEta(sec: number | null | undefined): string {
+  if (sec == null || sec <= 0) return '—'
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600)
+  const m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}min`
+  if (m > 0) return `${m}min ${s}s`
+  return `${s}s`
+}
+
 function RemoteWorkerSection() {
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const sQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   useEffect(() => { if (sQ.data) setSettings(sQ.data) }, [sQ.data])
-  const { data: status } = useQuery<{ enabled: boolean; has_token: boolean; pending: number; workers: { name: string; last_seen: number }[] }>({
-    queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 5000,
+  const { data: status } = useQuery<{
+    enabled: boolean; has_token: boolean; pending: number; avg_dur: number | null; eta_seconds: number | null;
+    workers: { name: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
+  }>({
+    queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
   })
   const save = useMutation({
     mutationFn: (s: Settings) => api.put('/settings', s),
@@ -1131,19 +1144,44 @@ function RemoteWorkerSection() {
         {/* Live status */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Status</span>
+            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Verarbeitung – Live</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? 'aktiv' : 'inaktiv'}</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div><span className="text-2xl font-bold tabular-nums text-amber-500">{status?.pending ?? 0}</span><p className="text-xs text-zinc-400">KI-Jobs offen</p></div>
             <div><span className="text-2xl font-bold tabular-nums text-indigo-500">{status?.workers?.length ?? 0}</span><p className="text-xs text-zinc-400">verbundene Worker</p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-sky-500">{status?.avg_dur != null ? `${status.avg_dur.toFixed(1)}s` : '—'}</span><p className="text-xs text-zinc-400">Ø pro Foto</p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-emerald-500">{fmtEta(status?.eta_seconds)}</span><p className="text-xs text-zinc-400">Restzeit (geschätzt)</p></div>
           </div>
-          {(status?.workers?.length ?? 0) > 0 && (
+          {status?.eta_seconds != null && status.eta_seconds > 0 && (
+            <p className="text-[11px] text-zinc-400">
+              Hochrechnung: {status.pending} Fotos × {status.avg_dur?.toFixed(1)}s ÷ {status.workers.length} Worker.
+              Bei diesem Tempo voraussichtlich fertig in <b className="text-zinc-600 dark:text-zinc-300">{fmtEta(status.eta_seconds)}</b>.
+            </p>
+          )}
+          {(status?.workers?.length ?? 0) > 0 ? (
             <ul className="text-xs text-zinc-500 space-y-1">
-              {status!.workers.map(w => <li key={w.name}>● <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b> — zuletzt vor {Math.max(0, now - w.last_seen)}s</li>)}
+              {status!.workers.map(w => {
+                const idle = w.idle_s ?? Math.max(0, now - w.last_seen)
+                return (
+                  <li key={w.name} className="flex flex-wrap items-center gap-x-2">
+                    <span className={idle < 30 ? 'text-emerald-500' : 'text-zinc-400'}>●</span>
+                    <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b>
+                    <span>· {w.jobs} Fotos</span>
+                    {w.last_dur != null && <span>· letztes {w.last_dur.toFixed(1)}s</span>}
+                    {w.avg_dur != null && <span>· Ø {w.avg_dur.toFixed(1)}s</span>}
+                    <span className="text-zinc-400">· aktiv vor {idle}s</span>
+                  </li>
+                )
+              })}
             </ul>
+          ) : (
+            <p className="text-xs text-zinc-400">Kein Worker verbunden — KI-Jobs werden lokal (CPU) verarbeitet.</p>
           )}
         </div>
+
+        {/* Live remote-worker log */}
+        <RemoteWorkerLog />
 
         {/* Agent command */}
         <div>
@@ -1152,6 +1190,34 @@ function RemoteWorkerSection() {
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
         </div>
       </div>
+    </div>
+  )
+}
+
+function RemoteWorkerLog() {
+  const [open, setOpen] = useState(true)
+  const { data = [] } = useQuery<{ ts: string; level: string; feature: string; message: string }[]>({
+    queryKey: ['logs', 'remote-feed'],
+    queryFn: () => api.get('/logs/remote', { params: { limit: 80 } }).then(r => r.data),
+    refetchInterval: open ? 3000 : false, staleTime: 0,
+  })
+  const lines = [...data].reverse()
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <Label>Remote-Worker-Log (live)</Label>
+        <button onClick={() => setOpen(o => !o)} className="text-xs text-indigo-500 hover:underline">{open ? 'Pausieren' : 'Aktualisieren'}</button>
+      </div>
+      <div className="h-64 overflow-y-auto rounded-lg bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed">
+        {lines.length === 0 ? (
+          <p className="text-zinc-500">Noch keine Remote-Aktivität. Sobald ein Worker Fotos verarbeitet, erscheinen hier die Einträge (Dauer pro Foto, Beschreibung).</p>
+        ) : lines.map((e, i) => (
+          <div key={i} className={e.level === 'WARNING' || e.level === 'ERROR' ? 'text-amber-400' : 'text-emerald-300'}>
+            <span className="text-zinc-600">{(e.ts || '').slice(11, 19)} </span>{e.message}
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-zinc-400 mt-1">Zeigt jede vom Remote-Worker abgeschlossene Aufgabe mit Verarbeitungsdauer. Vollständige Logs unter „Logs“ → Remote-Worker.</p>
     </div>
   )
 }
@@ -1767,6 +1833,7 @@ function LogsSection() {
           <option value="ai">AI</option>
           <option value="video">Video</option>
           <option value="faces">Gesichter</option>
+          <option value="remote">Remote-Worker</option>
           <option value="system">System</option>
         </select>
 
