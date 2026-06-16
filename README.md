@@ -39,6 +39,7 @@ and enriches your library with local or cloud AI.
 - **Adaptive multi-frame AI** — for Qwen, frames are sampled **evenly across the whole clip** (`~1/45 s`, 4–16 frames) and fed as a video, so the description covers the entire video (not one frame). Shorter clips get fewer frames, long ones stay bounded.
 - **Full-video hover preview** — an animated WebP "flipbook" sampled across the whole length (fast seeks, bounded even for hour-long videos), plus a sprite sheet for timeline scrubbing.
 - **HW transcode** (QSV/CUDA/VAAPI) endpoint; QSV used for thumbnails/previews where available.
+- **Face recognition in videos** (opt-in, Settings → Video-AI) — InsightFace runs on up to `video.max_frames` frames sampled across the whole clip, deduped by embedding so each person counts once; flows into the normal people clustering.
 - **Dedicated `video` log** — start, length, resolution, preview yes/no, processing time, errors, and the AI description per video.
 
 ### People & Faces
