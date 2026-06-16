@@ -172,7 +172,7 @@ class LocalVLMProvider(AIProvider):
 
     # ── interface ───────────────────────────────────────────────────────────
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
-                             max_new_tokens: int = 256) -> str:
+                             max_new_tokens: int = 512) -> str:
         try:
             kind, model, proc, device, dtype = self._load_vlm()
             import torch
@@ -219,7 +219,11 @@ class LocalVLMProvider(AIProvider):
                 if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
                     inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
                 with torch.no_grad():
-                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens)
+                    # repetition_penalty curbs the looping Qwen can fall into at
+                    # higher token budgets; enough headroom that a 2-4 sentence
+                    # German description is never cut off mid-sentence.
+                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens,
+                                         repetition_penalty=1.05)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
         except Exception as e:
