@@ -455,6 +455,13 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                         bbox_x=f.bbox_x, bbox_y=f.bbox_y, bbox_w=f.bbox_w, bbox_h=f.bbox_h,
                                         confidence=f.confidence, embedding=f.embedding, detector=face_engine,
                                     ))
+                                if faces:
+                                    # Face-aware crop centre (avg face centre, 0..1) so
+                                    # the gallery's object-cover keeps heads in frame.
+                                    cxs = [f.bbox_x + f.bbox_w / 2 for f in faces]
+                                    cys = [f.bbox_y + f.bbox_h / 2 for f in faces]
+                                    photo.focus_x = min(1.0, max(0.0, sum(cxs) / len(cxs)))
+                                    photo.focus_y = min(1.0, max(0.0, sum(cys) / len(cys)))
                                 await db.commit()
                                 if faces:
                                     flog("faces", "INFO", f"{len(faces)} Gesicht(er) erkannt ({face_engine}): {photo.filename}")

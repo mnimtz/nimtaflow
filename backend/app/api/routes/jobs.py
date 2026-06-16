@@ -21,6 +21,21 @@ async def list_jobs(limit: int = Query(20, ge=1, le=100), db: AsyncSession = Dep
     return result.scalars().all()
 
 
+@router.get("/queues")
+async def queue_depths():
+    """Live Celery queue depths so the UI can show how much work is waiting.
+    cpu = scans/thumbnails (parallel), gpu = AI/faces (single-slot)."""
+    from app.core.config import get_settings
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(get_settings().redis_url)
+        out = {q: int(await r.llen(q)) for q in ("cpu", "gpu", "celery")}
+        await r.aclose()
+        return out
+    except Exception as e:
+        return {"error": str(e)[:120], "cpu": None, "gpu": None, "celery": None}
+
+
 @router.get("/{job_id}", response_model=JobOut)
 async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
     job = await db.get(Job, job_id)

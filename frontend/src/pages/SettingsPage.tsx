@@ -934,12 +934,89 @@ function VideoAISection() {
 }
 
 function PipelineSection() {
-  return (
-    <div>
-      <SectionHeader title="Pipeline" desc="Batch-Verarbeitung, Parallelität und automatischer Scan-Zeitplan." />
-      <p className="text-sm text-zinc-400">Kommt bald.</p>
+  const qc = useQueryClient()
+  const [busy, setBusy] = useState('')
+  const { data: queues } = useQuery<{ cpu: number | null; gpu: number | null; celery: number | null; error?: string }>({
+    queryKey: ['queues'], queryFn: () => api.get('/jobs/queues').then(r => r.data), refetchInterval: 2000,
+  })
+  const { data: stats } = useQuery<{ total?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }>({
+    queryKey: ['photo-stats'], queryFn: () => api.get('/photos/stats').then(r => r.data), refetchInterval: 3000,
+  })
+  const st = stats?.by_status ?? {}
+  const cov = stats?.coverage ?? {}
+  const errCount = (st['error'] ?? 0) + (cov['ai_error'] ?? 0)
+
+  const act = useMutation({
+    mutationFn: (url: string) => api.post(url).then(r => r.data),
+    onSuccess: (d: any) => { setBusy(''); qc.invalidateQueries({ queryKey: ['photo-stats'] }); qc.invalidateQueries({ queryKey: ['queues'] }); alert(`${d?.reprocessing ?? d?.new ?? 'OK'} — Aktion gestartet.`) },
+    onError: () => setBusy(''),
+  })
+  const run = (key: string, url: string) => { setBusy(key); act.mutate(url) }
+
+  const QCard = ({ label, val, hint, cls }: { label: string; val: number | null | undefined; hint: string; cls: string }) => (
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+      <p className={`text-2xl font-bold tabular-nums ${cls}`}>{val == null ? '–' : val.toLocaleString('de')}</p>
+      <p className="text-sm text-zinc-700 dark:text-zinc-300">{label}</p>
+      <p className="text-[11px] text-zinc-400 mt-0.5">{hint}</p>
     </div>
   )
+
+  return (
+    <div>
+      <SectionHeader title="Pipeline" desc="Live-Warteschlangen, Fehler-Queue und Stapel-Verarbeitung." />
+      <div className="space-y-6 max-w-2xl">
+
+        {/* Live queues */}
+        <div>
+          <Label>Warteschlangen (live)</Label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
+            <QCard label="CPU-Queue" val={queues?.cpu} hint="Scans, Thumbnails (4 parallel)" cls="text-indigo-500" />
+            <QCard label="GPU-Queue" val={queues?.gpu} hint="KI + Gesichter (1 Slot)" cls="text-violet-500" />
+            <QCard label="In Arbeit" val={st['processing']} hint="aktuell verarbeitet" cls="text-sky-500" />
+          </div>
+          {queues?.error && <p className="text-xs text-amber-500 mt-1">Queue-Status nicht lesbar: {queues.error}</p>}
+        </div>
+
+        {/* Error queue */}
+        <div className={`rounded-xl border p-4 ${errCount > 0 ? 'border-amber-400/60 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-700'}`}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Fehler-Queue</p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {errCount > 0
+                  ? <><b className="text-amber-600 dark:text-amber-400">{errCount.toLocaleString('de')}</b> Fotos mit Fehler (Verarbeitung abgebrochen oder KI fehlgeschlagen).</>
+                  : 'Keine Fehler — alles sauber verarbeitet. ✅'}
+              </p>
+            </div>
+            <span className={`text-2xl font-bold tabular-nums ${errCount > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>{errCount.toLocaleString('de')}</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <ActBtn label="Alle Fehler neu verarbeiten" busy={busy === 'failed'} onClick={() => run('failed', '/photos/reprocess-failed')} />
+            <ActBtn label="KI nachholen" busy={busy === 'ai'} onClick={() => run('ai', '/photos/reprocess-missing-ai')} />
+          </div>
+        </div>
+
+        {/* Batch actions */}
+        <div>
+          <Label>Stapel-Verarbeitung</Label>
+          <div className="flex flex-wrap gap-2 mt-1">
+            <ActBtn label="Alle Ordner scannen" busy={busy === 'scan'} onClick={() => run('scan', '/sources/scan-all')} />
+            <ActBtn label="Gesichter clustern" busy={busy === 'cluster'} onClick={() => run('cluster', '/people/cluster')} />
+          </div>
+          <p className="text-[11px] text-zinc-400 mt-2">Live-Logs und Verlauf findest du unter <b>Pipeline</b> in der Navigation.</p>
+        </div>
+      </div>
+    </div>
+  )
+
+  function ActBtn({ label, busy, onClick }: { label: string; busy: boolean; onClick: () => void }) {
+    return (
+      <button onClick={onClick} disabled={busy}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">
+        <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> {label}
+      </button>
+    )
+  }
 }
 
 function FacesSection() {

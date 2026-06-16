@@ -68,6 +68,8 @@ export type Photo = {
   is_archived: boolean
   is_trashed: boolean
   user_rating: number | null
+  focus_x?: number | null
+  focus_y?: number | null
 }
 
 /** Thumbnail URL with a cache-bust token.

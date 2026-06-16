@@ -88,6 +88,15 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
       else cb.onPhotoClick(i)
     },
     render: {
+      // Face-aware crop: bias object-position to the face centre so heads aren't
+      // cut off. Falls back to an upper-third bias (heads are usually up top).
+      image: (props: any, ctx: any) => {
+        const p = (ctx.photo as AlbumPhoto)._p
+        const pos = (p.focus_x != null && p.focus_y != null)
+          ? `${Math.round(p.focus_x * 100)}% ${Math.round(p.focus_y * 100)}%`
+          : '50% 38%'
+        return <img {...props} style={{ ...(props.style || {}), display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos }} />
+      },
       extras: (_: any, ctx: any) => {
         const p = (ctx.photo as AlbumPhoto)._p, i = (ctx.photo as AlbumPhoto)._i
         return <Overlay photo={p} index={i} selectable={cb.selectable} isSel={cb.selected?.has(p.id) ?? false} onFav={cb.onFavoriteToggle} onToggle={cb.onToggleSelect} />

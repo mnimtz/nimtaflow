@@ -31,6 +31,9 @@ class Photo(Base):
     timezone_offset: Mapped[Optional[str]] = mapped_column(String(8))
     width: Mapped[Optional[int]] = mapped_column(Integer)
     height: Mapped[Optional[int]] = mapped_column(Integer)
+    # Face-aware crop centre (0..1) so the grid doesn't cut off heads.
+    focus_x: Mapped[Optional[float]] = mapped_column(Float)
+    focus_y: Mapped[Optional[float]] = mapped_column(Float)
     orientation: Mapped[Optional[int]] = mapped_column(Integer)
     color_space: Mapped[Optional[str]] = mapped_column(String(32))
 

@@ -23,6 +23,8 @@ class PhotoBase(BaseModel):
     is_archived: bool = False
     is_trashed: bool = False
     user_rating: Optional[int] = None
+    focus_x: Optional[float] = None   # face-aware crop center (0..1)
+    focus_y: Optional[float] = None
 
     model_config = {"from_attributes": True}
 
