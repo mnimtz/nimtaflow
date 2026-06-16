@@ -1365,10 +1365,11 @@ function UsersSection() {
                   <div className="w-full flex flex-wrap gap-2 mt-1">
                     <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Name"
                       className="flex-1 min-w-[8rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
-                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="E-Mail"
+                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="E-Mail (= Login)" type="email"
                       className="flex-1 min-w-[10rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
                     <button onClick={() => { patchU.mutate({ id: u.id, body: { name: editName, email: editEmail } as any }); setEditFor(null) }}
                       className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">Speichern</button>
+                    <p className="w-full text-[11px] text-amber-600 dark:text-amber-400">⚠ Die E-Mail ist dein Login — sie muss ein echtes E-Mail-Format haben (z. B. name@domain). Der Anzeigename oben ist frei wählbar.</p>
                   </div>
                 )}
                 {pwFor === u.id && (
