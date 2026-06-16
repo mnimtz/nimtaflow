@@ -133,7 +133,12 @@ async def scan_source(
 
             await session.commit()
             stats["new"] += 1
-            new_photo_ids.append(photo.id)
+            # Enqueue processing immediately (not in one batch at the end) so it
+            # starts right away, survives an interrupted scan, and shows progress.
+            from app.worker.tasks import process_photo_task
+            process_photo_task.delay(photo.id)
+            if stats["new"] % 100 == 0:
+                _slog("INFO", f"Scan läuft ({root.name}): {stats['new']} neu, {stats['skipped']} übersprungen …")
 
         except IntegrityError:
             # Another scan (overlapping/nested source, parallel cpu worker) already
@@ -171,11 +176,7 @@ async def scan_source(
     source.last_scan_count = stats["new"]
     await session.commit()
 
-    # Queue processing for all new photos (thumbnails + AI)
-    if new_photo_ids:
-        from app.worker.tasks import process_photo_task
-        for pid in new_photo_ids:
-            process_photo_task.delay(pid)
+    # (process_photo is now enqueued per-photo during the scan loop above.)
 
     try:
         from app.services.feature_log import log as flog
