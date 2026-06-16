@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
-  Check, Search, Star, Sparkles,
+  Check, Search, Star, Sparkles, Image as ImageIcon,
 } from 'lucide-react'
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
@@ -319,6 +319,7 @@ function SectionHeader({ title, count, hint }: { title: string; count: number; h
 function FaceTile({ face, selected, onToggle, onAssign }: {
   face: FaceRef; selected: boolean; onToggle: () => void; onAssign: () => void
 }) {
+  const [showPhoto, setShowPhoto] = useState(false)
   return (
     <div className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 transition-all ${
       selected ? 'ring-indigo-500' : 'ring-zinc-700 hover:ring-indigo-500/60'
@@ -333,6 +334,17 @@ function FaceTile({ face, selected, onToggle, onAssign }: {
         }`}>
         <Check size={12} />
       </button>
+      {/* on-demand: reveal the WHOLE photo (object-contain) to judge who it is */}
+      <button onClick={e => { e.stopPropagation(); setShowPhoto(v => !v) }} title="Ganzes Foto anzeigen"
+        className="absolute top-1 right-1 w-5 h-5 rounded-md flex items-center justify-center bg-black/60 text-white/70 ring-2 ring-white/40 hover:text-white">
+        <ImageIcon size={12} />
+      </button>
+      {showPhoto && (
+        <div className="absolute inset-0 z-10 bg-black/90 flex items-center justify-center cursor-zoom-out"
+          onClick={e => { e.stopPropagation(); setShowPhoto(false) }}>
+          <img src={thumbUrl({ id: face.photo_id } as any, 'medium')} className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
     </div>
   )
 }
