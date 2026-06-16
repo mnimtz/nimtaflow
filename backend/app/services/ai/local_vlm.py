@@ -219,11 +219,12 @@ class LocalVLMProvider(AIProvider):
                 if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
                     inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
                 with torch.no_grad():
-                    # repetition_penalty curbs the looping Qwen can fall into at
-                    # higher token budgets; enough headroom that a 2-4 sentence
-                    # German description is never cut off mid-sentence.
-                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens,
-                                         repetition_penalty=1.05)
+                    # Plain greedy. NB: do NOT add repetition_penalty here — on
+                    # this multilingual model it pushes generation off common
+                    # German tokens and into Chinese mid-sentence. The raised
+                    # max_new_tokens gives headroom so a 2-4 sentence German
+                    # description completes (greedy stops at EOS anyway).
+                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
         except Exception as e:
