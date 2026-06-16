@@ -8,6 +8,7 @@ import RelationshipsPage from './pages/RelationshipsPage'
 import MapPage from './pages/MapPage'
 import PipelinePage from './pages/PipelinePage'
 import SettingsPage from './pages/SettingsPage'
+import ProfilePage from './pages/ProfilePage'
 import LoginPage from './pages/LoginPage'
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/map" element={<MapPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
     </Routes>
   )

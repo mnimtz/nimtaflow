@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn, Network } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, Zap, BookImage, Sparkles, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -7,7 +7,7 @@ import clsx from 'clsx'
 
 function UserBadge() {
   const hasToken = !!localStorage.getItem('access_token')
-  const { data: me } = useQuery<{ name: string; role: string }>({
+  const { data: me } = useQuery<{ id: number; name: string; role: string; avatar_path: string | null }>({
     queryKey: ['me'],
     queryFn: () => api.get('/auth/me').then(r => r.data),
     enabled: hasToken,
@@ -28,13 +28,17 @@ function UserBadge() {
   }
   return (
     <div className="flex items-center gap-2 px-2.5 py-1.5">
-      <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
-        {me.name.charAt(0).toUpperCase()}
-      </div>
-      <div className="hidden md:block min-w-0 flex-1">
-        <p className="text-xs font-medium text-zinc-200 truncate leading-tight">{me.name}</p>
-        <p className="text-[10px] text-zinc-500 leading-tight">{me.role === 'admin' ? 'Administrator' : 'Benutzer'}</p>
-      </div>
+      <NavLink to="/profile" title="Mein Profil" className="flex items-center gap-2 min-w-0 flex-1 group">
+        <div className="w-7 h-7 rounded-full bg-indigo-600 overflow-hidden flex items-center justify-center text-white text-xs font-semibold shrink-0">
+          {me.avatar_path
+            ? <img src={`/api/users/${me.id}/avatar`} alt="" className="w-full h-full object-cover" />
+            : me.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="hidden md:block min-w-0 flex-1">
+          <p className="text-xs font-medium text-zinc-200 truncate leading-tight group-hover:text-white">{me.name}</p>
+          <p className="text-[10px] text-zinc-500 leading-tight">{me.role === 'admin' ? 'Administrator' : 'Benutzer'} · Profil</p>
+        </div>
+      </NavLink>
       <button onClick={logout} title="Abmelden" className="text-zinc-500 hover:text-red-400 shrink-0">
         <LogOut size={15} />
       </button>
@@ -155,7 +159,7 @@ export default function Layout() {
 
       {/* ── Mobile bottom nav ─────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-900 border-t border-white/5 flex">
-        {[...visibleNav, { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
+        {[...visibleNav, { to: '/profile', icon: UserCircle, label: 'Profil' }, { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} className="flex-1">
             {({ isActive }) => (
               <div className={clsx(

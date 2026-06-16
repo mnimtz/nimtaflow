@@ -21,6 +21,10 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Self-service profile
+    birthdate: Mapped[Optional[str]] = mapped_column(String(32))    # ISO "YYYY-MM-DD"
+    avatar_path: Mapped[Optional[str]] = mapped_column(String(512))
+
     # 2FA
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

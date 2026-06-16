@@ -1,0 +1,145 @@
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { Camera, Trash2, User as UserIcon, ArrowLeft } from 'lucide-react'
+import { api } from '../lib/api'
+
+type Profile = {
+  id: number; email: string; name: string; role: string
+  birthdate: string | null; avatar_path: string | null
+}
+
+const inp = 'w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm'
+const lbl = 'block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1'
+
+export default function ProfilePage() {
+  const qc = useQueryClient()
+  const nav = useNavigate()
+  const { data: me } = useQuery<Profile>({ queryKey: ['profile'], queryFn: () => api.get('/users/me').then(r => r.data) })
+
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [birthdate, setBirthdate] = useState('')
+  const [cur, setCur] = useState('')
+  const [npw, setNpw] = useState('')
+  const [npw2, setNpw2] = useState('')
+  const [msg, setMsg] = useState<{ k: 'ok' | 'err'; t: string } | null>(null)
+  const [avatarV, setAvatarV] = useState(0)  // cache-bust after upload
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (me) { setName(me.name); setEmail(me.email); setBirthdate(me.birthdate || '') }
+  }, [me])
+
+  const flash = (k: 'ok' | 'err', t: string) => { setMsg({ k, t }); setTimeout(() => setMsg(null), 4000) }
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['profile'] }); qc.invalidateQueries({ queryKey: ['me'] }) }
+
+  const saveProfile = useMutation({
+    mutationFn: () => api.patch('/users/me', { name, email, birthdate: birthdate || null }),
+    onSuccess: () => { refresh(); flash('ok', 'Profil gespeichert.') },
+    onError: (e: any) => flash('err', e?.response?.data?.detail || 'Speichern fehlgeschlagen.'),
+  })
+
+  const changePw = useMutation({
+    mutationFn: () => api.post('/users/me/password', { current_password: cur, new_password: npw }),
+    onSuccess: () => { setCur(''); setNpw(''); setNpw2(''); flash('ok', 'Passwort geändert.') },
+    onError: (e: any) => flash('err', e?.response?.data?.detail || 'Passwortänderung fehlgeschlagen.'),
+  })
+
+  const uploadAvatar = useMutation({
+    mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); return api.post('/users/me/avatar', fd) },
+    onSuccess: () => { setAvatarV(v => v + 1); refresh(); flash('ok', 'Profilbild aktualisiert.') },
+    onError: () => flash('err', 'Upload fehlgeschlagen (gültige Bilddatei?).'),
+  })
+
+  const removeAvatar = useMutation({
+    mutationFn: () => api.delete('/users/me/avatar'),
+    onSuccess: () => { setAvatarV(v => v + 1); refresh(); flash('ok', 'Profilbild entfernt.') },
+  })
+
+  if (!me) return <div className="p-6 text-zinc-500">Profil wird geladen…</div>
+
+  const hasAvatar = !!me.avatar_path
+  const avatarUrl = `/api/users/${me.id}/avatar?v=${avatarV}`
+  const initial = (me.name || me.email || '?').charAt(0).toUpperCase()
+
+  return (
+    <div className="p-4 md:p-6 max-w-2xl mx-auto pb-24">
+      <button onClick={() => nav(-1)} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 mb-4">
+        <ArrowLeft size={16} /> Zurück
+      </button>
+      <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white mb-6 flex items-center gap-2">
+        <UserIcon size={22} /> Mein Profil
+      </h1>
+
+      {msg && (
+        <div className={`mb-4 text-sm px-3 py-2 rounded-lg ${msg.k === 'ok' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/15 text-red-600 dark:text-red-400'}`}>{msg.t}</div>
+      )}
+
+      {/* Avatar */}
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-20 h-20 rounded-full overflow-hidden bg-indigo-600 flex items-center justify-center text-white text-2xl font-semibold shrink-0">
+          {hasAvatar ? <img key={avatarV} src={avatarUrl} alt="" className="w-full h-full object-cover" /> : initial}
+        </div>
+        <div className="flex flex-col gap-2">
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar.mutate(f); e.target.value = '' }} />
+          <button onClick={() => fileRef.current?.click()} disabled={uploadAvatar.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">
+            <Camera size={15} /> {uploadAvatar.isPending ? 'Lädt…' : 'Profilbild wählen'}
+          </button>
+          {hasAvatar && (
+            <button onClick={() => removeAvatar.mutate()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-500 hover:bg-red-500/10">
+              <Trash2 size={14} /> Entfernen
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Stammdaten */}
+      <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 md:p-5 mb-6 space-y-4">
+        <h2 className="font-semibold text-zinc-900 dark:text-white">Daten</h2>
+        <div>
+          <label className={lbl}>Anzeigename</label>
+          <input className={inp} value={name} onChange={e => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className={lbl}>E-Mail (= Login)</label>
+          <input className={inp} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">⚠ Die E-Mail ist dein Login — sie muss ein echtes E-Mail-Format haben.</p>
+        </div>
+        <div>
+          <label className={lbl}>Geburtsdatum</label>
+          <input className={inp} type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} />
+        </div>
+        <button onClick={() => saveProfile.mutate()} disabled={saveProfile.isPending}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {saveProfile.isPending ? 'Speichert…' : 'Speichern'}
+        </button>
+      </section>
+
+      {/* Passwort */}
+      <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 md:p-5 space-y-4">
+        <h2 className="font-semibold text-zinc-900 dark:text-white">Passwort ändern</h2>
+        <div>
+          <label className={lbl}>Aktuelles Passwort</label>
+          <input className={inp} type="password" value={cur} onChange={e => setCur(e.target.value)} autoComplete="current-password" />
+        </div>
+        <div>
+          <label className={lbl}>Neues Passwort (min. 6 Zeichen)</label>
+          <input className={inp} type="password" value={npw} onChange={e => setNpw(e.target.value)} autoComplete="new-password" />
+        </div>
+        <div>
+          <label className={lbl}>Neues Passwort wiederholen</label>
+          <input className={inp} type="password" value={npw2} onChange={e => setNpw2(e.target.value)} autoComplete="new-password" />
+        </div>
+        <button
+          onClick={() => { if (npw !== npw2) { flash('err', 'Die neuen Passwörter stimmen nicht überein.'); return } changePw.mutate() }}
+          disabled={changePw.isPending || !cur || npw.length < 6}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {changePw.isPending ? 'Ändert…' : 'Passwort ändern'}
+        </button>
+      </section>
+    </div>
+  )
+}

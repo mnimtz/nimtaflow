@@ -11,6 +11,8 @@ class UserOut(BaseModel):
     role: UserRole
     is_active: bool
     totp_enabled: bool
+    birthdate: Optional[str] = None
+    avatar_path: Optional[str] = None
     last_login: Optional[datetime]
     created_at: datetime
 
@@ -39,6 +41,18 @@ class UserUpdate(BaseModel):
 
 class PasswordSet(BaseModel):
     password: str
+
+
+class ProfileUpdate(BaseModel):
+    """Self-service profile edit (current user)."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    birthdate: Optional[str] = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class TokenResponse(BaseModel):
