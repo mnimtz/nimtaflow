@@ -64,6 +64,12 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
       <div className="p-4 space-y-4">
         <p className="text-sm font-medium text-zinc-100 break-all">{p.filename}</p>
 
+        <a href={p.is_video ? `/api/photos/${p.id}/video/stream` : `/api/photos/${p.id}/original`}
+           target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
+          {p.is_video ? 'Original-Video öffnen' : 'Original in voller Qualität öffnen'}
+        </a>
+
         {p.description && (
           <div>
             <p className="text-sm text-zinc-300 italic">{p.description}</p>

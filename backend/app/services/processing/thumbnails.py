@@ -301,32 +301,40 @@ def generate_video_preview_webp(
     if not dur:
         return None
 
-    if at_second is None:
-        at_second = max(0, min(dur * 0.05, max(0, dur - duration_sec - 1)))
-
-    total_frames = int(duration_sec * fps)
-    vf = f"scale={width}:-2:flags=fast_bilinear,fps={fps}"
+    # Whole-video "flipbook": grab frames evenly across the ENTIRE clip via fast
+    # seeks (seek + 1 frame each → bounded even for a 60-min video), then assemble
+    # a short looping WebP at a fixed playback fps so the whole video flits by on
+    # hover (instead of the old 2 s snippet from the start).
+    import tempfile
+    import shutil as _sh
+    total = max(10, min(24, int(dur / 15)))   # ~1 frame / 15 s, 10–24 frames
+    tmp = Path(tempfile.mkdtemp(prefix="pfprev_"))
     try:
+        written = 0
+        for i in range(total):
+            ts = (i + 0.5) * dur / total
+            fr = tmp / f"f{written:04d}.jpg"
+            r = subprocess.run(
+                [_FFMPEG, "-y", "-ss", f"{ts:.3f}", "-i", video_path,
+                 "-frames:v", "1", "-vf", f"scale={width}:-2:flags=fast_bilinear",
+                 "-q:v", "4", str(fr)],
+                capture_output=True, timeout=15,
+            )
+            if r.returncode == 0 and fr.exists() and fr.stat().st_size > 200:
+                written += 1
+        if written < 2:
+            return None
         r = subprocess.run(
-            [
-                _FFMPEG, "-y",
-                "-ss", str(at_second),
-                "-i", video_path,
-                "-t", str(duration_sec),
-                "-vf", vf,
-                "-vframes", str(total_frames),
-                "-loop", "0",
-                "-compression_level", "2",
-                "-quality", "70",
-                "-an",
-                str(out),
-            ],
-            capture_output=True, timeout=20,
+            [_FFMPEG, "-y", "-framerate", "10", "-i", str(tmp / "f%04d.jpg"),
+             "-loop", "0", "-compression_level", "2", "-quality", "70", "-an", str(out)],
+            capture_output=True, timeout=30,
         )
         if r.returncode == 0 and out.exists() and out.stat().st_size > 800:
             return str(out)
     except Exception:
         pass
+    finally:
+        _sh.rmtree(tmp, ignore_errors=True)
     return None
 
 

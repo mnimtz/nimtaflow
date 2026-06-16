@@ -767,7 +767,7 @@ function FaceAssignModal({ faceIds, people, onClose, onDone }: {
   })
 
   return (
-    <Modal open onClose={onClose} title={n === 1 ? 'Gesicht zuordnen' : `${n} Gesichter zuordnen`}>
+    <Modal open onClose={onClose} maxWidth="max-w-lg" title={n === 1 ? 'Gesicht zuordnen' : `${n} Gesichter zuordnen`}>
       <div className="flex gap-4 mb-4">
         <div className="flex -space-x-3 flex-shrink-0">
           {faceIds.slice(0, 4).map((id, i) => (

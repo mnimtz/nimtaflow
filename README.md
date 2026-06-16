@@ -31,7 +31,15 @@ and enriches your library with local or cloud AI.
   - **Qwen2.5-VL-3B** — native multilingual (German), loaded **4-bit (nf4)** so it fits an 8 GB card (~2.4 GB), ~23 s/photo.
 - **GPU acceleration** — CUDA passthrough (RTX 2080 tested): the VLM runs in fp16/4-bit on the GPU; InsightFace face detection stays on CPU so the two don't fight for the 8 GB of VRAM. Input is capped to ~1280 px and the CUDA cache is freed per photo to avoid OOM/fragmentation.
 - **Auto-tagging** (in the selected language) + **semantic search embeddings** (pgvector 768-dim; local e5 for the integrated provider).
-- **AI write-back** for **any** provider: embed `dc:description`/IPTC + keywords into the file and/or a `.xmp` sidecar (mode: off / file / file+sidecar / sidecar).
+- **AI write-back** for **any** provider: embed `dc:description`/IPTC + keywords into the file and/or a `.xmp` sidecar (mode: off / file / file+sidecar / sidecar). Full text, never truncated (XMP has no length limit); `-P` preserves the file timestamp so dates never become "today"; if a file has **no EXIF capture date**, the file date is written into `DateTimeOriginal` (+ DB) so it gets a stable date.
+- **Tag prompt** (`Settings → KI`): leave empty → tags are derived from the caption (fast, no extra pass); set it → the VLM produces keywords in a dedicated pass (≈doubles GPU time). Output is sanitised (no JSON scaffold / instruction-echo / repetition loops).
+
+### Videos
+- **Formats**: mp4, mov, avi, mkv, m4v, webm, mts, m2ts, m2t, ts, vob, mpg, mpeg, wmv, flv, ogv, mod, 3gp — anything ffmpeg decodes.
+- **Adaptive multi-frame AI** — for Qwen, frames are sampled **evenly across the whole clip** (`~1/45 s`, 4–16 frames) and fed as a video, so the description covers the entire video (not one frame). Shorter clips get fewer frames, long ones stay bounded.
+- **Full-video hover preview** — an animated WebP "flipbook" sampled across the whole length (fast seeks, bounded even for hour-long videos), plus a sprite sheet for timeline scrubbing.
+- **HW transcode** (QSV/CUDA/VAAPI) endpoint; QSV used for thumbnails/previews where available.
+- **Dedicated `video` log** — start, length, resolution, preview yes/no, processing time, errors, and the AI description per video.
 
 ### People & Faces
 - Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people.
@@ -55,6 +63,8 @@ and enriches your library with local or cloud AI.
 - **Library verify/cleanup**: removes orphaned entries (deleted files *and* photos no longer under any watched source) incl. their thumbnails/previews/faces.
 - Justified grid with **infinite scroll**, **sort** (newest/oldest/added/name), **page size**, multi-select + bulk actions, Library/Favorites/Archive/Trash views.
 - Timeline with date scrubber, lightbox (swipe, full EXIF + AI tags + recognized people + inline metadata editing), animated video hover previews.
+- **Search** matches the AI description **and the filename** (type e.g. `IMG_6801.JPG`).
+- **"Original in voller Qualität öffnen"** button in the lightbox info panel — opens the untouched original photo/video (full resolution) in a new tab.
 
 ### Map & Globe
 - **2D map** with **7 free no-key tile layers** (OSM, Esri satellite, CARTO dark/light/voyager, OpenTopoMap, Wikimedia); auto fit-to-photos; optional **Street View link** per photo.
@@ -71,7 +81,7 @@ and enriches your library with local or cloud AI.
 - **Verify** — non-destructively confirms a dump is complete & restorable (checks schema + photo rows).
 
 ### Other
-- Background job pipeline with **per-feature logs** (scanner / ai / faces / video / system) shown live in the UI.
+- Background job pipeline with **per-feature logs** (scanner / ai / faces / video / **remote** / system) shown live in the UI; a **dedicated scan worker** so re-indexing starts immediately instead of waiting behind the thumbnail queue.
 - App **version shown in the sidebar** (matches the running Docker build).
 - **Mobile**: responsive layout, bottom nav, redirect-to-login when unauthenticated.
 - **iOS app** (SwiftUI) talking to the `/api/v1` endpoints.
