@@ -27,6 +27,27 @@ POLL = float(os.getenv("POLL_INTERVAL", "5"))
 HEAD = {"X-Remote-Token": TOKEN}
 
 
+def _dedup_faces(raw: list) -> list:
+    """Collapse the same person seen across many video frames into one entry.
+    Greedy by confidence: a face is dropped if it matches an already-kept face
+    (cosine similarity > 0.5 on the embedding)."""
+    import math
+
+    def cos(a, b):
+        if not a or not b:
+            return 0.0
+        na = math.sqrt(sum(x * x for x in a)); nb = math.sqrt(sum(x * x for x in b))
+        return (sum(x * y for x, y in zip(a, b)) / (na * nb)) if na and nb else 0.0
+
+    reps = []
+    for f in sorted(raw, key=lambda x: x.get("confidence", 0) or 0, reverse=True):
+        emb = f.get("embedding")
+        if emb and any(cos(emb, r.get("embedding")) > 0.5 for r in reps):
+            continue
+        reps.append(f)
+    return reps
+
+
 async def _process(client: httpx.AsyncClient, job: dict) -> str:
     t0 = time.time()
     pid = job["photo_id"]
@@ -71,14 +92,34 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
             if fi.available():
                 min_px = float(job.get("min_face_px", 0) or 0)
                 min_conf = float(job.get("min_conf", 0.5) or 0.5)
-                W, H = img.size
-                for f in fi.detect_faces(img, min_conf):
-                    if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
-                        continue  # skip tiny/background faces (junk-cluster source)
-                    faces.append({
-                        "bbox_x": f.bbox_x, "bbox_y": f.bbox_y, "bbox_w": f.bbox_w, "bbox_h": f.bbox_h,
-                        "confidence": f.confidence, "embedding": f.embedding,
-                    })
+                # Video: detect across many frames sampled over the whole clip so
+                # a person appearing anywhere is caught; then dedup so the same
+                # face across frames collapses to one entry (per unique person).
+                face_imgs = [img]
+                ffurls = job.get("face_frame_urls") or []
+                if ffurls:
+                    fetched = []
+                    for fu in ffurls:
+                        try:
+                            fr = await client.get(SERVER + fu, headers=HEAD, timeout=60)
+                            if fr.status_code == 200 and fr.content:
+                                fetched.append(Image.open(io.BytesIO(fr.content)).convert("RGB"))
+                        except Exception:
+                            pass
+                    if fetched:
+                        face_imgs = fetched
+                        print(f"[agent] #{pid} video faces: scanning {len(fetched)} frames")
+                raw = []
+                for fim in face_imgs:
+                    W, H = fim.size
+                    for f in fi.detect_faces(fim, min_conf):
+                        if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
+                            continue
+                        raw.append({
+                            "bbox_x": f.bbox_x, "bbox_y": f.bbox_y, "bbox_w": f.bbox_w, "bbox_h": f.bbox_h,
+                            "confidence": f.confidence, "embedding": f.embedding,
+                        })
+                faces = _dedup_faces(raw) if ffurls else raw
         except Exception as e:
             print(f"[agent] face detection skipped: {e}")
 

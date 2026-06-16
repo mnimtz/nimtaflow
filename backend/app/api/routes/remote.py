@@ -104,17 +104,29 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         n = video_frame_plan(photo.duration_seconds)
         if n > 1:
             frame_urls = [f"/api/remote/frame/{photo.id}/{i}" for i in range(n)]
+
+    # Video face recognition (opt-in: Settings → Video-AI). Sample MORE frames
+    # than for the description — evenly across the whole clip — and let the agent
+    # detect + dedup faces. video.max_frames caps the count.
+    faces_for_image = str(s.get("faces.enabled", "true")).lower() != "false"
+    video_faces = str(s.get("video.face_recognition", "false")).lower() == "true"
+    face_frame_urls = []
+    if photo.is_video and video_faces:
+        nf = max(4, min(60, int(float(s.get("video.max_frames", "30") or 30))))
+        face_frame_urls = [f"/api/remote/frame/{photo.id}/{i}?n={nf}" for i in range(nf)]
+
     return {
         "photo_id": photo.id,
         "is_video": bool(photo.is_video),
         "image_url": f"/api/remote/image/{photo.id}",
         "frame_urls": frame_urls,
+        "face_frame_urls": face_frame_urls,
         "language": s.get("ai.language", "de"),
         "prompt": s.get(prompt_key) or None,
         "tag_prompt": (s.get("ai.prompt.tags") or "").strip() or None,
         "model": model,
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
-        "faces_enabled": str(s.get("faces.enabled", "true")).lower() != "false" and not photo.is_video,
+        "faces_enabled": (faces_for_image and not photo.is_video) or (photo.is_video and video_faces),
         "min_face_px": float(s.get("face.min_size_px", "40") or 0),
         # InsightFace det_score for clear faces is ~0.6-0.88, so the old 0.9
         # default filtered out almost everything. 0.5 matches its natural thresh.
@@ -136,10 +148,12 @@ async def image(photo_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/frame/{photo_id}/{idx}")
-async def video_frame(photo_id: int, idx: int, db: AsyncSession = Depends(get_db),
+async def video_frame(photo_id: int, idx: int, n: Optional[int] = None,
+                      db: AsyncSession = Depends(get_db),
                       x_remote_token: Optional[str] = Header(None)):
-    """Serve the idx-th of N evenly-spaced frames of a video (for multi-frame AI).
-    Frame timestamp = (idx+0.5) * duration / N — extracted on demand, no cache."""
+    """Serve the idx-th of N evenly-spaced frames of a video (for multi-frame AI
+    / face sampling). N defaults to the description plan; pass ?n= for a denser
+    face sweep. Frame timestamp = (idx+0.5) * duration / N — on demand, no cache."""
     from fastapi.responses import Response
     from app.services.processing.thumbnails import video_frame_plan, extract_video_frame_bytes, video_duration
     await _require_token(db, x_remote_token)
@@ -147,7 +161,7 @@ async def video_frame(photo_id: int, idx: int, db: AsyncSession = Depends(get_db
     if not photo or not photo.is_video:
         raise HTTPException(404)
     dur = photo.duration_seconds or video_duration(photo.path) or 0
-    n = max(1, video_frame_plan(dur))
+    n = max(1, int(n)) if n else max(1, video_frame_plan(dur))
     if dur <= 0 or idx >= n:
         raise HTTPException(404, "Frame außerhalb des Bereichs")
     ts = (idx + 0.5) * dur / n
