@@ -28,6 +28,63 @@ _vlm_cache: dict = {}
 _embed_cache: dict = {}
 _translate_cache: dict = {}
 
+# In a structured/JSON tag response: keys whose VALUE is a sentence, not tags —
+# skipped even in valid JSON (we don't want the description text as a tag).
+_NON_TAG_KEYS = {
+    "beschreibung_kurz", "beschreibung", "description", "summary", "caption",
+}
+# All recognised tag-container field NAMES. Used only when salvaging truncated
+# JSON via regex, so the key strings themselves don't end up as tags.
+_TAG_FIELD_KEYS = _NON_TAG_KEYS | {
+    "top_tags", "personen_tags", "aktivitaets_tags", "objekt_tags", "ort_tags",
+    "tier_tags", "natur_tags", "ereignis_tags", "stimmungs_tags",
+    "technische_tags", "suchbegriffe", "tags", "keywords",
+}
+
+
+def _extract_tag_candidates(raw: str) -> List[str]:
+    """Turn a tag-prompt response into a flat list of candidate tags.
+
+    Supports three shapes, in order:
+      1. A JSON object (e.g. {top_tags:[…], ort_tags:[…], suchbegriffe:[…]}) —
+         flattens every list/string value EXCEPT the description sentence.
+      2. Truncated/invalid JSON — salvages every quoted string, dropping the
+         known field-name keys (Qwen's 256-token cap often cuts JSON mid-array).
+      3. Plain comma/newline list — the original simple behaviour.
+    """
+    import json, re
+    raw = (raw or "").strip()
+
+    def _collect(obj) -> List[str]:
+        out: List[str] = []
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if str(k).strip().lower() in _NON_TAG_KEYS:
+                    continue
+                out += _collect(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                out += _collect(v)
+        elif isinstance(obj, str):
+            out.append(obj)
+        return out
+
+    # 1) strict JSON (grab the outermost {...} if there's surrounding prose)
+    m = re.search(r"\{.*\}", raw, re.S)
+    if m:
+        try:
+            return _collect(json.loads(m.group(0)))
+        except Exception:
+            pass
+    # 2) truncated JSON → quoted strings minus the field-name keys
+    if "{" in raw or '":' in raw:
+        quoted = re.findall(r'"([^"\n]+)"', raw)
+        cand = [s for s in quoted if s.strip().lower() not in _TAG_FIELD_KEYS]
+        if cand:
+            return cand
+    # 3) plain delimited list
+    return re.split(r"[,\n;•\-–]+", raw)
+
 
 class LocalVLMProvider(AIProvider):
     name = "local"
@@ -114,7 +171,8 @@ class LocalVLMProvider(AIProvider):
             return text  # fall back to original (English) on any failure
 
     # ── interface ───────────────────────────────────────────────────────────
-    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
+    async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
+                             max_new_tokens: int = 256) -> str:
         try:
             kind, model, proc, device, dtype = self._load_vlm()
             import torch
@@ -161,7 +219,7 @@ class LocalVLMProvider(AIProvider):
                 if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
                     inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
                 with torch.no_grad():
-                    gen = model.generate(**inputs, max_new_tokens=256)
+                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
         except Exception as e:
@@ -191,17 +249,17 @@ class LocalVLMProvider(AIProvider):
         # 'ai.prompt.tags' setting. Otherwise derive tags cheaply from the caption.
         if prompt and self.model_key.startswith("qwen"):
             try:
-                raw = await self.describe_image(image, language, prompt)
-                # split on commas/newlines/semicolons; drop sentences & junk
-                import re
-                parts = re.split(r"[,\n;•\-–]+", raw)
+                # Bigger budget: structured/JSON tag prompts are long and would
+                # otherwise be truncated mid-output at the default 256 tokens.
+                raw = await self.describe_image(image, language, prompt, max_new_tokens=640)
+                cand = _extract_tag_candidates(raw)
                 tags, seen = [], set()
-                for p in parts:
-                    t = p.strip().strip(".").lower()
-                    if 2 <= len(t) <= 40 and len(t.split()) <= 3 and t not in seen:
+                for c in cand:
+                    t = c.strip().strip(".,;").lower()
+                    if 2 <= len(t) <= 40 and not t.endswith(":") and t not in seen:
                         seen.add(t); tags.append(t)
                 if tags:
-                    return tags[:15]
+                    return tags[:30]
             except Exception:
                 pass  # fall through to caption-derived tags
         # Derive simple tags from the caption (keeps deps minimal & robust).
