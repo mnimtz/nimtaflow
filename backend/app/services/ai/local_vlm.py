@@ -42,6 +42,27 @@ _TAG_FIELD_KEYS = _NON_TAG_KEYS | {
 }
 
 
+_STRUCT_WORDS = {
+    "beschreibungkurz", "beschreibung", "name", "ziel", "regeln", "anforderungen",
+    "beispiel", "json", "stimmung", "stimmungs", "qualitat", "qualitats", "qualität",
+    "technisch", "technische", "personen", "objekt", "ort", "tier", "natur", "ereignis",
+}
+
+
+def _is_structural_tag(t: str) -> bool:
+    """True if a candidate is leaked JSON scaffolding (a field name / key) rather
+    than a real tag — e.g. 'top_tags', 'personen_tags', 'natur_tages', 'suchbegriffe',
+    '[]', 'beschreibung_kurz'. Robust to the mangling a small model adds under
+    repetition_penalty (spaces/missing underscores)."""
+    import re as _re
+    n = _re.sub(r"[\s_:\[\]\"'.,]+", "", (t or "").lower())
+    if len(n) < 2:
+        return True
+    if n.endswith(("tags", "tages", "tag", "begriffe")):
+        return True
+    return n in _STRUCT_WORDS
+
+
 def _extract_tag_candidates(raw: str) -> List[str]:
     """Turn a tag-prompt response into a flat list of candidate tags.
 
@@ -290,7 +311,7 @@ class LocalVLMProvider(AIProvider):
                 tags, seen = [], set()
                 for c in cand:
                     t = c.strip().strip(".,;").lower()
-                    if 2 <= len(t) <= 40 and not t.endswith(":") and t not in seen:
+                    if 2 <= len(t) <= 40 and t not in seen and not _is_structural_tag(t):
                         seen.add(t); tags.append(t)
                 if tags:
                     return tags[:30]
