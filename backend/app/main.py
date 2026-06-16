@@ -47,6 +47,27 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS missing_at TIMESTAMPTZ",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS video_preview_path VARCHAR(512)",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_error BOOLEAN NOT NULL DEFAULT FALSE",
+    # ── photos: face-aware crop, remote-worker lease, >2GB file sizes ─────────
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_x DOUBLE PRECISION",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_y DOUBLE PRECISION",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_claimed_at TIMESTAMPTZ",
+    # TYPE changes are guarded so they don't rewrite the table on every startup.
+    """DO $$ BEGIN
+        IF (SELECT data_type FROM information_schema.columns
+            WHERE table_name='photos' AND column_name='file_size') <> 'bigint' THEN
+          ALTER TABLE photos ALTER COLUMN file_size TYPE BIGINT;
+        END IF;
+    END $$""",
+    # ── users: self-service profile ───────────────────────────────────────────
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(32)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(512)",
+    # ── relationships: rel_type is now a free string (was a native enum) ──────
+    """DO $$ BEGIN
+        IF (SELECT data_type FROM information_schema.columns
+            WHERE table_name='person_relationships' AND column_name='rel_type') <> 'character varying' THEN
+          ALTER TABLE person_relationships ALTER COLUMN rel_type TYPE VARCHAR(32) USING rel_type::text;
+        END IF;
+    END $$""",
     # ── photo_sources: watching ───────────────────────────────────────────────
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS scan_interval_minutes INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS detect_deletions BOOLEAN NOT NULL DEFAULT TRUE",
@@ -75,6 +96,11 @@ _COLUMN_MIGRATIONS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Refuse to run with the built-in dev signing key (would let anyone forge
+    # tokens). Set SECRET_KEY in .env.
+    from app.core.config import get_settings as _gs
+    if _gs().secret_key == "dev-secret-key-change-in-production":
+        raise RuntimeError("SECRET_KEY is unset/default — set a strong SECRET_KEY in .env before running.")
     init_db()
     from app.core.database import Base, _engine
     import app.models  # noqa
@@ -92,14 +118,23 @@ async def lifespan(app: FastAPI):
         from app.models.user import User, UserRole
         from app.core.security import hash_password
         from sqlalchemy import select, func as _func
+        import os
         async for db in get_db():
             count = await db.scalar(select(_func.count()).select_from(User))
-            if not count:
+            # Seed an initial admin only on an empty DB, and only if credentials
+            # are provided via env (no hardcoded password in the repo).
+            seed_email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@photoflow.local")
+            seed_pw = os.getenv("INITIAL_ADMIN_PASSWORD", "")
+            if not count and seed_pw:
                 db.add(User(
-                    email="admin@photoflow.local", name="Admin",
-                    hashed_password=hash_password("Nimtz@1977"), role=UserRole.admin,
+                    email=seed_email, name="Admin",
+                    hashed_password=hash_password(seed_pw), role=UserRole.admin,
                 ))
                 await db.commit()
+            elif not count:
+                import logging
+                logging.getLogger("photoflow").warning(
+                    "No users and INITIAL_ADMIN_PASSWORD unset — create the first admin manually.")
             break
     except Exception as e:
         import logging

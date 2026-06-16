@@ -75,8 +75,9 @@ async def archive_config(config_path: str) -> Optional[str]:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         await proc.wait()
-        if proc.returncode == 0 and out.exists():
+        if proc.returncode in (0, 1) and out.exists() and out.stat().st_size > 100:
             return str(out)
+        out.unlink(missing_ok=True)
     except Exception:
         pass
     return None
@@ -142,10 +143,12 @@ async def verify_database_dump(db_url: str, sql_gz: str) -> Dict[str, Any]:
         out, _ = await proc.communicate()
         text = out.decode(errors="replace")
         tables = text.count("CREATE TABLE ")
-        has_photos = "COPY public.photos " in text
+        # Anchor on the opening paren so we don't match e.g. "photos_tags".
+        marker = "COPY public.photos ("
+        has_photos = marker in text
         rows = 0
         if has_photos:
-            body = text.split("COPY public.photos ", 1)[1].split("\n\\.", 1)[0]
+            body = text.split(marker, 1)[1].split("\n\\.", 1)[0]
             rows = max(0, body.count("\n") - 1)  # exclude the "(cols) FROM stdin;" line
         return {
             "ok": tables > 0 and has_photos,

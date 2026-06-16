@@ -19,7 +19,7 @@ from sqlalchemy import select, or_, func, delete as sql_delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models.photo import Photo
+from app.models.photo import Photo, PhotoStatus
 from app.services.settings_loader import load_settings
 
 router = APIRouter(prefix="/remote", tags=["remote"])
@@ -81,7 +81,10 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     ]
     if not include_videos:
         conds.insert(0, Photo.is_video == False)           # noqa: E712
-    photo = (await db.execute(select(Photo).where(*conds).order_by(Photo.id).limit(1))).scalars().first()
+    # Row-lock + skip_locked so two workers polling at once lease DIFFERENT photos.
+    photo = (await db.execute(
+        select(Photo).where(*conds).order_by(Photo.id).limit(1).with_for_update(skip_locked=True)
+    )).scalars().first()
     if not photo:
         return {"photo_id": None}
     photo.ai_claimed_at = datetime.now(timezone.utc)
@@ -147,9 +150,15 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     if not photo:
         raise HTTPException(404)
 
+    # The photo is at status=processing (process_photo handed it off and ai_photo
+    # yielded). Mark it done now so it appears in the iOS feed + search, which
+    # filter on status==done.
+    photo.status = PhotoStatus.done
+
     if body.error and not body.description:
         photo.ai_error = True
         photo.ai_claimed_at = None
+        photo.processed_at = datetime.now(timezone.utc)
         await db.commit()
         flog("ai", "WARNING", f"Remote-Fehler ({body.provider}): {photo.filename}: {body.error[:160]}")
         return {"ok": True, "stored": "error"}

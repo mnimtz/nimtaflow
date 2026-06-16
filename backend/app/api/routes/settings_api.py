@@ -8,7 +8,7 @@ from app.models.settings import Setting
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-SECRET_KEYS = {"ai.gemini.api_key", "ai.openai.api_key", "ai.anthropic.api_key"}
+SECRET_KEYS = {"ai.gemini.api_key", "ai.openai.api_key", "ai.anthropic.api_key", "remote.token"}
 
 
 @router.get("")

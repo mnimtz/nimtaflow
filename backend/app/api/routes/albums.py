@@ -7,6 +7,8 @@ from sqlalchemy import select, func, delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional as _current_user_optional
+from app.core.access import photo_conditions as _photo_conditions
 from app.models.album import Album, AlbumPhoto, AlbumType
 from app.models.photo import Photo, PhotoStatus
 
@@ -139,21 +141,28 @@ async def album_photos(
     page: int = 1,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    user=Depends(_current_user_optional),
 ):
     album = await db.get(Album, album_id)
     if not album:
         raise HTTPException(404)
 
+    # Respect per-user access restrictions (folder/date/person) — an album
+    # must not expose photos a restricted user otherwise can't see.
+    acl = _photo_conditions(user)
     q = (
         select(Photo)
         .join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
-        .where(AlbumPhoto.album_id == album_id)
+        .where(AlbumPhoto.album_id == album_id, *acl)
         .order_by(AlbumPhoto.sort_order, AlbumPhoto.added_at)
         .offset((page - 1) * limit).limit(limit)
     )
     photos = (await db.execute(q)).scalars().all()
     total = await db.scalar(
-        select(func.count()).where(AlbumPhoto.album_id == album_id)
+        select(func.count()).select_from(
+            select(Photo.id).join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
+            .where(AlbumPhoto.album_id == album_id, *acl).subquery()
+        )
     )
     # Use the gallery schema (PhotoBase) so serialization is clean — returning
     # raw ORM rows here pulled in the pgvector `embedding` and broke the response,
