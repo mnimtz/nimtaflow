@@ -112,19 +112,18 @@ async def archive_cache(cache_path: str) -> Optional[str]:
 async def restore_database(db_url: str, sql_gz: str) -> Dict[str, Any]:
     """Restore a db_*.sql.gz dump (created with --clean --if-exists, so it drops
     and recreates objects). DESTRUCTIVE for the target database."""
+    import shlex
     p = pathlib.Path(sql_gz)
     if not p.exists():
         return {"ok": False, "error": "dump not found"}
     try:
-        gunzip = await asyncio.create_subprocess_exec(
-            "gunzip", "-c", str(p), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        psql = await asyncio.create_subprocess_exec(
-            _PSQL, "--dbname", _pg_url(db_url), "-v", "ON_ERROR_STOP=0",
-            stdin=gunzip.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        _, perr = await psql.communicate()
-        await gunzip.wait()
-        ok = psql.returncode == 0
-        return {"ok": ok, "stderr": perr.decode(errors="replace")[-800:]}
+        # Use a shell pipe — chaining two asyncio subprocesses via stdout/stdin
+        # fails ("StreamReader has no fileno"). gunzip → psql.
+        cmd = f"gunzip -c {shlex.quote(str(p))} | {shlex.quote(_PSQL)} --dbname {shlex.quote(_pg_url(db_url))} -v ON_ERROR_STOP=0"
+        proc = await asyncio.create_subprocess_shell(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, perr = await proc.communicate()
+        return {"ok": proc.returncode == 0, "stderr": perr.decode(errors="replace")[-800:]}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
