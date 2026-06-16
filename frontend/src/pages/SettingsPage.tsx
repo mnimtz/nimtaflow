@@ -1088,7 +1088,8 @@ function RemoteWorkerSection() {
     set('remote.token', t)
   }
   const now = Math.floor(Date.now() / 1000)
-  const cmd = `PHOTOFLOW_SERVER=http://${window.location.hostname}:${window.location.port || 8090} \\\n  PHOTOFLOW_REMOTE_TOKEN=${token || '<TOKEN>'} \\\n  docker compose -f docker-compose.remote-worker.yml up -d --build`
+  const srvHost = `http://${window.location.hostname}:${window.location.port || 8090}`
+  const cmd = `cd /opt/photoflow\nPHOTOFLOW_SERVER=${srvHost} \\\n  PHOTOFLOW_REMOTE_TOKEN=${token || '<TOKEN>'} \\\n  WORKER_NAME=gpu-worker \\\n  docker compose -p photoflow-remote -f docker-compose.remote-worker.yml up -d --build`
 
   return (
     <div>
@@ -1147,7 +1148,7 @@ function RemoteWorkerSection() {
         {/* Agent command */}
         <div>
           <Label>Worker auf dem GPU-Rechner starten</Label>
-          <p className="text-xs text-zinc-400 mb-2">Auf der Maschine mit der GPU (gleiches Repo, Image vorhanden): Token oben speichern, dann:</p>
+          <p className="text-xs text-zinc-400 mb-2">Auf der Maschine mit der GPU (PhotoFlow-Repo unter <code>/opt/photoflow</code> vorhanden): oben Token speichern, dann im Terminal ausführen. Stoppen mit <code>docker compose -p photoflow-remote -f docker-compose.remote-worker.yml down</code>.</p>
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
         </div>
       </div>
