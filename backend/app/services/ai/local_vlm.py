@@ -311,10 +311,17 @@ class LocalVLMProvider(AIProvider):
                 tags, seen = [], set()
                 for c in cand:
                     t = c.strip().strip(".,;").lower()
-                    if 2 <= len(t) <= 40 and t not in seen and not _is_structural_tag(t):
-                        seen.add(t); tags.append(t)
+                    # crisp keywords only: ≤3 words, no instruction-echo ("keine
+                    # identifikation", "kein alter …"), no leaked JSON scaffold.
+                    if not (2 <= len(t) <= 40) or t in seen:
+                        continue
+                    if len(t.split()) > 3 or t.startswith(("kein", "keine", "keiner", "ohne ", "nicht ")):
+                        continue
+                    if _is_structural_tag(t):
+                        continue
+                    seen.add(t); tags.append(t)
                 if tags:
-                    return tags[:30]
+                    return tags[:25]
             except Exception:
                 pass  # fall through to caption-derived tags
         # Derive simple tags from the caption (keeps deps minimal & robust).
