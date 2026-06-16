@@ -133,7 +133,7 @@ export default function RelationshipsPage() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Familien- & Freundes-Netzwerk · {nodes.length} Personen, {edges.length} Verbindungen</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400" title="Bezugsperson für die Suche nach „meiner Ehefrau / meinem Kollegen …"">
+          <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400" title="Bezugsperson für die Suche nach meiner Ehefrau / meinem Kollegen">
             Ich bin:
             <select value={selfId} onChange={e => setSelf.mutate(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs max-w-[10rem]">
