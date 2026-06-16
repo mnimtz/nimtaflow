@@ -1041,7 +1041,7 @@ function MemoriesSettingsSection() {
 
   return (
     <div>
-      <SectionHeader title="Erinnerungen" desc="„Heute vor 1, 2, … Jahren" in der Galerie. Optional nur Fotos mit bestimmten Personen zeigen." />
+      <SectionHeader title="Erinnerungen" desc="Heute vor 1, 2, … Jahren — in der Galerie. Optional nur Fotos mit bestimmten Personen." />
       <div className="space-y-4 max-w-2xl">
         <p className="text-sm text-zinc-600 dark:text-zinc-300">{ids.length === 0 ? 'Alle Fotos' : `Nur Fotos mit ${ids.length} ausgewählten Person(en)`}</p>
         <div className="flex flex-wrap gap-2">
