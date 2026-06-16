@@ -16,6 +16,7 @@ services:
       PHOTOFLOW_REMOTE_TOKEN: ${PHOTOFLOW_REMOTE_TOKEN:?set the remote token}
       WORKER_NAME: ${WORKER_NAME:-gpu-worker}
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
+      PYTHONUNBUFFERED: "1"   # so agent log lines show up immediately in docker logs
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       FACE_DEVICE: cuda
