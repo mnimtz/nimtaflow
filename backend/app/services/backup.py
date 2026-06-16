@@ -32,29 +32,33 @@ def _ts() -> str:
 # ── Database dump ─────────────────────────────────────────────────────────────
 
 async def dump_database(db_url: str) -> Optional[str]:
-    """Async pg_dump to <backup_dir>/db_<ts>.sql.gz"""
+    """pg_dump to <backup_dir>/db_<ts>.sql.gz. Dumps to a plain file (--file)
+    then gzips it — avoids the fragile asyncio stdout→gzip pipe that left the
+    DB backup silently empty."""
     ts = _ts()
+    sql = BACKUP_DIR / f"db_{ts}.sql"
     out = BACKUP_DIR / f"db_{ts}.sql.gz"
-
-    # Convert asyncpg URL → psql URL
     pg_url = _pg_url(db_url)
 
     try:
         proc = await asyncio.create_subprocess_exec(
             _PG_DUMP, "--clean", "--if-exists", "--no-owner",
-            "--dbname", pg_url,
+            "--file", str(sql), "--dbname", pg_url,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
-        gz_proc = await asyncio.create_subprocess_exec(
-            "gzip", "-c",
-            stdin=proc.stdout, stdout=open(str(out), "wb"), stderr=subprocess.PIPE,
-        )
-        await asyncio.gather(proc.wait(), gz_proc.wait())
-
-        if proc.returncode == 0 and out.exists() and out.stat().st_size > 100:
+        _, err = await proc.communicate()
+        if proc.returncode != 0 or not sql.exists() or sql.stat().st_size < 100:
+            sql.unlink(missing_ok=True)
+            return None
+        gz = await asyncio.create_subprocess_exec(
+            "gzip", "-f", str(sql), stderr=subprocess.PIPE)
+        await gz.wait()
+        if gz.returncode == 0 and out.exists() and out.stat().st_size > 100:
             return str(out)
+        sql.unlink(missing_ok=True)
         out.unlink(missing_ok=True)
-    except Exception as e:
+    except Exception:
+        sql.unlink(missing_ok=True)
         return None
     return None
 
