@@ -1064,6 +1064,17 @@ function RemoteWorkerSection() {
           </div>
         </div>
 
+        <div>
+          <Label>Remote-Modell (auf der GPU des Workers)</Label>
+          <select value={settings['remote.model'] ?? ''} onChange={e => set('remote.model', e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+            <option value="">— wie lokal ({settings['ai.local.model'] ?? 'florence2-base'}) —</option>
+            <option value="florence2-base">Florence-2-base (klein/schnell)</option>
+            <option value="qwen2.5-vl-3b">Qwen2.5-VL-3B (besser, GPU)</option>
+          </select>
+          <p className="text-[11px] text-zinc-400 mt-1">Der Worker läuft auf der GPU — hier ruhig das stärkere Qwen wählen, selbst wenn dieser Host es lokal nicht stemmen würde.</p>
+        </div>
+
         <button onClick={() => save.mutate(settings)} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           {saved ? '✓ Gespeichert' : 'Speichern'}

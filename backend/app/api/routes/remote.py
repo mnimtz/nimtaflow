@@ -88,12 +88,16 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         return {"photo_id": None}
     photo.ai_claimed_at = datetime.now(timezone.utc)
     await db.commit()
+    # The remote worker can run a heavier model than the local host is capable
+    # of: prefer `remote.model` (chosen in Settings → Remote-Worker), fall back
+    # to the local image model.
+    model = (s.get("remote.model") or "").strip() or s.get("ai.local.model", "florence2-base")
     return {
         "photo_id": photo.id,
         "image_url": f"/api/remote/image/{photo.id}",
         "language": s.get("ai.language", "de"),
         "prompt": s.get("ai.prompt.image") or None,
-        "model": s.get("ai.local.model", "florence2-base"),
+        "model": model,
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
         "faces_enabled": str(s.get("faces.enabled", "true")).lower() != "false",
     }
