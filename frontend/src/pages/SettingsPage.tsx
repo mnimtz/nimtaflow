@@ -1305,6 +1305,27 @@ function BackupSection() {
     onSuccess: () => refetch(),
   })
 
+  // Automatic schedule (persisted settings the scheduled_backup beat task reads).
+  const { data: appSettings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  const [sched, setSched] = useState('off')
+  const [savedSched, setSavedSched] = useState(false)
+  useEffect(() => { if (appSettings?.['backup.schedule']) setSched(appSettings['backup.schedule']); if (appSettings?.['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days'])) }, [appSettings])
+  const saveSchedule = useMutation({
+    mutationFn: () => api.put('/settings', { 'backup.schedule': sched, 'backup.keep_days': String(keepDays), 'backup.rclone_remote': rcloneRemote }),
+    onSuccess: () => { setSavedSched(true); setTimeout(() => setSavedSched(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const restore = useMutation({
+    mutationFn: (b: BackupFile) => b.type === 'db'
+      ? api.post('/backup/restore/db', null, { params: { filename: b.name } })
+      : api.post('/backup/restore/files', null, { params: { filename: b.name } }),
+    onSuccess: (r: any) => alert(r?.data?.ok === false ? 'Wiederherstellung mit Fehlern — Server-Logs prüfen.' : 'Wiederhergestellt. Ggf. Seite neu laden / Backend neu starten.'),
+    onError: () => alert('Wiederherstellung fehlgeschlagen.'),
+  })
+  const verify = useMutation({
+    mutationFn: (name: string) => api.post('/backup/verify', null, { params: { filename: name } }).then(r => r.data),
+    onSuccess: (d: any) => alert(d?.ok ? `✓ Backup ok — ${d.tables} Tabellen, ${d.photo_rows} Fotos (${d.size_mb} MB).` : `⚠ Verifikation fehlgeschlagen: ${d?.error ?? 'unbekannt'}`),
+  })
+
   const hwColor = !hw ? 'text-zinc-400'
     : hw.name === 'cuda' ? 'text-green-400'
     : hw.name === 'qsv' ? 'text-blue-400'
@@ -1356,11 +1377,39 @@ function BackupSection() {
               </span>
               <span className="flex-1 font-mono text-xs text-zinc-600 dark:text-zinc-400 truncate">{b.name}</span>
               <span className="text-zinc-400 text-xs">{b.size_mb} MB</span>
+              {b.type === 'db' && <button onClick={() => verify.mutate(b.name)} className="text-zinc-400 hover:text-zinc-200 text-xs">Prüfen</button>}
+              <button onClick={() => { if (confirm(`„${b.name}" wiederherstellen? Überschreibt aktuelle ${b.type === 'db' ? 'Datenbank' : 'Dateien'}.`)) restore.mutate(b) }}
+                className="text-amber-400 hover:text-amber-300 text-xs transition-colors">Restore</button>
               <a href={`/api/backup/download/${b.name}`} download
                 className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors">Download</a>
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Automatic schedule */}
+      <div className="mb-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Automatische Sicherung</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label>Zeitplan</Label>
+            <select value={sched} onChange={e => setSched(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+              <option value="off">Aus</option>
+              <option value="daily">Täglich</option>
+              <option value="weekly">Wöchentlich</option>
+            </select>
+          </div>
+          <div>
+            <Label>Aufbewahrung (Tage)</Label>
+            <Input value={String(keepDays)} onChange={v => setKeepDays(Number(v) || 30)} placeholder="30" />
+          </div>
+        </div>
+        <button onClick={() => saveSchedule.mutate()} disabled={saveSchedule.isPending}
+          className="mt-3 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {savedSched ? '✓ Gespeichert' : 'Zeitplan speichern'}
+        </button>
+        <p className="text-[11px] text-zinc-400 mt-2">Sichert automatisch DB + Thumbnails + Config (inkl. optionalem Rclone-Ziel unten). Alte Backups werden nach der Aufbewahrungsdauer entfernt.</p>
       </div>
 
       {/* Run backup */}
