@@ -297,6 +297,14 @@ async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(g
     face.person_id = person_id
     face.is_ignored = False
     await db.commit()
+    # Persist the person's name into the now-assigned photo's XMP (re-import safe).
+    person = await db.get(Person, person_id)
+    if person and (person.name or "").strip():
+        try:
+            from app.worker.tasks import write_person_name_task
+            write_person_name_task.delay(person_id)
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -316,6 +324,12 @@ async def assign_faces_many(body: AssignManyRequest, db: AsyncSession = Depends(
     await db.execute(update(Face).where(Face.id.in_(body.face_ids))
                      .values(person_id=body.person_id, is_ignored=False))
     await db.commit()
+    if (person.name or "").strip():
+        try:
+            from app.worker.tasks import write_person_name_task
+            write_person_name_task.delay(person.id)
+        except Exception:
+            pass
     return {"updated": len(body.face_ids), "person_id": body.person_id}
 
 

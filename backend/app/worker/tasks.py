@@ -241,9 +241,12 @@ def write_person_name_task(self, person_id: int):
             written = 0
             for (path,) in rows:
                 try:
+                    # delete-then-add so re-runs don't pile up duplicate names,
+                    # while preserving any OTHER person names already in the file.
                     r = subprocess.run(
-                        [exe, "-P", "-overwrite_original",
-                         f"-XMP:PersonInImage+={name}", f"-XMP-iptcExt:PersonInImage+={name}",
+                        [exe, "-P", "-m", "-overwrite_original",
+                         f"-XMP:PersonInImage-={name}", f"-XMP:PersonInImage+={name}",
+                         f"-XMP-iptcExt:PersonInImage-={name}", f"-XMP-iptcExt:PersonInImage+={name}",
                          path],
                         capture_output=True, timeout=30,
                     )
@@ -323,7 +326,20 @@ def backfill_xmp_task(self):
                     flog("ai", "WARNING", f"XMP-Backfill-Fehler: {photo.filename}: {str(e)[:120]}")
             await db.commit()
             flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
-            return {"written": done, "failed": failed}
+
+            # Also persist face NAMES (XMP:PersonInImage) for every named person —
+            # these aren't part of the description/keyword write above, and pre-fix
+            # writes never landed. Reuses the idempotent per-person writer.
+            if mode in ("file", "file_sidecar"):
+                from app.models.person import Person
+                pids = [p for (p,) in (await db.execute(
+                    select(Person.id).where(Person.name.isnot(None), Person.name != "")
+                )).all()]
+                for pid in pids:
+                    write_person_name_task.delay(pid)
+                if pids:
+                    flog("faces", "INFO", f"XMP-Backfill: Namen für {len(pids)} Person(en) eingereiht")
+            return {"written": done, "failed": failed, "persons": len(pids) if mode in ("file", "file_sidecar") else 0}
     return _run(_main())
 
 
