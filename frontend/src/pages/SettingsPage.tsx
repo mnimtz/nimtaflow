@@ -950,11 +950,11 @@ function VideoAISection() {
 
         {/* Video transcoding */}
         <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Transkodierung (WebM/VP9)</p>
+          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Transkodierung (H.264 MP4, faststart)</p>
           <label className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Automatisch transkodieren</p>
-              <p className="text-xs text-zinc-400">Videos automatisch in WebM konvertieren (breitere Browser-Kompatibilität)</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">Alle Videos vorab transkodieren</p>
+              <p className="text-xs text-zinc-400">Standardmäßig AUS: Videos werden beim ersten Abspielen transkodiert (gecacht). AN = jedes Video direkt beim Scan vorab konvertieren — sofort abspielbar, aber rechenintensiv (HW/QSV, sonst CPU).</p>
             </div>
             <Toggle
               value={(settings['video.auto_transcode'] ?? 'false') === 'true'}

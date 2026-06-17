@@ -508,6 +508,20 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         pass
                 return  # don't hand a broken photo to the AI stage
 
+            # Optional: pre-transcode every video to a web-optimised MP4 now
+            # (Settings → Video-AI → "Automatisch transkodieren"). Off by default
+            # — videos otherwise transcode lazily on first play (cheaper). Heavy
+            # if on (software encode), so opt-in.
+            if photo.is_video:
+                try:
+                    from app.services.settings_loader import load_settings as _ls
+                    s_tc = await _ls(db)
+                    if str(s_tc.get("video.auto_transcode", "false")).lower() == "true":
+                        res = int(float(s_tc.get("video.transcode_resolution", "720") or 720))
+                        transcode_video_task.delay(photo_id, res)
+                except Exception:
+                    pass
+
             # Thumbnails are done & committed and the photo already shows in the
             # gallery. Hand the slow GPU work (AI description, embedding, face
             # detection) to the single-slot GPU queue so it never blocks scans
