@@ -266,9 +266,10 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     if not photo:
         raise HTTPException(404)
 
-    # Faces-only pass: the photo already had a description, so the agent only ran
-    # face detection (no new description/tags/XMP). Used for an accurate log line.
-    faces_only_pass = photo.description is not None and not body.description
+    # Faces-only pass: the agent produced no description (faces-only worker, or an
+    # already-described photo) and there was no describe error. Used for an
+    # accurate log line (no XMP is expected for these).
+    faces_only_pass = (not body.description) and (not body.error)
 
     # The photo is at status=processing (process_photo handed it off and ai_photo
     # yielded). Mark it done now so it appears in the iOS feed + search, which

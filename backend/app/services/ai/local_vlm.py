@@ -272,8 +272,12 @@ class LocalVLMProvider(AIProvider):
                     # Chinese mid-sentence. The TAG pass passes >1.0 on purpose:
                     # for a discrete keyword list it breaks loops (e.g. the
                     # "babyschutzschal/-band/-…" runaway) without the prose risk.
+                    # no_repeat_ngram_size kills verbatim sentence loops (common on
+                    # multi-frame VIDEO) as a hard constraint — unlike
+                    # repetition_penalty it doesn't push the prose into Chinese.
                     gen = model.generate(**inputs, max_new_tokens=max_new_tokens,
-                                         repetition_penalty=repetition_penalty)
+                                         repetition_penalty=repetition_penalty,
+                                         no_repeat_ngram_size=4)
                 trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
                 return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
         except Exception as e:
