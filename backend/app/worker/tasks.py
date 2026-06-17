@@ -336,20 +336,10 @@ def backfill_xmp_task(self):
                     flog("ai", "WARNING", f"XMP-Backfill-Fehler: {photo.filename}: {str(e)[:120]}")
             await db.commit()
             flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
-
-            # Also persist face NAMES (XMP:PersonInImage) for every named person —
-            # these aren't part of the description/keyword write above, and pre-fix
-            # writes never landed. Reuses the idempotent per-person writer.
-            if mode in ("file", "file_sidecar"):
-                from app.models.person import Person
-                pids = [p for (p,) in (await db.execute(
-                    select(Person.id).where(Person.name.isnot(None), Person.name != "")
-                )).all()]
-                for pid in pids:
-                    write_person_name_task.delay(pid)
-                if pids:
-                    flog("faces", "INFO", f"XMP-Backfill: Namen für {len(pids)} Person(en) eingereiht")
-            return {"written": done, "failed": failed, "persons": len(pids) if mode in ("file", "file_sidecar") else 0}
+            # NOTE: person names (XMP:PersonInImage) are intentionally NOT written
+            # here — they are persisted separately via the explicit "Namen schreiben"
+            # button (POST /people/write-names) once face clustering has settled.
+            return {"written": done, "failed": failed}
     return _run(_main())
 
 

@@ -76,14 +76,25 @@ async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = D
         setattr(person, k, v)
     await db.commit()
     await db.refresh(person)
-    # Write the person's name into their photos (XMP:PersonInImage) for re-import.
-    if name_changed:
-        try:
-            from app.worker.tasks import write_person_name_task
-            write_person_name_task.delay(person_id)
-        except Exception:
-            pass
+    # NOTE: person names are NOT written into files here. During the messy
+    # detect → cluster → name phase that would write into thousands of files
+    # prematurely. The user persists names explicitly via POST /people/write-names
+    # (button) once the assignments have settled.
     return person
+
+
+@router.post("/write-names")
+async def write_person_names(db: AsyncSession = Depends(get_db)):
+    """Persist EVERY named person's name into their photos as XMP:PersonInImage.
+    Button-driven — run once after the detect → cluster → name phase has settled,
+    so durable who-is-in-the-photo info is written into the files exactly once."""
+    pids = [p for (p,) in (await db.execute(
+        select(Person.id).where(Person.name.isnot(None), Person.name != "")
+    )).all()]
+    from app.worker.tasks import write_person_name_task
+    for pid in pids:
+        write_person_name_task.delay(pid)
+    return {"queued_persons": len(pids)}
 
 
 @router.delete("/{person_id}", status_code=204)
@@ -297,14 +308,6 @@ async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(g
     face.person_id = person_id
     face.is_ignored = False
     await db.commit()
-    # Persist the person's name into the now-assigned photo's XMP (re-import safe).
-    person = await db.get(Person, person_id)
-    if person and (person.name or "").strip():
-        try:
-            from app.worker.tasks import write_person_name_task
-            write_person_name_task.delay(person_id)
-        except Exception:
-            pass
     return {"ok": True}
 
 
@@ -324,12 +327,6 @@ async def assign_faces_many(body: AssignManyRequest, db: AsyncSession = Depends(
     await db.execute(update(Face).where(Face.id.in_(body.face_ids))
                      .values(person_id=body.person_id, is_ignored=False))
     await db.commit()
-    if (person.name or "").strip():
-        try:
-            from app.worker.tasks import write_person_name_task
-            write_person_name_task.delay(person.id)
-        except Exception:
-            pass
     return {"updated": len(body.face_ids), "person_id": body.person_id}
 
 
@@ -349,12 +346,6 @@ async def new_person_from_faces(body: NewPersonManyRequest, db: AsyncSession = D
     await db.execute(update(Face).where(Face.id.in_(body.face_ids))
                      .values(person_id=person.id, is_ignored=False))
     await db.commit()
-    if (body.name or "").strip():
-        try:
-            from app.worker.tasks import write_person_name_task
-            write_person_name_task.delay(person.id)
-        except Exception:
-            pass
     return {"person_id": person.id}
 
 

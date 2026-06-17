@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
-  Check, Search, Star, Sparkles, Image as ImageIcon,
+  Check, Search, Star, Sparkles, Image as ImageIcon, Save,
 } from 'lucide-react'
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
@@ -95,6 +95,16 @@ export default function PeoplePage() {
     onError: () => toast('Clustering fehlgeschlagen', 'error'),
   })
 
+  // Button-driven: persist every named person's name into their photos
+  // (XMP:PersonInImage). Done explicitly once clustering/naming has settled —
+  // not on every assignment, which would write into thousands of files mid-sort.
+  const writeNamesMutation = useMutation({
+    mutationFn: () => api.post('/people/write-names').then(r => r.data),
+    onSuccess: (d: { queued_persons: number }) =>
+      toast(`Namen für ${d.queued_persons} benannte Person(en) werden in die Dateien geschrieben`, 'success'),
+    onError: () => toast('Namen-Schreiben fehlgeschlagen', 'error'),
+  })
+
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
   const unknown = useMemo(() => people.filter(p => !(p.name || '').trim()), [people])
   const selectedPeople = people.filter(p => selection.has(p.id))
@@ -164,6 +174,11 @@ export default function PeoplePage() {
             className={`${BTN_GHOST} disabled:opacity-50`}
             title="Unzugeordnete Gesichter automatisch gruppieren">
             <Sparkles size={15} /><span className="hidden sm:inline">{clusterMutation.isPending ? 'Clustere…' : 'Clustern'}</span>
+          </button>
+          <button onClick={() => writeNamesMutation.mutate()} disabled={writeNamesMutation.isPending}
+            className={`${BTN_GHOST} disabled:opacity-50`}
+            title="Namen aller benannten Personen dauerhaft in die Bilddateien schreiben (XMP:PersonInImage)">
+            <Save size={15} /><span className="hidden sm:inline">{writeNamesMutation.isPending ? 'Schreibe…' : 'Namen schreiben'}</span>
           </button>
           <button onClick={() => setShowAdd(true)} className={BTN_PRIMARY}>
             <UserPlus size={15} /><span className="hidden sm:inline">Hinzufügen</span>
@@ -241,7 +256,7 @@ export default function PeoplePage() {
                   <button key={f.id} onClick={() => ignoreFaces.mutate({ ids: [f.id], ignored: false })}
                     title="Wieder einblenden"
                     className="relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-700 opacity-50 hover:opacity-100 hover:ring-emerald-500 transition-all">
-                    <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
+                    <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
                       onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
                   </button>
                 ))}
@@ -324,7 +339,7 @@ function FaceTile({ face, selected, onToggle, onAssign }: {
     <div className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 transition-all ${
       selected ? 'ring-indigo-500' : 'ring-zinc-700 hover:ring-indigo-500/60'
     }`}>
-      <img src={`/api/people/faces/${face.id}/crop`} onClick={onAssign}
+      <img src={`/api/people/faces/${face.id}/crop`} onClick={onAssign} loading="lazy"
         className="w-full h-full object-cover cursor-pointer" title="Gesicht zuordnen"
         onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
       {/* always-visible select checkbox */}
@@ -561,7 +576,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
           <div className="flex gap-2 flex-wrap">
             {faces.map(f => (
               <div key={f.id} className={`group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-2 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-700'}`}>
-                <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover"
+                <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
                   onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
                 {person.profile_face_id === f.id && (
                   <div className="absolute top-0.5 left-0.5 bg-indigo-500 rounded-full p-0.5"><Star size={9} className="text-white" fill="white" /></div>
