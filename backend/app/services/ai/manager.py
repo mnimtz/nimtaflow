@@ -37,6 +37,21 @@ def build_video_settings(settings: dict) -> dict:
     return out
 
 
+_EMBEDDER = None
+
+
+def _get_embedder():
+    """Cached local e5 text embedder. LocalVLMProvider.embed_text uses
+    sentence-transformers (independent of the VLM, which is never loaded here), so
+    this is cheap and works on any host. Used for ALL embeddings for vector-space
+    consistency — see AIManager.embed_text."""
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        from .local_vlm import LocalVLMProvider
+        _EMBEDDER = LocalVLMProvider("florence2-base")  # model arg unused for embeddings
+    return _EMBEDDER
+
+
 class AIManager:
     def __init__(self, settings: dict):
         self._settings = settings
@@ -92,8 +107,16 @@ class AIManager:
         return tags, provider.label
 
     async def embed_text(self, text: str) -> tuple[Optional[List[float]], str]:
-        provider = await self._get_active()
-        if not provider:
+        # Embeddings ALWAYS use the local e5 model, regardless of the description
+        # provider. Photos and search queries must live in ONE vector space —
+        # mixing e.g. Gemini's text-embedding-004 with e5 would make cosine
+        # distances meaningless and break semantic search/chat. e5 is local, free
+        # and multilingual, so switching descriptions to Gemini costs nothing here
+        # and keeps every embedding comparable.
+        if not (text or "").strip():
             return None, "none"
-        embedding = await provider.embed_text(text)
-        return embedding, provider.name
+        try:
+            embedding = await _get_embedder().embed_text(text)
+            return (embedding or None), "local:e5"
+        except Exception:
+            return None, "none"
