@@ -18,6 +18,7 @@ interface Person {
   profile_face_id?: number
   notes?: string
   face_count: number
+  photo_count?: number
   is_hidden?: boolean
   created_at: string
 }
@@ -35,6 +36,7 @@ const INPUT = 'w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border bo
 export default function PeoplePage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showHidden, setShowHidden] = useState(false)
+  const [sort, setSort] = useState('photos')
   const [selectMode, setSelectMode] = useState(false)
   const [selection, setSelection] = useState<Set<number>>(new Set())
   const [showAdd, setShowAdd] = useState(false)
@@ -46,8 +48,8 @@ export default function PeoplePage() {
   const confirm = useConfirm()
 
   const { data: people = [], isLoading } = useQuery<Person[]>({
-    queryKey: ['people', showHidden],
-    queryFn: () => api.get('/people', { params: { include_hidden: showHidden } }).then(r => r.data),
+    queryKey: ['people', showHidden, sort],
+    queryFn: () => api.get('/people', { params: { include_hidden: showHidden, sort } }).then(r => r.data),
   })
   const [loosePage, setLoosePage] = useState(1)
   const [loosePageSize, setLoosePageSize] = useState(50)
@@ -121,6 +123,20 @@ export default function PeoplePage() {
     onError: () => toast('Lokale Gesichtserkennung fehlgeschlagen', 'error'),
   })
 
+  // Pre-generate the face-crop cache so opening a person (esp. with video faces,
+  // which otherwise ffmpeg a frame per crop on first view) is instant.
+  const { data: cropStatus } = useQuery<{ total_faces: number; cached: number }>({
+    queryKey: ['crops-status'],
+    queryFn: () => api.get('/people/crops-status').then(r => r.data),
+    refetchInterval: 6000,
+  })
+  const warmCropsMutation = useMutation({
+    mutationFn: () => api.post('/people/warm-crops').then(r => r.data),
+    onSuccess: (d: { queued_faces: number }) =>
+      toast(`Crop-Cache wird vorbereitet (${d.queued_faces} Gesichter) — die Personen-Seite wird danach sofort schnell`, 'success'),
+    onError: () => toast('Crop-Cache vorbereiten fehlgeschlagen', 'error'),
+  })
+
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
   const unknown = useMemo(() => people.filter(p => !(p.name || '').trim()), [people])
   const selectedPeople = people.filter(p => selection.has(p.id))
@@ -168,9 +184,23 @@ export default function PeoplePage() {
       <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Personen</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">{known.length} benannt · {unknown.length} unbekannt</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            {known.length} benannt · {unknown.length} unbekannt
+            {cropStatus && cropStatus.total_faces > 0 && cropStatus.cached < cropStatus.total_faces && (
+              <span> · Crops {cropStatus.cached.toLocaleString()}/{cropStatus.total_faces.toLocaleString()}</span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <select value={sort} onChange={e => setSort(e.target.value)}
+            title="Personen sortieren"
+            className="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="photos">Meiste Bilder</option>
+            <option value="photos_asc">Wenigste Bilder</option>
+            <option value="faces">Meiste Gesichter</option>
+            <option value="name">Name (A–Z)</option>
+            <option value="recent">Zuletzt hinzugefügt</option>
+          </select>
           {selectMode ? (
             <button onClick={clearSelection} className={`${BTN_PRIMARY}`}>
               <X size={15} /> Fertig
@@ -195,6 +225,11 @@ export default function PeoplePage() {
             className={`${BTN_GHOST} disabled:opacity-50`}
             title="Gesichter lokal auf dem Server erkennen (parallel zu den Beschreibungen) — schneller fertig, unabhängig vom KI-Backlog">
             <Sparkles size={15} /><span className="hidden sm:inline">{detectFacesMutation.isPending ? 'Starte…' : 'Gesichter erkennen'}</span>
+          </button>
+          <button onClick={() => warmCropsMutation.mutate()} disabled={warmCropsMutation.isPending}
+            className={`${BTN_GHOST} disabled:opacity-50`}
+            title="Alle Gesichts-Vorschaubilder (Crops) vorab erzeugen — danach lädt die Personen-Seite sofort, ohne pro Video-Gesicht ffmpeg zu starten">
+            <ImageIcon size={15} /><span className="hidden sm:inline">{warmCropsMutation.isPending ? 'Starte…' : 'Crops vorbereiten'}</span>
           </button>
           <button onClick={() => writeNamesMutation.mutate()} disabled={writeNamesMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
@@ -506,7 +541,7 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
         </button>
       )}
       <p className="text-[11px] text-zinc-500">
-        {person.face_count} Foto{person.face_count === 1 ? '' : 's'}{age !== null ? ` · ${age} J.` : ''}
+        {(() => { const n = person.photo_count ?? person.face_count; return `${n} Foto${n === 1 ? '' : 's'}` })()}{age !== null ? ` · ${age} J.` : ''}
       </p>
     </div>
   )

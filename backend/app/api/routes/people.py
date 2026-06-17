@@ -35,16 +35,66 @@ def _face_crop_path(face, photo, person_id: int = 0):
 
 
 @router.get("", response_model=List[PersonDetail])
-async def list_people(include_hidden: bool = False, db: AsyncSession = Depends(get_db)):
-    q = select(Person).order_by(Person.name)
+async def list_people(include_hidden: bool = False, sort: str = "name",
+                      db: AsyncSession = Depends(get_db)):
+    """List persons with face- AND distinct-photo counts. `sort`:
+    name | photos (most→least) | photos_asc | faces | recent.
+    Counts come from two grouped queries (not N+1) so this stays fast."""
+    q = select(Person)
     if not include_hidden:
         q = q.where(Person.is_hidden == False)  # noqa: E712
     persons = (await db.execute(q)).scalars().all()
-    result = []
-    for p in persons:
-        face_count = await db.scalar(select(func.count()).where(Face.person_id == p.id))
-        result.append(PersonDetail(**{k: getattr(p, k) for k in PersonOut.model_fields}, notes=p.notes, face_count=face_count or 0))
+    ids = [p.id for p in persons]
+    faces, photos = {}, {}
+    if ids:
+        for pid, c in (await db.execute(
+            select(Face.person_id, func.count()).where(Face.person_id.in_(ids)).group_by(Face.person_id)
+        )).all():
+            faces[pid] = c
+        for pid, c in (await db.execute(
+            select(Face.person_id, func.count(func.distinct(Face.photo_id)))
+            .where(Face.person_id.in_(ids)).group_by(Face.person_id)
+        )).all():
+            photos[pid] = c
+    result = [PersonDetail(**{k: getattr(p, k) for k in PersonOut.model_fields}, notes=p.notes,
+                           face_count=faces.get(p.id, 0), photo_count=photos.get(p.id, 0))
+              for p in persons]
+    name_key = lambda r: (r.name or "￿").lower()  # unnamed sort last on ties
+    if sort == "photos":
+        result.sort(key=lambda r: (-r.photo_count, name_key(r)))
+    elif sort == "photos_asc":
+        result.sort(key=lambda r: (r.photo_count, name_key(r)))
+    elif sort == "faces":
+        result.sort(key=lambda r: (-r.face_count, name_key(r)))
+    elif sort == "recent":
+        result.sort(key=lambda r: r.created_at, reverse=True)
+    else:
+        result.sort(key=name_key)
     return result
+
+
+@router.post("/warm-crops")
+async def warm_crops(db: AsyncSession = Depends(get_db)):
+    """Pre-generate (warm) the 256px face-crop cache for every face so the People
+    page never triggers on-demand crops — the slow case being VIDEO faces (each
+    uncached crop runs ffmpeg to pull the exact frame). Idempotent."""
+    n = await db.scalar(select(func.count()).where(Face.is_ignored == False))  # noqa: E712
+    from app.worker.tasks import warm_face_crops_task
+    warm_face_crops_task.delay()
+    return {"queued_faces": int(n or 0)}
+
+
+@router.get("/crops-status")
+async def crops_status(db: AsyncSession = Depends(get_db)):
+    """Progress for the crop-cache warming: cached crop files vs. total faces."""
+    import os
+    from app.services.face_crop import _CACHE
+    total = await db.scalar(select(func.count()).where(Face.is_ignored == False)) or 0  # noqa: E712
+    try:
+        cached = sum(1 for e in os.scandir(_CACHE) if e.name.endswith(".jpg"))
+    except Exception:
+        cached = 0
+    return {"total_faces": int(total), "cached": int(cached)}
 
 
 @router.post("", response_model=PersonOut, status_code=201)

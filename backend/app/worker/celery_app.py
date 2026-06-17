@@ -33,6 +33,7 @@ celery_app.conf.update(
         "write_person_name":  {"queue": "cpu"},
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
+        "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "transcode_video":    {"queue": "cpu"},   # worker-cpu has /dev/dri (QSV)

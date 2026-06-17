@@ -11,18 +11,29 @@ except PermissionError:
     _CACHE.mkdir(parents=True, exist_ok=True)
 
 
+def crop_out_path(photo_path: str, person_id: int, face_id: int) -> Path:
+    """Deterministic cache path for a face crop. Key includes a hash of the SOURCE
+    path so a reused face_id (e.g. after a DB truncate + re-scan that restarts IDs)
+    can never serve a stale crop of a different photo. _v3 forces regen of older
+    letterboxed/stale crops."""
+    import hashlib
+    src_h = hashlib.sha1(str(photo_path).encode()).hexdigest()[:10]
+    return _CACHE / f"p{person_id}_f{face_id}_{src_h}_v3.jpg"
+
+
+def crop_cached(photo_path: str, person_id: int, face_id: int) -> bool:
+    """Is this face crop already on disk? Lets callers skip expensive work (e.g. a
+    video-frame ffmpeg extraction) before invoking crop_face()."""
+    return crop_out_path(photo_path, person_id, face_id).exists()
+
+
 def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 256,
               source_image=None) -> Optional[str]:
     """Crop face from photo and save as JPEG. Returns path or None on error.
 
     source_image: an already-loaded PIL image to crop from (e.g. the exact video
     frame the face was detected in) — avoids opening photo_path."""
-    # Key includes a hash of the SOURCE path so a reused face_id (e.g. after a DB
-    # truncate + re-scan that restarts IDs) can never serve a stale crop of a
-    # different photo. _v3 also forces regen of older letterboxed/stale crops.
-    import hashlib
-    src_h = hashlib.sha1(str(photo_path).encode()).hexdigest()[:10]
-    out = _CACHE / f"p{person_id}_f{face_id}_{src_h}_v3.jpg"
+    out = crop_out_path(photo_path, person_id, face_id)
     if out.exists():
         return str(out)
 

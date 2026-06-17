@@ -37,3 +37,4 @@ class PersonOut(BaseModel):
 class PersonDetail(PersonOut):
     notes: Optional[str]
     face_count: int
+    photo_count: int = 0

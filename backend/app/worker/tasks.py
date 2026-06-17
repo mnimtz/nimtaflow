@@ -406,6 +406,73 @@ def write_faces_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="warm_face_crops")
+def warm_face_crops_task(self):
+    """Pre-generate the 256px face-crop cache for EVERY non-ignored face so the
+    People page never has to crop on-demand. The expensive case is VIDEO faces:
+    each uncached crop runs ffmpeg to pull the exact detected frame — so we check
+    the cache FIRST and only extract when a crop is genuinely missing. Idempotent;
+    re-running is cheap (all hits are skips)."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.face_crop import crop_face, crop_cached
+        from app.services.processing.thumbnails import extract_video_frame_bytes
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Face.id, Face.photo_id, Face.person_id, Face.bbox_x, Face.bbox_y,
+                       Face.bbox_w, Face.bbox_h, Face.frame_time)
+                .where(Face.is_ignored == False)  # noqa: E712
+                .order_by(Face.person_id.isnot(None).desc(), Face.photo_id)
+            )).all()
+            flog("faces", "INFO", f"Crop-Cache vorbereiten: {len(rows)} Gesicht(er)")
+            done = skipped = failed = 0
+            photo_cache: dict = {}
+            for fid, photo_id, person_id, bx, by, bw, bh, ft in rows:
+                photo = photo_cache.get(photo_id)
+                if photo is None:
+                    photo = await db.get(Photo, photo_id)
+                    photo_cache[photo_id] = photo
+                if not photo or photo.is_missing:
+                    failed += 1
+                    continue
+                pid = person_id or 0
+                bbox = [bx, by, bw, bh]
+                use_frame = bool(getattr(photo, "is_video", False)) and ft is not None
+                # The cache key matches whatever path crop_face will be called with:
+                # the original video for frame-extracted faces, else the thumbnail.
+                key_path = photo.path if use_frame else (photo.thumb_large or photo.thumb_medium or photo.path)
+                if crop_cached(key_path, pid, fid):
+                    skipped += 1
+                    continue
+                try:
+                    out = None
+                    if use_frame:
+                        import io
+                        from PIL import Image
+                        data = extract_video_frame_bytes(photo.path, float(ft))
+                        if data:
+                            out = crop_face(photo.path, bbox, pid, fid,
+                                            source_image=Image.open(io.BytesIO(data)))
+                    else:
+                        out = crop_face(key_path, bbox, pid, fid)
+                    if out:
+                        done += 1
+                    else:
+                        failed += 1
+                except Exception:
+                    failed += 1
+                if (done + failed) % 200 == 0 and (done + failed) > 0:
+                    flog("faces", "INFO", f"Crop-Cache: {done} erzeugt, {skipped} bereits da, {failed} Fehler …")
+            flog("faces", "INFO", f"Crop-Cache fertig: {done} erzeugt, {skipped} bereits da, {failed} Fehler")
+            return {"warmed": done, "skipped": skipped, "failed": failed}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="detect_faces_local")
 def detect_faces_local_task(self, photo_id: int):
     """Detect faces on the SERVER with insightface (buffalo_l, CPU) — DECOUPLED
