@@ -266,15 +266,15 @@ async def map_points(db: AsyncSession = Depends(get_db),
     cap (the gallery list capped the map at 500). Just coordinates, so the whole
     library's points render; clicking a point fetches the photo detail by id."""
     conds = photo_conditions(user)
-    # Cap to a count the globe/map can render smoothly (13k+ points hang the
-    # WebGL globe and make the query heavy). Newest first. TODO: marker
-    # clustering to show the full set.
+    # Return ALL gps points (newest first) — the 2D map clusters them
+    # (react-leaflet-cluster, zoom-adaptive); the globe slices to a renderable
+    # subset client-side. Lightweight rows (just coords), so the full set is fine.
     rows = (await db.execute(
         select(Photo.id, Photo.latitude, Photo.longitude, Photo.is_video).where(
             Photo.latitude.isnot(None), Photo.longitude.isnot(None),
             Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
             *conds,
-        ).order_by(Photo.taken_at.desc().nullslast()).limit(5000)
+        ).order_by(Photo.taken_at.desc().nullslast())
     )).all()
     return [{"id": r[0], "latitude": r[1], "longitude": r[2], "is_video": r[3]} for r in rows]
 

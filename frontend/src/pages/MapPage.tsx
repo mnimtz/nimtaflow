@@ -1,12 +1,15 @@
 import { useState, useMemo, useEffect, Suspense, lazy } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Layers, Navigation, Globe2, Map as MapIcon } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
 
 const GlobeView = lazy(() => import('./GlobeView'))
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import L from 'leaflet'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -158,7 +161,7 @@ export default function MapPage() {
         ) : view3d ? (
           <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">Globus wird geladen…</div>}>
             <GlobeView
-              points={withGps.map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
+              points={withGps.slice(0, 5000).map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
               onPoint={(id) => { const i = withGps.findIndex(p => p.id === id); if (i >= 0) setLbIndex(i) }}
             />
           </Suspense>
@@ -166,6 +169,7 @@ export default function MapPage() {
           <MapContainer center={[51.1657, 10.4515]} zoom={5} className="h-full w-full">
             <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
             <FitBounds points={points} />
+            <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
             {withGps.map((photo) => (
               <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]}>
                 <Popup>
@@ -190,6 +194,7 @@ export default function MapPage() {
                 </Popup>
               </Marker>
             ))}
+            </MarkerClusterGroup>
           </MapContainer>
         )}
       </div>
