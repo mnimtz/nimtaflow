@@ -43,6 +43,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
@@ -60,6 +64,12 @@ services:
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "gpu", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-1}"]
     restart: unless-stopped
     runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
+    # Safety net: a host without enough RAM/GPU that tried to load the 11 GB Qwen
+    # VLM OOM-killed the box. The local VLM is now disabled here (PHOTOFLOW_LOCAL_VLM
+    # below — the Asus agent keeps it); this caps the worker so it can never starve
+    # the API/DB even if something else balloons. The Asus's own nvidia runtime
+    # ignores mem_limit for GPU memory; this bounds host RAM only.
+    mem_limit: ${WORKER_MEM_LIMIT:-4g}
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - photoflow-cache:/cache
@@ -75,6 +85,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
@@ -125,6 +139,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
@@ -163,6 +181,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
@@ -184,6 +206,10 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}

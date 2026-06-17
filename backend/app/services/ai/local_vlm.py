@@ -122,6 +122,10 @@ class LocalVLMProvider(AIProvider):
     def _load_vlm(self):
         if self.model_key in _vlm_cache:
             return _vlm_cache[self.model_key]
+        import os
+        if os.getenv("PHOTOFLOW_LOCAL_VLM", "1").lower() in ("0", "false", "no"):
+            raise RuntimeError("local VLM disabled on this host (PHOTOFLOW_LOCAL_VLM=0) — "
+                               "would OOM a non-GPU/low-RAM box; use the remote GPU worker")
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
         # Use the GPU in fp16 when available (huge speed-up; fp16 also lets the
@@ -402,6 +406,8 @@ class LocalVLMProvider(AIProvider):
             return []
 
     async def is_available(self) -> bool:
+        # NOTE: stays available even when PHOTOFLOW_LOCAL_VLM=0 — embed_text (e5) must
+        # keep working for search. Only the heavy VLM LOAD is blocked, in _load_vlm.
         try:
             import torch  # noqa
             import transformers  # noqa
