@@ -505,13 +505,15 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
     queryKey: ['person-photos', personId],
     queryFn: () => api.get(`/people/${personId}/photos?limit=200`).then(r => r.data),
   })
-  const [faceLimit, setFaceLimit] = useState(120)
+  const [facePage, setFacePage] = useState(1)
+  const [facePageSize, setFacePageSize] = useState(50)
   const { data: facesData } = useQuery<{ total: number; items: FaceRef[] }>({
-    queryKey: ['person-faces', personId, faceLimit],
-    queryFn: () => api.get(`/people/${personId}/faces`, { params: { limit: faceLimit } }).then(r => r.data),
+    queryKey: ['person-faces', personId, facePage, facePageSize],
+    queryFn: () => api.get(`/people/${personId}/faces`, { params: { page: facePage, limit: facePageSize } }).then(r => r.data),
   })
   const faces = facesData?.items ?? []
   const facesTotal = facesData?.total ?? 0
+  const facePages = Math.max(1, Math.ceil(facesTotal / facePageSize))
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['person', personId] })
@@ -589,9 +591,9 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
 
       <RelationshipsPanel personId={personId} personName={person.name || 'Unbekannt'} />
 
-      {faces.length > 0 && (
+      {facesTotal > 0 && (
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({faces.length}{facesTotal > faces.length ? ` von ${facesTotal}` : ''})</h2>
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({facesTotal})</h2>
           <p className="text-xs text-zinc-500 mb-3">Tippe ein Gesicht ★ um es als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
           <div className="flex gap-2 flex-wrap">
             {faces.map(f => (
@@ -611,11 +613,25 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
               </div>
             ))}
           </div>
-          {facesTotal > faces.length && (
-            <button onClick={() => setFaceLimit(l => l + 240)}
-              className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-              Mehr Gesichter laden ({faces.length}/{facesTotal})
-            </button>
+          {facesTotal > 25 && (
+            <div className="flex items-center gap-3 mt-4 text-xs flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-zinc-500 mr-1">Pro Seite:</span>
+                {[25, 50, 100].map(n => (
+                  <button key={n} onClick={() => { setFacePageSize(n); setFacePage(1) }}
+                    className={`px-2.5 py-1 rounded-lg border ${facePageSize === n
+                      ? 'border-indigo-500 bg-indigo-500 text-white'
+                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{n}</button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <button disabled={facePage <= 1} onClick={() => setFacePage(p => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">‹ Zurück</button>
+                <span className="text-zinc-500">Seite {facePage} / {facePages}</span>
+                <button disabled={facePage >= facePages} onClick={() => setFacePage(p => Math.min(facePages, p + 1))}
+                  className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">Weiter ›</button>
+              </div>
+            </div>
           )}
         </div>
       )}
