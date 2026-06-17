@@ -5,6 +5,7 @@ import SetupPage from './pages/SetupPage'
 import Layout from './components/layout/Layout'
 import GalleryPage from './pages/GalleryPage'
 import SearchPage from './pages/SearchPage'
+import ChatPage from './pages/ChatPage'
 import AlbumsPage from './pages/AlbumsPage'
 import PeoplePage from './pages/PeoplePage'
 import RelationshipsPage from './pages/RelationshipsPage'
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/gallery" replace />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/albums" element={<AlbumsPage />} />
         <Route path="/people" element={<PeoplePage />} />
         <Route path="/relationships" element={<RelationshipsPage />} />

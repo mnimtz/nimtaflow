@@ -5,6 +5,7 @@ import {
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
+  MessageCircle, Image as ImageIcon,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -32,6 +33,7 @@ const SECTIONS = [
   { id: 'gallery',   icon: Layers,    label: 'Galerie' },
   { id: 'features',  icon: Network,   label: 'Funktionen' },
   { id: 'ai',        icon: Brain,     label: 'Bilder-AI' },
+  { id: 'chat',      icon: MessageCircle, label: 'Chat-Assistent' },
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
@@ -1004,6 +1006,54 @@ function VideoAISection() {
   )
 }
 
+function ChatSettingsSection() {
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const qc = useQueryClient()
+  const settingsQuery = useQuery({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+  const provider = (settings['chat.provider'] || 'gemini').toLowerCase()
+
+  return (
+    <div>
+      <SectionHeader title="Chat-Assistent" desc="Unterhaltung über die Foto-Sammlung (RAG). Der Assistent durchsucht die Bilder per Vektorsuche (pgvector) und antwortet nur anhand der gefundenen Fotos. Öffnen über „Chat" in der Navigation." />
+      <div className="space-y-6 max-w-xl">
+        <div>
+          <Label>Modell für den Chat</Label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {([
+              { id: 'gemini', label: 'Gemini', sub: 'Cloud · Tool-Agent · Kosten pro Frage' },
+              { id: 'local', label: 'Lokal (Qwen)', sub: 'privat · gratis · langsamer (Asus-GPU)' },
+            ] as const).map(o => (
+              <button key={o.id} onClick={() => set('chat.provider', o.id)}
+                className={`text-left p-3 rounded-xl border transition ${
+                  provider === o.id
+                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40'
+                    : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{o.label}</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</p>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-zinc-400 mt-2">
+            Gemini nutzt den unter <b>Bilder-AI</b> hinterlegten API-Key als Tool-Agent (entscheidet selbst, wann er sucht).
+            Lokal läuft über den Remote-Worker (Qwen) — gratis, aber langsamer. Beide antworten nur auf Basis gefundener Fotos.
+          </p>
+        </div>
+        <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+      </div>
+    </div>
+  )
+}
+
 function PipelineSection() {
   const qc = useQueryClient()
   const [busy, setBusy] = useState('')
@@ -1013,6 +1063,16 @@ function PipelineSection() {
   const { data: stats } = useQuery<{ total?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }>({
     queryKey: ['photo-stats'], queryFn: () => api.get('/photos/stats').then(r => r.data), refetchInterval: 3000,
   })
+  // Remote backlog (descriptions + faces run on the pull-agent, NOT the local GPU
+  // queue) + crop-cache warming progress.
+  const { data: remote } = useQuery<{ enabled: boolean; pending: number; faces_pending: number; workers: { name: string }[] }>({
+    queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
+  })
+  const { data: crops } = useQuery<{ total_faces: number; cached: number }>({
+    queryKey: ['crops-status'], queryFn: () => api.get('/people/crops-status').then(r => r.data), refetchInterval: 5000,
+  })
+  const warmCrops = useMutation({ mutationFn: () => api.post('/people/warm-crops').then(r => r.data) })
+  const remoteActive = !!remote?.enabled && (remote?.workers?.length ?? 0) > 0
   const st = stats?.by_status ?? {}
   const cov = stats?.coverage ?? {}
   const errCount = (st['error'] ?? 0) + (cov['ai_error'] ?? 0)
@@ -1042,10 +1102,48 @@ function PipelineSection() {
           <Label>Warteschlangen (live)</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
             <QCard label="CPU-Queue" val={queues?.cpu} hint="Scans, Thumbnails (4 parallel)" cls="text-indigo-500" />
-            <QCard label="GPU-Queue" val={queues?.gpu} hint="KI + Gesichter (1 Slot)" cls="text-violet-500" />
-            <QCard label="In Arbeit" val={st['processing']} hint="aktuell verarbeitet" cls="text-sky-500" />
+            <QCard label="GPU-Queue (lokal)"
+              val={queues?.gpu}
+              hint={remoteActive ? 'bei aktivem Remote-Worker ungenutzt → läuft remote' : 'lokale KI + Gesichter (1 Slot)'}
+              cls="text-zinc-400" />
+            <QCard label="In Arbeit" val={st['processing']}
+              hint={remoteActive ? 'an Remote-Worker übergeben, wartet auf Beschreibung' : 'aktuell verarbeitet'}
+              cls="text-sky-500" />
           </div>
           {queues?.error && <p className="text-xs text-amber-500 mt-1">Queue-Status nicht lesbar: {queues.error}</p>}
+        </div>
+
+        {/* Remote AI backlog — the real description/face work when a remote worker runs */}
+        {remoteActive && (
+          <div>
+            <Label>Remote-Verarbeitung (KI auf der GPU)</Label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
+              <QCard label="Beschreibungen offen" val={remote?.pending} hint="warten auf Qwen/Gemini (GPU)" cls="text-violet-500" />
+              <QCard label="Gesichter offen" val={remote?.faces_pending} hint="warten auf Gesichtserkennung" cls="text-sky-500" />
+              <QCard label="Worker verbunden" val={remote?.workers?.length} hint="Details: Einstellungen → Remote-Worker" cls="text-emerald-500" />
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-1">Beschreibung + Gesichter laufen über den Remote-Worker (Pull über HTTP) — deshalb ist die lokale GPU-Queue leer, der Rückstau steht hier.</p>
+          </div>
+        )}
+
+        {/* Crop-cache warming (faster People page) */}
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5"><ImageIcon size={14} /> Crop-Cache (Personen-Vorschauen)</p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {crops && crops.total_faces > 0
+                  ? <><b className={crops.cached >= crops.total_faces ? 'text-emerald-500' : 'text-sky-500'}>{crops.cached.toLocaleString('de')}</b> / {crops.total_faces.toLocaleString('de')} Gesichts-Crops erzeugt ({Math.round((crops.cached / crops.total_faces) * 100)}%) — vorab erzeugen lässt die Personen-Seite sofort laden.</>
+                  : 'Vorschau-Crops für die Personen-Seite.'}
+              </p>
+              {crops && crops.total_faces > 0 && crops.cached < crops.total_faces && (
+                <div className="mt-2 h-1.5 w-full max-w-xs bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${Math.round((crops.cached / crops.total_faces) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+            <ActBtn label={crops && crops.cached >= crops.total_faces ? 'Crops neu prüfen' : 'Crops vorbereiten'} busy={warmCrops.isPending} onClick={() => warmCrops.mutate()} />
+          </div>
         </div>
 
         {/* Error queue */}
@@ -1993,6 +2091,7 @@ export default function SettingsPage() {
         {section === 'gallery'  && <GallerySection />}
         {section === 'features' && <FeaturesSection />}
         {section === 'ai'       && <AISection />}
+        {section === 'chat'     && <ChatSettingsSection />}
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}
         {section === 'memories' && <MemoriesSettingsSection />}

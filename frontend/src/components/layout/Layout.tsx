@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, BookImage, Sparkles, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
+import { Images, Users, Map, Activity, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -65,6 +65,7 @@ function VersionBadge() {
 const nav = [
   { to: '/gallery', icon: Images, label: 'Galerie' },
   { to: '/search', icon: Sparkles, label: 'Suche' },
+  { to: '/chat', icon: MessageCircle, label: 'Chat' },
   { to: '/albums', icon: BookImage, label: 'Alben' },
   { to: '/people', icon: Users, label: 'Personen' },
   { to: '/map', icon: Map, label: 'Karte' },
