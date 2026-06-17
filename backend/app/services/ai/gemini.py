@@ -7,28 +7,37 @@ import httpx
 from .base import AIProvider, DetectedFace
 
 
-# Shorter prompts (2-3 sentences / 15 tags) to cut Gemini OUTPUT tokens — the
-# dominant cost on flash (~$2.50/1M output). Combined with the single-call path
-# below (describe_and_tag) this roughly cuts per-image cost ~35-40 %.
+# Quality-first prompts (the user's explicit priority: do NOT shorten / cheap out
+# on the AI answers). These are DEFAULTS only — the live run uses the richer custom
+# `settings.ai.prompt.image` / `ai.prompt.tags`. The cost win comes purely from the
+# single-call path below (describe_and_tag → image uploaded ONCE, not twice), which
+# does not touch answer quality.
 LANG_PROMPTS = {
-    "de": ("Beschreibe dieses Foto sachlich auf Deutsch in 2-3 Sätzen. Nenne konkret: die "
-           "Personen (Anzahl, ungefähres Alter, Tätigkeit), die wichtigsten Objekte und den Ort "
-           "bzw. Hintergrund. Verwende KEINE wertenden Adjektive. Beginne direkt mit der Beschreibung."),
-    "en": ("Describe this photo factually in English in 2-3 sentences. State concretely: the people "
-           "(count, approximate age, activity), the main objects and the place/background. Use NO "
-           "subjective adjectives. Start directly with the description."),
-    "fr": ("Décris cette photo de manière factuelle en français en 2-3 phrases. Indique concrètement : "
-           "les personnes (nombre, âge approximatif, activité), les objets principaux et le lieu/"
-           "l'arrière-plan. N'utilise AUCUN adjectif subjectif. Commence directement par la description."),
+    "de": ("Beschreibe dieses Foto sachlich und ausführlich auf Deutsch in 4-6 Sätzen. "
+           "Nenne konkret: die Personen (Anzahl, ungefähres Alter, Kleidung, Tätigkeit), die "
+           "wichtigsten Objekte, den Ort bzw. Hintergrund und die Bildsituation. Verwende KEINE "
+           "wertenden oder gefühlsbetonten Adjektive (kein 'süß', 'niedlich', 'idyllisch'). "
+           "Beginne direkt mit der Beschreibung."),
+    "en": ("Describe this photo factually and in detail in English in 4-6 sentences. State "
+           "concretely: the people (count, approximate age, clothing, activity), the main "
+           "objects, the place/background and the situation. Use NO subjective or emotional "
+           "adjectives (no 'cute', 'adorable', 'idyllic'). Start directly with the description."),
+    "fr": ("Décris cette photo de manière factuelle et détaillée en français en 4-6 phrases. "
+           "Indique concrètement : les personnes (nombre, âge approximatif, vêtements, activité), "
+           "les objets principaux, le lieu/l'arrière-plan et la situation. N'utilise AUCUN "
+           "adjectif subjectif ou émotionnel. Commence directement par la description."),
 }
 
 TAG_PROMPTS = {
-    "de": ("genau 15 konkrete, sichtbare Schlagwörter auf Deutsch (Personen, Objekte, Kleidung, Ort, "
-           "Tätigkeit, Anlass), kommagetrennt in Kleinbuchstaben, keine Wertungen, keine Dopplungen"),
-    "en": ("exactly 15 concrete, visible English keywords (people, objects, clothing, place, activity, "
-           "occasion), comma-separated lowercase, no judgements, no duplicates"),
-    "fr": ("exactement 15 mots-clés concrets et visibles en français (personnes, objets, vêtements, lieu, "
-           "activité, occasion), séparés par des virgules en minuscules, sans jugements ni doublons"),
+    "de": ("20 bis 30 konkrete, sichtbare Schlagwörter auf Deutsch (Personen, Objekte, Kleidung, "
+           "Farben, Ort, Tätigkeit, Anlass), kommagetrennt in Kleinbuchstaben, ausschließlich "
+           "deutsche Begriffe, keine Wertungen, keine Erklärungen, keine Dopplungen"),
+    "en": ("20 to 30 concrete, visible English keywords (people, objects, clothing, colors, place, "
+           "activity, occasion), comma-separated lowercase, only English terms, no feelings or "
+           "judgements, no explanations, no duplicates"),
+    "fr": ("20 à 30 mots-clés concrets et visibles en français (personnes, objets, vêtements, couleurs, "
+           "lieu, activité, occasion), séparés par des virgules en minuscules, sans émotions ni "
+           "jugements, sans explications ni doublons"),
 }
 
 
