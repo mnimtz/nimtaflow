@@ -58,6 +58,41 @@ async def read_existing_ai_metadata(path: str):
     return desc, kws
 
 
+async def read_file_location(path: str):
+    """Read title + city + country from the file or its `.xmp` sidecar, so a
+    re-import recovers user-entered title and place names (which are otherwise
+    only re-derivable from GPS). Returns (title, city, country) — each or None."""
+    if not _EXIFTOOL:
+        return None, None, None
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Title", "-IPTC:ObjectName",
+                "-XMP:City", "-IPTC:City", "-XMP:Country", "-XMP:CountryName",
+                "-IPTC:Country-PrimaryLocationName", "-Iptc4xmpCore:Location", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await proc.communicate()
+            if proc.returncode != 0 or not out:
+                return None, None, None
+            d = (json.loads(out) or [{}])[0]
+            title = (d.get("Title") or d.get("ObjectName") or "").strip() or None
+            city = (d.get("City") or d.get("Location") or "").strip() or None
+            country = (d.get("Country") or d.get("CountryName")
+                       or d.get("Country-PrimaryLocationName") or "").strip() or None
+            return title, city, country
+        except Exception:
+            return None, None, None
+
+    title, city, country = await _read(path)
+    if not (title or city or country):
+        sc = Path(path).with_suffix(".xmp")
+        if sc.exists():
+            title, city, country = await _read(str(sc))
+    return title, city, country
+
+
 async def read_existing_extras(path: str):
     """Read durable user metadata we write into files — XMP:Rating (0-5) and the
     list of person names (XMP:PersonInImage) — from the file or its `.xmp` sidecar.

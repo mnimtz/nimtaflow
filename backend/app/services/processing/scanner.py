@@ -182,6 +182,15 @@ async def scan_source(
                                 photo.is_favorite = True
                         if persons:
                             photo.imported_person_names = ",".join(persons[:50])
+                        # Title + place names (otherwise only re-derivable from GPS).
+                        from app.services.exif_edit import read_file_location
+                        title, city, country = await read_file_location(path_str)
+                        if title and not photo.title:
+                            photo.title = title[:512]
+                        if city and not photo.city:
+                            photo.city = city
+                        if country and not photo.country:
+                            photo.country = country
                     except Exception:
                         pass
                     # Face regions (MWG): recreate the detected faces from the boxes

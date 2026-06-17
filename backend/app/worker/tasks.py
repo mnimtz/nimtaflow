@@ -450,6 +450,17 @@ def backfill_xmp_task(self):
                         eff = 5 if photo.is_favorite else int(photo.user_rating or 0)
                         if eff > 0:
                             await _wr(photo.path, eff)
+                        # title + place names → embed so they round-trip (read back
+                        # by read_file_location on the next scan).
+                        loc = {}
+                        if photo.title: loc["XMP:Title"] = photo.title; loc["IPTC:ObjectName"] = photo.title
+                        if photo.city: loc["XMP:City"] = photo.city; loc["IPTC:City"] = photo.city
+                        if photo.country:
+                            loc["XMP:Country"] = photo.country
+                            loc["IPTC:Country-PrimaryLocationName"] = photo.country
+                        if loc:
+                            from app.services.exif_edit import write_exif as _wx
+                            await _wx(photo.path, loc, make_backup=False)
                     if mode in ("file_sidecar", "sidecar"):
                         from app.services.xmp_sidecar import file_capture_date
                         cap = photo.taken_at or file_capture_date(photo.path)
