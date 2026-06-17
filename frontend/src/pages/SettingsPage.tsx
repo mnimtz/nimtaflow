@@ -801,6 +801,19 @@ function AISection() {
           <BackfillXmpButton />
         </div>
 
+        {/* Re-use existing file metadata on scan */}
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">KI trotz vorhandener Metadaten neu erkennen</p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Standard AUS: Hat eine Datei bereits eine Beschreibung (eingebettetes XMP oder <code>.xmp</code>-Sidecar),
+              wird sie beim Scan <strong>übernommen</strong> und die KI übersprungen (schnell, spart GPU — z. B. nach
+              Re-Import/Wiederherstellung). AN = immer neu mit KI beschreiben.
+            </p>
+          </div>
+          <Toggle value={(settings['scan.force_reindex'] ?? 'false') === 'true'} onChange={v => set('scan.force_reindex', v ? 'true' : 'false')} />
+        </label>
+
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
     </div>

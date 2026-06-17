@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.photo import Photo, PhotoStatus
 from app.models.source import PhotoSource
+from app.models.tag import Tag, PhotoTag
 from .exif import extract_exif
 from .thumbnails import generate_thumbnail
 
@@ -66,6 +67,15 @@ async def scan_source(
             pass
 
     _slog("INFO", f"Scan gestartet: {root} (rekursiv={source.recursive})")
+
+    # Read existing AI metadata (embedded XMP/IPTC or a .xmp sidecar) and import
+    # it instead of re-running the AI — unless the user forces a re-index.
+    try:
+        from app.services.settings_loader import load_settings
+        _s = await load_settings(session)
+        _force_reindex = str(_s.get("scan.force_reindex", "false")).lower() == "true"
+    except Exception:
+        _force_reindex = False
 
     if not root.exists():
         # Most common cause of "noch nicht gescannt": the path doesn't exist
@@ -135,10 +145,39 @@ async def scan_source(
             if thumb:
                 photo.thumb_small = thumb
 
+            # Import already-present metadata (embedded XMP/IPTC or .xmp sidecar)
+            # so we don't re-run the AI on already-described media. Setting the
+            # description here means the remote/local AI skips it (claim filters
+            # description IS NULL). Opt-out via scan.force_reindex.
+            imported = False
+            if not _force_reindex:
+                try:
+                    from app.services.exif_edit import read_existing_ai_metadata
+                    desc, kws = await read_existing_ai_metadata(path_str)
+                    if desc:
+                        photo.description = desc
+                        photo.description_model = "imported"
+                        for name in [k[:120] for k in (kws or [])[:20] if k.strip()]:
+                            tag = await session.scalar(select(Tag).where(Tag.name == name))
+                            if not tag:
+                                try:
+                                    async with session.begin_nested():
+                                        tag = Tag(name=name); session.add(tag); await session.flush()
+                                except IntegrityError:
+                                    tag = await session.scalar(select(Tag).where(Tag.name == name))
+                            if tag and not await session.scalar(select(PhotoTag).where(
+                                    PhotoTag.photo_id == photo.id, PhotoTag.tag_id == tag.id)):
+                                session.add(PhotoTag(photo_id=photo.id, tag_id=tag.id, source="imported"))
+                        imported = True
+                        _slog("INFO", f"Metadaten aus Datei übernommen (KI übersprungen): {entry.name}")
+                except Exception as e:
+                    _slog("WARNING", f"Metadaten-Import fehlgeschlagen: {entry.name}: {str(e)[:120]}")
+
             await session.commit()
             stats["new"] += 1
             # Enqueue processing immediately (not in one batch at the end) so it
             # starts right away, survives an interrupted scan, and shows progress.
+            # (process_photo skips the AI stage when a description was imported.)
             from app.worker.tasks import process_photo_task
             process_photo_task.delay(photo.id)
             if stats["new"] % 100 == 0:

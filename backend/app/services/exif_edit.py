@@ -19,6 +19,45 @@ class ExifEditError(RuntimeError):
     pass
 
 
+async def read_existing_ai_metadata(path: str):
+    """Read an already-present description + keywords from the file's embedded
+    XMP/IPTC, or from a `.xmp` sidecar next to it. Returns (description, keywords).
+
+    Used on scan to SKIP re-running AI on media that PhotoFlow (or another tool)
+    already described — e.g. after a re-import or DB loss, the descriptions we
+    wrote into the files are read back instead of recomputed."""
+    if not _EXIFTOOL:
+        return None, []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Description", "-IPTC:Caption-Abstract",
+                "-EXIF:ImageDescription", "-XMP:Subject", "-IPTC:Keywords", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await proc.communicate()
+            if proc.returncode != 0 or not out:
+                return None, []
+            d = (json.loads(out) or [{}])[0]
+            desc = (d.get("Description") or d.get("Caption-Abstract") or d.get("ImageDescription") or "").strip() or None
+            subj = d.get("Subject") or d.get("Keywords") or []
+            if isinstance(subj, str):
+                subj = [s.strip() for s in subj.split(",") if s.strip()]
+            return desc, [str(s).strip() for s in subj if str(s).strip()]
+        except Exception:
+            return None, []
+
+    desc, kws = await _read(path)
+    if not desc:  # fall back to a sidecar (videos always use one; images may)
+        from pathlib import Path as _P
+        sc = _P(path).with_suffix(".xmp")
+        if sc.exists():
+            desc, kws2 = await _read(str(sc))
+            kws = kws or kws2
+    return desc, kws
+
+
 async def read_all_exif(path: str) -> Dict[str, Any]:
     """Return all EXIF/IPTC/XMP tags as a flat dict."""
     if not _EXIFTOOL:

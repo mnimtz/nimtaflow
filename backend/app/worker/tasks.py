@@ -526,7 +526,12 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
             # gallery. Hand the slow GPU work (AI description, embedding, face
             # detection) to the single-slot GPU queue so it never blocks scans
             # or thumbnails for other photos.
-            ai_photo_task.delay(photo_id, job_id, redo_faces)
+            # Skip the AI stage when the description was IMPORTED from existing
+            # file metadata (scanner) — unless this is an explicit re-process.
+            if photo.description_model == "imported" and not (redo_faces or redo_thumbs):
+                flog("scanner", "INFO", f"KI übersprungen (Metadaten importiert): {photo.filename}")
+            else:
+                ai_photo_task.delay(photo_id, job_id, redo_faces)
 
     _run(_run_process())
 

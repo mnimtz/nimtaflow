@@ -32,6 +32,7 @@ and enriches your library with local or cloud AI.
 - **GPU acceleration** — CUDA passthrough (RTX 2080 tested): the VLM runs in fp16/4-bit on the GPU; InsightFace face detection stays on CPU so the two don't fight for the 8 GB of VRAM. Input is capped to ~1280 px and the CUDA cache is freed per photo to avoid OOM/fragmentation.
 - **Auto-tagging** (in the selected language) + **semantic search embeddings** (pgvector 768-dim; local e5 for the integrated provider).
 - **AI write-back** for **any** provider: embed `dc:description`/IPTC + keywords into the file and/or a `.xmp` sidecar (mode: off / file / file+sidecar / sidecar). Full text, never truncated (XMP has no length limit); `-P` preserves the file timestamp so dates never become "today"; if a file has **no EXIF capture date**, the file date is written into `DateTimeOriginal` (+ DB) so it gets a stable date.
+- **Re-use existing metadata on scan**: if a file already has a description (embedded XMP/IPTC **or** a `.xmp` sidecar), the scanner imports it and **skips the AI** (fast, saves GPU — e.g. after a re-import or DB recovery, the descriptions PhotoFlow wrote into the files are read back instead of recomputed). Force a fresh AI pass with `scan.force_reindex` (Settings → KI).
 - **Tag prompt** (`Settings → KI`): leave empty → tags are derived from the caption (fast, no extra pass); set it → the VLM produces keywords in a dedicated pass (≈doubles GPU time). Output is sanitised (no JSON scaffold / instruction-echo / repetition loops).
 
 ### Videos
