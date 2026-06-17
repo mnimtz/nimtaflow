@@ -1,0 +1,33 @@
+# Parallel CPU face-detection workers for a REMOTE PhotoFlow server.
+# Runs alongside docker-compose.remote-worker.yml (which keeps describing on the
+# GPU). These do ONLY face detection (WORKER_MODE=faces) on the CPU, so faces
+# finish fast in parallel — decoupled from the slow descriptions. Same image +
+# same insightface model → embeddings stay consistent with the GPU worker.
+#
+# Start (scale to ~half the cores; each worker uses ~2 threads):
+#   PHOTOFLOW_SERVER=http://<server>:8090 PHOTOFLOW_REMOTE_TOKEN=<token> \
+#     docker compose -f docker-compose.remote-faces.yml up -d --build --scale remote-faces=8
+services:
+  remote-faces:
+    build: ./backend
+    image: photoflow-app:latest
+    command: ["python", "-m", "app.remote_worker.agent"]
+    restart: unless-stopped
+    environment:
+      PHOTOFLOW_SERVER: ${PHOTOFLOW_SERVER:?set the server URL}
+      PHOTOFLOW_REMOTE_TOKEN: ${PHOTOFLOW_REMOTE_TOKEN:?set the remote token}
+      WORKER_NAME: ${WORKER_NAME:-asus-faces}
+      WORKER_MODE: faces          # faces-only — never describes
+      FACE_DEVICE: cpu            # CPU so it doesn't fight the GPU describe worker
+      OMP_NUM_THREADS: "2"        # keep each worker to ~2 cores; scale = parallelism
+      POLL_INTERVAL: ${POLL_INTERVAL:-3}
+      PYTHONUNBUFFERED: "1"
+      HF_HOME: /models
+      INSIGHTFACE_HOME: /models/insightface
+    volumes:
+      - photoflow-models:/models
+
+volumes:
+  photoflow-models:
+    external: true
+    name: photoflow_photoflow-models

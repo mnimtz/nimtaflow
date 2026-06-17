@@ -57,6 +57,7 @@ async def _require_token(db: AsyncSession, token: Optional[str]) -> dict:
 
 class ClaimReq(BaseModel):
     worker: str = "worker"
+    mode: str = "all"   # "all" = describe+faces | "faces" = faces-only worker
 
 
 @router.post("/claim")
@@ -82,6 +83,7 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # provider is 'local'. Images set to Gemini/OpenAI/Ollama are described on the
     # server; the remote still does their FACES (below), so every face uses the
     # same insightface engine and clustering stays consistent.
+    faces_mode = (body.mode or "all").strip().lower() == "faces"
     image_provider = (s.get("ai.provider") or "none").strip()
     video_provider = (build_video_settings(s).get("ai.provider") or "none").strip()
     desc_scope = []
@@ -90,23 +92,27 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     if video_provider == "local" and include_videos:
         desc_scope.append(Photo.is_video == True)   # noqa: E712
     where_terms = []
-    if desc_scope:
+    # A faces-only worker (mode=faces) NEVER describes — it just sweeps faces, so
+    # face detection can run in parallel (e.g. many CPU workers) independently of
+    # the slow descriptions.
+    if desc_scope and not faces_mode:
         where_terms.append(and_(
             Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
             Photo.thumb_large.isnot(None), not_claimed, or_(*desc_scope),
         ))
-    # Any DESCRIBED image still lacking a face pass needs one (faces-only) —
-    # covers imported metadata AND server-side (Gemini) descriptions. faces_scanned
-    # stops faceless photos from being re-claimed forever. Opt-out: faces.enabled /
-    # scan.faces_on_import.
+    # Images still lacking a face pass. A faces-only worker takes ANY such image
+    # (decoupled from description); the normal "all" worker only does the faces-only
+    # pass for ALREADY-DESCRIBED images (imported/Gemini) so it doesn't steal fresh
+    # descriptions from itself. faces_scanned stops faceless photos re-claiming.
     faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
     faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
-    if faces_enabled and faces_on_import:
+    if faces_enabled and (faces_on_import or faces_mode):
         no_faces = ~exists().where(Face.photo_id == Photo.id)
-        where_terms.append(and_(
-            Photo.description.isnot(None), Photo.thumb_large.isnot(None),
-            Photo.is_video == False, Photo.faces_scanned == False,  # noqa: E712
-            no_faces, not_claimed,
+        face_terms = [Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
+                      Photo.faces_scanned == False, no_faces, not_claimed]  # noqa: E712
+        if not faces_mode:
+            face_terms.insert(0, Photo.description.isnot(None))
+        where_terms.append(and_(*face_terms
         ))
     if not where_terms:
         return {"photo_id": None}
@@ -117,8 +123,9 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     )).scalars().first()
     if not photo:
         return {"photo_id": None}
-    # If the photo already has a description (imported), this is a faces-only job.
-    faces_only = photo.description is not None
+    # faces-only when the worker is a faces worker, or the photo already has a
+    # description (imported/Gemini) and only needs its face pass.
+    faces_only = faces_mode or (photo.description is not None)
     photo.ai_claimed_at = datetime.now(timezone.utc)
     await db.commit()
     # The remote worker can run a heavier model than the local host is capable

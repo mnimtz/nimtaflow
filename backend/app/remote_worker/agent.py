@@ -24,6 +24,7 @@ SERVER = os.getenv("PHOTOFLOW_SERVER", "http://localhost:8090").rstrip("/")
 TOKEN = os.getenv("PHOTOFLOW_REMOTE_TOKEN", "")
 NAME = os.getenv("WORKER_NAME") or socket.gethostname()
 POLL = float(os.getenv("POLL_INTERVAL", "5"))
+MODE = (os.getenv("WORKER_MODE") or "all").strip().lower()  # "all" | "faces"
 HEAD = {"X-Remote-Token": TOKEN}
 
 
@@ -156,11 +157,11 @@ async def main():
     if not TOKEN:
         print("[agent] PHOTOFLOW_REMOTE_TOKEN not set — aborting.")
         return
-    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s)")
+    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE})")
     async with httpx.AsyncClient() as client:
         while True:
             try:
-                r = await client.post(f"{SERVER}/api/remote/claim", json={"worker": NAME}, headers=HEAD, timeout=30)
+                r = await client.post(f"{SERVER}/api/remote/claim", json={"worker": NAME, "mode": MODE}, headers=HEAD, timeout=30)
                 if r.status_code != 200:
                     print(f"[agent] claim HTTP {r.status_code}: {r.text[:140]}")
                     await asyncio.sleep(POLL * 3)
