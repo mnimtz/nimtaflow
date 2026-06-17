@@ -208,8 +208,12 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         *live, Photo.ai_error == True, Photo.embedding.is_(None), Photo.is_video == False))  # noqa: E712
     with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
 
+    # all indexed (any status) — the right denominator for pipeline coverage %
+    total_indexed = await db.scalar(select(func.count()).where(Photo.is_trashed == False))  # noqa: E712
+
     return {
         "total": total or 0,
+        "total_indexed": total_indexed or 0,
         "videos": videos or 0,
         "favorites": favorites or 0,
         "with_gps": with_gps or 0,

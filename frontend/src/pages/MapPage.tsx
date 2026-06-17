@@ -161,7 +161,7 @@ export default function MapPage() {
         ) : view3d ? (
           <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">Globus wird geladen…</div>}>
             <GlobeView
-              points={withGps.slice(0, 5000).map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
+              points={withGps.map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
               onPoint={(id) => { const i = withGps.findIndex(p => p.id === id); if (i >= 0) setLbIndex(i) }}
             />
           </Suspense>

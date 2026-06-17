@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { RefreshCw, CheckCircle, XCircle, SkipForward, Users, Sparkles, Brain, DollarSign, AlertTriangle } from 'lucide-react'
 import { api, Job } from '../lib/api'
 
-type Stats = { total?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }
+type Stats = { total?: number; total_indexed?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }
 
 export default function PipelinePage() {
   const { data: jobs = [], refetch } = useQuery<Job[]>({
@@ -19,7 +19,9 @@ export default function PipelinePage() {
   })
   const st = stats?.by_status ?? {}
   const cov = stats?.coverage ?? {}
-  const total = stats?.total ?? 0
+  // coverage % is against ALL indexed photos (thumbnails run before "done", so
+  // using the done-count as denominator over-counts during a scan).
+  const total = stats?.total_indexed ?? stats?.total ?? 0
   const [busy, setBusy] = useState('')
 
   const act = useMutation({
