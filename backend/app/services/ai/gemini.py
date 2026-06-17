@@ -8,9 +8,32 @@ from .base import AIProvider, DetectedFace
 
 
 LANG_PROMPTS = {
-    "de": "Beschreibe dieses Foto auf Deutsch in 2-3 Sätzen. Beschreibe Personen, Orte, Aktivitäten und Stimmung.",
-    "en": "Describe this photo in English in 2-3 sentences. Describe people, places, activities and mood.",
-    "fr": "Décris cette photo en français en 2-3 phrases. Décris les personnes, lieux, activités et l'ambiance.",
+    "de": ("Beschreibe dieses Foto sachlich und ausführlich auf Deutsch in 4-6 Sätzen. "
+           "Nenne konkret: die Personen (Anzahl, ungefähres Alter, Kleidung, Tätigkeit), die "
+           "wichtigsten Objekte, den Ort bzw. Hintergrund und die Bildsituation. Verwende KEINE "
+           "wertenden oder gefühlsbetonten Adjektive (kein 'süß', 'niedlich', 'idyllisch'). "
+           "Beginne direkt mit der Beschreibung."),
+    "en": ("Describe this photo factually and in detail in English in 4-6 sentences. State "
+           "concretely: the people (count, approximate age, clothing, activity), the main "
+           "objects, the place/background and the situation. Use NO subjective or emotional "
+           "adjectives (no 'cute', 'adorable', 'idyllic'). Start directly with the description."),
+    "fr": ("Décris cette photo de manière factuelle et détaillée en français en 4-6 phrases. "
+           "Indique concrètement : les personnes (nombre, âge approximatif, vêtements, activité), "
+           "les objets principaux, le lieu/l'arrière-plan et la situation. N'utilise AUCUN "
+           "adjectif subjectif ou émotionnel. Commence directement par la description."),
+}
+
+TAG_PROMPTS = {
+    "de": ("Nenne 20 bis 30 konkrete, sichtbare Schlagwörter auf Deutsch zu diesem Foto: "
+           "Personen, Objekte, Kleidung, Farben, Ort, Tätigkeit, Anlass. Nur eine kommagetrennte "
+           "Liste in Kleinbuchstaben, ausschließlich deutsche Begriffe. Keine Gefühle oder "
+           "Wertungen, keine Erklärungen, keine Dopplungen."),
+    "en": ("List 20 to 30 concrete, visible keywords in English for this photo: people, objects, "
+           "clothing, colors, place, activity, occasion. Only a comma-separated lowercase list, "
+           "only English terms, no feelings or judgements, no explanations, no duplicates."),
+    "fr": ("Donne 20 à 30 mots-clés concrets et visibles en français pour cette photo : personnes, "
+           "objets, vêtements, couleurs, lieu, activité, occasion. Uniquement une liste minuscule "
+           "séparée par des virgules, sans émotions ni jugements, sans explications ni doublons."),
 }
 
 
@@ -83,15 +106,16 @@ class GeminiProvider(AIProvider):
 
     async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
                             caption: Optional[str] = None) -> List[str]:
-        lang = {"de": "auf Deutsch", "en": "in English", "fr": "en français", "es": "en español"}.get(language, "auf Deutsch")
         text = await self._generate(
             _image_to_b64(image),
-            prompt or (
-                f"Liste bis zu 15 beschreibende Schlagwörter {lang} für dieses Foto. "
-                f"Nur eine kommagetrennte Liste, keine Erklärungen."
-            ),
+            prompt or TAG_PROMPTS.get(language, TAG_PROMPTS["de"]),
         )
-        return [t.strip().lower() for t in text.split(",") if t.strip()]
+        # de-dupe (keep order), lowercase
+        seen, out = set(), []
+        for t in (x.strip().lower() for x in text.split(",")):
+            if t and t not in seen:
+                seen.add(t); out.append(t)
+        return out
 
     async def detect_faces(self, image: Image.Image) -> List[DetectedFace]:
         # Gemini doesn't return bounding boxes — use local model for faces
