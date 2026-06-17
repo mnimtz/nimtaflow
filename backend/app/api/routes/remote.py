@@ -173,7 +173,7 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         "min_face_px": float(s.get("face.min_size_px", "40") or 0),
         # Photos: 0.7 (clear faces, rejects walls). Video: lower (0.6) — sampled
         # frames are blurrier/lower-res so det_scores run lower; 0.7 dropped them all.
-        "min_conf": (float(s.get("video.face_min_confidence", "0.6") or 0.6) if photo.is_video
+        "min_conf": (float(s.get("video.face_min_confidence", "0.65") or 0.65) if photo.is_video
                      else float(s.get("face.min_confidence", "0.7") or 0.7)),
     }
 

@@ -121,10 +121,14 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
 
     # Only cluster faces from the active engine — facenet (VGGFace2) and InsightFace
     # (ArcFace) embeddings live in incompatible spaces and must never be mixed.
+    # Also gate on confidence: low-conf detections (blurry crops, round toys, ears)
+    # have noisy embeddings that cluster spuriously into junk "persons". Real faces
+    # average ~0.81; require >= 0.65 so weak detections stay loose, not clustered.
+    cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
     rows = (await db.execute(
         select(Face.id, Face.embedding).where(
             Face.person_id == None, Face.is_ignored == False, Face.embedding.isnot(None),  # noqa: E711,E712
-            Face.detector == engine,
+            Face.detector == engine, Face.confidence >= cmin,
         )
     )).all()
     if len(rows) < min_size:
