@@ -106,6 +106,23 @@ class AIManager:
         tags = await provider.generate_tags(image, language, prompt, caption)
         return tags, provider.label
 
+    async def describe_and_tag(self, image: Image.Image, language: str = "de",
+                               desc_prompt: Optional[str] = None,
+                               tag_prompt: Optional[str] = None) -> tuple[str, List[str], str]:
+        """Description + tags in a SINGLE provider call where supported (Gemini) to
+        halve image-input tokens; falls back to two calls for providers without a
+        combined method (local VLMs). Returns (description, tags, provider_label)."""
+        provider = await self._get_active()
+        if not provider:
+            return "", [], "none"
+        combined = getattr(provider, "describe_and_tag", None)
+        if combined is not None:
+            desc, tags = await combined(image, language, desc_prompt, tag_prompt)
+            return desc, tags, provider.label
+        desc = await provider.describe_image(image, language, desc_prompt)
+        tags = await provider.generate_tags(image, language, tag_prompt, caption=desc)
+        return desc, tags, provider.label
+
     async def embed_text(self, text: str) -> tuple[Optional[List[float]], str]:
         # Embeddings use the ACTIVE provider. With Gemini this is text-embedding-004
         # (a free network call) — no local e5 model on the server, which is what

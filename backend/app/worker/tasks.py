@@ -953,7 +953,11 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                     if img and not skip_ai:
                         lang = ai_settings.get("ai.language", "de")
                         custom_prompt = ai_settings.get("ai.prompt.video" if photo.is_video else "ai.prompt.image") or None
-                        description, provider = await ai.describe_image(img, lang, custom_prompt)
+                        # One combined call (Gemini): description + tags in a single
+                        # vision request → ~halved image-input tokens vs. two calls.
+                        # Local providers fall back to two calls inside the manager.
+                        tag_prompt = (ai_settings.get("ai.prompt.tags") or "").strip() or None
+                        description, tags, provider = await ai.describe_and_tag(img, lang, custom_prompt, tag_prompt)
                         if description:
                             photo.description = description
                             photo.description_model = (provider or "")[:120]
@@ -965,7 +969,6 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         else:
                             flog("ai", "WARNING", f"AI lieferte keine Beschreibung ({provider}): {photo.filename}")
 
-                        tags, _ = await ai.generate_tags(img, lang, (ai_settings.get("ai.prompt.tags") or "").strip() or None, caption=description)
                         if tags:
                             flog("ai", "INFO", f"Tags ({provider}): {photo.filename} — {', '.join(tags[:20])}")
                             # replace previous AI tags (e.g. old English ones) for this photo

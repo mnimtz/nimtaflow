@@ -7,33 +7,28 @@ import httpx
 from .base import AIProvider, DetectedFace
 
 
+# Shorter prompts (2-3 sentences / 15 tags) to cut Gemini OUTPUT tokens — the
+# dominant cost on flash (~$2.50/1M output). Combined with the single-call path
+# below (describe_and_tag) this roughly cuts per-image cost ~35-40 %.
 LANG_PROMPTS = {
-    "de": ("Beschreibe dieses Foto sachlich und ausführlich auf Deutsch in 4-6 Sätzen. "
-           "Nenne konkret: die Personen (Anzahl, ungefähres Alter, Kleidung, Tätigkeit), die "
-           "wichtigsten Objekte, den Ort bzw. Hintergrund und die Bildsituation. Verwende KEINE "
-           "wertenden oder gefühlsbetonten Adjektive (kein 'süß', 'niedlich', 'idyllisch'). "
-           "Beginne direkt mit der Beschreibung."),
-    "en": ("Describe this photo factually and in detail in English in 4-6 sentences. State "
-           "concretely: the people (count, approximate age, clothing, activity), the main "
-           "objects, the place/background and the situation. Use NO subjective or emotional "
-           "adjectives (no 'cute', 'adorable', 'idyllic'). Start directly with the description."),
-    "fr": ("Décris cette photo de manière factuelle et détaillée en français en 4-6 phrases. "
-           "Indique concrètement : les personnes (nombre, âge approximatif, vêtements, activité), "
-           "les objets principaux, le lieu/l'arrière-plan et la situation. N'utilise AUCUN "
-           "adjectif subjectif ou émotionnel. Commence directement par la description."),
+    "de": ("Beschreibe dieses Foto sachlich auf Deutsch in 2-3 Sätzen. Nenne konkret: die "
+           "Personen (Anzahl, ungefähres Alter, Tätigkeit), die wichtigsten Objekte und den Ort "
+           "bzw. Hintergrund. Verwende KEINE wertenden Adjektive. Beginne direkt mit der Beschreibung."),
+    "en": ("Describe this photo factually in English in 2-3 sentences. State concretely: the people "
+           "(count, approximate age, activity), the main objects and the place/background. Use NO "
+           "subjective adjectives. Start directly with the description."),
+    "fr": ("Décris cette photo de manière factuelle en français en 2-3 phrases. Indique concrètement : "
+           "les personnes (nombre, âge approximatif, activité), les objets principaux et le lieu/"
+           "l'arrière-plan. N'utilise AUCUN adjectif subjectif. Commence directement par la description."),
 }
 
 TAG_PROMPTS = {
-    "de": ("Nenne 20 bis 30 konkrete, sichtbare Schlagwörter auf Deutsch zu diesem Foto: "
-           "Personen, Objekte, Kleidung, Farben, Ort, Tätigkeit, Anlass. Nur eine kommagetrennte "
-           "Liste in Kleinbuchstaben, ausschließlich deutsche Begriffe. Keine Gefühle oder "
-           "Wertungen, keine Erklärungen, keine Dopplungen."),
-    "en": ("List 20 to 30 concrete, visible keywords in English for this photo: people, objects, "
-           "clothing, colors, place, activity, occasion. Only a comma-separated lowercase list, "
-           "only English terms, no feelings or judgements, no explanations, no duplicates."),
-    "fr": ("Donne 20 à 30 mots-clés concrets et visibles en français pour cette photo : personnes, "
-           "objets, vêtements, couleurs, lieu, activité, occasion. Uniquement une liste minuscule "
-           "séparée par des virgules, sans émotions ni jugements, sans explications ni doublons."),
+    "de": ("genau 15 konkrete, sichtbare Schlagwörter auf Deutsch (Personen, Objekte, Kleidung, Ort, "
+           "Tätigkeit, Anlass), kommagetrennt in Kleinbuchstaben, keine Wertungen, keine Dopplungen"),
+    "en": ("exactly 15 concrete, visible English keywords (people, objects, clothing, place, activity, "
+           "occasion), comma-separated lowercase, no judgements, no duplicates"),
+    "fr": ("exactement 15 mots-clés concrets et visibles en français (personnes, objets, vêtements, lieu, "
+           "activité, occasion), séparés par des virgules en minuscules, sans jugements ni doublons"),
 }
 
 
@@ -102,22 +97,49 @@ class GeminiProvider(AIProvider):
             raise last_exc
         return ""
 
+    @staticmethod
+    def _parse_tags(text: str) -> List[str]:
+        """Comma/newline/semicolon-separated → de-duped lowercase list, bullets stripped."""
+        import re
+        seen, out = set(), []
+        for raw in re.split(r"[,\n;]", text or ""):
+            t = raw.strip().lstrip("-•*").strip().lower()
+            if t and t not in seen:
+                seen.add(t); out.append(t)
+        return out
+
+    @staticmethod
+    def _split_desc_tags(raw: str) -> tuple:
+        """Split a combined 'description … TAGS: a, b, c' response into (desc, [tags])."""
+        import re
+        if not raw:
+            return "", []
+        parts = re.split(r"(?im)^[\s>*\-]*tags\s*:\s*", raw, maxsplit=1)
+        desc = parts[0].strip()
+        tags = GeminiProvider._parse_tags(parts[1]) if len(parts) > 1 else []
+        return desc, tags
+
     async def describe_image(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None) -> str:
         prompt = prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
         return await self._generate(_image_to_b64(image), prompt)
 
     async def generate_tags(self, image: Image.Image, language: str = "de", prompt: Optional[str] = None,
                             caption: Optional[str] = None) -> List[str]:
-        text = await self._generate(
-            _image_to_b64(image),
-            prompt or TAG_PROMPTS.get(language, TAG_PROMPTS["de"]),
-        )
-        # de-dupe (keep order), lowercase
-        seen, out = set(), []
-        for t in (x.strip().lower() for x in text.split(",")):
-            if t and t not in seen:
-                seen.add(t); out.append(t)
-        return out
+        frag = prompt or TAG_PROMPTS.get(language, TAG_PROMPTS["de"])
+        text = await self._generate(_image_to_b64(image), f"Nenne {frag}.")
+        return self._parse_tags(text)
+
+    async def describe_and_tag(self, image: Image.Image, language: str = "de",
+                               desc_prompt: Optional[str] = None,
+                               tag_prompt: Optional[str] = None) -> tuple:
+        """ONE vision call returns BOTH a description and tags — halves the image
+        input tokens vs. separate describe + tag calls (cost + a Gemini roundtrip
+        saved). Response: '<description>\\nTAGS: tag1, tag2, …'."""
+        dp = desc_prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
+        tp = tag_prompt or TAG_PROMPTS.get(language, TAG_PROMPTS["de"])
+        combined = f"{dp}\n\nGib anschließend in einer NEUEN Zeile, beginnend mit 'TAGS:', {tp}."
+        raw = await self._generate(_image_to_b64(image), combined)
+        return self._split_desc_tags(raw)
 
     async def detect_faces(self, image: Image.Image) -> List[DetectedFace]:
         # Gemini doesn't return bounding boxes — use local model for faces
