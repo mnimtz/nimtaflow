@@ -110,17 +110,20 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # detect + dedup faces. video.max_frames caps the count.
     faces_for_image = str(s.get("faces.enabled", "true")).lower() != "false"
     video_faces = str(s.get("video.face_recognition", "false")).lower() == "true"
-    face_frame_urls = []
+    face_frames = []  # [{url, t}] — t = the frame's timestamp so the crop can use it
     if photo.is_video and video_faces:
-        nf = max(4, min(60, int(float(s.get("video.max_frames", "30") or 30))))
-        face_frame_urls = [f"/api/remote/frame/{photo.id}/{i}?n={nf}" for i in range(nf)]
+        nf = max(4, min(60, int(float(s.get("video.max_frames", "15") or 15))))
+        dur = photo.duration_seconds or 0
+        for i in range(nf):
+            t = round((i + 0.5) * dur / nf, 2) if dur else 0
+            face_frames.append({"url": f"/api/remote/frame/{photo.id}/{i}?n={nf}", "t": t})
 
     return {
         "photo_id": photo.id,
         "is_video": bool(photo.is_video),
         "image_url": f"/api/remote/image/{photo.id}",
         "frame_urls": frame_urls,
-        "face_frame_urls": face_frame_urls,
+        "face_frames": face_frames,
         "language": s.get("ai.language", "de"),
         "prompt": s.get(prompt_key) or None,
         "tag_prompt": (s.get("ai.prompt.tags") or "").strip() or None,
@@ -178,6 +181,7 @@ class FaceIn(BaseModel):
     bbox_h: float
     confidence: float = 0.9
     embedding: Optional[List[float]] = None
+    frame_time: Optional[float] = None   # video: timestamp of the detection frame
 
 
 class ResultIn(BaseModel):
@@ -334,6 +338,7 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                 db.add(Face(
                     photo_id=photo_id, bbox_x=f.bbox_x, bbox_y=f.bbox_y, bbox_w=f.bbox_w, bbox_h=f.bbox_h,
                     confidence=f.confidence, embedding=f.embedding, detector="insightface",
+                    frame_time=f.frame_time,
                 ))
             cxs = [f.bbox_x + f.bbox_w / 2 for f in body.faces]
             cys = [f.bbox_y + f.bbox_h / 2 for f in body.faces]

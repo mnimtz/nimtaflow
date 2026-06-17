@@ -91,6 +91,7 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE",
     # ── faces: ignore/hide ────────────────────────────────────────────────────
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS is_ignored BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE faces ADD COLUMN IF NOT EXISTS frame_time DOUBLE PRECISION",
     # ── users: defensive (in case the table predates these columns) ───────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",

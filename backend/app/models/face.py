@@ -22,6 +22,9 @@ class Face(Base):
     confidence: Mapped[Optional[float]] = mapped_column(Float)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(512))
     detector: Mapped[Optional[str]] = mapped_column(String(64))
+    # For video faces: the timestamp (seconds) of the frame the face was detected
+    # in, so the crop is taken from THAT frame (not the 10%-mark thumbnail).
+    frame_time: Mapped[Optional[float]] = mapped_column(Float)
     # Ignored/hidden face: excluded from the 'unbekannte Gesichter' list and from
     # clustering (for the many faces of strangers you don't want to manage).
     is_ignored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)

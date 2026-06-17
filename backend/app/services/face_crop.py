@@ -11,8 +11,12 @@ except PermissionError:
     _CACHE.mkdir(parents=True, exist_ok=True)
 
 
-def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 256) -> Optional[str]:
-    """Crop face from photo and save as JPEG. Returns path or None on error."""
+def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 256,
+              source_image=None) -> Optional[str]:
+    """Crop face from photo and save as JPEG. Returns path or None on error.
+
+    source_image: an already-loaded PIL image to crop from (e.g. the exact video
+    frame the face was detected in) — avoids opening photo_path."""
     # Key includes a hash of the SOURCE path so a reused face_id (e.g. after a DB
     # truncate + re-scan that restarts IDs) can never serve a stale crop of a
     # different photo. _v3 also forces regen of older letterboxed/stale crops.
@@ -24,8 +28,11 @@ def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: i
 
     try:
         from PIL import Image
-        from app.services.processing.thumbnails import _open_image_any
-        img = _open_image_any(photo_path)  # HEIC/MOV-safe (ffmpeg/exiftool fallback)
+        if source_image is not None:
+            img = source_image
+        else:
+            from app.services.processing.thumbnails import _open_image_any
+            img = _open_image_any(photo_path)  # HEIC/MOV-safe (ffmpeg/exiftool fallback)
         if img is None:
             return None
         try:

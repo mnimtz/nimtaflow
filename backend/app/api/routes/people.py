@@ -14,6 +14,26 @@ from app.schemas.person import PersonCreate, PersonUpdate, PersonOut, PersonDeta
 router = APIRouter(prefix="/people", tags=["people"])
 
 
+def _face_crop_path(face, photo, person_id: int = 0):
+    """Path to a face crop. For a video face detected at a known frame_time, crop
+    from THAT frame (not the 10%-mark thumbnail); else from the SSD thumbnail."""
+    from app.services.face_crop import crop_face
+    bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
+    if getattr(photo, "is_video", False) and face.frame_time is not None:
+        try:
+            import io
+            from PIL import Image
+            from app.services.processing.thumbnails import extract_video_frame_bytes
+            data = extract_video_frame_bytes(photo.path, float(face.frame_time))
+            if data:
+                frame = Image.open(io.BytesIO(data))
+                return crop_face(photo.path, bbox, person_id, face.id, source_image=frame)
+        except Exception:
+            pass
+    src = photo.thumb_large or photo.thumb_medium or photo.path
+    return crop_face(src, bbox, person_id, face.id)
+
+
 @router.get("", response_model=List[PersonDetail])
 async def list_people(include_hidden: bool = False, db: AsyncSession = Depends(get_db)):
     q = select(Person).order_by(Person.name)
@@ -199,12 +219,7 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
         photo = await db.get(Photo, face.photo_id)
         if not photo:
             return None
-        bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
-        # Crop from the (SSD-cached) large thumbnail, not the full original on the
-        # HDD — bbox is relative (0-1) so it maps to any size; avoids a slow HEIC
-        # decode per face on first load.
-        src = photo.thumb_large or photo.thumb_medium or photo.path
-        crop_path = crop_face(src, bbox, person_id, face.id)
+        crop_path = _face_crop_path(face, photo, person_id)
         if crop_path and os.path.exists(crop_path):
             return FileResponse(crop_path, media_type="image/jpeg")
         return None
@@ -389,9 +404,7 @@ async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, face.photo_id)
     if not photo:
         raise HTTPException(404)
-    bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
-    src = photo.thumb_large or photo.thumb_medium or photo.path  # crop from SSD thumb, not HDD original
-    path = crop_face(src, bbox, 0, face_id)
+    path = _face_crop_path(face, photo, 0)
     if path and os.path.exists(path):
         return FileResponse(path, media_type="image/jpeg")
     raise HTTPException(404, "crop failed")

@@ -92,25 +92,27 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
             if fi.available():
                 min_px = float(job.get("min_face_px", 0) or 0)
                 min_conf = float(job.get("min_conf", 0.5) or 0.5)
-                # Video: detect across many frames sampled over the whole clip so
-                # a person appearing anywhere is caught; then dedup so the same
-                # face across frames collapses to one entry (per unique person).
-                face_imgs = [img]
-                ffurls = job.get("face_frame_urls") or []
-                if ffurls:
+                # Video: detect across frames sampled over the whole clip; carry
+                # each frame's TIMESTAMP so the server can later crop the face from
+                # exactly that frame. Then dedup so the same person across frames
+                # collapses to one entry (per unique person), keeping its timestamp.
+                # [(image, frame_time_or_None)]
+                face_imgs = [(img, None)]
+                fframes = job.get("face_frames") or []
+                if fframes:
                     fetched = []
-                    for fu in ffurls:
+                    for ff in fframes:
                         try:
-                            fr = await client.get(SERVER + fu, headers=HEAD, timeout=60)
+                            fr = await client.get(SERVER + ff["url"], headers=HEAD, timeout=60)
                             if fr.status_code == 200 and fr.content:
-                                fetched.append(Image.open(io.BytesIO(fr.content)).convert("RGB"))
+                                fetched.append((Image.open(io.BytesIO(fr.content)).convert("RGB"), ff.get("t")))
                         except Exception:
                             pass
                     if fetched:
                         face_imgs = fetched
                         print(f"[agent] #{pid} video faces: scanning {len(fetched)} frames")
                 raw = []
-                for fim in face_imgs:
+                for fim, ftime in face_imgs:
                     W, H = fim.size
                     for f in fi.detect_faces(fim, min_conf):
                         if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
@@ -118,8 +120,9 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
                         raw.append({
                             "bbox_x": f.bbox_x, "bbox_y": f.bbox_y, "bbox_w": f.bbox_w, "bbox_h": f.bbox_h,
                             "confidence": f.confidence, "embedding": f.embedding,
+                            "frame_time": ftime,
                         })
-                faces = _dedup_faces(raw) if ffurls else raw
+                faces = _dedup_faces(raw) if fframes else raw
         except Exception as e:
             print(f"[agent] face detection skipped: {e}")
 
