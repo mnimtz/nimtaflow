@@ -38,12 +38,12 @@ and enriches your library with local or cloud AI.
 - **Formats**: mp4, mov, avi, mkv, m4v, webm, mts, m2ts, m2t, ts, vob, mpg, mpeg, wmv, flv, ogv, mod, 3gp — anything ffmpeg decodes.
 - **Adaptive multi-frame AI** — for Qwen, frames are sampled **evenly across the whole clip** (`~1/45 s`, 4–16 frames) and fed as a video, so the description covers the entire video (not one frame). Shorter clips get fewer frames, long ones stay bounded.
 - **Full-video hover preview** — an animated WebP "flipbook" sampled across the whole length (fast seeks, bounded even for hour-long videos), plus a sprite sheet for timeline scrubbing.
-- **HW transcode** (QSV/CUDA/VAAPI) endpoint; QSV used for thumbnails/previews where available.
+- **Instant playback**: the stream serves a cached, web-optimised **H.264 MP4 (+faststart)**; on first play it kicks off a background HW transcode (QSV/CUDA/VAAPI, software fallback) and serves the original meanwhile, so the next play starts immediately and non-streamable formats (MTS/VOB/…) become playable.
 - **Face recognition in videos** (opt-in, Settings → Video-AI) — InsightFace runs on up to `video.max_frames` frames sampled across the whole clip, deduped by embedding so each person counts once; flows into the normal people clustering.
 - **Dedicated `video` log** — start, length, resolution, preview yes/no, processing time, errors, and the AI description per video.
 
 ### People & Faces
-- Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people.
+- Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people. New faces grow existing people by **nearest-exemplar** match (not a blurred mean), so a person who varies a lot (e.g. a baby across ages) still gets matched.
 - **Merge / rename / hide / delete** people, **bulk** face assignment, **ignore** stray faces.
 - Choose a **display avatar** per person (★ on any of their faces).
 - Configurable engine (facenet / insightface), clustering algorithm + merge threshold; never mixes detectors.
@@ -81,7 +81,7 @@ and enriches your library with local or cloud AI.
 
 ### Map & Globe
 - **2D map** with **7 free no-key tile layers** (OSM, Esri satellite, CARTO dark/light/voyager, OpenTopoMap, Wikimedia); auto fit-to-photos; optional **Street View link** per photo.
-- **3D globe** (react-globe.gl) of all photo locations; click a point to **fly the camera down** to it.
+- **3D globe** (react-globe.gl) of **all** photo locations (lightweight `/photos/map`, no 500-row cap); click a point to **fly the camera down** to it.
 
 ### Users & Profiles
 - **Login** (JWT + refresh; cookie mirror so `<img>` requests authenticate). Optional enforcement.
