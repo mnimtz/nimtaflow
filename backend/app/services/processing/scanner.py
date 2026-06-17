@@ -184,6 +184,38 @@ async def scan_source(
                             photo.imported_person_names = ",".join(persons[:50])
                     except Exception:
                         pass
+                    # Face regions (MWG): recreate the detected faces from the boxes
+                    # in the file, so face DETECTION never re-runs on a re-import.
+                    # Named regions are linked to the person; unknown regions keep
+                    # just the box (no embedding — clustering can't be recovered).
+                    try:
+                        from app.services.exif_edit import read_face_regions
+                        from app.models.face import Face
+                        from app.models.person import Person
+                        regions = await read_face_regions(path_str)
+                        for reg in regions:
+                            bx = min(1.0, max(0.0, reg["cx"] - reg["w"] / 2))
+                            by = min(1.0, max(0.0, reg["cy"] - reg["h"] / 2))
+                            pid = None
+                            nm = (reg.get("name") or "").strip()
+                            if nm:
+                                person = await session.scalar(select(Person).where(Person.name == nm))
+                                if not person:
+                                    try:
+                                        async with session.begin_nested():
+                                            person = Person(name=nm); session.add(person); await session.flush()
+                                    except IntegrityError:
+                                        person = await session.scalar(select(Person).where(Person.name == nm))
+                                pid = person.id if person else None
+                            session.add(Face(
+                                photo_id=photo.id, bbox_x=bx, bbox_y=by,
+                                bbox_w=reg["w"], bbox_h=reg["h"],
+                                confidence=1.0, detector="imported", person_id=pid,
+                            ))
+                        if regions:
+                            _slog("INFO", f"{len(regions)} Gesicht(er) aus Datei-Regionen übernommen: {entry.name}")
+                    except Exception as e:
+                        _slog("WARNING", f"Gesichts-Regionen-Import fehlgeschlagen: {entry.name}: {str(e)[:100]}")
                 except Exception as e:
                     _slog("WARNING", f"Metadaten-Import fehlgeschlagen: {entry.name}: {str(e)[:120]}")
 

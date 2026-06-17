@@ -98,6 +98,49 @@ async def read_existing_extras(path: str):
     return rating, persons
 
 
+async def read_face_regions(path: str):
+    """Read MWG face regions (XMP-mwg-rs:RegionInfo) from the file or its `.xmp`
+    sidecar. Returns a list of {cx,cy,w,h (normalized, CENTER-based), name}. Used
+    on import to recreate faces from the boxes we (or another tool) wrote, so face
+    DETECTION never has to run again on a re-imported library."""
+    if not _EXIFTOOL:
+        return []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-struct", "-RegionInfo", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await proc.communicate()
+            if proc.returncode != 0 or not out:
+                return []
+            d = (json.loads(out) or [{}])[0].get("RegionInfo") or {}
+            rl = d.get("RegionList") or []
+            out_regions = []
+            for r in rl:
+                if (r.get("Type") or "Face") != "Face":
+                    continue
+                a = r.get("Area") or {}
+                x, y, w, h = a.get("X"), a.get("Y"), a.get("W"), a.get("H")
+                if None in (x, y, w, h):
+                    continue
+                out_regions.append({
+                    "cx": float(x), "cy": float(y), "w": float(w), "h": float(h),
+                    "name": (r.get("Name") or "").strip(),
+                })
+            return out_regions
+        except Exception:
+            return []
+
+    regions = await _read(path)
+    if not regions:
+        sc = Path(path).with_suffix(".xmp")
+        if sc.exists():
+            regions = await _read(str(sc))
+    return regions
+
+
 def _clean_region_name(name: str) -> str:
     """exiftool struct syntax uses { } [ ] , as delimiters — strip them from a
     person name so they can't corrupt the RegionList struct."""
