@@ -259,6 +259,10 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     if not photo:
         raise HTTPException(404)
 
+    # Faces-only pass: the photo already had a description, so the agent only ran
+    # face detection (no new description/tags/XMP). Used for an accurate log line.
+    faces_only_pass = photo.description is not None and not body.description
+
     # The photo is at status=processing (process_photo handed it off and ai_photo
     # yielded). Mark it done now so it appears in the iOS feed + search, which
     # filter on status==done.
@@ -410,10 +414,13 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     # One consolidated line per finished photo for the live Remote-Worker log:
     # duration + what was produced + final status. (Description, tag list and
     # faces also land in their own ai/faces logs above.)
-    file_note = "✎ XMP" if wrote_file else ("kein XMP" if xmp_mode == "off" else "XMP-Fehler")
+    if faces_only_pass:
+        file_note = "nur Gesichter"
+    else:
+        file_note = "✎ XMP" if wrote_file else ("kein XMP" if xmp_mode == "off" else "XMP-Fehler")
     flog("remote", "INFO",
          f"[{worker}] #{photo_id} {photo.filename} ✓ {dur} · {n_tags} Tags · {n_faces} Gesichter · "
-         f"{file_note} · status=done — {(body.description or '')[:140]}")
+         f"{file_note} · status=done — {(body.description or photo.description or '')[:140]}")
     return {"ok": True}
 
 
