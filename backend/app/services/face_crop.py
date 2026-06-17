@@ -13,10 +13,12 @@ except PermissionError:
 
 def crop_face(photo_path: str, bbox: list, person_id: int, face_id: int, size: int = 256) -> Optional[str]:
     """Crop face from photo and save as JPEG. Returns path or None on error."""
-    # _v2: square crops now fill the frame (ImageOps.fit) instead of grey-padding,
-    # so circular avatars show only face pixels. New suffix forces a regen of any
-    # old letterboxed crops.
-    out = _CACHE / f"p{person_id}_f{face_id}_v2.jpg"
+    # Key includes a hash of the SOURCE path so a reused face_id (e.g. after a DB
+    # truncate + re-scan that restarts IDs) can never serve a stale crop of a
+    # different photo. _v3 also forces regen of older letterboxed/stale crops.
+    import hashlib
+    src_h = hashlib.sha1(str(photo_path).encode()).hexdigest()[:10]
+    out = _CACHE / f"p{person_id}_f{face_id}_{src_h}_v3.jpg"
     if out.exists():
         return str(out)
 

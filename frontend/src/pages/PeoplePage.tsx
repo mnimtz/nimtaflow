@@ -340,9 +340,11 @@ function FaceTile({ face, selected, onToggle, onAssign }: {
         <ImageIcon size={12} />
       </button>
       {showPhoto && (
-        <div className="absolute inset-0 z-10 bg-black/90 flex items-center justify-center cursor-zoom-out"
+        <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6 cursor-zoom-out"
           onClick={e => { e.stopPropagation(); setShowPhoto(false) }}>
-          <img src={thumbUrl({ id: face.photo_id } as any, 'medium')} className="max-w-full max-h-full object-contain" />
+          <img src={thumbUrl({ id: face.photo_id } as any, 'large')}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>
