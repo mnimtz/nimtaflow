@@ -83,18 +83,18 @@ async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = D
     return person
 
 
-@router.post("/write-names")
-async def write_person_names(db: AsyncSession = Depends(get_db)):
-    """Persist EVERY named person's name into their photos as XMP:PersonInImage.
-    Button-driven — run once after the detect → cluster → name phase has settled,
-    so durable who-is-in-the-photo info is written into the files exactly once."""
-    pids = [p for (p,) in (await db.execute(
-        select(Person.id).where(Person.name.isnot(None), Person.name != "")
-    )).all()]
-    from app.worker.tasks import write_person_name_task
-    for pid in pids:
-        write_person_name_task.delay(pid)
-    return {"queued_persons": len(pids)}
+@router.post("/write-faces")
+async def write_faces_to_files(db: AsyncSession = Depends(get_db)):
+    """Persist EVERY detected face as an MWG face region (box + name where known)
+    into the files. Button-driven — run once the detect → cluster → name phase has
+    settled. Unknown faces keep just their coordinates, so a future tool never has
+    to re-run face DETECTION. Returns how many photos will be processed."""
+    n_photos = await db.scalar(
+        select(func.count(func.distinct(Face.photo_id))).where(Face.is_ignored == False)  # noqa: E712
+    )
+    from app.worker.tasks import write_faces_task
+    write_faces_task.delay()
+    return {"queued_photos": int(n_photos or 0)}
 
 
 @router.delete("/{person_id}", status_code=204)

@@ -95,14 +95,15 @@ export default function PeoplePage() {
     onError: () => toast('Clustering fehlgeschlagen', 'error'),
   })
 
-  // Button-driven: persist every named person's name into their photos
-  // (XMP:PersonInImage). Done explicitly once clustering/naming has settled —
-  // not on every assignment, which would write into thousands of files mid-sort.
+  // Button-driven: persist every detected face as an MWG region (box + name
+  // where known) into the files. Done explicitly once clustering/naming has
+  // settled — unknown faces keep their coordinates so a future tool never has
+  // to re-run face detection.
   const writeNamesMutation = useMutation({
-    mutationFn: () => api.post('/people/write-names').then(r => r.data),
-    onSuccess: (d: { queued_persons: number }) =>
-      toast(`Namen für ${d.queued_persons} benannte Person(en) werden in die Dateien geschrieben`, 'success'),
-    onError: () => toast('Namen-Schreiben fehlgeschlagen', 'error'),
+    mutationFn: () => api.post('/people/write-faces').then(r => r.data),
+    onSuccess: (d: { queued_photos: number }) =>
+      toast(`Gesichts-Regionen werden in ${d.queued_photos} Foto(s) geschrieben`, 'success'),
+    onError: () => toast('Gesichter-Schreiben fehlgeschlagen', 'error'),
   })
 
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
@@ -177,8 +178,8 @@ export default function PeoplePage() {
           </button>
           <button onClick={() => writeNamesMutation.mutate()} disabled={writeNamesMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
-            title="Namen aller benannten Personen dauerhaft in die Bilddateien schreiben (XMP:PersonInImage)">
-            <Save size={15} /><span className="hidden sm:inline">{writeNamesMutation.isPending ? 'Schreibe…' : 'Namen schreiben'}</span>
+            title="Alle erkannten Gesichter (Koordinaten + Namen) dauerhaft in die Bilddateien schreiben (MWG-Regionen) — erspart später erneute Gesichtserkennung">
+            <Save size={15} /><span className="hidden sm:inline">{writeNamesMutation.isPending ? 'Schreibe…' : 'Gesichter schreiben'}</span>
           </button>
           <button onClick={() => setShowAdd(true)} className={BTN_PRIMARY}>
             <UserPlus size={15} /><span className="hidden sm:inline">Hinzufügen</span>

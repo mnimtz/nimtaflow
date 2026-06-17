@@ -259,6 +259,60 @@ def write_person_name_task(self, person_id: int):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="write_faces")
+def write_faces_task(self):
+    """Write EVERY photo's detected faces as MWG face regions (box + name where
+    known) into the files — button-driven, run once face clustering has settled.
+    Saves a future tool from re-running face DETECTION on the whole library.
+    Images: embedded XMP. Videos (can't embed): a `.xmp` sidecar."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.models.person import Person
+        from app.services.exif_edit import write_face_regions
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            pids = [p for (p,) in (await db.execute(
+                select(Face.photo_id).where(Face.is_ignored == False).distinct()  # noqa: E712
+            )).all()]
+            flog("faces", "INFO", f"Gesichts-Regionen schreiben: {len(pids)} Foto(s)")
+            done = failed = 0
+            for pid in pids:
+                photo = await db.get(Photo, pid)
+                if not photo or photo.is_missing:
+                    continue
+                # ALL non-ignored faces — including unknown/loose ones. Unknown
+                # faces get the box only (no name), so a future tool keeps the
+                # coordinates and never has to re-detect; you just re-name them.
+                rows = (await db.execute(
+                    select(Face.bbox_x, Face.bbox_y, Face.bbox_w, Face.bbox_h, Person.name)
+                    .join(Person, Person.id == Face.person_id, isouter=True)
+                    .where(Face.photo_id == pid, Face.is_ignored == False)  # noqa: E712
+                )).all()
+                regions = [{
+                    "cx": (x or 0) + (w or 0) / 2, "cy": (y or 0) + (h or 0) / 2,
+                    "w": w or 0, "h": h or 0, "name": nm or "",
+                } for (x, y, w, h, nm) in rows if w and h]
+                if not regions:
+                    continue
+                target = (photo.path + ".xmp") if photo.is_video else None
+                try:
+                    ok = await write_face_regions(photo.path, regions,
+                                                  photo.width or 0, photo.height or 0, target=target)
+                    done += 1 if ok else 0
+                    failed += 0 if ok else 1
+                except Exception:
+                    failed += 1
+                if (done + failed) % 100 == 0:
+                    flog("faces", "INFO", f"Gesichts-Regionen: {done} geschrieben, {failed} Fehler …")
+            flog("faces", "INFO", f"Gesichts-Regionen fertig: {done} geschrieben, {failed} Fehler")
+            return {"written": done, "failed": failed}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="backfill_xmp")
 def backfill_xmp_task(self):
     """Write the existing DB AI description + tags INTO the image files for every

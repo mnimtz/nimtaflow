@@ -98,6 +98,53 @@ async def read_existing_extras(path: str):
     return rating, persons
 
 
+def _clean_region_name(name: str) -> str:
+    """exiftool struct syntax uses { } [ ] , as delimiters — strip them from a
+    person name so they can't corrupt the RegionList struct."""
+    out = (name or "").strip()
+    for ch in "{}[],":
+        out = out.replace(ch, " ")
+    return " ".join(out.split())
+
+
+async def write_face_regions(path: str, regions: list, width: int, height: int,
+                             target: Optional[str] = None) -> bool:
+    """Write MWG face regions (XMP-mwg-rs:RegionInfo) into the file — the portable
+    standard that Lightroom/digiKam/Synology read. Each region carries the face
+    BOX (so re-import never needs face DETECTION again) plus the Name when known.
+    Named regions are also mirrored to XMP:PersonInImage for tools that only read
+    that. Idempotent: overwrites RegionInfo. `regions` = list of dicts with
+    cx,cy,w,h (normalized, CENTER-based) and optional name. Writes to `target`
+    (e.g. a .xmp sidecar for videos) when given, else into `path`."""
+    if not _EXIFTOOL or not regions:
+        return False
+    w = int(width or 0) or 1000
+    h = int(height or 0) or 1000
+    items, names = [], []
+    for r in regions:
+        area = (f"Area={{X={float(r['cx']):.4f},Y={float(r['cy']):.4f},"
+                f"W={float(r['w']):.4f},H={float(r['h']):.4f},Unit=normalized}}")
+        nm = _clean_region_name(r.get("name", ""))
+        if nm:
+            names.append(nm)
+            items.append(f"{{{area},Type=Face,Name={nm}}}")
+        else:
+            items.append(f"{{{area},Type=Face}}")
+    region_info = (f"{{AppliedToDimensions={{W={w},H={h},Unit=pixel}},"
+                   f"RegionList=[{','.join(items)}]}}")
+    args = [_EXIFTOOL, "-m", "-P", "-overwrite_original", f"-RegionInfo={region_info}"]
+    for nm in dict.fromkeys(names):  # de-dup; clear-then-add keeps it idempotent
+        args += [f"-XMP:PersonInImage-={nm}", f"-XMP:PersonInImage+={nm}"]
+    args.append(target or path)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await proc.communicate()
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
 async def read_all_exif(path: str) -> Dict[str, Any]:
     """Return all EXIF/IPTC/XMP tags as a flat dict."""
     if not _EXIFTOOL:
