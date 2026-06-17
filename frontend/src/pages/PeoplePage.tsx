@@ -505,10 +505,13 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
     queryKey: ['person-photos', personId],
     queryFn: () => api.get(`/people/${personId}/photos?limit=200`).then(r => r.data),
   })
-  const { data: faces = [] } = useQuery<FaceRef[]>({
-    queryKey: ['person-faces', personId],
-    queryFn: () => api.get(`/people/${personId}/faces`).then(r => r.data),
+  const [faceLimit, setFaceLimit] = useState(120)
+  const { data: facesData } = useQuery<{ total: number; items: FaceRef[] }>({
+    queryKey: ['person-faces', personId, faceLimit],
+    queryFn: () => api.get(`/people/${personId}/faces`, { params: { limit: faceLimit } }).then(r => r.data),
   })
+  const faces = facesData?.items ?? []
+  const facesTotal = facesData?.total ?? 0
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['person', personId] })
@@ -588,7 +591,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
 
       {faces.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({faces.length})</h2>
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({faces.length}{facesTotal > faces.length ? ` von ${facesTotal}` : ''})</h2>
           <p className="text-xs text-zinc-500 mb-3">Tippe ein Gesicht ★ um es als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
           <div className="flex gap-2 flex-wrap">
             {faces.map(f => (
@@ -608,6 +611,12 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
               </div>
             ))}
           </div>
+          {facesTotal > faces.length && (
+            <button onClick={() => setFaceLimit(l => l + 240)}
+              className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+              Mehr Gesichter laden ({faces.length}/{facesTotal})
+            </button>
+          )}
         </div>
       )}
 

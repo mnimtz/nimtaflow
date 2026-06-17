@@ -329,13 +329,20 @@ async def person_photos(
 
 
 @router.get("/{person_id}/faces")
-async def person_faces(person_id: int, db: AsyncSession = Depends(get_db)):
-    """List the individual faces assigned to a person (for the faces strip)."""
+async def person_faces(person_id: int, page: int = 1, limit: int = 120,
+                       db: AsyncSession = Depends(get_db)):
+    """List the faces assigned to a person — PAGINATED. A person can have
+    thousands of faces (e.g. a child photographed for years); returning + rendering
+    all of them as on-demand crops froze the page. Best faces first."""
+    limit = max(1, min(limit, 500))
+    total = await db.scalar(select(func.count()).select_from(Face).where(Face.person_id == person_id))
     rows = (await db.execute(
         select(Face.id, Face.photo_id, Face.confidence)
         .where(Face.person_id == person_id).order_by(Face.confidence.desc().nullslast())
+        .offset((max(1, page) - 1) * limit).limit(limit)
     )).all()
-    return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
+    return {"total": total or 0, "page": page, "limit": limit,
+            "items": [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]}
 
 
 # ── Face management ───────────────────────────────────────────────────────────

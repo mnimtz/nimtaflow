@@ -124,11 +124,14 @@ class GeminiProvider(AIProvider):
         return []
 
     async def embed_text(self, text: str) -> List[float]:
+        # outputDimensionality=768 fits the pgvector column. gemini-embedding-001 is
+        # Matryoshka-trained, so 768 keeps near-full quality (and text-embedding-004
+        # accepts it too). Avoids returning 3072 dims that we'd just truncate.
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 f"{self._base}/models/{self.embed_model}:embedContent",
                 params={"key": self.api_key},
-                json={"content": {"parts": [{"text": text}]}},
+                json={"content": {"parts": [{"text": text}]}, "outputDimensionality": 768},
             )
             resp.raise_for_status()
             return (resp.json().get("embedding") or {}).get("values") or []
