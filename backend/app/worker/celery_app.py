@@ -45,10 +45,11 @@ celery_app.conf.beat_schedule = {
         "task": "watch_sources",
         "schedule": 60.0,
     },
-    # Auto-group unassigned faces so they don't pile up individually.
+    # Grow existing people from loose faces (light, grow_only). New-cluster forming
+    # (heavy HDBSCAN) is manual-only. Every 10 min keeps it gentle on the server.
     "auto-cluster-faces": {
         "task": "auto_cluster_faces",
-        "schedule": 300.0,
+        "schedule": 600.0,
     },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {

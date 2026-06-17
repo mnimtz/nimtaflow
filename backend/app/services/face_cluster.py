@@ -103,7 +103,11 @@ async def consolidate_persons(db: AsyncSession, merge_eps: float) -> int:
     return merged
 
 
-async def cluster_unassigned(db: AsyncSession) -> dict:
+async def cluster_unassigned(db: AsyncSession, grow_only: bool = False) -> dict:
+    # grow_only=True does ONLY Stage 1 (assign loose faces to EXISTING named people)
+    # and skips the heavy HDBSCAN that forms new clusters. The periodic auto-run uses
+    # this so it stays light (no CPU spike that starves the API); the manual "Clustern"
+    # button runs the full thing.
     from app.services.settings_loader import load_settings
 
     # remove orphaned auto-persons (empty name + no faces, e.g. after reprocess)
@@ -174,6 +178,12 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     else:
         remaining_ids, remaining_idx = list(ids), list(range(len(ids)))
 
+    # Light auto-run: stop after growing existing people — skip the heavy HDBSCAN.
+    if grow_only:
+        await db.commit()
+        return {"assigned_to_existing": assigned, "clustered": 0,
+                "new_persons": 0, "merged_clusters": 0, "unclustered": len(remaining_ids)}
+
     # 2) Cluster the rest into new (unnamed) persons.
     new_persons = 0
     clustered = 0
@@ -192,7 +202,7 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
                 labels = hdbscan.HDBSCAN(
                     min_cluster_size=min_size, metric="euclidean",
                     cluster_selection_epsilon=float(np.sqrt(2.0 * eps)),
-                    cluster_selection_method="eom",
+                    cluster_selection_method="eom", core_dist_n_jobs=2,  # cap CPU → keep API responsive
                 ).fit_predict(Xr)
             except Exception:
                 labels = None
@@ -201,7 +211,7 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
             # Tying it to min_size (e.g. 3) dumped real but under-photographed
             # people into noise. Use 2 (a pair is enough to seed a cluster) and
             # enforce min_size as a post-hoc size filter below → far better recall.
-            labels = DBSCAN(eps=eps, min_samples=2, metric="cosine").fit_predict(Xr)
+            labels = DBSCAN(eps=eps, min_samples=2, metric="cosine", n_jobs=2).fit_predict(Xr)
         clusters: dict = {}
         for fid, lbl in zip(remaining_ids, labels):
             if lbl == -1:

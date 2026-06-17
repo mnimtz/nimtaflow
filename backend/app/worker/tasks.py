@@ -189,7 +189,11 @@ def auto_cluster_faces_task(self):
                 return {"skipped": "disabled"}
             try:
                 from app.services.face_cluster import cluster_unassigned
-                res = await cluster_unassigned(db)
+                # grow_only: only assign loose faces to EXISTING people (light).
+                # The heavy HDBSCAN that forms NEW clusters runs only on the manual
+                # "Clustern" button — auto-running it on ~13k faces spiked CPU and
+                # made the website hang. New clusters: user-triggered.
+                res = await cluster_unassigned(db, grow_only=True)
             except ImportError:
                 return {"skipped": "no sklearn"}
             # Keep person-based smart albums current (face↔person links just changed).
