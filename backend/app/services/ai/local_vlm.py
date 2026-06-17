@@ -259,31 +259,61 @@ class LocalVLMProvider(AIProvider):
                         {"type": "text", "text": vid_text},
                     ]}]
                 else:
+                    # Cap single-image resolution. A full-size photo (4000 px+) makes
+                    # the vision encoder allocate >2 GB of activations and OOM the
+                    # 8 GB card (which already holds the ~6 GB model → only ~1.5 GB
+                    # free). Qwen still sees ample detail at ≤1280 px, and a described
+                    # photo beats a failed one ("no description").
+                    if max(image.size) > 1280:
+                        image = image.copy()
+                        image.thumbnail((1280, 1280), Image.LANCZOS)
                     messages = [{"role": "user", "content": [
                         {"type": "image", "image": image},
                         {"type": "text", "text": user_text},
                     ]}]
-                text = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                 from qwen_vl_utils import process_vision_info
-                img_inputs, vid_inputs = process_vision_info(messages)
-                inputs = proc(text=[text], images=img_inputs, videos=vid_inputs, padding=True, return_tensors="pt")
-                inputs = inputs.to(device)
-                if "pixel_values" in inputs:  # match model dtype on GPU (fp16)
-                    inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
-                with torch.no_grad():
-                    # repetition_penalty defaults to 1.0 (off) for DESCRIPTIONS —
-                    # on this multilingual model a penalty pushes prose into
-                    # Chinese mid-sentence. The TAG pass passes >1.0 on purpose:
-                    # for a discrete keyword list it breaks loops (e.g. the
-                    # "babyschutzschal/-band/-…" runaway) without the prose risk.
-                    # no_repeat_ngram_size kills verbatim sentence loops (common on
-                    # multi-frame VIDEO) as a hard constraint — unlike
-                    # repetition_penalty it doesn't push the prose into Chinese.
-                    gen = model.generate(**inputs, max_new_tokens=max_new_tokens,
-                                         repetition_penalty=repetition_penalty,
-                                         no_repeat_ngram_size=4)
-                trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
-                return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
+
+                def _build(msgs):
+                    txt = proc.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+                    ii, vi = process_vision_info(msgs)
+                    inp = proc(text=[txt], images=ii, videos=vi, padding=True, return_tensors="pt").to(device)
+                    if "pixel_values" in inp:  # match model dtype on GPU (fp16)
+                        inp["pixel_values"] = inp["pixel_values"].to(dtype)
+                    return inp
+
+                def _gen(inp):
+                    with torch.no_grad():
+                        # do_sample=False (greedy): the fp16 sampling path on this
+                        # Turing card (no bf16) intermittently yields "probability
+                        # tensor contains inf/nan" on some images — greedy decoding
+                        # skips the multinomial sampler entirely and is more factual.
+                        # repetition_penalty stays 1.0 for prose (>1 drifts this
+                        # multilingual model into Chinese); the TAG pass passes >1.0.
+                        # no_repeat_ngram_size kills verbatim loops (multi-frame video).
+                        g = model.generate(**inp, max_new_tokens=max_new_tokens,
+                                           do_sample=False,
+                                           repetition_penalty=repetition_penalty,
+                                           no_repeat_ngram_size=4)
+                    trimmed = [o[len(i):] for i, o in zip(inp.input_ids, g)]
+                    return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
+
+                try:
+                    return _gen(_build(messages))
+                except RuntimeError:
+                    # OOM or residual fp16 instability → free VRAM, shrink the image
+                    # hard and retry once (single-image only; video frames are ≤448).
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                    if not frames:
+                        small = image.copy()
+                        small.thumbnail((896, 896), Image.LANCZOS)
+                        return _gen(_build([{"role": "user", "content": [
+                            {"type": "image", "image": small},
+                            {"type": "text", "text": user_text},
+                        ]}]))
+                    raise
         except Exception as e:
             # Surface *why* a description failed (OOM, bad file, …) instead of a
             # silent empty string — the worker's "AI lieferte keine Beschreibung"
