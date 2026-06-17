@@ -119,6 +119,10 @@ class Photo(Base):
     # Person names read from the file's XMP:PersonInImage on import (comma-joined).
     # Lets a re-imported photo stay searchable by person + seeds face auto-assign.
     imported_person_names: Mapped[Optional[str]] = mapped_column(Text)
+    # A face-detection pass has run (even if it found 0 faces). Stops a photo
+    # described by a non-local provider (e.g. Gemini) from being claimed for a
+    # faces-only pass forever when it genuinely has no faces.
+    faces_scanned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

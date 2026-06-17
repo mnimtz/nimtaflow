@@ -638,17 +638,26 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                 return
             start = time.time()
 
-            # If a remote GPU worker is enabled and currently alive, yield this
-            # job: leave the photo pending (description stays NULL) so the remote
-            # claims it via /api/remote/claim. If no worker is alive, fall through
-            # and process locally (so 'enabled but nobody connected' still works).
+            # Remote-worker dispatch, provider-aware. The remote agent runs the
+            # LOCAL VLM, so it only DESCRIBES media whose effective provider is
+            # 'local'. If this photo's description provider is local and a worker is
+            # alive → yield the whole job (description + faces) to the remote. If the
+            # provider is Gemini/etc (e.g. images switched to Gemini) → describe it
+            # locally below, but still let the remote do the FACES (faces-only claim)
+            # so all faces use the same engine. skip_local_faces records that.
+            skip_local_faces = False
             try:
                 from app.services.settings_loader import load_settings as _ls
+                from app.services.ai.manager import build_video_settings as _bvs
                 _s = await _ls(db)
                 if str(_s.get("remote.enabled", "false")).lower() == "true":
                     from app.api.routes.remote import remote_worker_alive
                     if await remote_worker_alive() > 0:
-                        return  # remote will pick it up
+                        eff_prov = (_bvs(_s).get("ai.provider") if photo.is_video
+                                    else _s.get("ai.provider")) or "none"
+                        if eff_prov == "local":
+                            return  # remote does description + faces
+                        skip_local_faces = True  # remote will do faces-only
             except Exception:
                 pass
 
@@ -803,7 +812,9 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                     flog("ai", "WARNING", f"AI übersprungen (Thumbnail bleibt): {photo.filename if photo else photo_id}: {str(ai_err)[:160]}")
 
                 # ── Face detection (local, best-effort) ───────────────────────
-                if str(ai_settings.get("faces.enabled", "true")).lower() != "false":
+                # Skipped when a remote worker will do the faces (so all faces use
+                # the same insightface engine and clustering stays consistent).
+                if not skip_local_faces and str(ai_settings.get("faces.enabled", "true")).lower() != "false":
                     try:
                         from app.services.face_detect import detect_faces_engine, engine_available
                         from app.models.face import Face
@@ -835,6 +846,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                     cys = [f.bbox_y + f.bbox_h / 2 for f in faces]
                                     photo.focus_x = min(1.0, max(0.0, sum(cxs) / len(cxs)))
                                     photo.focus_y = min(1.0, max(0.0, sum(cys) / len(cys)))
+                                photo.faces_scanned = True  # pass ran (even if 0)
                                 await db.commit()
                                 if faces:
                                     flog("faces", "INFO", f"{len(faces)} Gesicht(er) erkannt ({face_engine}): {photo.filename}")

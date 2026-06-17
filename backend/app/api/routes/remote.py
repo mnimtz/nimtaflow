@@ -73,28 +73,44 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
 
     from sqlalchemy import and_, exists
     from app.models.face import Face
+    from app.services.ai.manager import build_video_settings
     include_videos = str(s.get("remote.include_videos", "true")).lower() != "false"
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TTL)
     not_claimed = or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff)
-    needs_desc = and_(
-        Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
-        Photo.thumb_large.isnot(None), not_claimed,
-    )
-    if not include_videos:
-        needs_desc = and_(needs_desc, Photo.is_video == False)  # noqa: E712
-    where_any = needs_desc
-    # Faces aren't stored in file metadata, so a photo whose description was
-    # IMPORTED still needs a face pass — claim it (faces-only). Opt-out via
+
+    # The remote agent runs the LOCAL VLM, so it only DESCRIBES media whose
+    # provider is 'local'. Images set to Gemini/OpenAI/Ollama are described on the
+    # server; the remote still does their FACES (below), so every face uses the
+    # same insightface engine and clustering stays consistent.
+    image_provider = (s.get("ai.provider") or "none").strip()
+    video_provider = (build_video_settings(s).get("ai.provider") or "none").strip()
+    desc_scope = []
+    if image_provider == "local":
+        desc_scope.append(Photo.is_video == False)  # noqa: E712
+    if video_provider == "local" and include_videos:
+        desc_scope.append(Photo.is_video == True)   # noqa: E712
+    where_terms = []
+    if desc_scope:
+        where_terms.append(and_(
+            Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+            Photo.thumb_large.isnot(None), not_claimed, or_(*desc_scope),
+        ))
+    # Any DESCRIBED image still lacking a face pass needs one (faces-only) —
+    # covers imported metadata AND server-side (Gemini) descriptions. faces_scanned
+    # stops faceless photos from being re-claimed forever. Opt-out: faces.enabled /
     # scan.faces_on_import.
     faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
     faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
     if faces_enabled and faces_on_import:
         no_faces = ~exists().where(Face.photo_id == Photo.id)
-        needs_faces = and_(
-            Photo.description_model == "imported", Photo.thumb_large.isnot(None),
-            Photo.is_video == False, no_faces, not_claimed,  # noqa: E712
-        )
-        where_any = or_(needs_desc, needs_faces)
+        where_terms.append(and_(
+            Photo.description.isnot(None), Photo.thumb_large.isnot(None),
+            Photo.is_video == False, Photo.faces_scanned == False,  # noqa: E712
+            no_faces, not_claimed,
+        ))
+    if not where_terms:
+        return {"photo_id": None}
+    where_any = or_(*where_terms)
     # Row-lock + skip_locked so two workers polling at once lease DIFFERENT photos.
     photo = (await db.execute(
         select(Photo).where(where_any).order_by(Photo.id).limit(1).with_for_update(skip_locked=True)
@@ -386,6 +402,8 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
             flog("faces", "INFO", f"{n_faces} Gesicht(er) (remote): {photo.filename}")
 
     photo.ai_claimed_at = None
+    # A face pass ran (even with 0 faces) — don't re-claim this photo faces-only.
+    photo.faces_scanned = True
     photo.processed_at = datetime.now(timezone.utc)
     await db.commit()
 
