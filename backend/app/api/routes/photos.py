@@ -570,12 +570,21 @@ async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db),
     if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
-    # Prefer pre-transcoded WebM
-    if photo.video_webm_path and os.path.exists(photo.video_webm_path):
-        return FileResponse(photo.video_webm_path, media_type="video/webm",
+    # Prefer the cached web-optimised version (H.264 MP4 with faststart, or WebM)
+    web = photo.video_webm_path
+    if web and os.path.exists(web):
+        mt = "video/mp4" if web.endswith(".mp4") else "video/webm"
+        return FileResponse(web, media_type=mt,
                             headers={"Cache-Control": "public, max-age=86400"})
 
-    # Fall back to original (browser handles mp4/mov natively)
+    # No web version yet → kick off a background HW transcode (single-flight) so
+    # the NEXT play starts instantly, and serve the original meanwhile (works for
+    # native mp4/mov; non-streamable formats become playable after the transcode).
+    try:
+        from app.worker.tasks import transcode_video_task
+        transcode_video_task.delay(photo_id)
+    except Exception:
+        pass
     mime = photo.mime_type or "video/mp4"
     return FileResponse(photo.path, media_type=mime)
 

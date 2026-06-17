@@ -327,6 +327,66 @@ def backfill_xmp_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="transcode_video")
+def transcode_video_task(self, photo_id: int, resolution: int = 720):
+    """On-demand: produce a web-optimised H.264 MP4 (HW/QSV, +faststart) so the
+    player starts instantly instead of downloading the un-streamable original.
+    Triggered lazily by the stream endpoint; single-flight via a Redis lock."""
+    async def _run_tc():
+        import os, subprocess, pathlib, time as _t
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.core.config import get_settings
+        from app.services.hw_accel import detect_hw, build_transcode_cmd
+        from app.services.feature_log import log as flog
+        init_db()
+        settings = get_settings()
+        r = None
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.redis_url)
+            if not await r.set(f"transcode:lock:{photo_id}", "1", nx=True, ex=3600):
+                await r.aclose(); return {"skipped": "running"}
+        except Exception:
+            r = None
+        try:
+            async for db in get_db():
+                photo = await db.get(Photo, photo_id)
+                if not photo or not photo.is_video:
+                    return {"error": "not a video"}
+                out_dir = pathlib.Path(settings.cache_path) / "videos"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_path = out_dir / f"{photo_id}_{resolution}.mp4"
+                if out_path.exists():
+                    photo.video_webm_path = str(out_path); await db.commit()
+                    return {"cached": True}
+                hw = detect_hw()
+                t0 = _t.time()
+                cmd = build_transcode_cmd(photo.path, str(out_path), resolution=resolution, codec="h264", hw=hw)
+                proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+                if proc.returncode != 0 or not out_path.exists():
+                    sw = ["ffmpeg", "-y", "-i", photo.path, "-c:v", "libx264",
+                          "-vf", f"scale=-2:{resolution}", "-c:a", "aac", "-b:a", "128k",
+                          "-movflags", "+faststart", str(out_path)]
+                    proc = subprocess.run(sw, capture_output=True, timeout=1800)
+                    hwname = "software"
+                else:
+                    hwname = hw.name
+                if proc.returncode == 0 and out_path.exists():
+                    photo.video_webm_path = str(out_path); await db.commit()
+                    flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {photo.filename}")
+                    return {"ok": True, "hw": hwname}
+                flog("video", "WARNING", f"Transkodierung fehlgeschlagen: {photo.filename}: {proc.stderr.decode(errors='replace')[-200:]}")
+                return {"error": "ffmpeg"}
+        finally:
+            if r is not None:
+                try:
+                    await r.delete(f"transcode:lock:{photo_id}"); await r.aclose()
+                except Exception:
+                    pass
+    return _run(_run_tc())
+
+
 @celery_app.task(bind=True, name="process_photo")
 def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces: bool = False, redo_thumbs: bool = False):
     async def _run_process():
