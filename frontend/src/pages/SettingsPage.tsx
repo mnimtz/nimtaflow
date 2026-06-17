@@ -1153,7 +1153,7 @@ function RemoteWorkerSection() {
   const sQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   useEffect(() => { if (sQ.data) setSettings(sQ.data) }, [sQ.data])
   const { data: status } = useQuery<{
-    enabled: boolean; has_token: boolean; pending: number; avg_dur: number | null; eta_seconds: number | null;
+    enabled: boolean; has_token: boolean; pending: number; faces_pending: number; avg_dur: number | null; eta_seconds: number | null;
     workers: { name: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
   }>({
     queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
@@ -1216,11 +1216,12 @@ function RemoteWorkerSection() {
             <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Verarbeitung – Live</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? 'aktiv' : 'inaktiv'}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div><span className="text-2xl font-bold tabular-nums text-amber-500">{status?.pending ?? 0}</span><p className="text-xs text-zinc-400">KI-Jobs offen</p></div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+            <div><span className="text-2xl font-bold tabular-nums text-violet-500">{status?.pending ?? 0}</span><p className="text-xs text-zinc-400">Beschreibungen offen <span className="text-zinc-500">(GPU)</span></p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-sky-500">{status?.faces_pending ?? 0}</span><p className="text-xs text-zinc-400">Gesichter offen</p></div>
             <div><span className="text-2xl font-bold tabular-nums text-indigo-500">{status?.workers?.length ?? 0}</span><p className="text-xs text-zinc-400">verbundene Worker</p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-sky-500">{status?.avg_dur != null ? `${status.avg_dur.toFixed(1)}s` : '—'}</span><p className="text-xs text-zinc-400">Ø pro Foto</p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-emerald-500">{fmtEta(status?.eta_seconds)}</span><p className="text-xs text-zinc-400">Restzeit (geschätzt)</p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-zinc-400">{status?.avg_dur != null ? `${status.avg_dur.toFixed(1)}s` : '—'}</span><p className="text-xs text-zinc-400">Ø pro Foto</p></div>
+            <div><span className="text-2xl font-bold tabular-nums text-emerald-500">{fmtEta(status?.eta_seconds)}</span><p className="text-xs text-zinc-400">Restzeit Beschreib.</p></div>
           </div>
           {status?.eta_seconds != null && status.eta_seconds > 0 && (
             <p className="text-[11px] text-zinc-400">
@@ -1236,6 +1237,10 @@ function RemoteWorkerSection() {
                   <li key={w.name} className="flex flex-wrap items-center gap-x-2">
                     <span className={idle < 30 ? 'text-emerald-500' : 'text-zinc-400'}>●</span>
                     <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b>
+                    {/* type from the worker name: a "faces" worker only sweeps faces, everything else describes */}
+                    {/faces/i.test(w.name)
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-500">Gesichter</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-500">Beschreibung</span>}
                     <span>· {w.jobs} Fotos</span>
                     {w.last_dur != null && <span>· letztes {w.last_dur.toFixed(1)}s</span>}
                     {w.avg_dur != null && <span>· Ø {w.avg_dur.toFixed(1)}s</span>}

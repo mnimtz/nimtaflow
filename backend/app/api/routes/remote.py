@@ -443,6 +443,14 @@ async def status(db: AsyncSession = Depends(get_db)):
             Photo.thumb_large.isnot(None),
         )
     )
+    # Faces backlog (the OTHER remote pipeline) so the UI can show description
+    # and face progress separately instead of one vague "AI jobs" number.
+    faces_pending = await db.scalar(
+        select(func.count()).where(
+            Photo.faces_scanned == False, Photo.thumb_large.isnot(None),  # noqa: E712
+            Photo.is_video == False, Photo.is_trashed == False,  # noqa: E712
+        )
+    )
     now = int(time.time())
     workers = []
     durs = []
@@ -483,6 +491,7 @@ async def status(db: AsyncSession = Depends(get_db)):
         "enabled": str(s.get("remote.enabled", "false")).lower() == "true",
         "has_token": bool((s.get("remote.token") or "").strip()),
         "pending": pending or 0,
+        "faces_pending": faces_pending or 0,
         "workers": workers,
         "avg_dur": avg_dur,
         "eta_seconds": eta_seconds,
