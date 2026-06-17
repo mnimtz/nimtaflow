@@ -238,7 +238,11 @@ def generate_video_thumbnail(
                 "-ss", str(at_second),
                 "-i", video_path,
                 "-vframes", "1",
-                "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease",
+                # yadif deinterlaces AVCHD/.MTS frames — the comb artifacts of
+                # interlaced video otherwise make the face detector hallucinate
+                # high-confidence non-faces (walls/scenery). deint=1 = only touch
+                # frames flagged interlaced, so progressive video is untouched.
+                "-vf", f"yadif=deint=1,scale={w}:{h}:force_original_aspect_ratio=decrease",
                 "-q:v", "3",
                 str(out),
             ],
@@ -266,7 +270,7 @@ def extract_video_frame_bytes(video_path: str, at_second: float, max_edge: int =
     try:
         r = subprocess.run(
             [_FFMPEG, "-y", "-ss", str(max(0.0, at_second)), "-i", video_path,
-             "-frames:v", "1", "-vf", f"scale='min({max_edge},iw)':-2",
+             "-frames:v", "1", "-vf", f"yadif=deint=1,scale='min({max_edge},iw)':-2",
              "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "pipe:1"],
             capture_output=True, timeout=30,
         )

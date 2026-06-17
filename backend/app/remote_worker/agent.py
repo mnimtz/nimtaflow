@@ -122,6 +122,13 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
                     for f in fi.detect_faces(fim, min_conf):
                         if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
                             continue
+                        # Reject non-face-shaped boxes. Interlaced video frames
+                        # produce tall/narrow (or very wide) high-confidence false
+                        # positives; real faces sit around w/h ~0.9. <0.45 drops
+                        # only ~1% of genuine faces (they have other detections).
+                        ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
+                        if ar < 0.45 or ar > 1.8:
+                            continue
                         raw.append({
                             "bbox_x": f.bbox_x, "bbox_y": f.bbox_y, "bbox_w": f.bbox_w, "bbox_h": f.bbox_h,
                             "confidence": f.confidence, "embedding": f.embedding,

@@ -235,20 +235,32 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
             return FileResponse(crop_path, media_type="image/jpeg")
         return None
 
-    if person.profile_face_id:
+    # Honour a profile face only for NAMED persons (a user likely picked it).
+    # Auto-clustered unnamed persons get the most face-like crop instead of the
+    # arbitrary first face — otherwise the tile shows a wall/scenery FP.
+    if person.profile_face_id and (person.name or "").strip():
         pf = await db.get(Face, person.profile_face_id)
-        # Only use the profile face if it still belongs to this person (a merge or
-        # reassignment can leave a stale profile_face_id pointing elsewhere).
+        # Only use it if it still belongs to this person (merge/reassign can leave
+        # a stale profile_face_id pointing elsewhere).
         if pf and pf.person_id == person_id:
             res = await _try(pf)
             if res:
                 return res
 
-    res = await _try((await db.execute(
-        select(Face).where(Face.person_id == person_id).order_by(Face.confidence.desc().nullslast()).limit(1)
-    )).scalar_one_or_none())
-    if res:
-        return res
+    # Rank by face-likeness: real faces are ~square (w/h 0.6–1.05); interlaced
+    # FPs are tall/narrow. Prefer those, then highest confidence. Try a few in
+    # case the top crop file isn't on disk yet.
+    from sqlalchemy import case
+    _ar = Face.bbox_w / func.nullif(Face.bbox_h, 0)
+    _facelike = case((_ar.between(0.6, 1.05), 0), else_=1)
+    candidates = (await db.execute(
+        select(Face).where(Face.person_id == person_id)
+        .order_by(_facelike.asc(), Face.confidence.desc().nullslast()).limit(5)
+    )).scalars().all()
+    for c in candidates:
+        res = await _try(c)
+        if res:
+            return res
 
     raise HTTPException(404, "No avatar available")
 

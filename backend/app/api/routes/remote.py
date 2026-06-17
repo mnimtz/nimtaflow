@@ -351,6 +351,10 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
 
     # faces (only if none yet — don't wipe existing person links)
     n_faces = 0
+    # Safety net (also enforced in the agent): drop non-face-shaped boxes, which
+    # interlaced video frames produce as high-confidence false positives.
+    body.faces = [f for f in (body.faces or [])
+                  if f.bbox_h and 0.45 <= (f.bbox_w / f.bbox_h) <= 1.8]
     if body.faces:
         existing = await db.scalar(select(func.count()).where(Face.photo_id == photo_id))
         if not existing:
