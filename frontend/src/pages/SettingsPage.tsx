@@ -814,6 +814,18 @@ function AISection() {
           <Toggle value={(settings['scan.force_reindex'] ?? 'false') === 'true'} onChange={v => set('scan.force_reindex', v ? 'true' : 'false')} />
         </label>
 
+        <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichter auch bei importierten Metadaten erkennen</p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Standard AN: Gesichter stehen <strong>nicht</strong> in den Dateimetadaten — auch wenn Beschreibung/Tags
+              übernommen wurden, läuft eine reine Gesichtserkennung (ohne erneute KI-Beschreibung). AUS = importierte
+              Fotos ganz ohne KI/Gesichter.
+            </p>
+          </div>
+          <Toggle value={(settings['scan.faces_on_import'] ?? 'true') !== 'false'} onChange={v => set('scan.faces_on_import', v ? 'true' : 'false')} />
+        </label>
+
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
     </div>

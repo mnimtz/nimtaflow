@@ -529,6 +529,12 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
             # Skip the AI stage when the description was IMPORTED from existing
             # file metadata (scanner) — unless this is an explicit re-process.
             if photo.description_model == "imported" and not (redo_faces or redo_thumbs):
+                # Imported metadata → no AI describe. Mark done so it shows in the
+                # gallery; the remote then claims it for a faces-only pass (faces
+                # aren't in file metadata), unless scan.faces_on_import is off.
+                photo.status = PhotoStatus.done
+                photo.processed_at = datetime.now(timezone.utc)
+                await db.commit()
                 flog("scanner", "INFO", f"KI übersprungen (Metadaten importiert): {photo.filename}")
             else:
                 ai_photo_task.delay(photo_id, job_id, redo_faces)

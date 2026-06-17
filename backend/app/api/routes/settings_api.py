@@ -44,6 +44,7 @@ async def get_defaults():
         "ai.language": "de",
         "chat.provider": "gemini",
         "scan.force_reindex": "false",
+        "scan.faces_on_import": "true",
         "ai.gemini.model": "gemini-2.5-flash",
         "ai.gemini.embed_model": "text-embedding-004",
         "ai.ollama.url": "http://localhost:11434",

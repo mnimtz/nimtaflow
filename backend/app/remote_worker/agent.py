@@ -78,12 +78,17 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
     lang = job.get("language", "de")
     prompt = job.get("prompt")
 
-    desc = await prov.describe_image(img, lang, prompt, frames=frames)
-    # Pass the description we just generated so tag extraction reuses it instead
-    # of running a second full VLM pass (~halves per-photo time when no JSON tag
-    # prompt is set). With a tag_prompt, generate_tags does its own keyword pass.
-    tags = await prov.generate_tags(img, lang, job.get("tag_prompt"), caption=desc) if desc else []
-    emb = await prov.embed_text(desc) if desc else []
+    # faces_only: the photo already has an (imported) description — only run face
+    # detection, don't re-describe/re-tag/re-embed.
+    faces_only = bool(job.get("faces_only"))
+    if faces_only:
+        desc, tags, emb = None, [], []
+    else:
+        desc = await prov.describe_image(img, lang, prompt, frames=frames)
+        # Reuse the description we just generated for tag extraction instead of a
+        # second full VLM pass (~halves per-photo time when no JSON tag prompt).
+        tags = await prov.generate_tags(img, lang, job.get("tag_prompt"), caption=desc) if desc else []
+        emb = await prov.embed_text(desc) if desc else []
 
     faces = []
     if job.get("faces_enabled", True):
@@ -132,7 +137,7 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
         "embedding": emb or None,
         "faces": faces,
         "provider": f"remote:{prov.label}",
-        "error": None if desc else "no description",
+        "error": None if (desc or faces_only) else "no description",
         "worker": NAME,
         "duration": round(time.time() - t0, 1),
     }

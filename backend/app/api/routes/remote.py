@@ -71,22 +71,38 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     except Exception:
         pass
 
+    from sqlalchemy import and_, exists
+    from app.models.face import Face
     include_videos = str(s.get("remote.include_videos", "true")).lower() != "false"
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TTL)
-    conds = [
-        Photo.description.is_(None),
-        Photo.ai_error == False,                           # noqa: E712
-        Photo.thumb_large.isnot(None),                     # need a displayable JPEG/frame
-        or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff),
-    ]
+    not_claimed = or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff)
+    needs_desc = and_(
+        Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+        Photo.thumb_large.isnot(None), not_claimed,
+    )
     if not include_videos:
-        conds.insert(0, Photo.is_video == False)           # noqa: E712
+        needs_desc = and_(needs_desc, Photo.is_video == False)  # noqa: E712
+    where_any = needs_desc
+    # Faces aren't stored in file metadata, so a photo whose description was
+    # IMPORTED still needs a face pass — claim it (faces-only). Opt-out via
+    # scan.faces_on_import.
+    faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
+    faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
+    if faces_enabled and faces_on_import:
+        no_faces = ~exists().where(Face.photo_id == Photo.id)
+        needs_faces = and_(
+            Photo.description_model == "imported", Photo.thumb_large.isnot(None),
+            Photo.is_video == False, no_faces, not_claimed,  # noqa: E712
+        )
+        where_any = or_(needs_desc, needs_faces)
     # Row-lock + skip_locked so two workers polling at once lease DIFFERENT photos.
     photo = (await db.execute(
-        select(Photo).where(*conds).order_by(Photo.id).limit(1).with_for_update(skip_locked=True)
+        select(Photo).where(where_any).order_by(Photo.id).limit(1).with_for_update(skip_locked=True)
     )).scalars().first()
     if not photo:
         return {"photo_id": None}
+    # If the photo already has a description (imported), this is a faces-only job.
+    faces_only = photo.description is not None
     photo.ai_claimed_at = datetime.now(timezone.utc)
     await db.commit()
     # The remote worker can run a heavier model than the local host is capable
@@ -121,6 +137,7 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     return {
         "photo_id": photo.id,
         "is_video": bool(photo.is_video),
+        "faces_only": faces_only,
         "image_url": f"/api/remote/image/{photo.id}",
         "frame_urls": frame_urls,
         "face_frames": face_frames,
