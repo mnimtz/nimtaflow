@@ -271,9 +271,9 @@ def backfill_xmp_task(self):
         from app.models.tag import Tag, PhotoTag
         from app.services.settings_loader import load_settings
         from app.services.feature_log import log as flog
-        from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
+        from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd, write_rating as _wr
         from app.services.xmp_sidecar import write_sidecar
-        from sqlalchemy import select
+        from sqlalchemy import select, or_
         init_db()
         async for db in get_db():
             s = await load_settings(db)
@@ -281,9 +281,15 @@ def backfill_xmp_task(self):
             if mode not in ("file", "file_sidecar", "sidecar"):
                 flog("ai", "WARNING", "Backfill übersprungen: xmp.write_mode=off")
                 return {"skipped": "xmp.write_mode=off"}
+            # Cover everything that carries durable user info: a description, OR a
+            # rating/favourite (those may have no description but must still be
+            # stamped into the file so they survive a solution switch).
             rows = (await db.execute(
-                select(Photo).where(Photo.description.isnot(None), Photo.is_missing == False)  # noqa: E712
-                .order_by(Photo.id)
+                select(Photo).where(
+                    Photo.is_missing == False,  # noqa: E712
+                    or_(Photo.description.isnot(None), Photo.is_favorite == True,  # noqa: E712
+                        Photo.user_rating.isnot(None)),
+                ).order_by(Photo.id)
             )).scalars().all()
             flog("ai", "INFO", f"XMP-Backfill gestartet: {len(rows)} beschriebene Fotos (Modus={mode})")
             done, failed = 0, 0
@@ -304,6 +310,10 @@ def backfill_xmp_task(self):
                             await _wd(photo.path, photo.description, overwrite=True)
                         if kw:
                             await _wk(photo.path, kw)
+                        # rating + favourite (favourite = 5 stars, our convention)
+                        eff = 5 if photo.is_favorite else int(photo.user_rating or 0)
+                        if eff > 0:
+                            await _wr(photo.path, eff)
                     if mode in ("file_sidecar", "sidecar"):
                         from app.services.xmp_sidecar import file_capture_date
                         cap = photo.taken_at or file_capture_date(photo.path)
