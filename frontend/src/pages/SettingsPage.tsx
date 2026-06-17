@@ -1024,7 +1024,7 @@ function ChatSettingsSection() {
 
   return (
     <div>
-      <SectionHeader title="Chat-Assistent" desc="Unterhaltung über die Foto-Sammlung (RAG). Der Assistent durchsucht die Bilder per Vektorsuche (pgvector) und antwortet nur anhand der gefundenen Fotos. Öffnen über „Chat" in der Navigation." />
+      <SectionHeader title="Chat-Assistent" desc={'Unterhaltung über die Foto-Sammlung (RAG). Der Assistent durchsucht die Bilder per Vektorsuche (pgvector) und antwortet nur anhand der gefundenen Fotos. Öffnen über „Chat" in der Navigation.'} />
       <div className="space-y-6 max-w-xl">
         <div>
           <Label>Modell für den Chat</Label>
