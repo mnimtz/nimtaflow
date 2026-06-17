@@ -313,6 +313,88 @@ def write_faces_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="detect_faces_local")
+def detect_faces_local_task(self, photo_id: int):
+    """Detect faces on the SERVER with insightface (buffalo_l, CPU) — DECOUPLED
+    from the slow description pass. Same model as the remote agent → compatible
+    embeddings + same aspect-ratio gate. Reads thumb_large directly (no HTTP),
+    idempotent, skips photos that already have faces."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.settings_loader import load_settings
+        from app.services.processing.thumbnails import open_image_for_ai
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, func as _func
+        init_db()
+        async for db in get_db():
+            photo = await db.get(Photo, photo_id)
+            if not photo or photo.is_missing or photo.is_video:
+                return
+            if await db.scalar(select(_func.count()).where(Face.photo_id == photo_id)):
+                photo.faces_scanned = True
+                await db.commit()
+                return
+            from app.services import face_detect_insightface as fi
+            if not fi.available():
+                return
+            s = await load_settings(db)
+            if str(s.get("faces.enabled", "true")).lower() == "false":
+                return
+            img = open_image_for_ai(photo.thumb_large or photo.thumb_medium or photo.path)
+            if img is None:
+                photo.faces_scanned = True
+                await db.commit()
+                return
+            W, H = img.size
+            min_conf = float(s.get("face.min_confidence", "0.7") or 0.7)
+            min_px = float(s.get("face.min_size_px", "40") or 0)
+            cxs, cys, added = [], [], 0
+            for f in fi.detect_faces(img, min_conf):
+                if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
+                    continue
+                ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
+                if ar < 0.45 or ar > 1.8:   # same non-face gate as the remote path
+                    continue
+                db.add(Face(photo_id=photo_id, bbox_x=f.bbox_x, bbox_y=f.bbox_y,
+                            bbox_w=f.bbox_w, bbox_h=f.bbox_h, confidence=f.confidence,
+                            embedding=f.embedding, detector="insightface"))
+                cxs.append(f.bbox_x + f.bbox_w / 2); cys.append(f.bbox_y + f.bbox_h / 2); added += 1
+            if cxs:
+                photo.focus_x = min(1.0, max(0.0, sum(cxs) / len(cxs)))
+                photo.focus_y = min(1.0, max(0.0, sum(cys) / len(cys)))
+            photo.faces_scanned = True
+            await db.commit()
+            if added:
+                flog("faces", "INFO", f"{added} Gesicht(er) (lokal insightface): {photo.filename}")
+    return _run(_main())
+
+
+@celery_app.task(bind=True, name="sweep_faces_local")
+def sweep_faces_local_task(self):
+    """Enqueue local face detection for every image still lacking a face pass, so
+    faces finish in parallel to (and independently of) the slow descriptions."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, exists as _exists
+        init_db()
+        async for db in get_db():
+            pids = (await db.execute(select(Photo.id).where(
+                Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
+                Photo.is_missing == False, Photo.faces_scanned == False,  # noqa: E712
+                ~_exists().where(Face.photo_id == Photo.id),
+            ).order_by(Photo.id))).scalars().all()
+            flog("faces", "INFO", f"Lokale Gesichtserkennung gestartet: {len(pids)} Bild(er) eingereiht")
+            for pid in pids:
+                detect_faces_local_task.delay(pid)
+            return {"queued": len(pids)}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="backfill_xmp")
 def backfill_xmp_task(self):
     """Write the existing DB AI description + tags INTO the image files for every

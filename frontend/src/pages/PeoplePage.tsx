@@ -106,6 +106,17 @@ export default function PeoplePage() {
     onError: () => toast('Gesichter-Schreiben fehlgeschlagen', 'error'),
   })
 
+  // Server-side parallel face detection (insightface, CPU) — decoupled from the
+  // slow descriptions so faces finish in hours, independent of the AI backlog.
+  const detectFacesMutation = useMutation({
+    mutationFn: () => api.post('/people/detect-faces-local').then(r => r.data),
+    onSuccess: (d: { queued_photos: number }) => {
+      refresh()
+      toast(`Lokale Gesichtserkennung gestartet für ${d.queued_photos} Bild(er)`, 'success')
+    },
+    onError: () => toast('Lokale Gesichtserkennung fehlgeschlagen', 'error'),
+  })
+
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
   const unknown = useMemo(() => people.filter(p => !(p.name || '').trim()), [people])
   const selectedPeople = people.filter(p => selection.has(p.id))
@@ -175,6 +186,11 @@ export default function PeoplePage() {
             className={`${BTN_GHOST} disabled:opacity-50`}
             title="Unzugeordnete Gesichter automatisch gruppieren">
             <Sparkles size={15} /><span className="hidden sm:inline">{clusterMutation.isPending ? 'Clustere…' : 'Clustern'}</span>
+          </button>
+          <button onClick={() => detectFacesMutation.mutate()} disabled={detectFacesMutation.isPending}
+            className={`${BTN_GHOST} disabled:opacity-50`}
+            title="Gesichter lokal auf dem Server erkennen (parallel zu den Beschreibungen) — schneller fertig, unabhängig vom KI-Backlog">
+            <Sparkles size={15} /><span className="hidden sm:inline">{detectFacesMutation.isPending ? 'Starte…' : 'Gesichter erkennen'}</span>
           </button>
           <button onClick={() => writeNamesMutation.mutate()} disabled={writeNamesMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}

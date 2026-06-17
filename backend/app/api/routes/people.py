@@ -97,6 +97,23 @@ async def write_faces_to_files(db: AsyncSession = Depends(get_db)):
     return {"queued_photos": int(n_photos or 0)}
 
 
+@router.post("/detect-faces-local")
+async def detect_faces_local(db: AsyncSession = Depends(get_db)):
+    """Run face detection on the SERVER (insightface, CPU) for every image still
+    lacking a face pass — decoupled from the slow descriptions, so faces finish
+    in parallel. Same model as the remote agent → compatible embeddings."""
+    from sqlalchemy import exists as _exists
+    from app.models.photo import Photo
+    n = await db.scalar(select(func.count()).select_from(Photo).where(
+        Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
+        Photo.is_missing == False, Photo.faces_scanned == False,  # noqa: E712
+        ~_exists().where(Face.photo_id == Photo.id),
+    ))
+    from app.worker.tasks import sweep_faces_local_task
+    sweep_faces_local_task.delay()
+    return {"queued_photos": int(n or 0)}
+
+
 @router.delete("/{person_id}", status_code=204)
 async def delete_person(person_id: int, db: AsyncSession = Depends(get_db)):
     person = await db.get(Person, person_id)

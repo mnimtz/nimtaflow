@@ -31,6 +31,8 @@ celery_app.conf.update(
         "watch_sources":      {"queue": "cpu"},
         "auto_cluster_faces": {"queue": "cpu"},
         "write_person_name":  {"queue": "cpu"},
+        "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
+        "sweep_faces_local":  {"queue": "cpu"},
         "transcode_video":    {"queue": "cpu"},   # worker-cpu has /dev/dri (QSV)
     },
 )
