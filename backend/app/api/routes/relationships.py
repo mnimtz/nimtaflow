@@ -33,17 +33,26 @@ def _edge(r: PersonRelationship) -> dict:
 
 
 @router.get("/graph")
-async def graph(db: AsyncSession = Depends(get_db)):
-    """All persons (nodes) + relationships (edges) for the network view."""
-    persons = (await db.execute(select(Person).order_by(Person.name))).scalars().all()
+async def graph(category: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Only persons that are IN at least one relationship (+ the relationships) —
+    NOT every person. Dumping all 70+ persons (incl. dozens of unnamed clusters)
+    overwhelmed the view. Optional `category` (familie | sozial | …) shows just
+    that relationship category — a separate graph per area, as requested."""
+    rels = (await db.execute(select(PersonRelationship))).scalars().all()
+    if category:
+        rels = [r for r in rels if CATEGORY.get(r.rel_type, "other") == category]
+    ids = {i for r in rels for i in (r.from_person_id, r.to_person_id)}
+    if not ids:
+        return {"nodes": [], "edges": []}
+    persons = (await db.execute(
+        select(Person).where(Person.id.in_(ids)).order_by(Person.name))).scalars().all()
     counts = dict((await db.execute(
-        select(Face.person_id, func.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id)
+        select(Face.person_id, func.count()).where(Face.person_id.in_(ids)).group_by(Face.person_id)
     )).all())
     nodes = [{
         "id": p.id, "name": p.name or "Unbekannt", "named": bool((p.name or "").strip()),
         "face_count": counts.get(p.id, 0), "profile_face_id": p.profile_face_id,
     } for p in persons]
-    rels = (await db.execute(select(PersonRelationship))).scalars().all()
     return {"nodes": nodes, "edges": [_edge(r) for r in rels]}
 
 
