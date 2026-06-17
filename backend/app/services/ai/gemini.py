@@ -78,21 +78,23 @@ class GeminiProvider(AIProvider):
             {"text": text_prompt},
         ]}]}
         last_exc = None
-        async with httpx.AsyncClient(timeout=60) as client:
-            for attempt in range(4):
+        # Shorter timeout + fewer in-task retries so a Gemini outage frees the
+        # worker slot quickly; the beat retry-queue re-attempts later (no photo lost).
+        async with httpx.AsyncClient(timeout=25) as client:
+            for attempt in range(3):
                 try:
                     resp = await client.post(
                         f"{self._base}/models/{self.model}:generateContent",
                         params={"key": self.api_key}, json=payload,
                     )
-                    if resp.status_code in (429, 500, 503) and attempt < 3:
+                    if resp.status_code in (429, 500, 503) and attempt < 2:
                         await asyncio.sleep(2 ** attempt)  # 1,2,4s backoff
                         continue
                     resp.raise_for_status()
                     return self._extract_text(resp.json())
                 except httpx.HTTPStatusError as e:
                     last_exc = e
-                    if e.response.status_code in (429, 500, 503) and attempt < 3:
+                    if e.response.status_code in (429, 500, 503) and attempt < 2:
                         await asyncio.sleep(2 ** attempt)
                         continue
                     raise

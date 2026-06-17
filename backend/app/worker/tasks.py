@@ -217,6 +217,37 @@ def auto_cluster_faces_task(self):
     return _run(_run_cluster())
 
 
+@celery_app.task(bind=True, name="retry_failed_ai")
+def retry_failed_ai_task(self):
+    """Retry queue: re-enqueue photos whose AI failed (e.g. a Gemini outage) so a
+    transient provider hiccup doesn't permanently drop them. Capped by ai_attempts
+    so genuinely-bad media eventually stops being retried. Beat-scheduled."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update
+        init_db()
+        MAX_ATTEMPTS = 20
+        async for db in get_db():
+            ids = [r for (r,) in (await db.execute(
+                select(Photo.id).where(
+                    Photo.ai_error == True, Photo.description.is_(None),  # noqa: E712
+                    Photo.ai_attempts < MAX_ATTEMPTS, Photo.thumb_large.isnot(None),
+                    Photo.is_missing == False,  # noqa: E712
+                ).order_by(Photo.id).limit(2000)
+            )).all()]
+            if not ids:
+                return {"retried": 0}
+            await db.execute(update(Photo).where(Photo.id.in_(ids)).values(ai_error=False))
+            await db.commit()
+            flog("ai", "INFO", f"Retry-Queue: {len(ids)} fehlgeschlagene Fotos erneut eingereiht")
+            for pid in ids:
+                process_photo_task.delay(pid)
+            return {"retried": len(ids)}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="write_person_name")
 def write_person_name_task(self, person_id: int):
     """Write a person's name into their photos as XMP:PersonInImage (best-effort),
@@ -964,6 +995,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                     photo = await db.get(Photo, photo_id)
                     if photo:
                         photo.ai_error = True  # persisted by the final commit below
+                        photo.ai_attempts = (photo.ai_attempts or 0) + 1  # retry queue caps on this
                     flog("ai", "WARNING", f"AI übersprungen (Thumbnail bleibt): {photo.filename if photo else photo_id}: {str(ai_err)[:160]}")
 
                 # ── Face detection (local, best-effort) ───────────────────────

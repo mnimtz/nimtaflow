@@ -107,16 +107,18 @@ class AIManager:
         return tags, provider.label
 
     async def embed_text(self, text: str) -> tuple[Optional[List[float]], str]:
-        # Embeddings ALWAYS use the local e5 model, regardless of the description
-        # provider. Photos and search queries must live in ONE vector space —
-        # mixing e.g. Gemini's text-embedding-004 with e5 would make cosine
-        # distances meaningless and break semantic search/chat. e5 is local, free
-        # and multilingual, so switching descriptions to Gemini costs nothing here
-        # and keeps every embedding comparable.
+        # Embeddings use the ACTIVE provider. With Gemini this is text-embedding-004
+        # (a free network call) — no local e5 model on the server, which is what
+        # overloaded the small box before. Photos AND the search query both embed via
+        # the same provider, so the vector space stays consistent (re-embed existing
+        # photos once after switching — see reembed_descriptions_task).
         if not (text or "").strip():
             return None, "none"
+        provider = await self._get_active()
+        if not provider:
+            return None, "none"
         try:
-            embedding = await _get_embedder().embed_text(text)
-            return (embedding or None), "local:e5"
+            embedding = await provider.embed_text(text)
+            return (embedding or None), provider.label
         except Exception:
             return None, "none"

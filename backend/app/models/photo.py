@@ -91,6 +91,10 @@ class Photo(Base):
     # AI step failed (e.g. provider 503) while the rest of processing succeeded —
     # lets us re-queue just-AI-failed photos without a full folder reprocess.
     ai_error: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # How many times AI processing has failed (e.g. Gemini outage). The retry
+    # queue re-attempts ai_error photos until this hits a cap, so transient
+    # provider outages don't permanently drop photos.
+    ai_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # ── Thumbnails ────────────────────────────────────────────────────────────
     thumb_small: Mapped[Optional[str]] = mapped_column(String(512))

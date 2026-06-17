@@ -34,6 +34,7 @@ celery_app.conf.update(
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
         "reembed_imported":   {"queue": "cpu"},
+        "retry_failed_ai":    {"queue": "cpu"},
         "transcode_video":    {"queue": "cpu"},   # worker-cpu has /dev/dri (QSV)
     },
 )
@@ -50,6 +51,11 @@ celery_app.conf.beat_schedule = {
     "auto-cluster-faces": {
         "task": "auto_cluster_faces",
         "schedule": 600.0,
+    },
+    # Retry queue: re-attempt AI that failed (e.g. a Gemini outage) every 15 min.
+    "retry-failed-ai": {
+        "task": "retry_failed_ai",
+        "schedule": 900.0,
     },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {

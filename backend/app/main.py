@@ -53,6 +53,7 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_claimed_at TIMESTAMPTZ",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS imported_person_names TEXT",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS faces_scanned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_attempts INTEGER NOT NULL DEFAULT 0",
     # TYPE changes are guarded so they don't rewrite the table on every startup.
     """DO $$ BEGIN
         IF (SELECT data_type FROM information_schema.columns
