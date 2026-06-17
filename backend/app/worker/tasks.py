@@ -259,6 +259,64 @@ def write_person_name_task(self, person_id: int):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="reembed_imported")
+def reembed_imported_faces_task(self):
+    """Imported faces (recreated from MWG regions on re-import) have a box but NO
+    embedding, so they can't be clustered/matched. Crop each region (with margin)
+    from the image, run insightface on the crop to recover a proper ArcFace
+    embedding, and flip the detector to 'insightface' so it re-joins clustering.
+    Closes the recovery loop: a restored library can be re-clustered."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.processing.thumbnails import open_image_for_ai
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update
+        init_db()
+        async for db in get_db():
+            from app.services import face_detect_insightface as fi
+            if not fi.available():
+                flog("faces", "WARNING", "Re-Embed: insightface nicht verfügbar")
+                return {"reembedded": 0}
+            rows = (await db.execute(
+                select(Face.id, Face.photo_id, Face.bbox_x, Face.bbox_y, Face.bbox_w, Face.bbox_h)
+                .where(Face.detector == "imported", Face.embedding.is_(None))
+                .order_by(Face.photo_id)
+            )).all()
+            flog("faces", "INFO", f"Re-Embed importierter Gesichter: {len(rows)}")
+            done = failed = 0
+            cache_pid, cache_img = None, None
+            for fid, pid, bx, by, bw, bh in rows:
+                try:
+                    if pid != cache_pid:
+                        photo = await db.get(Photo, pid)
+                        cache_img = open_image_for_ai(
+                            photo.thumb_large or photo.thumb_medium or photo.path) if photo else None
+                        cache_pid = pid
+                    if cache_img is None:
+                        failed += 1; continue
+                    W, H = cache_img.size
+                    mx, my = (bw or 0) * 0.4, (bh or 0) * 0.4  # 40% margin for context
+                    crop = cache_img.crop((int(max(0.0, bx - mx) * W), int(max(0.0, by - my) * H),
+                                           int(min(1.0, bx + bw + mx) * W), int(min(1.0, by + bh + my) * H)))
+                    faces = fi.detect_faces(crop, 0.3)  # low conf — we know it IS a face
+                    best = max(faces, key=lambda f: f.confidence or 0) if faces else None
+                    if not best or not best.embedding:
+                        failed += 1; continue
+                    await db.execute(update(Face).where(Face.id == fid).values(
+                        embedding=best.embedding, detector="insightface"))
+                    done += 1
+                    if (done + failed) % 50 == 0:
+                        await db.commit()
+                except Exception:
+                    failed += 1
+            await db.commit()
+            flog("faces", "INFO", f"Re-Embed fertig: {done} neu eingebettet, {failed} ohne Treffer")
+            return {"reembedded": done, "failed": failed}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="write_faces")
 def write_faces_task(self):
     """Write EVERY photo's detected faces as MWG face regions (box + name where

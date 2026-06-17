@@ -114,6 +114,17 @@ async def detect_faces_local(db: AsyncSession = Depends(get_db)):
     return {"queued_photos": int(n or 0)}
 
 
+@router.post("/reembed-imported")
+async def reembed_imported(db: AsyncSession = Depends(get_db)):
+    """Recover ArcFace embeddings for faces imported from MWG regions (box only,
+    no embedding) so they re-join clustering after a recovery/re-import."""
+    n = await db.scalar(select(func.count()).select_from(Face).where(
+        Face.detector == "imported", Face.embedding.is_(None)))
+    from app.worker.tasks import reembed_imported_faces_task
+    reembed_imported_faces_task.delay()
+    return {"queued_faces": int(n or 0)}
+
+
 @router.delete("/{person_id}", status_code=204)
 async def delete_person(person_id: int, db: AsyncSession = Depends(get_db)):
     person = await db.get(Person, person_id)
