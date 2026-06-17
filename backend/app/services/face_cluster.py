@@ -157,7 +157,9 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
         E = _norm(np.array([e for _, e in existing], dtype="float32"))   # (M, D)
         Epids = [pid for pid, _ in existing]
         sims = X @ E.T                                                    # (U, M) cosine sim
-        eps_existing = max(eps, 0.45)  # exemplar match → allow a little more slack
+        eps_existing = eps + 0.05  # exemplar match → a little more slack than cluster
+        #   eps, but still TRACKS the configured threshold (tighten/loosen both work)
+        #   — default threshold 0.6 → eps 0.4 → 0.45, same as before.
         for i, fid in enumerate(ids):
             j = int(np.argmax(sims[i]))
             if 1.0 - float(sims[i, j]) < eps_existing:
@@ -179,21 +181,31 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
             # photos) better than DBSCAN and needs no eps. Falls back if missing.
             try:
                 import hdbscan
+                # eps is a COSINE distance; HDBSCAN works in EUCLIDEAN here. On
+                # L2-normalised vectors euclidean² = 2·(1−cos) = 2·cos_dist, so the
+                # equivalent euclidean radius is sqrt(2·eps) — passing the raw cosine
+                # eps made the selection radius ~2× too small (weak merging).
                 labels = hdbscan.HDBSCAN(
                     min_cluster_size=min_size, metric="euclidean",
-                    # merge micro-clusters that sit within the same radius → fewer fragments
-                    cluster_selection_epsilon=float(eps), cluster_selection_method="eom",
-                ).fit_predict(Xr)  # vectors are L2-normalised → euclidean ≈ cosine
+                    cluster_selection_epsilon=float(np.sqrt(2.0 * eps)),
+                    cluster_selection_method="eom",
+                ).fit_predict(Xr)
             except Exception:
                 labels = None
         if labels is None:
-            labels = DBSCAN(eps=eps, min_samples=min_size, metric="cosine").fit_predict(Xr)
+            # min_samples controls noise sensitivity, NOT minimum cluster size.
+            # Tying it to min_size (e.g. 3) dumped real but under-photographed
+            # people into noise. Use 2 (a pair is enough to seed a cluster) and
+            # enforce min_size as a post-hoc size filter below → far better recall.
+            labels = DBSCAN(eps=eps, min_samples=2, metric="cosine").fit_predict(Xr)
         clusters: dict = {}
         for fid, lbl in zip(remaining_ids, labels):
             if lbl == -1:
                 continue
             clusters.setdefault(int(lbl), []).append(fid)
         for _, face_ids in clusters.items():
+            if len(face_ids) < min_size:   # discard clusters below the min size
+                continue
             person = Person(name="", profile_face_id=face_ids[0])
             db.add(person)
             await db.flush()
