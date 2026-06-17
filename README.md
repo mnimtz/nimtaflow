@@ -49,6 +49,18 @@ and enriches your library with local or cloud AI.
 - Configurable engine (facenet / insightface), clustering algorithm + merge threshold; never mixes detectors.
 - Person-based **smart albums** kept current automatically.
 
+### Chat assistant (RAG / agent over the library)
+- **`POST /api/chat`** — ask about the library in German. A tool-calling **agent**
+  (Gemini) decides when to search, gets **fused** photo records (description +
+  face-recognised names + tags + date/place) and reasons over them — so an
+  anonymous "person in the blue shirt" plus recognised "Günter Nimtz" is
+  understood as the same person. Answers are grounded in the retrieved photos and
+  reference them by `#id`.
+- **Toggle `chat.provider`**: `gemini` (cloud, smart, only text leaves the house)
+  or `local` (private RAG via the local Qwen — slower without a GPU on the host).
+- Builds on the existing pgvector semantic search + people/date/place metadata.
+  *(Backend MVP; chat UI tab to follow.)*
+
 ### Relationships (optional, toggle in settings)
 - Define connections between people (parent, sibling, partner, …).
 - **Derive** siblings & grandparents automatically from parent links.
