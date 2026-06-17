@@ -131,9 +131,10 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
         "faces_enabled": (faces_for_image and not photo.is_video) or (photo.is_video and video_faces),
         "min_face_px": float(s.get("face.min_size_px", "40") or 0),
-        # 0.9 missed faces, 0.5 let in wall/floor false positives. 0.7 is the
-        # balance: keeps clear + most profile faces, rejects texture/background.
-        "min_conf": float(s.get("face.min_confidence", "0.7") or 0.7),
+        # Photos: 0.7 (clear faces, rejects walls). Video: lower (0.6) — sampled
+        # frames are blurrier/lower-res so det_scores run lower; 0.7 dropped them all.
+        "min_conf": (float(s.get("video.face_min_confidence", "0.6") or 0.6) if photo.is_video
+                     else float(s.get("face.min_confidence", "0.7") or 0.7)),
     }
 
 
