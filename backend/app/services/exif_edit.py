@@ -58,6 +58,46 @@ async def read_existing_ai_metadata(path: str):
     return desc, kws
 
 
+async def read_existing_extras(path: str):
+    """Read durable user metadata we write into files — XMP:Rating (0-5) and the
+    list of person names (XMP:PersonInImage) — from the file or its `.xmp` sidecar.
+    Returns (rating:Optional[int], persons:list[str]). Used on scan so a re-import
+    recovers favourites/ratings and who-is-in-the-photo, not just the description."""
+    if not _EXIFTOOL:
+        return None, []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Rating",
+                "-XMP:PersonInImage", "-XMP-iptcExt:PersonInImage", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await proc.communicate()
+            if proc.returncode != 0 or not out:
+                return None, []
+            d = (json.loads(out) or [{}])[0]
+            rating = d.get("Rating")
+            try:
+                rating = int(rating) if rating is not None and str(rating) != "" else None
+            except (ValueError, TypeError):
+                rating = None
+            persons = d.get("PersonInImage")
+            if isinstance(persons, str):
+                persons = [p.strip() for p in persons.split(",") if p.strip()]
+            persons = [str(p).strip() for p in (persons or []) if str(p).strip()]
+            return rating, persons
+        except Exception:
+            return None, []
+
+    rating, persons = await _read(path)
+    if rating is None and not persons:
+        sc = Path(path).with_suffix(".xmp")
+        if sc.exists():
+            rating, persons = await _read(str(sc))
+    return rating, persons
+
+
 async def read_all_exif(path: str) -> Dict[str, Any]:
     """Return all EXIF/IPTC/XMP tags as a flat dict."""
     if not _EXIFTOOL:

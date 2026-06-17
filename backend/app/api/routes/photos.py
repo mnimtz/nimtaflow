@@ -320,6 +320,18 @@ async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db),
     return data
 
 
+async def _persist_rating(photo) -> None:
+    """Write the photo's rating into the file as XMP:Rating (0-5). Favourite maps
+    to 5 stars (user-chosen convention) so a re-import recovers it. Best-effort —
+    never let a file-write failure break the API call."""
+    try:
+        from app.services.exif_edit import write_rating
+        eff = 5 if photo.is_favorite else int(photo.user_rating or 0)
+        await write_rating(photo.path, eff)
+    except Exception:
+        pass
+
+
 @router.patch("/{photo_id}/favorite")
 async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, photo_id)
@@ -327,6 +339,7 @@ async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404)
     photo.is_favorite = not photo.is_favorite
     await db.commit()
+    await _persist_rating(photo)
     return {"is_favorite": photo.is_favorite}
 
 
@@ -347,6 +360,7 @@ async def set_rating(photo_id: int, rating: int = 0, db: AsyncSession = Depends(
         raise HTTPException(404)
     photo.user_rating = max(0, min(5, rating))
     await db.commit()
+    await _persist_rating(photo)
     return {"user_rating": photo.user_rating}
 
 

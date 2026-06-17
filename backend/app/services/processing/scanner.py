@@ -170,6 +170,20 @@ async def scan_source(
                                 session.add(PhotoTag(photo_id=photo.id, tag_id=tag.id, source="imported"))
                         imported = True
                         _slog("INFO", f"Metadaten aus Datei übernommen (KI übersprungen): {entry.name}")
+                    # Durable user metadata: rating (XMP:Rating), favourite (rating==5
+                    # by our convention) and the person names in the file. Read even
+                    # when there is no AI description, so favourites/people round-trip.
+                    try:
+                        from app.services.exif_edit import read_existing_extras
+                        rating, persons = await read_existing_extras(path_str)
+                        if rating is not None:
+                            photo.user_rating = rating
+                            if rating >= 5:
+                                photo.is_favorite = True
+                        if persons:
+                            photo.imported_person_names = ",".join(persons[:50])
+                    except Exception:
+                        pass
                 except Exception as e:
                     _slog("WARNING", f"Metadaten-Import fehlgeschlagen: {entry.name}: {str(e)[:120]}")
 

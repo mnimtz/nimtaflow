@@ -354,12 +354,26 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     if body.faces:
         existing = await db.scalar(select(func.count()).where(Face.photo_id == photo_id))
         if not existing:
+            # Recovery: if the file named exactly ONE person (XMP:PersonInImage read
+            # on import), this is an unambiguous single-person photo — assign the
+            # detected face(s) to that person directly. Ambiguous multi-name photos
+            # are left for clustering (the names stay searchable on the photo).
+            auto_pid = None
+            names = [n.strip() for n in (photo.imported_person_names or "").split(",") if n.strip()]
+            if len(names) == 1:
+                from app.models.person import Person
+                person = await db.scalar(select(Person).where(Person.name == names[0]))
+                if not person:
+                    person = Person(name=names[0]); db.add(person); await db.flush()
+                auto_pid = person.id
             for f in body.faces:
                 db.add(Face(
                     photo_id=photo_id, bbox_x=f.bbox_x, bbox_y=f.bbox_y, bbox_w=f.bbox_w, bbox_h=f.bbox_h,
                     confidence=f.confidence, embedding=f.embedding, detector="insightface",
-                    frame_time=f.frame_time,
+                    frame_time=f.frame_time, person_id=auto_pid,
                 ))
+            if auto_pid:
+                flog("faces", "INFO", f"Gesicht(er) Person '{names[0]}' zugeordnet (aus Datei): {photo.filename}")
             cxs = [f.bbox_x + f.bbox_w / 2 for f in body.faces]
             cys = [f.bbox_y + f.bbox_h / 2 for f in body.faces]
             photo.focus_x = min(1.0, max(0.0, sum(cxs) / len(cxs)))
