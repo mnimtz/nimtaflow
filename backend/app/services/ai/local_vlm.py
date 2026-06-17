@@ -351,6 +351,36 @@ class LocalVLMProvider(AIProvider):
         except Exception:
             return []
 
+    async def generate_text(self, prompt: str, max_new_tokens: int = 400) -> str:
+        """Text-only generation (for the local chat assistant). Qwen only.
+        NB: slow on a CPU-only host — the chat toggle warns about this."""
+        if not self.model_key.startswith("qwen"):
+            return ""
+        try:
+            import torch
+            kind, model, proc, device, dtype = self._load_vlm()
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            text = proc.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = proc(text=[text], return_tensors="pt").to(device)
+            with torch.no_grad():
+                gen = model.generate(**inputs, max_new_tokens=max_new_tokens)
+            trimmed = [o[len(i):] for i, o in zip(inputs.input_ids, gen)]
+            return proc.batch_decode(trimmed, skip_special_tokens=True)[0].strip()
+        except Exception as e:
+            try:
+                from app.services.feature_log import log as _flog
+                _flog("ai", "WARNING", f"Chat-Textgenerierung fehlgeschlagen: {type(e).__name__}: {str(e)[:160]}")
+            except Exception:
+                pass
+            return ""
+        finally:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+
     async def detect_faces(self, image: Image.Image) -> List[DetectedFace]:
         return []  # handled by the dedicated InsightFace step (Stage 3)
 

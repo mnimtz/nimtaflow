@@ -42,6 +42,7 @@ async def get_defaults():
     return {
         "ai.provider": "none",
         "ai.language": "de",
+        "chat.provider": "gemini",
         "ai.gemini.model": "gemini-2.5-flash",
         "ai.gemini.embed_model": "text-embedding-004",
         "ai.ollama.url": "http://localhost:11434",
