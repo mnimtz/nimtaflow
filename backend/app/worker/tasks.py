@@ -297,7 +297,7 @@ def reembed_imported_faces_task(self):
                     if cache_img is None:
                         failed += 1; continue
                     W, H = cache_img.size
-                    mx, my = (bw or 0) * 0.4, (bh or 0) * 0.4  # 40% margin for context
+                    mx, my = (bw or 0) * 0.6, (bh or 0) * 0.6  # 60% margin → better re-detect
                     crop = cache_img.crop((int(max(0.0, bx - mx) * W), int(max(0.0, by - my) * H),
                                            int(min(1.0, bx + bw + mx) * W), int(min(1.0, by + bh + my) * H)))
                     faces = fi.detect_faces(crop, 0.3)  # low conf — we know it IS a face
