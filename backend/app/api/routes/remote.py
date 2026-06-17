@@ -280,7 +280,9 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     xmp_mode = str(s.get("xmp.write_mode", "off")).lower()
     if (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
         try:
-            if xmp_mode in ("file", "file_sidecar"):
+            # Videos: never embed (exiftool can't write MTS/AVCHD and many video
+            # containers) — always use a .xmp sidecar instead. Images embed per mode.
+            if xmp_mode in ("file", "file_sidecar") and not photo.is_video:
                 from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
                 # If the file has no capture date, derive one from its filesystem
                 # date BEFORE we touch it (and mirror it into the DB).
@@ -297,7 +299,7 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                     await _wk(photo.path, clean)
                 wrote_file = True
                 flog("ai", "INFO", f"Beschreibung in Datei geschrieben (remote): {photo.filename}")
-            if xmp_mode in ("file_sidecar", "sidecar"):
+            if photo.is_video or xmp_mode in ("file_sidecar", "sidecar"):
                 from app.services.xmp_sidecar import write_sidecar, file_capture_date
                 # Capture date for the sidecar: EXIF date if known, else the file
                 # date (read-only) — and mirror that into the DB so PhotoFlow

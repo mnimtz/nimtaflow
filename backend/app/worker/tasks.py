@@ -648,7 +648,8 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         # description OR keywords — not gemini-only, not description-only.
                         if (description or kw) and xmp_mode in ("file", "file_sidecar", "sidecar"):
                             try:
-                                if xmp_mode in ("file", "file_sidecar"):
+                                # Videos never embed (exiftool can't write MTS/AVCHD etc.) → sidecar only.
+                                if xmp_mode in ("file", "file_sidecar") and not photo.is_video:
                                     from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
                                     # No capture date? Derive one from the file date before editing.
                                     set_date = await _ecd(photo.path)
@@ -663,7 +664,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                     if kw:
                                         await _wk(photo.path, kw)
                                     flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
-                                if xmp_mode in ("file_sidecar", "sidecar"):
+                                if photo.is_video or xmp_mode in ("file_sidecar", "sidecar"):
                                     from app.services.xmp_sidecar import write_sidecar, file_capture_date
                                     cap = photo.taken_at or file_capture_date(photo.path)
                                     if cap and photo.taken_at is None:
