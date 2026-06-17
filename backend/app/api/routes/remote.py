@@ -128,9 +128,9 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         "face_engine": str(s.get("face.engine", "insightface")).lower(),
         "faces_enabled": (faces_for_image and not photo.is_video) or (photo.is_video and video_faces),
         "min_face_px": float(s.get("face.min_size_px", "40") or 0),
-        # InsightFace det_score for clear faces is ~0.6-0.88, so the old 0.9
-        # default filtered out almost everything. 0.5 matches its natural thresh.
-        "min_conf": float(s.get("face.min_confidence", "0.5") or 0.5),
+        # 0.9 missed faces, 0.5 let in wall/floor false positives. 0.7 is the
+        # balance: keeps clear + most profile faces, rejects texture/background.
+        "min_conf": float(s.get("face.min_confidence", "0.7") or 0.7),
     }
 
 
