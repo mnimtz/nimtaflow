@@ -539,10 +539,17 @@ async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = 
     photo = await db.get(Photo, photo_id)
     if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
-    thumb = getattr(photo, f"thumb_{size}", None) or photo.thumb_medium or photo.thumb_small
+    exact = getattr(photo, f"thumb_{size}", None)
+    thumb = exact or photo.thumb_medium or photo.thumb_small
     if not thumb or not os.path.exists(thumb):
         raise HTTPException(404, "Thumbnail not ready")
-    return FileResponse(thumb, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000"})
+    # Cache forever ONLY when we serve the exact size requested. If the requested
+    # size isn't ready yet and we fall back to a smaller one, send no-cache so the
+    # browser refetches later — otherwise it would keep the fallback (small) image
+    # permanently even after the larger one is generated ("clicked photo stays small").
+    served_exact = bool(exact) and os.path.exists(exact)
+    cache = "public, max-age=31536000, immutable" if served_exact else "no-cache, must-revalidate"
+    return FileResponse(thumb, media_type="image/jpeg", headers={"Cache-Control": cache})
 
 
 @router.get("/{photo_id}/preview")
