@@ -10,6 +10,7 @@ Two modes (toggle: chat.provider):
 
 Grounded: the model is told to answer ONLY from the retrieved photos.
 """
+import asyncio
 import json
 from typing import List, Optional
 
@@ -104,10 +105,17 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 "contents": contents,
                 "tools": [tool],
             }
-            r = await client.post(f"{base}/models/{model}:generateContent",
-                                  params={"key": key}, json=payload)
+            r = None
+            for attempt in range(4):  # Gemini 503/429 spikes are usually transient
+                r = await client.post(f"{base}/models/{model}:generateContent",
+                                      params={"key": key}, json=payload)
+                if r.status_code in (429, 500, 503) and attempt < 3:
+                    await asyncio.sleep(2 ** attempt)  # 1,2,4s backoff
+                    continue
+                break
             if r.status_code != 200:
-                return {"answer": f"Gemini-Fehler {r.status_code}: {r.text[:200]}", "photo_ids": seen_ids}
+                return {"answer": f"Gemini gerade nicht erreichbar ({r.status_code}). Bitte gleich nochmal versuchen.",
+                        "photo_ids": seen_ids}
             cand = (r.json().get("candidates") or [{}])[0]
             parts = (cand.get("content") or {}).get("parts") or []
             calls = [p["functionCall"] for p in parts if "functionCall" in p]
@@ -138,8 +146,14 @@ async def _local_rag(message: str, settings: dict, db: AsyncSession) -> dict:
     model = (settings.get("ai.local.model") or "qwen2.5-vl-3b")
     prov = LocalVLMProvider(model if model.startswith("qwen") else "qwen2.5-vl-3b")
     answer = await prov.generate_text(prompt, max_new_tokens=400)
-    return {"answer": answer or "(lokales Modell lieferte keine Antwort)",
-            "photo_ids": [r["id"] for r in recs]}
+    if not (answer or "").strip():
+        # The server host has no GPU (local VLM disabled) → local chat text-gen
+        # can't run here. Retrieval still worked, so surface the photos + steer to Gemini.
+        return {"answer": "Der lokale Chat braucht ein GPU am Server (hier nicht vorhanden). "
+                          "Stell den Chat-Assistenten auf Gemini um (Einstellungen → Chat-Assistent) "
+                          "— die gefundenen Fotos siehst du unten.",
+                "photo_ids": [r["id"] for r in recs]}
+    return {"answer": answer, "photo_ids": [r["id"] for r in recs]}
 
 
 async def chat(message: str, history: list, settings: dict, db: AsyncSession,
