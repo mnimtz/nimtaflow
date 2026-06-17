@@ -406,14 +406,19 @@ async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/faces/unassigned")
-async def unassigned_faces(limit: int = Query(200, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
+async def unassigned_faces(page: int = 1, limit: int = Query(50, ge=1, le=500),
+                           db: AsyncSession = Depends(get_db)):
+    """Paginated — there can be thousands of loose faces; returning all of them as
+    on-demand crops froze the page. Best-confidence first."""
+    where = (Face.person_id == None, Face.is_ignored == False)  # noqa: E711,E712
+    total = await db.scalar(select(func.count()).select_from(Face).where(*where))
     rows = (await db.execute(
-        select(Face.id, Face.photo_id, Face.confidence)
-        .where(Face.person_id == None, Face.is_ignored == False)  # noqa: E711,E712
+        select(Face.id, Face.photo_id, Face.confidence).where(*where)
         .order_by(Face.confidence.desc().nullslast())
-        .limit(limit)
+        .offset((max(1, page) - 1) * limit).limit(limit)
     )).all()
-    return [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]
+    return {"total": total or 0, "page": page, "limit": limit,
+            "items": [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]}
 
 
 class FaceIdsRequest(BaseModel):

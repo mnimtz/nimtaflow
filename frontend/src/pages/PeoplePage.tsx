@@ -49,10 +49,14 @@ export default function PeoplePage() {
     queryKey: ['people', showHidden],
     queryFn: () => api.get('/people', { params: { include_hidden: showHidden } }).then(r => r.data),
   })
-  const { data: looseFaces = [] } = useQuery<FaceRef[]>({
-    queryKey: ['unassigned-faces'],
-    queryFn: () => api.get('/people/faces/unassigned', { params: { limit: 500 } }).then(r => r.data),
+  const [loosePage, setLoosePage] = useState(1)
+  const [loosePageSize, setLoosePageSize] = useState(50)
+  const { data: looseData } = useQuery<{ total: number; items: FaceRef[] }>({
+    queryKey: ['unassigned-faces', loosePage, loosePageSize],
+    queryFn: () => api.get('/people/faces/unassigned', { params: { page: loosePage, limit: loosePageSize } }).then(r => r.data),
   })
+  const looseFaces = looseData?.items ?? []
+  const looseTotal = looseData?.total ?? 0
   const { data: ignoredFaces = [] } = useQuery<FaceRef[]>({
     queryKey: ['ignored-faces'],
     queryFn: () => api.get('/people/faces/ignored').then(r => r.data),
@@ -211,7 +215,7 @@ export default function PeoplePage() {
 
       {isLoading ? (
         <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
-      ) : (people.length === 0 && looseFaces.length === 0) ? (
+      ) : (people.length === 0 && looseTotal === 0) ? (
         <EmptyPeople />
       ) : (
         <div className="space-y-10">
@@ -228,17 +232,17 @@ export default function PeoplePage() {
               <div className={GRID}>{unknown.map(renderCard)}</div>
             </section>
           )}
-          {looseFaces.length > 0 && (
+          {looseTotal > 0 && (
             <section>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Einzelne Gesichter <span className="text-zinc-500 font-normal">({looseFaces.length})</span></h2>
+                  <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Einzelne Gesichter <span className="text-zinc-500 font-normal">({looseTotal})</span></h2>
                   <p className="text-xs text-zinc-500 mt-0.5">Häkchen zum Auswählen, Bild antippen zum Zuordnen. Unbekannte einfach auswählen und ausblenden.</p>
                 </div>
                 <div className="flex gap-2 text-xs">
                   <button onClick={() => setFaceSel(new Set(looseFaces.map(f => f.id)))}
                     className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                    Alle auswählen
+                    Seite auswählen
                   </button>
                   {ignoredFaces.length > 0 || showIgnored ? (
                     <button onClick={() => setShowIgnored(v => !v)}
@@ -254,6 +258,8 @@ export default function PeoplePage() {
                     onToggle={() => toggleFace(f.id)} onAssign={() => setAssignIds([f.id])} />
                 ))}
               </div>
+              <Pager page={loosePage} pageSize={loosePageSize} total={looseTotal}
+                onPage={setLoosePage} onSize={(n) => { setLoosePageSize(n); setLoosePage(1) }} />
             </section>
           )}
 
@@ -344,6 +350,37 @@ function SectionHeader({ title, count, hint }: { title: string; count: number; h
     <div className="mb-4">
       <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{title} <span className="text-zinc-500 font-normal">({count})</span></h2>
       {hint && <p className="text-xs text-zinc-500 mt-0.5">{hint}</p>}
+    </div>
+  )
+}
+
+function Pager({ page, pageSize, total, onPage, onSize }: {
+  page: number; pageSize: number; total: number;
+  onPage: (p: number) => void; onSize: (n: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  if (total <= 25) return null
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(total, page * pageSize)
+  return (
+    <div className="flex items-center gap-3 mt-4 text-xs flex-wrap">
+      <div className="flex items-center gap-1">
+        <span className="text-zinc-500 mr-1">Pro Seite:</span>
+        {[25, 50, 100].map(n => (
+          <button key={n} onClick={() => onSize(n)}
+            className={`px-2.5 py-1 rounded-lg border ${pageSize === n
+              ? 'border-indigo-500 bg-indigo-500 text-white'
+              : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{n}</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 ml-auto">
+        <span className="text-zinc-500">{from}–{to} von {total}</span>
+        <button disabled={page <= 1} onClick={() => onPage(page - 1)}
+          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">‹ Zurück</button>
+        <span className="text-zinc-500 tabular-nums">Seite {page} / {pages}</span>
+        <button disabled={page >= pages} onClick={() => onPage(page + 1)}
+          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">Weiter ›</button>
+      </div>
     </div>
   )
 }
@@ -501,9 +538,11 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
     queryKey: ['person', personId],
     queryFn: () => api.get(`/people/${personId}`).then(r => r.data),
   })
+  const [photoPage, setPhotoPage] = useState(1)
+  const [photoPageSize, setPhotoPageSize] = useState(50)
   const { data: photosData } = useQuery({
-    queryKey: ['person-photos', personId],
-    queryFn: () => api.get(`/people/${personId}/photos?limit=200`).then(r => r.data),
+    queryKey: ['person-photos', personId, photoPage, photoPageSize],
+    queryFn: () => api.get(`/people/${personId}/photos`, { params: { page: photoPage, limit: photoPageSize } }).then(r => r.data),
   })
   const [facePage, setFacePage] = useState(1)
   const [facePageSize, setFacePageSize] = useState(50)
@@ -513,7 +552,6 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
   })
   const faces = facesData?.items ?? []
   const facesTotal = facesData?.total ?? 0
-  const facePages = Math.max(1, Math.ceil(facesTotal / facePageSize))
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['person', personId] })
@@ -613,26 +651,8 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
               </div>
             ))}
           </div>
-          {facesTotal > 25 && (
-            <div className="flex items-center gap-3 mt-4 text-xs flex-wrap">
-              <div className="flex items-center gap-1">
-                <span className="text-zinc-500 mr-1">Pro Seite:</span>
-                {[25, 50, 100].map(n => (
-                  <button key={n} onClick={() => { setFacePageSize(n); setFacePage(1) }}
-                    className={`px-2.5 py-1 rounded-lg border ${facePageSize === n
-                      ? 'border-indigo-500 bg-indigo-500 text-white'
-                      : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{n}</button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 ml-auto">
-                <button disabled={facePage <= 1} onClick={() => setFacePage(p => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">‹ Zurück</button>
-                <span className="text-zinc-500">Seite {facePage} / {facePages}</span>
-                <button disabled={facePage >= facePages} onClick={() => setFacePage(p => Math.min(facePages, p + 1))}
-                  className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">Weiter ›</button>
-              </div>
-            </div>
-          )}
+          <Pager page={facePage} pageSize={facePageSize} total={facesTotal}
+            onPage={setFacePage} onSize={(n) => { setFacePageSize(n); setFacePage(1) }} />
         </div>
       )}
 
@@ -649,6 +669,8 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
           </div>
         ))}
       </div>
+      <Pager page={photoPage} pageSize={photoPageSize} total={total}
+        onPage={setPhotoPage} onSize={(n) => { setPhotoPageSize(n); setPhotoPage(1) }} />
       {photos.length === 0 && <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>}
 
       {lightboxIndex !== null && <PhotoLightbox photos={photos as any} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />}
