@@ -141,32 +141,32 @@ async def cluster_unassigned(db: AsyncSession) -> dict:
     X = _norm(np.array([r[1] for r in rows], dtype="float32"))
     eps = max(0.05, 1.0 - threshold)
 
-    # 1) Grow existing people.
+    # 1) Grow existing people — match each unassigned face to its NEAREST
+    #    EXEMPLAR (closest single assigned face), not the person's mean embedding.
+    #    A centroid blurs a person who varies a lot (e.g. a baby across ages/
+    #    angles), so clear faces sat unassigned. Nearest-exemplar assigns a face
+    #    if it's close to ANY confirmed face of the person — far more recall, and
+    #    a tad looser eps (exemplar match is stronger evidence than a centroid).
     existing = (await db.execute(
         select(Face.person_id, Face.embedding).where(
             Face.person_id.isnot(None), Face.embedding.isnot(None), Face.detector == engine)
     )).all()
-    centroids = {}
-    if existing:
-        acc = defaultdict(list)
-        for pid, emb in existing:
-            acc[pid].append(emb)
-        for pid, embs in acc.items():
-            centroids[pid] = _norm(np.mean(_norm(np.array(embs, dtype="float32")), axis=0))
-
     assigned = 0
     remaining_ids, remaining_idx = [], []
-    for i, fid in enumerate(ids):
-        best_pid, best_dist = None, 1e9
-        for pid, c in centroids.items():
-            d = 1.0 - float(np.dot(X[i], c))
-            if d < best_dist:
-                best_pid, best_dist = pid, d
-        if best_pid is not None and best_dist < eps:
-            await db.execute(update(Face).where(Face.id == fid).values(person_id=best_pid))
-            assigned += 1
-        else:
-            remaining_ids.append(fid); remaining_idx.append(i)
+    if existing:
+        E = _norm(np.array([e for _, e in existing], dtype="float32"))   # (M, D)
+        Epids = [pid for pid, _ in existing]
+        sims = X @ E.T                                                    # (U, M) cosine sim
+        eps_existing = max(eps, 0.45)  # exemplar match → allow a little more slack
+        for i, fid in enumerate(ids):
+            j = int(np.argmax(sims[i]))
+            if 1.0 - float(sims[i, j]) < eps_existing:
+                await db.execute(update(Face).where(Face.id == fid).values(person_id=Epids[j]))
+                assigned += 1
+            else:
+                remaining_ids.append(fid); remaining_idx.append(i)
+    else:
+        remaining_ids, remaining_idx = list(ids), list(range(len(ids)))
 
     # 2) Cluster the rest into new (unnamed) persons.
     new_persons = 0

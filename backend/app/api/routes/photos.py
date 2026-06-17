@@ -259,6 +259,23 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
     return memories
 
 
+@router.get("/map")
+async def map_points(db: AsyncSession = Depends(get_db),
+                     user: Optional[User] = Depends(current_user_optional)):
+    """Lightweight: every photo with GPS as {id, latitude, longitude} — NO 500
+    cap (the gallery list capped the map at 500). Just coordinates, so the whole
+    library's points render; clicking a point fetches the photo detail by id."""
+    conds = photo_conditions(user)
+    rows = (await db.execute(
+        select(Photo.id, Photo.latitude, Photo.longitude, Photo.is_video).where(
+            Photo.latitude.isnot(None), Photo.longitude.isnot(None),
+            Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
+            *conds,
+        )
+    )).all()
+    return [{"id": r[0], "latitude": r[1], "longitude": r[2], "is_video": r[3]} for r in rows]
+
+
 @router.get("/{photo_id}")
 async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db),
                     user: Optional[User] = Depends(current_user_optional)):
