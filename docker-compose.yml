@@ -26,6 +26,7 @@ services:
   backend:
     build: ./backend
     image: photoflow-app:latest
+    init: true
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
@@ -51,6 +52,7 @@ services:
   worker:
     build: ./backend
     image: photoflow-app:latest
+    init: true
     # GPU work serializes through one model copy: a single 8 GB card can hold
     # exactly one 3B VLM. Prefork with >1 worker would load N copies → OOM
     # (SIGKILL). Keep concurrency at 1 and consume ONLY the gpu queue (AI +
@@ -104,6 +106,7 @@ services:
   worker-cpu:
     build: ./backend
     image: photoflow-app:latest
+    init: true
     command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "cpu,celery", "--loglevel=${LOG_LEVEL:-info}", "-c", "${CPU_WORKER_CONCURRENCY:-4}"]
     restart: unless-stopped
     volumes:
@@ -142,6 +145,7 @@ services:
   worker-scan:
     build: ./backend
     image: photoflow-app:latest
+    init: true
     command: ["nice", "-n", "10", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "scan", "--loglevel=${LOG_LEVEL:-info}", "-c", "1"]
     restart: unless-stopped
     volumes:
@@ -167,6 +171,7 @@ services:
   beat:
     build: ./backend
     image: photoflow-app:latest
+    init: true
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=${LOG_LEVEL:-info}"]
     restart: unless-stopped
     depends_on:
