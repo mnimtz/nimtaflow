@@ -1,3 +1,5 @@
+import asyncio
+import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -20,17 +22,27 @@ def _face_crop_path(face, photo, person_id: int = 0):
     from app.services.face_crop import crop_face
     bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
     if getattr(photo, "is_video", False) and face.frame_time is not None:
-        try:
-            import io
-            from PIL import Image
-            from app.services.processing.thumbnails import extract_video_frame_bytes
-            data = extract_video_frame_bytes(photo.path, float(face.frame_time))
-            if data:
-                frame = Image.open(io.BytesIO(data))
-                return crop_face(photo.path, bbox, person_id, face.id, source_image=frame)
-        except Exception:
-            pass
-    src = photo.thumb_large or photo.thumb_medium or photo.path
+        # Extract the exact frame from the 1080p web MP4 on the SSD (fast seek) —
+        # NEVER ffmpeg the 4K original on the spinning HDD (that was the slow/
+        # "never loads" case). No web version yet → fall through to the SSD
+        # thumbnail (instant, approximate frame) rather than hit the HDD.
+        vsrc = photo.video_webm_path if (photo.video_webm_path and os.path.exists(photo.video_webm_path)) else None
+        if vsrc:
+            try:
+                import io
+                from PIL import Image
+                from app.services.processing.thumbnails import extract_video_frame_bytes
+                data = extract_video_frame_bytes(vsrc, float(face.frame_time))
+                if data:
+                    frame = Image.open(io.BytesIO(data))
+                    return crop_face(photo.path, bbox, person_id, face.id, source_image=frame)
+            except Exception:
+                pass
+    src = photo.thumb_large or photo.thumb_medium
+    if not src and not getattr(photo, "is_video", False):
+        src = photo.path  # last resort for an image without any thumbnail yet
+    if not src:
+        return None
     return crop_face(src, bbox, person_id, face.id)
 
 
@@ -309,7 +321,9 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
         photo = await db.get(Photo, face.photo_id)
         if not photo:
             return None
-        crop_path = _face_crop_path(face, photo, person_id)
+        # Offload the (sync, possibly ffmpeg/PIL) crop work to a thread so one slow
+        # crop never blocks the event loop / the other ~40 parallel crop requests.
+        crop_path = await asyncio.to_thread(_face_crop_path, face, photo, person_id)
         if crop_path and os.path.exists(crop_path):
             return FileResponse(crop_path, media_type="image/jpeg")
         return None
@@ -512,7 +526,7 @@ async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db)):
     photo = await db.get(Photo, face.photo_id)
     if not photo:
         raise HTTPException(404)
-    path = _face_crop_path(face, photo, 0)
+    path = await asyncio.to_thread(_face_crop_path, face, photo, 0)
     if path and os.path.exists(path):
         return FileResponse(path, media_type="image/jpeg")
     raise HTTPException(404, "crop failed")
