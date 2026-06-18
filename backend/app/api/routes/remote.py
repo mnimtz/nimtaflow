@@ -409,26 +409,11 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         except Exception as xe:
             flog("ai", "WARNING", f"Metadaten-Schreiben fehlgeschlagen (remote): {photo.filename}: {str(xe)[:120]}")
 
-    # Embedding — computed CENTRALLY on the server from the description, so the
-    # whole library shares ONE vector space no matter which (possibly different)
-    # model each describe-worker used (Qwen-3B, Ollama-qwen2.5-vl-7B on a Mac, …).
-    # Uses the same provider as search → photos + queries stay comparable. Falls
-    # back to a worker-posted embedding only if the server can't embed.
-    emb = None
-    if body.description:
-        try:
-            from app.services.ai.manager import AIManager
-            emb, _ = await AIManager(s).embed_text(body.description)
-        except Exception:
-            emb = None
-    emb = emb or body.embedding
-    if emb:
-        if len(emb) > 768:
-            emb = emb[:768]
-            n = math.sqrt(sum(x * x for x in emb)) or 1.0
-            emb = [x / n for x in emb]
-        if len(emb) == 768:
-            photo.embedding = emb
+    # NOTE: embeddings are NOT computed here. The dedicated jina-clip-v2 `embed`
+    # worker owns BOTH vectors (image + description text) so the whole library
+    # stays in one joint space — computing an e5 vector here would clobber the
+    # jina image vector. A describe result just sets the description; the embed
+    # worker then picks the photo up (embedding_text IS NULL AND description set).
 
     # faces (only if none yet — don't wipe existing person links)
     n_faces = 0
