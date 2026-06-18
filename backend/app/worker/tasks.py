@@ -686,38 +686,52 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
         except Exception:
             r = None
         try:
+            out_dir = pathlib.Path(settings.cache_path) / "videos"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"{photo_id}_{resolution}.mp4"
+            # 1) SHORT session: resolve the source path / early-exit if cached. We
+            #    must NOT hold a DB transaction open across the long ffmpeg run —
+            #    idle_in_transaction_session_timeout (60s) would kill the connection
+            #    on big 4K transcodes and the final commit would fail (→ task error
+            #    → re-queue → the queue never drains).
+            src_path = fname = None
             async for db in get_db():
                 photo = await db.get(Photo, photo_id)
                 if not photo or not photo.is_video:
                     return {"error": "not a video"}
-                out_dir = pathlib.Path(settings.cache_path) / "videos"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_path = out_dir / f"{photo_id}_{resolution}.mp4"
+                src_path, fname = photo.path, photo.filename
                 if out_path.exists():
                     photo.video_webm_path = str(out_path); await db.commit()
                     return {"cached": True}
-                hw = detect_hw()
-                t0 = _t.time()
-                cmd = build_transcode_cmd(photo.path, str(out_path), resolution=resolution, codec="h264", hw=hw)
-                proc = subprocess.run(cmd, capture_output=True, timeout=1800)
-                if proc.returncode != 0 or not out_path.exists():
-                    # Software fallback — same no-upscale cap as build_transcode_cmd.
-                    _long = int(resolution * 16 / 9)
-                    sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
-                                ":force_original_aspect_ratio=decrease:force_divisible_by=2")
-                    sw = ["ffmpeg", "-y", "-i", photo.path, "-c:v", "libx264",
-                          "-vf", sw_scale, "-c:a", "aac", "-b:a", "128k",
-                          "-movflags", "+faststart", str(out_path)]
-                    proc = subprocess.run(sw, capture_output=True, timeout=1800)
-                    hwname = "software"
-                else:
-                    hwname = hw.name
-                if proc.returncode == 0 and out_path.exists():
-                    photo.video_webm_path = str(out_path); await db.commit()
-                    flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {photo.filename}")
-                    return {"ok": True, "hw": hwname}
-                flog("video", "WARNING", f"Transkodierung fehlgeschlagen: {photo.filename}: {proc.stderr.decode(errors='replace')[-200:]}")
-                return {"error": "ffmpeg"}
+                break
+            # 2) Transcode — NO DB session held while ffmpeg runs.
+            hw = detect_hw()
+            t0 = _t.time()
+            cmd = build_transcode_cmd(src_path, str(out_path), resolution=resolution, codec="h264", hw=hw)
+            proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+            if proc.returncode != 0 or not out_path.exists():
+                # Software fallback — same no-upscale cap as build_transcode_cmd.
+                _long = int(resolution * 16 / 9)
+                sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
+                            ":force_original_aspect_ratio=decrease:force_divisible_by=2")
+                sw = ["ffmpeg", "-y", "-i", src_path, "-c:v", "libx264",
+                      "-vf", sw_scale, "-c:a", "aac", "-b:a", "128k",
+                      "-movflags", "+faststart", str(out_path)]
+                proc = subprocess.run(sw, capture_output=True, timeout=1800)
+                hwname = "software"
+            else:
+                hwname = hw.name
+            # 3) SHORT session: persist the result.
+            if proc.returncode == 0 and out_path.exists():
+                async for db in get_db():
+                    photo = await db.get(Photo, photo_id)
+                    if photo:
+                        photo.video_webm_path = str(out_path); await db.commit()
+                    break
+                flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {fname}")
+                return {"ok": True, "hw": hwname}
+            flog("video", "WARNING", f"Transkodierung fehlgeschlagen: {fname}: {proc.stderr.decode(errors='replace')[-200:]}")
+            return {"error": "ffmpeg"}
         finally:
             if r is not None:
                 try:
