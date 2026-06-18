@@ -64,13 +64,21 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
         tags.setdefault(pid, []).append(tname)
     out = []
     for p in photos:
+        # Give the model the FULL rich description (we generate detailed, multi-
+        # sentence descriptions — truncating to 400 chars threw most of it away).
+        # 1500-char cap only bounds pathological outliers. Plus the user's own note
+        # + title, which are strong, human-curated signals.
+        desc = (p.description or "").strip()
+        note = (getattr(p, "user_description", None) or "").strip()
         out.append({
             "id": p.id,
             "datum": str(p.taken_at)[:10] if p.taken_at else None,
             "ort": ", ".join([x for x in (p.city, p.country) if x]) or None,
+            "titel": (getattr(p, "title", None) or "").strip() or None,
             "personen": sorted(people.get(p.id, [])) or None,
-            "tags": (tags.get(p.id) or [])[:15] or None,
-            "beschreibung": (p.description or "")[:400] or None,
+            "tags": (tags.get(p.id) or [])[:25] or None,
+            "beschreibung": desc[:1500] or None,
+            "notiz": note[:500] or None,
             "ist_video": bool(p.is_video),
         })
     return out
