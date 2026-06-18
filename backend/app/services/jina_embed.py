@@ -51,8 +51,15 @@ def _norm(vec) -> List[float]:
 def embed_image(image: Image.Image) -> Optional[List[float]]:
     """768-dim L2-normalised image vector, or None on failure."""
     try:
+        import torch
         m = _get()
-        vec = m.encode_image([image.convert("RGB")], truncate_dim=_DIM)[0]
+        # inference_mode disables autograd graph building. Without it, jina's
+        # encode_* retained grad tensors per call, so the long-lived backend
+        # process grew a few hundred MB per search/chat query until the kernel
+        # OOM-killed it (SIGKILL/137) → 502s + empty pages. Inference needs no
+        # gradients, so this both fixes the leak and speeds up encoding.
+        with torch.inference_mode():
+            vec = m.encode_image([image.convert("RGB")], truncate_dim=_DIM)[0]
         return _norm(vec)
     except Exception:
         return None
@@ -64,8 +71,10 @@ def embed_text(text: str) -> Optional[List[float]]:
     if not text:
         return None
     try:
+        import torch
         m = _get()
-        vec = m.encode_text([text], truncate_dim=_DIM)[0]
+        with torch.inference_mode():  # no autograd graph → no per-call memory leak (see embed_image)
+            vec = m.encode_text([text], truncate_dim=_DIM)[0]
         return _norm(vec)
     except Exception:
         return None
