@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -33,6 +34,7 @@ celery_app.conf.update(
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
+        "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "retry_missing_thumbnails": {"queue": "cpu"},
@@ -75,5 +77,12 @@ celery_app.conf.beat_schedule = {
     "scheduled-backup": {
         "task": "scheduled_backup",
         "schedule": 3600.0,
+    },
+    # Nightly false-positive face filter: re-detect unnamed faces' crops, ignore
+    # the ones that aren't faces (hands/patterns). New photos keep arriving, so it
+    # runs every night at 03:30 to keep the People grid clean.
+    "verify-unnamed-faces": {
+        "task": "verify_unnamed_faces",
+        "schedule": crontab(hour=3, minute=30),
     },
 }

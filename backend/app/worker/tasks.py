@@ -497,6 +497,62 @@ def warm_face_crops_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="verify_unnamed_faces")
+def verify_unnamed_faces_task(self, limit: int = 4000):
+    """False-positive filter: re-run InsightFace on the CROP of each UNNAMED face.
+    A context-triggered false positive (a hand/pattern/skin the full-image detector
+    fired on) usually does NOT re-detect as a face once isolated → mark is_ignored
+    (reversible, removes it from the People grid). Conservative: only ignore when
+    ZERO faces are found at a LOW threshold, so real faces survive. Never touches
+    NAMED persons. Nightly + on-demand; only the crop (SSD) is read, never the HDD."""
+    async def _main():
+        import os
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.models.person import Person
+        from app.services import face_detect_insightface as fdi
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, or_, func as sfunc
+        from PIL import Image
+        init_db()
+        if not fdi.available():
+            return {"skipped": "no insightface"}
+        from app.api.routes.people import _face_crop_path  # SSD-only crop path
+        async for db in get_db():
+            faces = (await db.execute(
+                select(Face).join(Person, Person.id == Face.person_id, isouter=True)
+                .where(Face.is_ignored == False,  # noqa: E712
+                       or_(Face.person_id.is_(None),
+                           Person.name.is_(None),
+                           sfunc.length(sfunc.trim(Person.name)) == 0))
+                .order_by(Face.id).limit(limit)
+            )).scalars().all()
+            flog("faces", "INFO", f"FP-Filter: prüfe {len(faces)} unbenannte Gesicht(er)")
+            checked = ignored = 0
+            for face in faces:
+                photo = await db.get(Photo, face.photo_id)
+                if not photo or photo.is_missing:
+                    continue
+                try:
+                    cp = _face_crop_path(face, photo, face.person_id or 0)
+                    if not cp or not os.path.exists(cp):
+                        continue
+                    found = fdi.detect_faces(Image.open(cp), min_conf=0.35)
+                    checked += 1
+                    if not found:
+                        face.is_ignored = True
+                        ignored += 1
+                except Exception:
+                    pass
+                if checked % 200 == 0:
+                    await db.commit()
+            await db.commit()
+            flog("faces", "INFO", f"FP-Filter fertig: {checked} geprüft, {ignored} als 'kein Gesicht' markiert")
+            return {"checked": checked, "ignored": ignored}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="detect_faces_local")
 def detect_faces_local_task(self, photo_id: int):
     """Detect faces on the SERVER with insightface (buffalo_l, CPU) — DECOUPLED
