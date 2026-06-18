@@ -237,15 +237,19 @@ def generate_video_thumbnail(
     size: str = "medium",
     at_second: Optional[float] = None,
     force: bool = False,
+    source_path: Optional[str] = None,
 ) -> Optional[str]:
-    """Extract a JPEG frame from a video at `at_second` (default: 10% mark)."""
+    """Extract a JPEG frame from a video at `at_second` (default: 10% mark).
+    `source_path` (e.g. the 1080p web MP4 on SSD) is read from when given — far
+    faster than the 4K original on the HDD — while the cache key stays video_path."""
     out = _thumb_path(cache_root, video_path + ":thumb", size)
     if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    src = source_path or video_path
 
     if at_second is None:
-        dur = video_duration(video_path)
+        dur = video_duration(src)
         at_second = max(1.0, (dur or 10) * 0.1)
 
     w, h = SIZES[size]
@@ -254,7 +258,7 @@ def generate_video_thumbnail(
             [
                 _FFMPEG, "-y",
                 "-ss", str(at_second),
-                "-i", video_path,
+                "-i", src,
                 "-vframes", "1",
                 # yadif deinterlaces AVCHD/.MTS frames — the comb artifacts of
                 # interlaced video otherwise make the face detector hallucinate
@@ -307,19 +311,23 @@ def generate_video_preview_webp(
     width: int = 320,
     at_second: Optional[float] = None,
     force: bool = False,
+    source_path: Optional[str] = None,
 ) -> Optional[str]:
     """Generate a lightweight animated WebP hover preview (silent, looping).
 
     Kept cheap on purpose so it never clogs the worker pool: short clip, low
     fps, small width, single fast pass with a tight timeout. No GIF fallback.
+    `source_path` (1080p web MP4 on SSD) is read from when given — much faster than
+    the 4K original on the HDD; the cache key stays video_path.
     """
     h = _hash(video_path + ":preview")
     out = Path(cache_root) / "previews" / h[:2] / f"{h}.webp"
     if out.exists() and not force:
         return str(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    src = source_path or video_path
 
-    dur = video_duration(video_path)
+    dur = video_duration(src)
     if not dur:
         return None
 
@@ -337,7 +345,7 @@ def generate_video_preview_webp(
             ts = (i + 0.5) * dur / total
             fr = tmp / f"f{written:04d}.jpg"
             r = subprocess.run(
-                [_FFMPEG, "-y", "-ss", f"{ts:.3f}", "-i", video_path,
+                [_FFMPEG, "-y", "-ss", f"{ts:.3f}", "-i", src,
                  "-frames:v", "1", "-vf", f"scale={width}:-2:flags=fast_bilinear",
                  "-q:v", "4", str(fr)],
                 capture_output=True, timeout=15,

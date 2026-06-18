@@ -966,12 +966,19 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
 
                 # Generate all thumbnail sizes — videos need a frame extracted via ffmpeg
                 if photo.is_video:
-                    import time as _vt
+                    import time as _vt, os as _os
                     _v0 = _vt.time()
                     flog("video", "INFO", f"Verarbeitung gestartet: {photo.filename}")
+                    # Read frames from the 1080p web MP4 on the SSD when it exists —
+                    # MUCH faster than seeking the 4K original on the HDD (which
+                    # clogged worker-cpu and starved image thumbnails). Cache key stays
+                    # the original path inside the helpers.
+                    vsrc = (photo.video_webm_path
+                            if (photo.video_webm_path and _os.path.exists(photo.video_webm_path)) else None)
                     for size in ("small", "medium", "large"):
                         try:
-                            thumb = generate_video_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
+                            thumb = generate_video_thumbnail(photo.path, settings.cache_path, size,
+                                                             force=redo_thumbs, source_path=vsrc)
                             if thumb:
                                 setattr(photo, f"thumb_{size}", thumb)
                         except Exception as ve:
@@ -986,7 +993,8 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     # animated hover preview (best-effort)
                     preview_ok = False
                     try:
-                        preview = generate_video_preview_webp(photo.path, settings.cache_path, force=redo_thumbs)
+                        preview = generate_video_preview_webp(photo.path, settings.cache_path,
+                                                              force=redo_thumbs, source_path=vsrc)
                         if preview:
                             photo.video_preview_path = preview; preview_ok = True
                     except Exception as ve:
