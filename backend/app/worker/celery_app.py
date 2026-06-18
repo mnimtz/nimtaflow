@@ -36,6 +36,7 @@ celery_app.conf.update(
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
+        "retry_missing_thumbnails": {"queue": "cpu"},
         "transcode_video":    {"queue": "cpu"},   # worker-cpu has /dev/dri (QSV)
     },
 )
@@ -57,6 +58,11 @@ celery_app.conf.beat_schedule = {
     "retry-failed-ai": {
         "task": "retry_failed_ai",
         "schedule": 900.0,
+    },
+    # Self-heal thumbnail gaps (re-try attempted-but-failed thumbnails, capped).
+    "retry-missing-thumbnails": {
+        "task": "retry_missing_thumbnails",
+        "schedule": 600.0,
     },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {

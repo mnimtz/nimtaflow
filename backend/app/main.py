@@ -54,6 +54,7 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS imported_person_names TEXT",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS faces_scanned BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_attempts INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS thumb_attempts INTEGER NOT NULL DEFAULT 0",
     # jina-clip-v2: description-text vector (image vector reuses the existing `embedding` col)
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS embedding_text vector(768)",
     # TYPE changes are guarded so they don't rewrite the table on every startup.

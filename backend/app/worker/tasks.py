@@ -248,6 +248,37 @@ def retry_failed_ai_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="retry_missing_thumbnails")
+def retry_missing_thumbnails_task(self):
+    """Self-heal thumbnail gaps: re-queue photos that were ATTEMPTED but ended up
+    without a thumbnail (thumb_attempts ≥ 1) — e.g. a stubborn TIFF that a newly
+    added fallback (ImageMagick) can now decode. Capped by thumb_attempts so
+    genuinely-undecodable files eventually stop. Never-attempted (pending) photos
+    are left to the normal pipeline. Beat-scheduled."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        CAP = 5
+        async for db in get_db():
+            ids = [r for (r,) in (await db.execute(
+                select(Photo.id).where(
+                    Photo.thumb_large.is_(None), Photo.is_missing == False,  # noqa: E712
+                    Photo.is_trashed == False,                               # noqa: E712
+                    Photo.thumb_attempts >= 1, Photo.thumb_attempts < CAP,
+                ).order_by(Photo.id).limit(500)
+            )).all()]
+            if not ids:
+                return {"retried": 0}
+            flog("scanner", "INFO", f"Thumbnail-Retry: {len(ids)} Foto(s) ohne Thumbnail erneut eingereiht")
+            for pid in ids:
+                process_photo_task.delay(pid, None, False, True)  # redo_thumbs=True
+            return {"retried": len(ids)}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="write_person_name")
 def write_person_name_task(self, person_id: int):
     """Write a person's name into their photos as XMP:PersonInImage (best-effort),
@@ -799,7 +830,8 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         if thumb:
                             setattr(photo, f"thumb_{size}", thumb)
                     if not photo.thumb_small:
-                        flog("scanner", "WARNING", f"Thumbnail fehlgeschlagen: {photo.filename}")
+                        photo.thumb_attempts = (photo.thumb_attempts or 0) + 1
+                        flog("scanner", "WARNING", f"Thumbnail fehlgeschlagen (Versuch {photo.thumb_attempts}): {photo.filename}")
 
                 # Persist thumbnails immediately — AI is best-effort and must
                 # never cost us the thumbnail or stick the photo on a transient error.

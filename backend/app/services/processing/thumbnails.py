@@ -81,7 +81,7 @@ def _open_image_any(photo_path: str) -> Optional[Image.Image]:
                 return Image.open(io.BytesIO(r.stdout))
     except Exception:
         pass
-    # last resort: let ffmpeg decode one frame (handles HEIC variants without preview)
+    # ffmpeg: decode one frame (handles HEIC variants without preview)
     try:
         import subprocess, tempfile, os as _os
         tmp = tempfile.mktemp(suffix=".png")
@@ -91,6 +91,24 @@ def _open_image_any(photo_path: str) -> Optional[Image.Image]:
             img = Image.open(tmp).copy()
             _os.remove(tmp)
             return img
+    except Exception:
+        pass
+    # LAST resort: ImageMagick — eats stubborn TIFF variants (16-bit, CMYK, LZW,
+    # multi-page) + other formats PIL/ffmpeg reject. [0] = first page; -colorspace
+    # sRGB normalises CMYK. This rescues the scanned-TIFF thumbnails.
+    try:
+        import shutil as _sh, subprocess, tempfile, os as _os
+        magick = _sh.which("magick") or _sh.which("convert")
+        if magick:
+            tmp = tempfile.mktemp(suffix=".png")
+            r = subprocess.run([magick, f"{photo_path}[0]", "-colorspace", "sRGB", tmp],
+                               capture_output=True, timeout=90)
+            if r.returncode == 0 and _os.path.exists(tmp) and _os.path.getsize(tmp) > 1000:
+                img = Image.open(tmp).copy()
+                _os.remove(tmp)
+                return img
+            if _os.path.exists(tmp):
+                _os.remove(tmp)
     except Exception:
         pass
     return None

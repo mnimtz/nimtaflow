@@ -96,6 +96,9 @@ class Photo(Base):
     # queue re-attempts ai_error photos until this hits a cap, so transient
     # provider outages don't permanently drop photos.
     ai_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Thumbnail attempts — so the reaper can retry thumbnail-less photos (e.g. a
+    # stubborn TIFF a new fallback can now decode) yet cap genuinely-undecodable ones.
+    thumb_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # ── Thumbnails ────────────────────────────────────────────────────────────
     thumb_small: Mapped[Optional[str]] = mapped_column(String(512))
