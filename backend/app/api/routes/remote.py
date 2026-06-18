@@ -529,6 +529,11 @@ async def status(db: AsyncSession = Depends(get_db)):
             Photo.is_video == False, Photo.is_trashed == False,  # noqa: E712
         )
     )
+    # jina-clip-v2 embedding progress (image vectors)
+    embed_total = await db.scalar(select(func.count()).where(
+        Photo.thumb_large.isnot(None), Photo.is_trashed == False, Photo.is_missing == False))  # noqa: E712
+    embed_done = await db.scalar(select(func.count()).where(
+        Photo.embedding.isnot(None), Photo.is_trashed == False))  # noqa: E712
     now = int(time.time())
     workers = []
     durs = []
@@ -570,6 +575,8 @@ async def status(db: AsyncSession = Depends(get_db)):
         "has_token": bool((s.get("remote.token") or "").strip()),
         "pending": pending or 0,
         "faces_pending": faces_pending or 0,
+        "embed_done": embed_done or 0,
+        "embed_total": embed_total or 0,
         "workers": workers,
         "avg_dur": avg_dur,
         "eta_seconds": eta_seconds,

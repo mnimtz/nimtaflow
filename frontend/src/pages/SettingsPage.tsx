@@ -1251,11 +1251,18 @@ function RemoteWorkerSection() {
   const sQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   useEffect(() => { if (sQ.data) setSettings(sQ.data) }, [sQ.data])
   const { data: status } = useQuery<{
-    enabled: boolean; has_token: boolean; pending: number; faces_pending: number; avg_dur: number | null; eta_seconds: number | null;
+    enabled: boolean; has_token: boolean; pending: number; faces_pending: number;
+    embed_done: number; embed_total: number; avg_dur: number | null; eta_seconds: number | null;
     workers: { name: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
   }>({
     queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
   })
+  // ── Worker command builder (self-service: add any worker type) ──────────────
+  const [wType, setWType] = useState<'ollama' | 'bundled'>('ollama')
+  const [wMode, setWMode] = useState('describe')       // describe | faces | embed | all
+  const [wMedia, setWMedia] = useState('images')       // both | images | videos
+  const [wModel, setWModel] = useState('gemma4:26b')   // ollama model OR bundled model
+  const [wName, setWName] = useState('mac-describe')
   const save = useMutation({
     mutationFn: (s: Settings) => api.put('/settings', s),
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['remote-status'] }) },
@@ -1269,7 +1276,19 @@ function RemoteWorkerSection() {
   }
   const now = Math.floor(Date.now() / 1000)
   const srvHost = `http://${window.location.hostname}:${window.location.port || 8090}`
-  const cmd = `cd /opt/photoflow\nPHOTOFLOW_SERVER=${srvHost} \\\n  PHOTOFLOW_REMOTE_TOKEN=${token || '<TOKEN>'} \\\n  WORKER_NAME=gpu-worker \\\n  docker compose -p photoflow-remote -f docker-compose.remote-worker.yml up -d --build`
+  const SEL = "w-full px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm"
+  const tok = token || '<TOKEN>'
+  // Generate the start command for the chosen worker type/mode/media/model.
+  const cmd = wType === 'ollama'
+    ? `# Mac: Ollama läuft + Modell da (ollama pull ${wModel}); mac_describe_agent.py aus dem Repo.\n`
+      + `# Einmalig falls nötig: sudo xcodebuild -license\n`
+      + `PHOTOFLOW_SERVER=${srvHost} \\\n  PHOTOFLOW_REMOTE_TOKEN=${tok} \\\n`
+      + `  WORKER_NAME=${wName} WORKER_MODE=${wMode} WORKER_MEDIA=${wMedia} \\\n`
+      + `  OLLAMA_MODEL=${wModel} \\\n  python3 mac_describe_agent.py`
+    : `cd /opt/photoflow\n`
+      + `PHOTOFLOW_SERVER=${srvHost} PHOTOFLOW_REMOTE_TOKEN=${tok} \\\n`
+      + `  WORKER_NAME=${wName} WORKER_MODE=${wMode} WORKER_MEDIA=${wMedia} \\\n`
+      + `  docker compose -p photoflow-${wName} -f docker-compose.remote-worker.yml up -d --build`
 
   return (
     <div>
@@ -1292,15 +1311,39 @@ function RemoteWorkerSection() {
           </div>
         </div>
 
-        <div>
-          <Label>Remote-Modell (auf der GPU des Workers)</Label>
-          <select value={settings['remote.model'] ?? ''} onChange={e => set('remote.model', e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
-            <option value="">— wie lokal ({settings['ai.local.model'] ?? 'florence2-base'}) —</option>
-            <option value="florence2-base">Florence-2-base (klein/schnell)</option>
-            <option value="qwen2.5-vl-3b">Qwen2.5-VL-3B (besser, GPU)</option>
-          </select>
-          <p className="text-[11px] text-zinc-400 mt-1">Der Worker läuft auf der GPU — hier ruhig das stärkere Qwen wählen, selbst wenn dieser Host es lokal nicht stemmen würde.</p>
+        {/* Worker-Builder: stell zusammen, was für ein Worker auf welchem Gerät laufen soll */}
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
+          <Label>Worker einrichten (Befehl generieren)</Label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+            <label className="space-y-1"><span className="text-xs text-zinc-500">Typ</span>
+              <select value={wType} onChange={e => setWType(e.target.value as any)} className={SEL}>
+                <option value="ollama">Ollama (Mac, nativ)</option>
+                <option value="bundled">Gebündelt (GPU-Box, Docker)</option>
+              </select></label>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">Aufgabe</span>
+              <select value={wMode} onChange={e => setWMode(e.target.value)} className={SEL}>
+                <option value="describe">Beschreibung</option>
+                <option value="embed">Embeddings (jina)</option>
+                <option value="faces">Gesichter</option>
+                <option value="all">Alles</option>
+              </select></label>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">Medien</span>
+              <select value={wMedia} onChange={e => setWMedia(e.target.value)} className={SEL}>
+                <option value="images">Nur Bilder</option>
+                <option value="videos">Nur Videos</option>
+                <option value="both">Bilder + Videos</option>
+              </select></label>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">Worker-Name</span>
+              <input value={wName} onChange={e => setWName(e.target.value)} className={SEL} /></label>
+            {wType === 'ollama' && (
+              <label className="space-y-1 col-span-2"><span className="text-xs text-zinc-500">Ollama-Modell</span>
+                <input value={wModel} onChange={e => setWModel(e.target.value)} placeholder="z.B. gemma4:26b, qwen3-vl:8b" className={SEL} /></label>
+            )}
+          </div>
+          <p className="text-[11px] text-zinc-400">
+            Beispiele: M3 = Ollama · Beschreibung · nur Bilder · gemma4:26b · „m3-describe". M5 = Ollama · Beschreibung · nur Videos · qwen3-vl:8b.
+            Asus = Gebündelt · Embeddings (oder Gesichter). Embeddings/Gesichter brauchen die GPU-Box (jina/InsightFace).
+          </p>
         </div>
 
         <button onClick={() => save.mutate(settings)} disabled={save.isPending}
@@ -1321,6 +1364,14 @@ function RemoteWorkerSection() {
             <div><span className="text-2xl font-bold tabular-nums text-zinc-400">{status?.avg_dur != null ? `${status.avg_dur.toFixed(1)}s` : '—'}</span><p className="text-xs text-zinc-400">Ø pro Foto</p></div>
             <div><span className="text-2xl font-bold tabular-nums text-emerald-500">{fmtEta(status?.eta_seconds)}</span><p className="text-xs text-zinc-400">Restzeit Beschreib.</p></div>
           </div>
+          {status && status.embed_total > 0 && (
+            <div className="text-[11px] text-zinc-400">
+              Embeddings (Bildsuche): <b className={status.embed_done >= status.embed_total ? 'text-emerald-500' : 'text-sky-500'}>{status.embed_done.toLocaleString('de')}</b> / {status.embed_total.toLocaleString('de')} ({Math.round(status.embed_done / status.embed_total * 100)}%)
+              <div className="mt-1 h-1.5 w-full max-w-xs bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${Math.round(status.embed_done / status.embed_total * 100)}%` }} />
+              </div>
+            </div>
+          )}
           {status?.eta_seconds != null && status.eta_seconds > 0 && (
             <p className="text-[11px] text-zinc-400">
               Hochrechnung: {status.pending} Fotos × {status.avg_dur?.toFixed(1)}s ÷ {status.workers.length} Worker.
@@ -1352,10 +1403,12 @@ function RemoteWorkerSection() {
           )}
         </div>
 
-        {/* Agent command */}
+        {/* Generated start command for the chosen worker */}
         <div>
-          <Label>Worker auf dem GPU-Rechner starten</Label>
-          <p className="text-xs text-zinc-400 mb-2">Auf der Maschine mit der GPU (PhotoFlow-Repo unter <code>/opt/photoflow</code> vorhanden): oben Token speichern, dann im Terminal ausführen. Stoppen mit <code>docker compose -p photoflow-remote -f docker-compose.remote-worker.yml down</code>.</p>
+          <Label>Start-Befehl (auf dem Worker-Gerät ausführen)</Label>
+          <p className="text-xs text-zinc-400 mb-2">{wType === 'ollama'
+            ? <>Mac mit Ollama: <code>mac_describe_agent.py</code> aus dem Repo, Token oben speichern, im Terminal ausführen. Stoppen mit Ctrl-C.</>
+            : <>GPU-Box (Repo unter <code>/opt/photoflow</code>): Token oben speichern, dann ausführen. Stoppen mit <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code>.</>}</p>
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
         </div>
       </div>
