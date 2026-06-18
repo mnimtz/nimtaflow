@@ -975,6 +975,26 @@ function VideoAISection() {
           </div>
         </div>
 
+        {/* Video language (shared with images) */}
+        <div>
+          <Label>Sprache für Videobeschreibungen</Label>
+          <select value={settings['ai.language'] ?? 'de'} onChange={e => set('ai.language', e.target.value)}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+          <p className="text-[11px] text-zinc-400 mt-1">Gemeinsame Sprach-Einstellung für Bilder und Videos.</p>
+        </div>
+
+        {/* Where video metadata goes */}
+        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 space-y-1.5">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Wohin werden Video-Metadaten geschrieben?</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">Datenbank:</b> immer (Beschreibung + Tags → durchsuchbar in PhotoFlow).</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">Sidecar-Datei</b> <code>&lt;video&gt;.xmp</code> neben der Datei: wenn unter <b>Bilder-AI → „AI-Beschreibung &amp; Tags zurückschreiben"</b> ein Modus mit Sidecar aktiv ist (<code>Datei + Sidecar</code> oder <code>nur Sidecar</code>).</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">Ins Video selbst:</b> nein — gängige Video-Container können kein eingebettetes XMP, daher immer der Sidecar (verlustfreier Round-Trip, übersteht einen Lösungswechsel).</p>
+        </div>
+
         {/* Video transcoding */}
         <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Transkodierung (H.264 MP4, faststart)</p>
