@@ -107,8 +107,21 @@ def main():
                 "error": None if desc else "no description",
             }, timeout=120)
             print(f"[mac] #{pid} {round(time.time()-t,1)}s: {desc[:70]}")
+        except urllib.error.HTTPError as e:
+            # Server IST erreichbar, antwortet aber mit Fehlercode (z. B. 500/503 bei
+            # kurzer DB-Last, oder 401/403 bei Token-Problem). Body-Anfang mitloggen,
+            # damit der Schluckauf im worker.log diagnostizierbar ist. Kurz warten + erneut.
+            fails += 1
+            wait = min(60, POLL * 3 * fails)
+            try:
+                body = e.read(300).decode("utf-8", "replace").replace("\n", " ").strip()
+            except Exception:
+                body = ""
+            print(f"[mac] Server-Antwort HTTP {e.code} bei {e.url} (#{fails}) — "
+                  f"warte {wait}s, dann erneut … {body[:140]}")
+            time.sleep(wait)
         except (urllib.error.URLError, OSError, ConnectionError, TimeoutError) as e:
-            # Server/Netz nicht erreichbar (Server aus, Deploy-Neustart, WLAN weg):
+            # Server/Netz wirklich nicht erreichbar (Server aus, Deploy-Neustart, WLAN weg):
             # PAUSE + Backoff (bis 60s), endlos weiter prüfen, bis er wieder da ist.
             fails += 1
             wait = min(60, POLL * 3 * fails)
