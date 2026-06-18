@@ -580,7 +580,8 @@ async def status(db: AsyncSession = Depends(get_db)):
             # Role from the worker name (embed / faces / else describe) so we never
             # average a 10s describe together with a 1s face pass.
             nl = name.lower()
-            role = "embed" if "embed" in nl else ("faces" if "face" in nl else "describe")
+            role = ("embed" if "embed" in nl else "faces" if "face" in nl
+                    else "video" if "video" in nl else "describe")
             workers.append({
                 "name": name, "role": role,
                 "last_seen": int(ts) if ts else 0,
@@ -593,14 +594,33 @@ async def status(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    # PER-ROLE stats + ETA — each pipeline (describe / embed / faces) gets its own
-    # backlog, its own workers' mean time, and its own honest projection. Mixing
-    # them (as before) made the average + ETA meaningless.
-    role_pending = {"describe": pending or 0, "faces": faces_pending or 0,
+    # Describe split: images (gemma4/Ollama, thumb_large source) vs videos
+    # (Qwen3-VL/MLX, 1080p web-mp4 source) — different workers + sources, so shown
+    # as separate lines instead of one lumped "describe".
+    img_describe_pending = await db.scalar(select(func.count()).where(
+        Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+        Photo.thumb_large.isnot(None), Photo.is_video == False, Photo.is_trashed == False))  # noqa: E712
+    vid_describe_pending = await db.scalar(select(func.count()).where(
+        Photo.description.is_(None), Photo.is_video == True,  # noqa: E712
+        Photo.video_webm_path.isnot(None), Photo.is_trashed == False))  # noqa: E712
+    # 1080p web transcode (server-side worker-video, QSV) — the player + video-AI
+    # source. "done" = has a *_1080.mp4; pending = remaining videos.
+    vid_total = await db.scalar(select(func.count()).where(
+        Photo.is_video == True, Photo.is_trashed == False, Photo.is_missing == False))  # noqa: E712
+    vid_1080 = await db.scalar(select(func.count()).where(
+        Photo.is_video == True, Photo.video_webm_path.like("%_1080.mp4"),  # noqa: E712
+        Photo.is_trashed == False))  # noqa: E712
+    transcode_pending = max(0, (vid_total or 0) - (vid_1080 or 0))
+
+    # PER-ROLE stats + ETA — each pipeline gets its own backlog, its own workers'
+    # mean time, and its own honest projection. Mixing them made ETA meaningless.
+    role_pending = {"describe": img_describe_pending or 0, "video": vid_describe_pending or 0,
+                    "faces": faces_pending or 0,
                     "embed": max(0, (embed_total or 0) - (embed_done or 0))}
-    role_label = {"describe": "Beschreibung", "embed": "Embeddings", "faces": "Gesichter"}
+    role_label = {"describe": "Bild-Beschreibung", "video": "Video-Beschreibung",
+                  "embed": "Embeddings", "faces": "Gesichter"}
     roles = []
-    for role in ("describe", "embed", "faces"):
+    for role in ("describe", "video", "embed", "faces"):
         rw = [w for w in workers if w["role"] == role and (w["idle_s"] is None or w["idle_s"] < 120)]
         rdurs = [w["avg_dur"] for w in rw if w["avg_dur"]]
         ravg = round(sum(rdurs) / len(rdurs), 1) if rdurs else None
@@ -608,6 +628,13 @@ async def status(db: AsyncSession = Depends(get_db)):
         eta = int(pend * ravg / len(rw)) if (ravg and rw and pend) else None
         roles.append({"role": role, "label": role_label[role], "pending": pend,
                       "workers": len(rw), "avg_dur": ravg, "eta_seconds": eta})
+    # Video 1080p transcode — server-side (worker-video, 2 QSV slots), no remote
+    # heartbeat; rough ETA at ~8s/video over 2 parallel slots.
+    if transcode_pending or vid_1080:
+        roles.append({"role": "transcode", "label": "Video 1080p (Web)",
+                      "pending": transcode_pending, "done": vid_1080 or 0,
+                      "workers": 2, "avg_dur": None,
+                      "eta_seconds": int(transcode_pending * 8 / 2) if transcode_pending else 0})
 
     return {
         "enabled": str(s.get("remote.enabled", "false")).lower() == "true",

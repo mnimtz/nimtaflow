@@ -1276,7 +1276,7 @@ function RemoteWorkerSection() {
   const { data: status } = useQuery<{
     enabled: boolean; has_token: boolean; pending: number; faces_pending: number;
     embed_done: number; embed_total: number; avg_dur: number | null;
-    roles: { role: string; label: string; pending: number; workers: number; avg_dur: number | null; eta_seconds: number | null }[];
+    roles: { role: string; label: string; pending: number; workers: number; avg_dur: number | null; eta_seconds: number | null; done?: number }[];
     workers: { name: string; role: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
   }>({
     queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
@@ -1393,6 +1393,7 @@ function RemoteWorkerSection() {
                     <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{r.label}</span>
                     <div className="flex gap-4 text-xs text-zinc-500 tabular-nums">
                       <span><b className={color}>{r.pending.toLocaleString('de')}</b> offen</span>
+                      {r.done != null && <span><b className="text-emerald-500">{r.done.toLocaleString('de')}</b> fertig</span>}
                       <span><b className="text-zinc-700 dark:text-zinc-300">{r.workers}</b> Worker</span>
                       <span>Ø {r.avg_dur != null ? `${r.avg_dur.toFixed(1)}s` : '—'}</span>
                       <span>Rest <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
