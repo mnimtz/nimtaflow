@@ -33,6 +33,8 @@ celery_app.conf.update(
         "auto_cluster_faces": {"queue": "cpu"},
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
+        "detect_video_faces": {"queue": "cpu"},   # video faces from 1080p frames
+        "sweep_video_faces":  {"queue": "cpu"},
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
         "reembed_imported":   {"queue": "cpu"},
@@ -84,5 +86,10 @@ celery_app.conf.beat_schedule = {
     "verify-unnamed-faces": {
         "task": "verify_unnamed_faces",
         "schedule": crontab(hour=3, minute=30),
+    },
+    # Nightly video face detection (videos that gained a 1080p web version that day).
+    "sweep-video-faces": {
+        "task": "sweep_video_faces",
+        "schedule": crontab(hour=4, minute=0),
     },
 }

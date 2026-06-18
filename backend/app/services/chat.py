@@ -11,7 +11,9 @@ Two modes (toggle: chat.provider):
 Grounded: the model is told to answer ONLY from the retrieved photos.
 """
 import asyncio
+import base64
 import json
+import os
 from datetime import date
 from typing import List, Optional
 
@@ -124,6 +126,32 @@ async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[
             "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person}
 
 
+async def _image_parts(db: AsyncSession, ids: List[int], max_n: int) -> list:
+    """Gemini inline_data parts for the top-N hits' thumbnails (SSD, JPEG) so the
+    multimodal model can SEE the photos — answers details no description captured.
+    Each image is preceded by a '#id' text part so it can correlate them."""
+    if not ids or max_n <= 0:
+        return []
+    ids = ids[:max_n]
+    rows = (await db.execute(
+        select(Photo.id, Photo.thumb_medium, Photo.thumb_small).where(Photo.id.in_(ids))
+    )).all()
+    path_by = {r[0]: (r[1] or r[2]) for r in rows}
+    parts: list = []
+    for pid in ids:
+        path = path_by.get(pid)
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as fh:
+                b64 = base64.b64encode(fh.read()).decode()
+            parts.append({"text": f"Foto #{pid}:"})
+            parts.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+        except Exception:
+            pass
+    return parts
+
+
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession) -> dict:
     key = (settings.get("ai.gemini.api_key") or "").strip()
     if not key:
@@ -164,7 +192,11 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     contents.append({"role": "user", "parts": [{"text": message}]})
 
     seen_ids: list = []
-    async with httpx.AsyncClient(timeout=60) as client:
+    # Multimodal: send the top hits' thumbnails so Gemini can SEE them. Budget caps
+    # total images across the conversation to bound token cost (chat.vision=off disables).
+    vision = str(settings.get("chat.vision", "true")).lower() != "false"
+    img_budget = 8
+    async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {
                 "system_instruction": {"parts": [{"text": SYSTEM}]},
@@ -201,6 +233,12 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         seen_ids.extend([rrec["id"] for rrec in recs])
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": {"treffer": recs}}}]})
+                        if vision and img_budget > 0 and recs:
+                            imgs = await _image_parts(db, [r["id"] for r in recs], min(6, img_budget))
+                            if imgs:
+                                contents.append({"role": "user", "parts":
+                                    [{"text": "Die Bilder zu den Treffern (zur visuellen Beantwortung):"}] + imgs})
+                                img_budget -= sum(1 for p in imgs if "inline_data" in p)
                 continue
             text = " ".join(p["text"] for p in parts if "text" in p).strip()
             # de-dupe preserving order

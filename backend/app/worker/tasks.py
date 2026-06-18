@@ -635,6 +635,114 @@ def sweep_faces_local_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="detect_video_faces")
+def detect_video_faces_task(self, photo_id: int):
+    """Detect faces in a VIDEO: sample frames from the 1080p web MP4 (SSD, never the
+    HDD original), run insightface on each, then DEDUP across frames by ArcFace
+    cosine so a person appearing in many frames becomes ONE face record (with its
+    best frame + frame_time). Embeddings drop into the same ArcFace space → cluster
+    with photo faces. Idempotent; skips videos that already have faces."""
+    async def _main():
+        import io, os
+        import numpy as np
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.face import Face
+        from app.services.settings_loader import load_settings
+        from app.services.processing.thumbnails import extract_video_frame_bytes, video_duration
+        from app.services import face_detect_insightface as fi
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, func as _func
+        from PIL import Image
+        init_db()
+        async for db in get_db():
+            photo = await db.get(Photo, photo_id)
+            if not photo or not photo.is_video or photo.is_missing:
+                return
+            if await db.scalar(select(_func.count()).where(Face.photo_id == photo_id)):
+                photo.faces_scanned = True; await db.commit(); return
+            if not fi.available():
+                return
+            s = await load_settings(db)
+            if str(s.get("faces.enabled", "true")).lower() == "false":
+                return
+            if str(s.get("video.face_recognition", "true")).lower() == "false":
+                photo.faces_scanned = True; await db.commit(); return
+            src = photo.video_webm_path
+            if not src or not os.path.exists(src):
+                return  # 1080p web version not ready yet — sweep will retry later
+            dur = photo.duration_seconds or video_duration(src) or 0
+            if dur <= 0:
+                photo.faces_scanned = True; await db.commit(); return
+            n = max(8, min(30, int(dur / 3) + 1))   # frame count scales with duration
+            min_conf = float(s.get("video.face_min_confidence", "0.6") or 0.6)
+            min_px = float(s.get("face.min_size_px", "40") or 0)
+            sim = float(s.get("video.face_dedup_sim", "0.45") or 0.45)
+            reps = []  # [{emb: np, det: {f, ts}}] — one per distinct person in the clip
+            for i in range(n):
+                ts = round((i + 0.5) * dur / n, 2)
+                data = extract_video_frame_bytes(src, ts)
+                if not data:
+                    continue
+                try:
+                    img = Image.open(io.BytesIO(data))
+                except Exception:
+                    continue
+                W, H = img.size
+                for f in fi.detect_faces(img, min_conf):
+                    if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
+                        continue
+                    ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
+                    if ar < 0.45 or ar > 1.8:
+                        continue
+                    emb = np.asarray(f.embedding, dtype="float32")
+                    matched = False
+                    for rep in reps:
+                        if float(np.dot(emb, rep["emb"])) >= sim:  # ArcFace normed → cosine
+                            if f.confidence > rep["det"]["f"].confidence:
+                                rep["det"] = {"f": f, "ts": ts}; rep["emb"] = emb
+                            matched = True
+                            break
+                    if not matched:
+                        reps.append({"emb": emb, "det": {"f": f, "ts": ts}})
+            added = 0
+            for rep in reps:
+                f = rep["det"]["f"]
+                db.add(Face(photo_id=photo_id, bbox_x=f.bbox_x, bbox_y=f.bbox_y,
+                            bbox_w=f.bbox_w, bbox_h=f.bbox_h, confidence=f.confidence,
+                            embedding=f.embedding, frame_time=rep["det"]["ts"],
+                            detector="insightface"))
+                added += 1
+            photo.faces_scanned = True
+            await db.commit()
+            if added:
+                flog("faces", "INFO", f"{added} Person(en) im Video erkannt: {photo.filename}")
+    return _run(_main())
+
+
+@celery_app.task(bind=True, name="sweep_video_faces")
+def sweep_video_faces_task(self, limit: int = 400):
+    """Enqueue video face detection for videos that have a 1080p web version but no
+    face pass yet. Nightly + on-demand; gated by the transcode (needs the SSD mp4)."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            pids = (await db.execute(select(Photo.id).where(
+                Photo.is_video == True, Photo.faces_scanned == False,  # noqa: E712
+                Photo.video_webm_path.isnot(None), Photo.is_missing == False,  # noqa: E712
+                Photo.is_trashed == False,  # noqa: E712
+            ).order_by(Photo.id).limit(limit))).scalars().all()
+            flog("faces", "INFO", f"Video-Gesichtserkennung: {len(pids)} Video(s) eingereiht")
+            for pid in pids:
+                detect_video_faces_task.delay(pid)
+            return {"queued": len(pids)}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="backfill_xmp")
 def backfill_xmp_task(self):
     """Write the existing DB AI description + tags INTO the image files for every
