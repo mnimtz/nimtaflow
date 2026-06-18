@@ -123,9 +123,15 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     else:
         # describe term — a faces-only worker NEVER describes.
         if desc_scope and not faces_mode:
+            # Source gating per type: images need a thumbnail to send; videos need
+            # the pre-transcoded 1080p web MP4 (the native-video worker downloads it).
+            src_ok = or_(
+                and_(Photo.is_video == False, Photo.thumb_large.isnot(None)),   # noqa: E712
+                and_(Photo.is_video == True, Photo.video_webm_path.isnot(None)),  # noqa: E712
+            )
             where_terms.append(and_(
                 Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
-                Photo.thumb_large.isnot(None), not_claimed, or_(*desc_scope), *media_conds,
+                src_ok, not_claimed, or_(*desc_scope), *media_conds,
             ))
         # Images still lacking a face pass. A faces-only worker takes ANY such image;
         # the "all" worker only does the faces-only pass for ALREADY-DESCRIBED images
@@ -200,6 +206,11 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         "is_video": bool(photo.is_video),
         "faces_only": faces_only,
         "image_url": f"/api/remote/image/{photo.id}",
+        # Native-video worker (Qwen3-VL/MLX): the pre-transcoded 1080p web MP4 is
+        # the AI source (player + AI share it). duration drives adaptive frame
+        # sampling on the worker. Non-video → null.
+        "video_url": (f"/api/remote/video/{photo.id}" if photo.is_video else None),
+        "duration": photo.duration_seconds,
         "frame_urls": frame_urls,
         "face_frames": face_frames,
         "language": s.get("ai.language", "de"),
@@ -227,6 +238,22 @@ async def image(photo_id: int, db: AsyncSession = Depends(get_db),
     if not thumb or not os.path.exists(thumb):
         raise HTTPException(404, "Kein Bild verfügbar")
     return FileResponse(thumb, media_type="image/jpeg")
+
+
+@router.get("/video/{photo_id}")
+async def video(photo_id: int, db: AsyncSession = Depends(get_db),
+                x_remote_token: Optional[str] = Header(None)):
+    """Serve the pre-transcoded 1080p web MP4 for native-video AI (Qwen3-VL/MLX).
+    The same small file the player streams — far cheaper than shipping the 4K
+    original. 404 (→ worker skips) until the transcode has produced it."""
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+    wp = photo.video_webm_path
+    if not wp or not os.path.exists(wp):
+        raise HTTPException(404, "Kein transkodiertes Video verfügbar")
+    return FileResponse(wp, media_type="video/mp4")
 
 
 @router.get("/frame/{photo_id}/{idx}")
