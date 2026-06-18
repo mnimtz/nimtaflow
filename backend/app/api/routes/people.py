@@ -21,29 +21,40 @@ def _face_crop_path(face, photo, person_id: int = 0):
     from THAT frame (not the 10%-mark thumbnail); else from the SSD thumbnail."""
     from app.services.face_crop import crop_face
     bbox = [face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h]
-    if getattr(photo, "is_video", False) and face.frame_time is not None:
-        # Extract the exact frame from the 1080p web MP4 on the SSD (fast seek) —
-        # NEVER ffmpeg the 4K original on the spinning HDD (that was the slow/
-        # "never loads" case). No web version yet → fall through to the SSD
-        # thumbnail (instant, approximate frame) rather than hit the HDD.
-        vsrc = photo.video_webm_path if (photo.video_webm_path and os.path.exists(photo.video_webm_path)) else None
-        if vsrc:
-            try:
-                import io
-                from PIL import Image
-                from app.services.processing.thumbnails import extract_video_frame_bytes
-                data = extract_video_frame_bytes(vsrc, float(face.frame_time))
-                if data:
-                    frame = Image.open(io.BytesIO(data))
-                    return crop_face(photo.path, bbox, person_id, face.id, source_image=frame)
-            except Exception:
-                pass
-    src = photo.thumb_large or photo.thumb_medium
-    if not src and not getattr(photo, "is_video", False):
-        src = photo.path  # last resort for an image without any thumbnail yet
-    if not src:
-        return None
+    if getattr(photo, "is_video", False):
+        # VIDEO faces: cache key is always photo.path; pixels come ONLY from the SSD
+        # (exact frame from the 1080p web MP4 when available, else the video's
+        # thumbnail) — NEVER ffmpeg the 4K original on the spinning HDD, which was
+        # the slow/"never loads" case. crop_face keys on photo.path for both.
+        src_img = _video_face_source(photo, face)
+        if src_img is None:
+            return None
+        return crop_face(photo.path, bbox, person_id, face.id, source_image=src_img)
+    src = photo.thumb_large or photo.thumb_medium or photo.path  # image → SSD thumb
     return crop_face(src, bbox, person_id, face.id)
+
+
+def _video_face_source(photo, face):
+    """Source PIL image for a VIDEO face crop, from the SSD only: the exact detected
+    frame out of the 1080p web MP4 if present, else the video's thumbnail."""
+    from PIL import Image
+    vsrc = photo.video_webm_path if (photo.video_webm_path and os.path.exists(photo.video_webm_path)) else None
+    if vsrc and getattr(face, "frame_time", None) is not None:
+        try:
+            import io
+            from app.services.processing.thumbnails import extract_video_frame_bytes
+            data = extract_video_frame_bytes(vsrc, float(face.frame_time))
+            if data:
+                return Image.open(io.BytesIO(data))
+        except Exception:
+            pass
+    thumb = photo.thumb_large or photo.thumb_medium
+    if thumb and os.path.exists(thumb):
+        try:
+            return Image.open(thumb)
+        except Exception:
+            pass
+    return None
 
 
 @router.get("", response_model=List[PersonDetail])

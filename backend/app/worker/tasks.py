@@ -465,12 +465,23 @@ def warm_face_crops_task(self):
                 try:
                     out = None
                     if use_frame:
-                        import io
+                        import io, os
                         from PIL import Image
-                        data = extract_video_frame_bytes(photo.path, float(ft))
-                        if data:
-                            out = crop_face(photo.path, bbox, pid, fid,
-                                            source_image=Image.open(io.BytesIO(data)))
+                        # SSD only: exact frame from the 1080p web MP4, else the video
+                        # thumbnail — never ffmpeg the 4K original on the HDD. Key stays
+                        # photo.path (matches the request-time crop path).
+                        src_img = None
+                        vsrc = photo.video_webm_path if (photo.video_webm_path and os.path.exists(photo.video_webm_path)) else None
+                        if vsrc:
+                            data = extract_video_frame_bytes(vsrc, float(ft))
+                            if data:
+                                src_img = Image.open(io.BytesIO(data))
+                        if src_img is None:
+                            thumb = photo.thumb_large or photo.thumb_medium
+                            if thumb and os.path.exists(thumb):
+                                src_img = Image.open(thumb)
+                        if src_img is not None:
+                            out = crop_face(photo.path, bbox, pid, fid, source_image=src_img)
                     else:
                         out = crop_face(key_path, bbox, pid, fid)
                     if out:
