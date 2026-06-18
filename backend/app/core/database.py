@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from .config import get_settings
 
 
@@ -11,7 +12,15 @@ def get_engine():
     settings = get_settings()
     return create_async_engine(
         settings.database_url, echo=False,
-        pool_pre_ping=True,   # drop dead connections instead of erroring on them
+        # NullPool = NO connection pooling: every checkout opens a fresh asyncpg
+        # connection and closes it on release. This is the correct pool for our
+        # Celery tasks, which run each on a NEW event loop (see worker._run): a
+        # POOLED connection is bound to the loop it was created on, so reusing it
+        # from the next task's loop raised "Event loop is closed" and leaked the
+        # connection — those leaked up to Postgres "too many clients", which made
+        # the API return nothing (empty pages). No pool → nothing to leak across
+        # loops. The tiny per-request connect cost is irrelevant for this app.
+        poolclass=NullPool,
         connect_args={"server_settings": {
             # Safety net: Postgres auto-terminates any session left
             # idle-in-transaction > 60s. A session that isn't cleanly closed (e.g.
