@@ -31,7 +31,7 @@ services:
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - /mnt:/mnt:ro
-      - photoflow-cache:/cache
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
       - photoflow-config:/config
       - photoflow-models:/models     # persist jina-clip-v2 / e5 across rebuilds (search query + everyday embedding)
     depends_on:
@@ -79,7 +79,7 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-4g}
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
-      - photoflow-cache:/cache
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
       - photoflow-config:/config
       - photoflow-models:/models
     depends_on:
@@ -133,7 +133,7 @@ services:
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - /mnt:/mnt:ro
-      - photoflow-cache:/cache
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
       - photoflow-config:/config
       - photoflow-models:/models
     depends_on:
@@ -176,7 +176,7 @@ services:
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
       - /mnt:/mnt:ro
-      - photoflow-cache:/cache
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
       - photoflow-config:/config
     depends_on:
       db:
@@ -233,6 +233,5 @@ services:
 
 volumes:
   photoflow-db:
-  photoflow-cache:
   photoflow-config:
   photoflow-models:
