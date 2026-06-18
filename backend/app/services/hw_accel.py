@@ -8,6 +8,33 @@ from typing import List, Optional
 from functools import lru_cache
 
 _FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+_FFPROBE = shutil.which("ffprobe") or "ffprobe"
+
+
+def _probe_dims(path: str):
+    """Source video stream dimensions (w, h) or None. Used to pre-compute the QSV
+    scale target, because the QSV scaler (vpp_qsv) does NOT accept ffmpeg's
+    min()/force_original_aspect_ratio expressions — we must pass explicit pixels."""
+    try:
+        r = subprocess.run(
+            [_FFPROBE, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", path],
+            capture_output=True, text=True, timeout=20)
+        parts = r.stdout.strip().split("\n")[0].split("x")
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        return None
+
+
+def _scale_target(iw: int, ih: int, long_cap: int):
+    """Cap the LONGER side to long_cap, preserve aspect, NEVER upscale, even dims."""
+    m = max(iw, ih)
+    if m <= long_cap:
+        tw, th = iw, ih
+    else:
+        s = long_cap / m
+        tw, th = round(iw * s), round(ih * s)
+    return max(2, tw - tw % 2), max(2, th - th % 2)
 
 
 @dataclass
@@ -208,8 +235,27 @@ def build_transcode_cmd(
     # odd input codecs); the expensive encode runs on the Intel GPU. Falls back to
     # software in transcode_video_task if it ever errors.
     if codec == "h264" and hw.name == "qsv":
+        # Full QSV: HARDWARE decode + scale + encode — ~6× faster than software
+        # decoding on 4K (which was the real bottleneck). vpp_qsv needs EXPLICIT
+        # pixel dims (it rejects ffmpeg's min()/force_original_aspect_ratio
+        # expressions), so probe the source and pre-compute the no-upscale target.
+        # Display rotation is preserved in the output metadata (players orient
+        # correctly). If probing fails OR the input isn't QSV-decodable, the cmd
+        # errors and transcode_video_task's libx264 fallback takes over.
+        dims = _probe_dims(input_path)
+        if dims:
+            tw, th = _scale_target(dims[0], dims[1], _long)
+            return [
+                _FFMPEG, "-nostdin", "-y",
+                "-hwaccel", "qsv", "-hwaccel_output_format", "qsv",
+                "-i", input_path,
+                "-vf", f"vpp_qsv=w={tw}:h={th}",
+                "-c:v", "h264_qsv", *hw.encode_extra,
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path,
+            ]
+        # Probe failed → robust software-decode → QSV-encode path.
         return [
-            _FFMPEG, "-y",
+            _FFMPEG, "-nostdin", "-y",
             "-init_hw_device", "qsv=hw", "-filter_hw_device", "hw",
             "-i", input_path,
             "-vf", f"{scale},format=nv12,hwupload=extra_hw_frames=64",
