@@ -82,7 +82,8 @@ class Photo(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     description_language: Mapped[Optional[str]] = mapped_column(String(8))
     description_model: Mapped[Optional[str]] = mapped_column(String(128))
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))        # jina-clip-v2 IMAGE vector (visual search)
+    embedding_text: Mapped[Optional[List[float]]] = mapped_column(Vector(768))   # jina-clip-v2 vector of the description (semantic)
 
     # ── Processing ────────────────────────────────────────────────────────────
     status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)

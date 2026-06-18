@@ -104,25 +104,26 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
             Photo.is_trashed == False, *(extra_conditions or [])]
     tokens = _tokens(q)
 
-    # ── semantic ────────────────────────────────────────────────────────────
+    # ── semantic (jina-clip-v2) ───────────────────────────────────────────────
+    # The query is embedded with jina's TEXT tower; photos carry a jina IMAGE
+    # vector (`embedding`) AND a jina text-of-description vector (`embedding_text`),
+    # all in ONE joint space. We score against both and keep the better match per
+    # photo → visual hits ("rotes Auto", even if undescribed) AND description hits.
     sem: dict = {}
     try:
-        from app.services.ai.manager import AIManager
-        vec, _ = await AIManager(settings).embed_text(q)
-        if vec:
-            if len(vec) > 768:
-                vec = vec[:768]
-                nrm = math.sqrt(sum(x * x for x in vec)) or 1.0
-                vec = [x / nrm for x in vec]
-            if len(vec) == 768:
-                max_dist = float(settings.get("search.max_distance", "0.78") or 0.78)
-                dist = Photo.embedding.cosine_distance(vec)
+        from app.services import jina_embed
+        vec = jina_embed.embed_text(q)
+        if vec and len(vec) == 768:
+            max_dist = float(settings.get("search.max_distance", "0.78") or 0.78)
+            for col in (Photo.embedding, Photo.embedding_text):
+                dist = col.cosine_distance(vec)
                 rows = (await db.execute(
-                    select(Photo.id, dist).where(*base, Photo.embedding.isnot(None), dist < max_dist)
+                    select(Photo.id, dist).where(*base, col.isnot(None), dist < max_dist)
                     .order_by(dist).limit(limit * 3)
                 )).all()
                 for pid, d in rows:
-                    sem[pid] = max(0.0, (max_dist - float(d)) / max_dist)
+                    score = max(0.0, (max_dist - float(d)) / max_dist)
+                    sem[pid] = max(sem.get(pid, 0.0), score)
     except Exception:
         pass
 

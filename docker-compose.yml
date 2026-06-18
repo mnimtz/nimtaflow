@@ -33,6 +33,7 @@ services:
       - /mnt:/mnt:ro
       - photoflow-cache:/cache
       - photoflow-config:/config
+      - photoflow-models:/models     # persist jina-clip-v2 / e5 across rebuilds (search query + everyday embedding)
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +51,12 @@ services:
       CONFIG_PATH: /config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Europe/Berlin}
+      # Persistent HF model cache so jina-clip-v2 (search query + everyday/trickle
+      # embedding) survives rebuilds instead of re-downloading ~1.7 GB each time.
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+      JINA_DEVICE: cpu     # no GPU on this host — query/trickle embedding on CPU
       # Run as root so XMP write-back can modify the root-owned photo library.
       PHOTOFLOW_USER: root
 
