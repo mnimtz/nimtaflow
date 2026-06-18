@@ -612,14 +612,39 @@ async def status(db: AsyncSession = Depends(get_db)):
         Photo.is_trashed == False))  # noqa: E712
     transcode_pending = max(0, (vid_total or 0) - (vid_1080 or 0))
 
+    # Progress ("done") counts for the dashboard's per-stage progress bars.
+    from app.models.face import Face
+    from app.models.person import Person
+    img_described = await db.scalar(select(func.count()).where(
+        Photo.description.isnot(None), Photo.is_video == False,  # noqa: E712
+        Photo.thumb_large.isnot(None), Photo.is_trashed == False))  # noqa: E712
+    vid_described = await db.scalar(select(func.count()).where(
+        Photo.description.isnot(None), Photo.is_video == True, Photo.is_trashed == False))  # noqa: E712
+    faces_done = await db.scalar(select(func.count()).where(
+        Photo.faces_scanned == True, Photo.is_video == False, Photo.is_trashed == False))  # noqa: E712
+    thumb_done = await db.scalar(select(func.count()).where(
+        Photo.thumb_large.isnot(None), Photo.is_trashed == False))  # noqa: E712
+    thumb_pending = await db.scalar(select(func.count()).where(
+        Photo.thumb_large.is_(None), Photo.is_trashed == False, Photo.is_missing == False))  # noqa: E712
+    photos_total = await db.scalar(select(func.count()).where(Photo.is_trashed == False))  # noqa: E712
+    with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
+    named_persons = await db.scalar(select(func.count()).where(
+        Person.name.isnot(None), func.length(func.trim(Person.name)) > 0))
+
     # PER-ROLE stats + ETA — each pipeline gets its own backlog, its own workers'
     # mean time, and its own honest projection. Mixing them made ETA meaningless.
     role_pending = {"describe": img_describe_pending or 0, "video": vid_describe_pending or 0,
                     "faces": faces_pending or 0,
                     "embed": max(0, (embed_total or 0) - (embed_done or 0))}
+    role_done = {"describe": img_described or 0, "video": vid_described or 0,
+                 "faces": faces_done or 0, "embed": embed_done or 0}
     role_label = {"describe": "Bild-Beschreibung", "video": "Video-Beschreibung",
                   "embed": "Embeddings", "faces": "Gesichter"}
     roles = []
+    # Thumbnails first in the chain (server-side worker-cpu, ~4 slots).
+    roles.append({"role": "thumbnails", "label": "Thumbnails", "pending": thumb_pending or 0,
+                  "done": thumb_done or 0, "workers": 4, "avg_dur": None,
+                  "eta_seconds": int((thumb_pending or 0) * 2 / 4) if thumb_pending else 0})
     for role in ("describe", "video", "embed", "faces"):
         rw = [w for w in workers if w["role"] == role and (w["idle_s"] is None or w["idle_s"] < 120)]
         rdurs = [w["avg_dur"] for w in rw if w["avg_dur"]]
@@ -627,6 +652,7 @@ async def status(db: AsyncSession = Depends(get_db)):
         pend = role_pending.get(role, 0)
         eta = int(pend * ravg / len(rw)) if (ravg and rw and pend) else None
         roles.append({"role": role, "label": role_label[role], "pending": pend,
+                      "done": role_done.get(role, 0),
                       "workers": len(rw), "avg_dur": ravg, "eta_seconds": eta})
     # Video 1080p transcode — server-side (worker-video, 2 QSV slots), no remote
     # heartbeat; rough ETA at ~8s/video over 2 parallel slots.
@@ -646,4 +672,15 @@ async def status(db: AsyncSession = Depends(get_db)):
         "workers": workers,
         "roles": roles,
         "avg_dur": round(sum(durs) / len(durs), 1) if durs else None,  # legacy
+        # Library headline numbers for the dashboard.
+        "library": {
+            "photos": photos_total or 0,
+            "videos": vid_total or 0,
+            "images": max(0, (photos_total or 0) - (vid_total or 0)),
+            "described": (img_described or 0) + (vid_described or 0),
+            "with_faces": with_faces or 0,
+            "named_persons": named_persons or 0,
+            "embeddings": embed_done or 0,
+            "thumbnails": thumb_done or 0,
+        },
     }

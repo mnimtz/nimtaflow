@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
+import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -70,6 +70,7 @@ const nav = [
   { to: '/people', icon: Users, label: 'Personen' },
   { to: '/map', icon: Map, label: 'Karte' },
   { to: '/pipeline', icon: Activity, label: 'Pipeline' },
+  { to: '/leitstand', icon: Gauge, label: 'Leitstand' },
 ]
 
 type Me = { role: string; access_config?: Record<string, any> | null }
@@ -93,7 +94,7 @@ export default function Layout() {
     : nav
   const visibleNav = fullNav.filter(n =>
     (n.to !== '/map' || allow('allow_map')) &&
-    (n.to !== '/pipeline' || (me ? me.role === 'admin' || me.access_config?.allow_pipeline : true)),
+    ((n.to !== '/pipeline' && n.to !== '/leitstand') || (me ? me.role === 'admin' || me.access_config?.allow_pipeline : true)),
   )
 
   return (
