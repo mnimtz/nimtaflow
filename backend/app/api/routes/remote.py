@@ -83,7 +83,9 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # provider is 'local'. Images set to Gemini/OpenAI/Ollama are described on the
     # server; the remote still does their FACES (below), so every face uses the
     # same insightface engine and clustering stays consistent.
-    faces_mode = (body.mode or "all").strip().lower() == "faces"
+    _mode = (body.mode or "all").strip().lower()
+    faces_mode = _mode == "faces"        # only sweeps faces (e.g. the Asus GPU box)
+    describe_mode = _mode == "describe"  # only describes, never faces (e.g. a Mac/Ollama worker)
     image_provider = (s.get("ai.provider") or "none").strip()
     video_provider = (build_video_settings(s).get("ai.provider") or "none").strip()
     desc_scope = []
@@ -106,7 +108,7 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # descriptions from itself. faces_scanned stops faceless photos re-claiming.
     faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
     faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
-    if faces_enabled and (faces_on_import or faces_mode):
+    if faces_enabled and (faces_on_import or faces_mode) and not describe_mode:
         no_faces = ~exists().where(Face.photo_id == Photo.id)
         face_terms = [Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
                       Photo.faces_scanned == False, no_faces, not_claimed]  # noqa: E712
@@ -234,6 +236,10 @@ class ResultIn(BaseModel):
     error: Optional[str] = None
     worker: Optional[str] = None
     duration: Optional[float] = None   # seconds the worker spent on this photo
+    faces_done: bool = True            # did a face pass actually run? describe-only
+                                       # workers (e.g. Ollama on a Mac, no InsightFace)
+                                       # set this False so the photo stays claimable
+                                       # for a faces worker. Default True = legacy agents.
 
 
 async def _record_worker_stat(worker: str, duration: Optional[float]):
@@ -367,9 +373,20 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         except Exception as xe:
             flog("ai", "WARNING", f"Metadaten-Schreiben fehlgeschlagen (remote): {photo.filename}: {str(xe)[:120]}")
 
-    # embedding (fit pgvector 768)
-    if body.embedding:
-        emb = body.embedding
+    # Embedding — computed CENTRALLY on the server from the description, so the
+    # whole library shares ONE vector space no matter which (possibly different)
+    # model each describe-worker used (Qwen-3B, Ollama-qwen2.5-vl-7B on a Mac, …).
+    # Uses the same provider as search → photos + queries stay comparable. Falls
+    # back to a worker-posted embedding only if the server can't embed.
+    emb = None
+    if body.description:
+        try:
+            from app.services.ai.manager import AIManager
+            emb, _ = await AIManager(s).embed_text(body.description)
+        except Exception:
+            emb = None
+    emb = emb or body.embedding
+    if emb:
         if len(emb) > 768:
             emb = emb[:768]
             n = math.sqrt(sum(x * x for x in emb)) or 1.0
@@ -414,8 +431,11 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
             flog("faces", "INFO", f"{n_faces} Gesicht(er) (remote): {photo.filename}")
 
     photo.ai_claimed_at = None
-    # A face pass ran (even with 0 faces) — don't re-claim this photo faces-only.
-    photo.faces_scanned = True
+    # Mark faces done ONLY if a face pass actually ran (even with 0 faces). A
+    # describe-only worker (faces_done=False) leaves this so a faces worker still
+    # claims the photo — otherwise its faces would be silently lost.
+    if body.faces_done:
+        photo.faces_scanned = True
     photo.processed_at = datetime.now(timezone.utc)
     await db.commit()
 

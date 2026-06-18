@@ -24,8 +24,21 @@ SERVER = os.getenv("PHOTOFLOW_SERVER", "http://localhost:8090").rstrip("/")
 TOKEN = os.getenv("PHOTOFLOW_REMOTE_TOKEN", "")
 NAME = os.getenv("WORKER_NAME") or socket.gethostname()
 POLL = float(os.getenv("POLL_INTERVAL", "5"))
-MODE = (os.getenv("WORKER_MODE") or "all").strip().lower()  # "all" | "faces"
+MODE = (os.getenv("WORKER_MODE") or "all").strip().lower()  # "all" | "faces" | "describe"
+# Describe backend: "local" = bundled Qwen/Florence (needs torch); "ollama" = a
+# co-located Ollama server (e.g. on a Mac via Metal — model chosen PER WORKER).
+BACKEND = (os.getenv("WORKER_BACKEND") or "local").strip().lower()
+OLLAMA_URL = (os.getenv("OLLAMA_URL") or "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5vl:7b"
 HEAD = {"X-Remote-Token": TOKEN}
+
+# Is InsightFace importable here? A describe-only Mac worker won't have it — then
+# we never claim/mark faces (the dedicated faces worker handles them).
+try:
+    from app.services import face_detect_insightface as _fi  # noqa: F401
+    FACES_AVAILABLE = True
+except Exception:
+    FACES_AVAILABLE = False
 
 
 def _dedup_faces(raw: list) -> list:
@@ -74,28 +87,37 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
         else:
             frames = None
 
-    from app.services.ai.local_vlm import LocalVLMProvider
-    prov = LocalVLMProvider(job.get("model", "florence2-base"))
+    # Describe backend chosen per worker: bundled local VLM, or a co-located Ollama
+    # (the model lives on the worker via OLLAMA_MODEL, so different Macs can run
+    # different models simultaneously — the server records which one per photo).
+    if BACKEND == "ollama":
+        from app.services.ai.ollama import OllamaProvider
+        prov = OllamaProvider(OLLAMA_URL, OLLAMA_MODEL)
+    else:
+        from app.services.ai.local_vlm import LocalVLMProvider
+        prov = LocalVLMProvider(job.get("model", "florence2-base"))
     lang = job.get("language", "de")
     prompt = job.get("prompt")
 
     # faces_only: the photo already has an (imported) description — only run face
-    # detection, don't re-describe/re-tag/re-embed.
+    # detection, don't re-describe/re-tag.
     faces_only = bool(job.get("faces_only"))
     if faces_only:
-        desc, tags, emb = None, [], []
+        desc, tags = None, []
     else:
         desc = await prov.describe_image(img, lang, prompt, frames=frames)
-        # Reuse the description we just generated for tag extraction instead of a
-        # second full VLM pass (~halves per-photo time when no JSON tag prompt).
         tags = await prov.generate_tags(img, lang, job.get("tag_prompt"), caption=desc) if desc else []
-        emb = await prov.embed_text(desc) if desc else []
+    # Embeddings are computed CENTRALLY on the server (one vector space across all
+    # workers/models) — the agent no longer embeds.
 
+    faces_enabled = bool(job.get("faces_enabled", True))
     faces = []
-    if job.get("faces_enabled", True):
+    faces_done = not faces_enabled  # nothing to do → already "done"
+    if faces_enabled and FACES_AVAILABLE:
         try:
             from app.services import face_detect_insightface as fi
             if fi.available():
+                faces_done = True
                 min_px = float(job.get("min_face_px", 0) or 0)
                 min_conf = float(job.get("min_conf", 0.5) or 0.5)
                 # Video: detect across frames sampled over the whole clip; carry
@@ -142,8 +164,9 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
     payload = {
         "description": desc or None,
         "tags": tags,
-        "embedding": emb or None,
+        "embedding": None,   # server embeds centrally now
         "faces": faces,
+        "faces_done": faces_done,
         "provider": f"remote:{prov.label}",
         "error": None if (desc or faces_only) else "no description",
         "worker": NAME,
