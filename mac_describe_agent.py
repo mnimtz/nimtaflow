@@ -44,7 +44,17 @@ def _get(url, timeout=60):
 def _ollama(prompt, b64, timeout=300):
     out = _post(f"{OLLAMA}/api/generate",
                 {"model": MODEL, "prompt": prompt, "images": [b64], "stream": False,
-                 "keep_alive": "30m"},  # keep the model resident between photos (no reload)
+                 # think=false: thinking models (e.g. gemma4) otherwise emit a long
+                 # reasoning chain (1000+ tokens) before the answer → very slow.
+                 "think": False,
+                 "keep_alive": "30m",  # keep the model resident between photos (no 50s reload)
+                 "options": {
+                     # num_ctx=4096 instead of the model's 256K default: describing ONE
+                     # image needs ~2k tokens, and a 256K context allocates a huge KV
+                     # cache → slow + memory-heavy. num_predict caps a runaway output.
+                     "num_ctx": int(os.environ.get("OLLAMA_NUM_CTX", "4096")),
+                     "num_predict": int(os.environ.get("OLLAMA_NUM_PREDICT", "512")),
+                 }},
                 timeout=timeout)
     return (out.get("response") or "").strip()
 
