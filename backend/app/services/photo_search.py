@@ -125,7 +125,11 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
                     score = max(0.0, (max_dist - float(d)) / max_dist)
                     sem[pid] = max(sem.get(pid, 0.0), score)
     except Exception:
-        pass
+        # A failed sub-query leaves the session's transaction in an aborted
+        # state; without rolling back, the NEXT db.execute below raises
+        # PendingRollbackError, which propagated up and 502'd the whole chat.
+        # Roll back so the keyword/person queries still run (degrade, not crash).
+        await db.rollback()
 
     # ── literal / tag / person hits ──────────────────────────────────────────
     kw: dict = defaultdict(int)
@@ -166,7 +170,7 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
                 for (pid,) in frows:
                     kw[pid] += 3  # explicit relationship resolution is the strongest signal
     except Exception:
-        pass
+        await db.rollback()  # don't poison the session for the final fetch below
 
     # ── combine & rank ────────────────────────────────────────────────────────
     scores: dict = {}
