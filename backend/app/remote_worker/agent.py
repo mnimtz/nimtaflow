@@ -24,7 +24,8 @@ SERVER = os.getenv("PHOTOFLOW_SERVER", "http://localhost:8090").rstrip("/")
 TOKEN = os.getenv("PHOTOFLOW_REMOTE_TOKEN", "")
 NAME = os.getenv("WORKER_NAME") or socket.gethostname()
 POLL = float(os.getenv("POLL_INTERVAL", "5"))
-MODE = (os.getenv("WORKER_MODE") or "all").strip().lower()  # "all" | "faces" | "describe"
+MODE = (os.getenv("WORKER_MODE") or "all").strip().lower()  # all | faces | describe | embed
+MEDIA = (os.getenv("WORKER_MEDIA") or "both").strip().lower()  # both | images | videos
 # Describe backend: "local" = bundled Qwen/Florence (needs torch); "ollama" = a
 # co-located Ollama server (e.g. on a Mac via Metal — model chosen PER WORKER).
 BACKEND = (os.getenv("WORKER_BACKEND") or "local").strip().lower()
@@ -176,15 +177,37 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
     return desc or ""
 
 
+async def _embed(client: httpx.AsyncClient, job: dict) -> str:
+    """Embed mode: jina-clip-v2 IMAGE vector (+ description TEXT vector) → post."""
+    t0 = time.time()
+    pid = job["photo_id"]
+    from app.services import jina_embed
+    iv = tv = None
+    if job.get("need_image", True):
+        r = await client.get(SERVER + job["image_url"], headers=HEAD, timeout=60)
+        r.raise_for_status()
+        iv = jina_embed.embed_image(Image.open(io.BytesIO(r.content)).convert("RGB"))
+    desc = job.get("description")
+    if desc and job.get("need_text", True):
+        tv = jina_embed.embed_text(desc)
+    await client.post(f"{SERVER}/api/remote/embed-result/{pid}", json={
+        "embedding": iv, "embedding_text": tv,
+        "worker": NAME, "duration": round(time.time() - t0, 1),
+    }, headers=HEAD, timeout=120)
+    return f"img={'✓' if iv else '–'} txt={'✓' if tv else '–'}"
+
+
 async def main():
     if not TOKEN:
         print("[agent] PHOTOFLOW_REMOTE_TOKEN not set — aborting.")
         return
-    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE})")
+    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE}, media={MEDIA}, backend={BACKEND})")
     async with httpx.AsyncClient() as client:
         while True:
             try:
-                r = await client.post(f"{SERVER}/api/remote/claim", json={"worker": NAME, "mode": MODE}, headers=HEAD, timeout=30)
+                r = await client.post(f"{SERVER}/api/remote/claim",
+                                      json={"worker": NAME, "mode": MODE, "media": MEDIA},
+                                      headers=HEAD, timeout=30)
                 if r.status_code != 200:
                     print(f"[agent] claim HTTP {r.status_code}: {r.text[:140]}")
                     await asyncio.sleep(POLL * 3)
@@ -194,8 +217,12 @@ async def main():
                     await asyncio.sleep(POLL)
                     continue
                 t = time.time()
-                desc = await _process(client, job)
-                print(f"[agent] #{job['photo_id']} done in {time.time() - t:.1f}s: {desc[:60]}")
+                if job.get("mode") == "embed":
+                    info = await _embed(client, job)
+                    print(f"[agent] #{job['photo_id']} embed in {time.time() - t:.1f}s: {info}")
+                else:
+                    desc = await _process(client, job)
+                    print(f"[agent] #{job['photo_id']} done in {time.time() - t:.1f}s: {desc[:60]}")
             except Exception as e:
                 print(f"[agent] error: {type(e).__name__}: {e}")
                 await asyncio.sleep(POLL * 3)

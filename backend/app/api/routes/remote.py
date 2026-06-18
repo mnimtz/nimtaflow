@@ -57,7 +57,12 @@ async def _require_token(db: AsyncSession, token: Optional[str]) -> dict:
 
 class ClaimReq(BaseModel):
     worker: str = "worker"
-    mode: str = "all"   # "all" = describe+faces | "faces" = faces-only worker
+    # "all" = describe+faces | "faces" = faces-only | "describe" = describe-only
+    # (no faces) | "embed" = compute jina image/text vectors only.
+    mode: str = "all"
+    # Restrict a worker to one media type so machines can specialise: a Mac on
+    # images ("images"), the M5 on video ("videos"), or "both" (default).
+    media: str = "both"
 
 
 @router.post("/claim")
@@ -86,6 +91,15 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     _mode = (body.mode or "all").strip().lower()
     faces_mode = _mode == "faces"        # only sweeps faces (e.g. the Asus GPU box)
     describe_mode = _mode == "describe"  # only describes, never faces (e.g. a Mac/Ollama worker)
+    embed_mode = _mode == "embed"        # only computes jina image/text vectors
+    # Media restriction so a worker can specialise: M3 = images, M5 = videos.
+    _media = (body.media or "both").strip().lower()
+    media_conds = []
+    if _media == "images":
+        media_conds = [Photo.is_video == False]  # noqa: E712
+    elif _media == "videos":
+        media_conds = [Photo.is_video == True]   # noqa: E712
+
     image_provider = (s.get("ai.provider") or "none").strip()
     video_provider = (build_video_settings(s).get("ai.provider") or "none").strip()
     desc_scope = []
@@ -94,28 +108,37 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     if video_provider == "local" and include_videos:
         desc_scope.append(Photo.is_video == True)   # noqa: E712
     where_terms = []
-    # A faces-only worker (mode=faces) NEVER describes — it just sweeps faces, so
-    # face detection can run in parallel (e.g. many CPU workers) independently of
-    # the slow descriptions.
-    if desc_scope and not faces_mode:
+
+    if embed_mode:
+        # jina vectors: need the IMAGE vector (embedding NULL) OR the description
+        # TEXT vector (embedding_text NULL, once a description exists). No describe
+        # lease — skip_locked already serialises concurrent embed workers.
         where_terms.append(and_(
-            Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
-            Photo.thumb_large.isnot(None), not_claimed, or_(*desc_scope),
+            Photo.thumb_large.isnot(None), Photo.is_trashed == False,  # noqa: E712
+            Photo.is_missing == False,                                 # noqa: E712
+            or_(Photo.embedding.is_(None),
+                and_(Photo.embedding_text.is_(None), Photo.description.isnot(None))),
+            *media_conds,
         ))
-    # Images still lacking a face pass. A faces-only worker takes ANY such image
-    # (decoupled from description); the normal "all" worker only does the faces-only
-    # pass for ALREADY-DESCRIBED images (imported/Gemini) so it doesn't steal fresh
-    # descriptions from itself. faces_scanned stops faceless photos re-claiming.
-    faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
-    faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
-    if faces_enabled and (faces_on_import or faces_mode) and not describe_mode:
-        no_faces = ~exists().where(Face.photo_id == Photo.id)
-        face_terms = [Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
-                      Photo.faces_scanned == False, no_faces, not_claimed]  # noqa: E712
-        if not faces_mode:
-            face_terms.insert(0, Photo.description.isnot(None))
-        where_terms.append(and_(*face_terms
-        ))
+    else:
+        # describe term — a faces-only worker NEVER describes.
+        if desc_scope and not faces_mode:
+            where_terms.append(and_(
+                Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+                Photo.thumb_large.isnot(None), not_claimed, or_(*desc_scope), *media_conds,
+            ))
+        # Images still lacking a face pass. A faces-only worker takes ANY such image;
+        # the "all" worker only does the faces-only pass for ALREADY-DESCRIBED images
+        # so it doesn't steal fresh descriptions from itself. faces_scanned stops re-claims.
+        faces_enabled = str(s.get("faces.enabled", "true")).lower() != "false"
+        faces_on_import = str(s.get("scan.faces_on_import", "true")).lower() != "false"
+        if faces_enabled and (faces_on_import or faces_mode) and not describe_mode:
+            no_faces = ~exists().where(Face.photo_id == Photo.id)
+            face_terms = [Photo.thumb_large.isnot(None), Photo.is_video == False,  # noqa: E712
+                          Photo.faces_scanned == False, no_faces, not_claimed]  # noqa: E712
+            if not faces_mode:
+                face_terms.insert(0, Photo.description.isnot(None))
+            where_terms.append(and_(*face_terms))
     if not where_terms:
         return {"photo_id": None}
     where_any = or_(*where_terms)
@@ -128,8 +151,21 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
     # faces-only when the worker is a faces worker, or the photo already has a
     # description (imported/Gemini) and only needs its face pass.
     faces_only = faces_mode or (photo.description is not None)
-    photo.ai_claimed_at = datetime.now(timezone.utc)
+    # Embed workers don't take the describe lease (they don't describe) — just
+    # release the row lock so another worker can describe/face it meanwhile.
+    if not embed_mode:
+        photo.ai_claimed_at = datetime.now(timezone.utc)
     await db.commit()
+    if embed_mode:
+        return {
+            "photo_id": photo.id, "mode": "embed",
+            "is_video": bool(photo.is_video),
+            "image_url": f"/api/remote/image/{photo.id}",
+            # the agent computes the text vector from this (None → only image vector)
+            "description": photo.description or None,
+            "need_image": photo.embedding is None,
+            "need_text": photo.embedding_text is None and bool(photo.description),
+        }
     # The remote worker can run a heavier model than the local host is capable
     # of: prefer `remote.model` (Settings → Remote-Worker). For videos the agent
     # describes the extracted frame (thumb_large).
@@ -450,6 +486,43 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
          f"[{worker}] #{photo_id} {photo.filename} ✓ {dur} · {n_tags} Tags · {n_faces} Gesichter · "
          f"{file_note} · status=done — {(body.description or photo.description or '')[:140]}")
     return {"ok": True}
+
+
+class EmbedResultIn(BaseModel):
+    embedding: Optional[List[float]] = None        # jina-clip-v2 IMAGE vector (768)
+    embedding_text: Optional[List[float]] = None   # jina-clip-v2 description vector (768)
+    worker: Optional[str] = None
+    duration: Optional[float] = None
+
+
+@router.post("/embed-result/{photo_id}")
+async def embed_result(photo_id: int, body: EmbedResultIn, db: AsyncSession = Depends(get_db),
+                       x_remote_token: Optional[str] = Header(None)):
+    """Persist jina-clip-v2 vectors computed by a remote embed worker (GPU bulk).
+    Storage-free worker → the server just stores the 768-dim image/text vectors."""
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+
+    def _fit(v):
+        if not v:
+            return None
+        if len(v) > 768:
+            v = v[:768]
+            n = math.sqrt(sum(x * x for x in v)) or 1.0
+            v = [x / n for x in v]
+        return v if len(v) == 768 else None
+
+    iv, tv = _fit(body.embedding), _fit(body.embedding_text)
+    if iv is not None:
+        photo.embedding = iv
+    if tv is not None:
+        photo.embedding_text = tv
+    await db.commit()
+    if body.worker:
+        await _record_worker_stat((body.worker or "embed")[:60], body.duration)
+    return {"ok": True, "image": iv is not None, "text": tv is not None}
 
 
 @router.get("/status")

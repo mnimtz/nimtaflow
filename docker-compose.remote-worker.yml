@@ -15,6 +15,11 @@ services:
       PHOTOFLOW_SERVER: ${PHOTOFLOW_SERVER:?set the server URL}
       PHOTOFLOW_REMOTE_TOKEN: ${PHOTOFLOW_REMOTE_TOKEN:?set the remote token}
       WORKER_NAME: ${WORKER_NAME:-gpu-worker}
+      WORKER_MODE: ${WORKER_MODE:-all}        # all | faces | describe | embed
+      WORKER_MEDIA: ${WORKER_MEDIA:-both}     # both | images | videos
+      WORKER_BACKEND: ${WORKER_BACKEND:-local}  # local (bundled Qwen) | ollama
+      OLLAMA_URL: ${OLLAMA_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5vl:7b}
       POLL_INTERVAL: ${POLL_INTERVAL:-5}
       PYTHONUNBUFFERED: "1"   # so agent log lines show up immediately in docker logs
       NVIDIA_VISIBLE_DEVICES: all
