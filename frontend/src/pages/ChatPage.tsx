@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Send, Sparkles, Loader2, Cpu, Cloud } from 'lucide-react'
-import { api, thumbUrl } from '../lib/api'
+import { api, thumbUrl, type Photo } from '../lib/api'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 
 type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[] }
 
@@ -17,6 +18,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [provider, setProvider] = useState('')   // '' = Server-Standard
+  const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
@@ -40,6 +42,15 @@ export default function ChatPage() {
     } catch (e: any) {
       setMessages(m => [...m, { role: 'assistant', content: 'Fehler: ' + (e?.response?.data?.detail || e?.message || 'unbekannt') }])
     } finally { setSending(false) }
+  }
+
+  // Open chat results IN-APP (lightbox), not in a new browser tab. Fetches the
+  // full Photo objects for the message's ids so videos play + dimensions are right.
+  const openLightbox = async (ids: number[], idx: number) => {
+    try {
+      const photos = await Promise.all(ids.map(id => api.get(`/photos/${id}`).then(r => r.data as Photo)))
+      setLightbox({ photos, index: idx })
+    } catch { /* ignore */ }
   }
 
   return (
@@ -95,11 +106,11 @@ export default function ChatPage() {
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
               {m.photo_ids && m.photo_ids.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  {m.photo_ids.slice(0, 12).map(id => (
-                    <a key={id} href={thumbUrl({ id }, 'large')} target="_blank" rel="noreferrer"
+                  {m.photo_ids.slice(0, 12).map((id, idx) => (
+                    <button key={id} onClick={() => openLightbox(m.photo_ids!.slice(0, 12), idx)}
                       className="block w-16 h-16 rounded-lg overflow-hidden border border-black/10 hover:ring-2 hover:ring-indigo-400 transition">
                       <img src={thumbUrl({ id }, 'small')} className="w-full h-full object-cover" loading="lazy" />
-                    </a>
+                    </button>
                   ))}
                 </div>
               )}
@@ -129,6 +140,14 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
+
+      {lightbox && (
+        <GalleryLightbox
+          photos={lightbox.photos}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   )
 }

@@ -12,10 +12,11 @@ Grounded: the model is told to answer ONLY from the retrieved photos.
 """
 import asyncio
 import json
+from datetime import date
 from typing import List, Optional
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.photo import Photo
@@ -33,7 +34,10 @@ SYSTEM = (
     "benannten Personen (z. B. „Person im blauen Hemd“ + erkannt „Günter Nimtz“ → "
     "die Person im blauen Hemd ist Günter Nimtz). Antworte ausschließlich anhand "
     "der gefundenen Fotos; gibt es keine Treffer, sage das ehrlich. Nenne relevante "
-    "Fotos per #id."
+    "Fotos per #id. "
+    "Nutze bei Fragen nach VIDEOS den Filter medientyp='video', bei Bildern/Fotos "
+    "medientyp='bild'. Für 'wie viele …'-Fragen nutze das Werkzeug zaehle_fotos "
+    "(exakte Anzahl) statt zu schätzen. Jahresangaben → jahr_von/jahr_bis."
 )
 
 
@@ -72,9 +76,44 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
     return out
 
 
-async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 15) -> List[dict]:
-    photos = await search_photos(db, query, settings, limit=limit)
+def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_bis: Optional[int]):
+    """SQLAlchemy conditions for the structured filters the chat tools expose.
+    (No is_trashed here — search_photos adds its own; _count adds it explicitly.)"""
+    conds = []
+    mt = (medientyp or "").lower()
+    if mt in ("video", "videos"):
+        conds.append(Photo.is_video == True)   # noqa: E712
+    elif mt in ("bild", "bilder", "foto", "fotos", "image", "images"):
+        conds.append(Photo.is_video == False)  # noqa: E712
+    if jahr_von:
+        conds.append(Photo.taken_at >= date(int(jahr_von), 1, 1))
+    if jahr_bis:
+        conds.append(Photo.taken_at < date(int(jahr_bis) + 1, 1, 1))
+    return conds
+
+
+async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 20,
+                    medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
+                    jahr_bis: Optional[int] = None) -> List[dict]:
+    extra = _filter_conditions(medientyp, jahr_von, jahr_bis)
+    photos = await search_photos(db, query or "", settings, limit=limit,
+                                 extra_conditions=extra or None)
     return await _fused_records(db, photos)
+
+
+async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[int],
+                 jahr_bis: Optional[int], person: Optional[str]) -> dict:
+    """Exact count for 'wie viele …' questions — structural filters, not top-K search."""
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [Photo.is_trashed == False]  # noqa: E712
+    q = select(func.count(func.distinct(Photo.id))).select_from(Photo)
+    if person and person.strip():
+        q = (q.join(Face, Face.photo_id == Photo.id)
+              .join(Person, Person.id == Face.person_id)
+              .where(Person.name.ilike(f"%{person.strip()}%")))
+    q = q.where(*conds)
+    n = await db.scalar(q)
+    return {"anzahl": int(n or 0), "medientyp": medientyp or "beide",
+            "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person}
 
 
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession) -> dict:
@@ -83,14 +122,33 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
         return {"answer": "Kein Gemini-API-Key hinterlegt (Einstellungen → KI).", "photo_ids": []}
     model = settings.get("ai.gemini.model", "gemini-2.5-flash")
     base = "https://generativelanguage.googleapis.com/v1beta"
-    tool = {"function_declarations": [{
-        "name": "suche_fotos",
-        "description": "Durchsucht die Fotosammlung semantisch + nach Person/Ort/Tag und "
-                       "liefert passende Fotos mit Beschreibung, erkannten Personen, Tags, Datum, Ort.",
-        "parameters": {"type": "object", "properties": {
-            "suchbegriff": {"type": "string", "description": "Wonach gesucht wird, z. B. 'Günter im Garten', 'Strand Sommer 2018'"}
-        }, "required": ["suchbegriff"]},
-    }]}
+    _filter_props = {
+        "medientyp": {"type": "string", "enum": ["bild", "video", "beide"],
+                      "description": "Nur Bilder, nur Videos, oder beide. WICHTIG: fragt der Nutzer nach Videos → 'video', nach Bildern/Fotos → 'bild'."},
+        "jahr_von": {"type": "integer", "description": "frühestes Jahr (inkl.), z. B. 2018"},
+        "jahr_bis": {"type": "integer", "description": "spätestes Jahr (inkl.), z. B. 2020"},
+    }
+    tool = {"function_declarations": [
+        {
+            "name": "suche_fotos",
+            "description": "Durchsucht die Sammlung semantisch + nach Person/Ort/Tag und liefert passende "
+                           "Medien mit Beschreibung, erkannten Personen, Tags, Datum, Ort. Mit Filtern für "
+                           "Medientyp (Bild/Video) und Jahr.",
+            "parameters": {"type": "object", "properties": {
+                "suchbegriff": {"type": "string", "description": "Wonach gesucht wird, z. B. 'Günter im Garten', 'Strand'"},
+                **_filter_props,
+            }, "required": ["suchbegriff"]},
+        },
+        {
+            "name": "zaehle_fotos",
+            "description": "Liefert die EXAKTE Anzahl passender Medien (für 'wie viele …'-Fragen). "
+                           "Filtert nach Medientyp, Jahr und optional Person.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "optionaler Personenname, z. B. 'Lea Marie Nimtz'"},
+                **_filter_props,
+            }},
+        },
+    ]}
     contents = []
     for h in (history or [])[-8:]:
         role = "user" if h.get("role") == "user" else "model"
@@ -122,11 +180,19 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             if calls:
                 contents.append({"role": "model", "parts": parts})
                 for c in calls:
-                    q = (c.get("args") or {}).get("suchbegriff", "")
-                    recs = await _retrieve(db, q, settings)
-                    seen_ids.extend([rrec["id"] for rrec in recs])
-                    contents.append({"role": "user", "parts": [{"functionResponse": {
-                        "name": c["name"], "response": {"treffer": recs}}}]})
+                    args = c.get("args") or {}
+                    if c.get("name") == "zaehle_fotos":
+                        resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
+                                            args.get("jahr_bis"), args.get("person"))
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    else:
+                        recs = await _retrieve(db, args.get("suchbegriff", ""), settings,
+                                               medientyp=args.get("medientyp"),
+                                               jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"))
+                        seen_ids.extend([rrec["id"] for rrec in recs])
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": {"treffer": recs}}}]})
                 continue
             text = " ".join(p["text"] for p in parts if "text" in p).strip()
             # de-dupe preserving order
