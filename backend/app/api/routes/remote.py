@@ -550,8 +550,12 @@ async def status(db: AsyncSession = Depends(get_db)):
             jobs = int(st["jobs"]) if st.get("jobs") else 0
             if avg:
                 durs.append(avg)
+            # Role from the worker name (embed / faces / else describe) so we never
+            # average a 10s describe together with a 1s face pass.
+            nl = name.lower()
+            role = "embed" if "embed" in nl else ("faces" if "face" in nl else "describe")
             workers.append({
-                "name": name,
+                "name": name, "role": role,
                 "last_seen": int(ts) if ts else 0,
                 "idle_s": now - int(ts) if ts else None,
                 "jobs": jobs,
@@ -562,13 +566,21 @@ async def status(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    # ETA: spread the pending queue across the alive workers using their mean
-    # per-photo time. With N workers each doing ~avg s/photo, throughput is
-    # N/avg photos per second → remaining = pending * avg / N.
-    eta_seconds = None
-    avg_dur = round(sum(durs) / len(durs), 1) if durs else None
-    if pending and avg_dur and len(durs) > 0:
-        eta_seconds = int(pending * avg_dur / len(durs))
+    # PER-ROLE stats + ETA — each pipeline (describe / embed / faces) gets its own
+    # backlog, its own workers' mean time, and its own honest projection. Mixing
+    # them (as before) made the average + ETA meaningless.
+    role_pending = {"describe": pending or 0, "faces": faces_pending or 0,
+                    "embed": max(0, (embed_total or 0) - (embed_done or 0))}
+    role_label = {"describe": "Beschreibung", "embed": "Embeddings", "faces": "Gesichter"}
+    roles = []
+    for role in ("describe", "embed", "faces"):
+        rw = [w for w in workers if w["role"] == role and (w["idle_s"] is None or w["idle_s"] < 120)]
+        rdurs = [w["avg_dur"] for w in rw if w["avg_dur"]]
+        ravg = round(sum(rdurs) / len(rdurs), 1) if rdurs else None
+        pend = role_pending.get(role, 0)
+        eta = int(pend * ravg / len(rw)) if (ravg and rw and pend) else None
+        roles.append({"role": role, "label": role_label[role], "pending": pend,
+                      "workers": len(rw), "avg_dur": ravg, "eta_seconds": eta})
 
     return {
         "enabled": str(s.get("remote.enabled", "false")).lower() == "true",
@@ -578,6 +590,6 @@ async def status(db: AsyncSession = Depends(get_db)):
         "embed_done": embed_done or 0,
         "embed_total": embed_total or 0,
         "workers": workers,
-        "avg_dur": avg_dur,
-        "eta_seconds": eta_seconds,
+        "roles": roles,
+        "avg_dur": round(sum(durs) / len(durs), 1) if durs else None,  # legacy
     }

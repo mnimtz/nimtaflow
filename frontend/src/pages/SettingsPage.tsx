@@ -1252,8 +1252,9 @@ function RemoteWorkerSection() {
   useEffect(() => { if (sQ.data) setSettings(sQ.data) }, [sQ.data])
   const { data: status } = useQuery<{
     enabled: boolean; has_token: boolean; pending: number; faces_pending: number;
-    embed_done: number; embed_total: number; avg_dur: number | null; eta_seconds: number | null;
-    workers: { name: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
+    embed_done: number; embed_total: number; avg_dur: number | null;
+    roles: { role: string; label: string; pending: number; workers: number; avg_dur: number | null; eta_seconds: number | null }[];
+    workers: { name: string; role: string; last_seen: number; idle_s: number | null; jobs: number; last_dur: number | null; avg_dur: number | null }[]
   }>({
     queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
   })
@@ -1357,59 +1358,68 @@ function RemoteWorkerSection() {
             <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Verarbeitung – Live</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? 'aktiv' : 'inaktiv'}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-            <div><span className="text-2xl font-bold tabular-nums text-violet-500">{status?.pending ?? 0}</span><p className="text-xs text-zinc-400">Beschreibungen offen <span className="text-zinc-500">(in Schlange)</span></p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-sky-500">{status?.faces_pending ?? 0}</span><p className="text-xs text-zinc-400">Gesichter offen</p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-indigo-500">{status?.workers?.length ?? 0}</span><p className="text-xs text-zinc-400">verbundene Worker</p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-zinc-400">{status?.avg_dur != null ? `${status.avg_dur.toFixed(1)}s` : '—'}</span><p className="text-xs text-zinc-400">Ø pro Foto</p></div>
-            <div><span className="text-2xl font-bold tabular-nums text-emerald-500">{fmtEta(status?.eta_seconds)}</span><p className="text-xs text-zinc-400">Restzeit Beschreib.</p></div>
+          {/* Pro Rolle getrennt — je eigener Backlog, eigenes Ø, eigene Restzeit.
+              (Beschreibung ~10s vs Gesichter ~1s NICHT mehr zusammen gemittelt.) */}
+          <div className="space-y-2">
+            {(status?.roles ?? []).filter(r => r.pending > 0 || r.workers > 0).map(r => {
+              const color = r.role === 'describe' ? 'text-violet-500' : r.role === 'embed' ? 'text-sky-500' : 'text-emerald-500'
+              const rolW = (status?.workers ?? []).filter(w => w.role === r.role && (w.idle_s == null || w.idle_s < 120))
+              return (
+                <div key={r.role} className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+                  <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-1">
+                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{r.label}</span>
+                    <div className="flex gap-4 text-xs text-zinc-500 tabular-nums">
+                      <span><b className={color}>{r.pending.toLocaleString('de')}</b> offen</span>
+                      <span><b className="text-zinc-700 dark:text-zinc-300">{r.workers}</b> Worker</span>
+                      <span>Ø {r.avg_dur != null ? `${r.avg_dur.toFixed(1)}s` : '—'}</span>
+                      <span>Rest <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
+                    </div>
+                  </div>
+                  {rolW.length > 0 && (
+                    <ul className="mt-1.5 text-[11px] text-zinc-500 space-y-0.5">
+                      {rolW.map(w => {
+                        const idle = w.idle_s ?? Math.max(0, now - w.last_seen)
+                        return (
+                          <li key={w.name} className="flex flex-wrap items-center gap-x-2">
+                            <span className={idle < 30 ? 'text-emerald-500' : 'text-zinc-400'}>●</span>
+                            <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b>
+                            <span>· {w.jobs} Fotos</span>
+                            {w.avg_dur != null && <span>· Ø {w.avg_dur.toFixed(1)}s</span>}
+                            <span className="text-zinc-400">· vor {idle}s</span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+            {(status?.workers?.length ?? 0) === 0 && (
+              <p className="text-xs text-zinc-400">Kein Worker verbunden — KI-Jobs werden lokal (CPU) verarbeitet.</p>
+            )}
           </div>
-          {status && status.embed_total > 0 && (
-            <div className="text-[11px] text-zinc-400">
-              Embeddings (Bildsuche): <b className={status.embed_done >= status.embed_total ? 'text-emerald-500' : 'text-sky-500'}>{status.embed_done.toLocaleString('de')}</b> / {status.embed_total.toLocaleString('de')} ({Math.round(status.embed_done / status.embed_total * 100)}%)
-              <div className="mt-1 h-1.5 w-full max-w-xs bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${Math.round(status.embed_done / status.embed_total * 100)}%` }} />
-              </div>
-            </div>
-          )}
-          {status?.eta_seconds != null && status.eta_seconds > 0 && (
-            <p className="text-[11px] text-zinc-400">
-              Hochrechnung: {status.pending} Fotos × {status.avg_dur?.toFixed(1)}s ÷ {status.workers.length} Worker.
-              Bei diesem Tempo voraussichtlich fertig in <b className="text-zinc-600 dark:text-zinc-300">{fmtEta(status.eta_seconds)}</b>.
-            </p>
-          )}
-          {(status?.workers?.length ?? 0) > 0 ? (
-            <ul className="text-xs text-zinc-500 space-y-1">
-              {status!.workers.map(w => {
-                const idle = w.idle_s ?? Math.max(0, now - w.last_seen)
-                return (
-                  <li key={w.name} className="flex flex-wrap items-center gap-x-2">
-                    <span className={idle < 30 ? 'text-emerald-500' : 'text-zinc-400'}>●</span>
-                    <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b>
-                    {/* type from the worker name: a "faces" worker only sweeps faces, everything else describes */}
-                    {/faces/i.test(w.name)
-                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-500">Gesichter</span>
-                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-500">Beschreibung</span>}
-                    <span>· {w.jobs} Fotos</span>
-                    {w.last_dur != null && <span>· letztes {w.last_dur.toFixed(1)}s</span>}
-                    {w.avg_dur != null && <span>· Ø {w.avg_dur.toFixed(1)}s</span>}
-                    <span className="text-zinc-400">· aktiv vor {idle}s</span>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <p className="text-xs text-zinc-400">Kein Worker verbunden — KI-Jobs werden lokal (CPU) verarbeitet.</p>
-          )}
         </div>
 
-        {/* Generated start command for the chosen worker */}
+        {/* Schritt-für-Schritt + generierter Start-Befehl */}
         <div>
-          <Label>Start-Befehl (auf dem Worker-Gerät ausführen)</Label>
-          <p className="text-xs text-zinc-400 mb-2">{wType === 'ollama'
-            ? <>Mac mit Ollama: <code>mac_describe_agent.py</code> aus dem Repo, Token oben speichern, im Terminal ausführen. Stoppen mit Ctrl-C.</>
-            : <>GPU-Box (Repo unter <code>/opt/photoflow</code>): Token oben speichern, dann ausführen. Stoppen mit <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code>.</>}</p>
+          <Label>So fügst du diesen Worker hinzu</Label>
+          {wType === 'ollama' ? (
+            <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
+              <li>Auf dem Mac <a className="text-indigo-500" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> installieren.</li>
+              <li>Modell laden: <code>ollama pull {wModel}</code></li>
+              <li><code>mac_describe_agent.py</code> aus dem PhotoFlow-Repo auf den Mac legen (z. B. <code>~/photoflow_worker/</code>).</li>
+              <li>Token oben <b>speichern</b>, dann den Befehl unten im Terminal ausführen (Mac-Python reicht — kein pip).</li>
+              <li>Optional dauerhaft: als <code>launchctl</code>-LaunchAgent einrichten (Autostart bei Login).</li>
+            </ol>
+          ) : (
+            <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
+              <li>Auf der GPU-Box das PhotoFlow-Repo unter <code>/opt/photoflow</code> bereitstellen (+ Docker, NVIDIA-Runtime).</li>
+              <li>Token oben <b>speichern</b>, dann den Befehl unten ausführen.</li>
+              <li>Stoppen: <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code></li>
+            </ol>
+          )}
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
+          {!token && <p className="text-[11px] text-amber-500 mt-1">⚠️ Noch kein Token gespeichert — oben „Generieren" + „Speichern", sonst lehnt der Server den Worker ab.</p>}
         </div>
       </div>
 
