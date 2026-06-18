@@ -30,14 +30,16 @@ celery_app.conf.update(
         "scan_source":        {"queue": "scan"},
         "watch_sources":      {"queue": "cpu"},
         "auto_cluster_faces": {"queue": "cpu"},
-        "write_person_name":  {"queue": "cpu"},
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "retry_missing_thumbnails": {"queue": "cpu"},
-        "transcode_video":    {"queue": "cpu"},   # worker-cpu has /dev/dri (QSV)
+        # Dedicated queue + worker so slow video transcodes (esp. software h264)
+        # never occupy the worker-cpu slots that make image thumbnails — those two
+        # now run fully in parallel. worker-video has /dev/dri for QSV.
+        "transcode_video":    {"queue": "video"},
     },
 )
 

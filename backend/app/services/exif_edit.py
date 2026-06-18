@@ -6,6 +6,7 @@ edits when exiftool is not installed.
 """
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,6 +14,14 @@ from typing import Any, Dict, Optional
 
 
 _EXIFTOOL = shutil.which("exiftool")
+
+
+def _sidecar_paths(path: str):
+    """Candidate sidecar paths, preferred first: the canonical full-name form
+    'IMG_1234.JPG.xmp' (what we write now), then the legacy replace-extension form
+    'IMG_1234.xmp'. Reading checks both so a library written under either scheme
+    still round-trips on re-import."""
+    return [path + ".xmp", str(Path(path).with_suffix(".xmp"))]
 
 
 class ExifEditError(RuntimeError):
@@ -50,11 +59,12 @@ async def read_existing_ai_metadata(path: str):
 
     desc, kws = await _read(path)
     if not desc:  # fall back to a sidecar (videos always use one; images may)
-        from pathlib import Path as _P
-        sc = _P(path).with_suffix(".xmp")
-        if sc.exists():
-            desc, kws2 = await _read(str(sc))
-            kws = kws or kws2
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                desc, kws2 = await _read(sc)
+                kws = kws or kws2
+                if desc:
+                    break
     return desc, kws
 
 
@@ -87,9 +97,11 @@ async def read_file_location(path: str):
 
     title, city, country = await _read(path)
     if not (title or city or country):
-        sc = Path(path).with_suffix(".xmp")
-        if sc.exists():
-            title, city, country = await _read(str(sc))
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                title, city, country = await _read(sc)
+                if title or city or country:
+                    break
     return title, city, country
 
 
@@ -127,9 +139,11 @@ async def read_existing_extras(path: str):
 
     rating, persons = await _read(path)
     if rating is None and not persons:
-        sc = Path(path).with_suffix(".xmp")
-        if sc.exists():
-            rating, persons = await _read(str(sc))
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                rating, persons = await _read(sc)
+                if rating is not None or persons:
+                    break
     return rating, persons
 
 
@@ -170,9 +184,11 @@ async def read_face_regions(path: str):
 
     regions = await _read(path)
     if not regions:
-        sc = Path(path).with_suffix(".xmp")
-        if sc.exists():
-            regions = await _read(str(sc))
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                regions = await _read(sc)
+                if regions:
+                    break
     return regions
 
 

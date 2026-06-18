@@ -69,26 +69,33 @@ def _probe_qsv() -> HWProfile:
 
     code, out = _run([_FFMPEG, "-hide_banner", "-encoders"])
     has_qsv = "h264_qsv" in out
-    has_vpp = "vpp_qsv" in out
 
-    # Quick test: can ffmpeg init QSV?
+    # Real test: actually ENCODE a couple of frames with h264_qsv. The old test
+    # (-hwaccel qsv on a nullsrc) returns 0 even when it silently runs on the CPU,
+    # so it falsely reported QSV "available" and the transcode then fell back to
+    # software at runtime. This exercises the same init_hw_device + hwupload +
+    # h264_qsv path the transcode uses, so detection matches reality.
     code2, out2 = _run([
-        _FFMPEG, "-hide_banner", "-hwaccel", "qsv", "-f", "lavfi",
-        "-i", "nullsrc=s=128x128:d=0.1", "-vframes", "1", "-f", "null", "-",
-    ], timeout=6)
+        _FFMPEG, "-hide_banner", "-init_hw_device", "qsv=hw", "-filter_hw_device", "hw",
+        "-f", "lavfi", "-i", "testsrc=s=256x256:d=0.2",
+        "-vf", "format=nv12,hwupload=extra_hw_frames=64",
+        "-c:v", "h264_qsv", "-frames:v", "2", "-f", "null", "-",
+    ], timeout=10)
 
     if not has_qsv or code2 != 0:
-        return HWProfile(name="qsv", hwaccel="qsv", info=f"QSV init failed: {out2[:80]}")
+        return HWProfile(name="qsv", hwaccel="qsv", info=f"QSV encode test failed: {out2[-80:]}")
 
     return HWProfile(
         name="qsv",
         hwaccel="qsv",
-        decode_args=["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
+        # Software-decode → QSV-encode (see build_transcode_cmd): robust across all
+        # input codecs; the costly encode still runs on the Intel GPU.
+        decode_args=[],
         encode_video_codec="h264_qsv",
         encode_h264_codec="h264_qsv",
-        encode_extra=["-global_quality", "28", "-look_ahead", "1"],
+        encode_extra=["-global_quality", "28"],
         available=True,
-        info="Intel Quick Sync (h264_qsv)",
+        info="Intel Quick Sync (h264_qsv, sw-decode→qsv-encode)",
     )
 
 
@@ -186,6 +193,21 @@ def build_transcode_cmd(
         hw = detect_hw()
 
     scale = f"scale=-2:{resolution}"
+
+    # QSV: software-decode → scale → upload to QSV surfaces → h264_qsv encode.
+    # This is the validated, codec-agnostic path (no HW-decode init that breaks on
+    # odd input codecs); the expensive encode runs on the Intel GPU. Falls back to
+    # software in transcode_video_task if it ever errors.
+    if codec == "h264" and hw.name == "qsv":
+        return [
+            _FFMPEG, "-y",
+            "-init_hw_device", "qsv=hw", "-filter_hw_device", "hw",
+            "-i", input_path,
+            "-vf", f"{scale},format=nv12,hwupload=extra_hw_frames=64",
+            "-c:v", "h264_qsv", *hw.encode_extra,
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path,
+        ]
+
     cmd = [_FFMPEG, "-y"]
 
     if hw.decode_args:
@@ -198,7 +220,7 @@ def build_transcode_cmd(
         cmd += ["-c:v", vcodec]
         if hw.encode_extra:
             cmd += hw.encode_extra
-        if "nvenc" in vcodec or "qsv" in vcodec or "vaapi" in vcodec or "videotoolbox" in vcodec:
+        if "nvenc" in vcodec or "vaapi" in vcodec or "videotoolbox" in vcodec:
             cmd += ["-vf", f"scale_{'npp' if 'nvenc' in vcodec else vcodec.split('_')[1]}={'-2'}:{resolution}"]
         else:
             cmd += ["-vf", scale]

@@ -250,11 +250,12 @@ def retry_failed_ai_task(self):
 
 @celery_app.task(bind=True, name="retry_missing_thumbnails")
 def retry_missing_thumbnails_task(self):
-    """Self-heal thumbnail gaps: re-queue photos that were ATTEMPTED but ended up
-    without a thumbnail (thumb_attempts ≥ 1) — e.g. a stubborn TIFF that a newly
-    added fallback (ImageMagick) can now decode. Capped by thumb_attempts so
-    genuinely-undecodable files eventually stop. Never-attempted (pending) photos
-    are left to the normal pipeline. Beat-scheduled."""
+    """Self-heal thumbnail gaps: re-queue EVERY photo still missing its large
+    thumbnail, whether it was attempted-but-failed (e.g. a stubborn TIFF a newly
+    added ImageMagick fallback can now decode) OR never attempted at all (a scan
+    that enqueued newest-first and never reached the backlog — these have
+    thumb_attempts = 0 and would otherwise sit forever). Capped by thumb_attempts
+    so genuinely-undecodable files eventually stop. Beat-scheduled."""
     async def _main():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
@@ -267,8 +268,8 @@ def retry_missing_thumbnails_task(self):
                 select(Photo.id).where(
                     Photo.thumb_large.is_(None), Photo.is_missing == False,  # noqa: E712
                     Photo.is_trashed == False,                               # noqa: E712
-                    Photo.thumb_attempts >= 1, Photo.thumb_attempts < CAP,
-                ).order_by(Photo.id).limit(500)
+                    Photo.thumb_attempts < CAP,   # incl. 0 = never attempted
+                ).order_by(Photo.id).limit(1000)
             )).all()]
             if not ids:
                 return {"retried": 0}
@@ -279,50 +280,11 @@ def retry_missing_thumbnails_task(self):
     return _run(_main())
 
 
-@celery_app.task(bind=True, name="write_person_name")
-def write_person_name_task(self, person_id: int):
-    """Write a person's name into their photos as XMP:PersonInImage (best-effort),
-    so the tagging survives a re-import into Lightroom/digiKam/Immich."""
-    async def _main():
-        import shutil, subprocess
-        from app.core.database import init_db, get_db
-        from app.models.person import Person
-        from app.models.photo import Photo
-        from app.models.face import Face
-        from app.services.feature_log import log as flog
-        from sqlalchemy import select
-        init_db()
-        exe = shutil.which("exiftool")
-        if not exe:
-            return {"written": 0}
-        async for db in get_db():
-            person = await db.get(Person, person_id)
-            if not person or not (person.name or "").strip():
-                return {"written": 0}
-            name = person.name.strip()
-            rows = (await db.execute(
-                select(Photo.path).join(Face, Face.photo_id == Photo.id)
-                .where(Face.person_id == person_id).distinct()
-            )).all()
-            written = 0
-            for (path,) in rows:
-                try:
-                    # delete-then-add so re-runs don't pile up duplicate names,
-                    # while preserving any OTHER person names already in the file.
-                    r = subprocess.run(
-                        [exe, "-P", "-m", "-overwrite_original",
-                         f"-XMP:PersonInImage-={name}", f"-XMP:PersonInImage+={name}",
-                         f"-XMP-iptcExt:PersonInImage-={name}", f"-XMP-iptcExt:PersonInImage+={name}",
-                         path],
-                        capture_output=True, timeout=30,
-                    )
-                    if r.returncode == 0:
-                        written += 1
-                except Exception:
-                    pass
-            flog("faces", "INFO", f"Name '{name}' in {written} Foto(s) geschrieben (XMP:PersonInImage)")
-            return {"written": written}
-    return _run(_main())
+# NOTE: person-name persistence is handled by write_faces_task (the "In Dateien
+# schreiben" button → /people/write-faces), which writes MWG face regions carrying
+# both the box AND the name (+ a PersonInImage mirror) into the file/sidecar. The
+# old standalone write_person_name task was never wired to any endpoint and has
+# been removed to avoid two divergent name-writing paths.
 
 
 @celery_app.task(bind=True, name="reembed_imported")
@@ -395,14 +357,18 @@ def write_faces_task(self):
         from app.models.face import Face
         from app.models.person import Person
         from app.services.exif_edit import write_face_regions
+        from app.services.xmp_sidecar import write_sidecar
+        from app.services.settings_loader import load_settings
         from app.services.feature_log import log as flog
         from sqlalchemy import select
         init_db()
         async for db in get_db():
+            s = await load_settings(db)
+            xmp_mode = str(s.get("xmp.write_mode", "off")).lower()
             pids = [p for (p,) in (await db.execute(
                 select(Face.photo_id).where(Face.is_ignored == False).distinct()  # noqa: E712
             )).all()]
-            flog("faces", "INFO", f"Gesichts-Regionen schreiben: {len(pids)} Foto(s)")
+            flog("faces", "INFO", f"Gesichts-Regionen schreiben: {len(pids)} Foto(s) (Modus {xmp_mode})")
             done = failed = 0
             for pid in pids:
                 photo = await db.get(Photo, pid)
@@ -422,10 +388,26 @@ def write_faces_task(self):
                 } for (x, y, w, h, nm) in rows if w and h]
                 if not regions:
                     continue
-                target = (photo.path + ".xmp") if photo.is_video else None
+                # Placement follows xmp.write_mode, mirroring the describe path:
+                #   embed into the image for file/file_sidecar (images only), and
+                #   merge into the consolidated <name>.xmp sidecar for sidecar/
+                #   file_sidecar — and ALWAYS for videos (can't embed). The button
+                #   is an explicit "persist" action, so if the mode is "off" we
+                #   still write a sidecar rather than silently doing nothing.
+                want_embed = (xmp_mode in ("file", "file_sidecar")) and not photo.is_video
+                want_sidecar = photo.is_video or xmp_mode in ("file_sidecar", "sidecar")
+                if not want_embed and not want_sidecar:
+                    want_sidecar = True
                 try:
-                    ok = await write_face_regions(photo.path, regions,
-                                                  photo.width or 0, photo.height or 0, target=target)
+                    ok = True
+                    if want_embed:
+                        ok = await write_face_regions(photo.path, regions,
+                                                      photo.width or 0, photo.height or 0)
+                    if want_sidecar:
+                        # Merges into the sidecar, preserving any description/tags
+                        # a describe job already wrote there (and vice-versa).
+                        write_sidecar(photo.path, faces=regions,
+                                      width=photo.width or 0, height=photo.height or 0)
                     done += 1 if ok else 0
                     failed += 0 if ok else 1
                 except Exception:

@@ -1,16 +1,32 @@
-"""XMP sidecar writer.
+"""XMP sidecar writer (exiftool-backed, consolidated).
 
-Creates/updates <filename>.xmp files alongside originals.  This is the
-standard way tools like Lightroom, Darktable, and digiKam exchange metadata
-without touching the original file.
+Writes ONE `.xmp` sidecar per media file, named `<full-name>.xmp`
+(e.g. `IMG_1234.JPG.xmp`, `clip.MP4.xmp`) — the append convention used by
+Immich, digiKam, Darktable ("store next to file") and exiftool's own default.
+It is collision-free (a `.JPG` and a `.MOV` of the same base name get separate
+sidecars) and unambiguous, unlike the older replace-extension form `IMG_1234.xmp`.
 
-Only activated when the 'write_xmp_sidecars' setting is enabled.
+Why exiftool instead of hand-built XML: a photo's metadata is written at several
+moments — the AI description/keywords when a describe job finishes, the face
+regions + person names when the "write faces" button runs. exiftool MERGES into
+an existing sidecar (updating only the tags it is given, preserving the rest),
+so those writes accumulate into one consolidated file instead of clobbering each
+other. Hand-built XML rewrote the whole file each time and dropped whatever it
+wasn't given (e.g. face regions).
+
+Legacy `IMG_1234.xmp` sidecars (the old replace-extension form PhotoFlow used to
+write) are migrated on the first write: their content is seeded into the new
+`IMG_1234.JPG.xmp` and the legacy file is removed, so nothing is lost and no
+duplicate/stale sidecar is left behind.
 """
 import os
-import xml.etree.ElementTree as ET
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+_EXIFTOOL = shutil.which("exiftool")
 
 
 def file_capture_date(path: str) -> Optional[datetime]:
@@ -22,22 +38,25 @@ def file_capture_date(path: str) -> Optional[datetime]:
     except Exception:
         return None
 
-_NS = {
-    "x":    "adobe:ns:meta/",
-    "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "xmp":  "http://ns.adobe.com/xap/1.0/",
-    "xmpMM": "http://ns.adobe.com/xap/1.0/mm/",
-    "dc":   "http://purl.org/dc/elements/1.1/",
-    "exif": "http://ns.adobe.com/exif/1.0/",
-    "Iptc4xmpCore": "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/",
-}
 
-for prefix, uri in _NS.items():
-    ET.register_namespace(prefix, uri)
+def sidecar_for(media_path: str) -> str:
+    """The canonical sidecar path: full media name + '.xmp' (IMG_1234.JPG.xmp)."""
+    return media_path + ".xmp"
 
 
-def _ns(prefix: str, tag: str) -> str:
-    return f"{{{_NS[prefix]}}}{tag}"
+def legacy_sidecar_for(media_path: str) -> str:
+    """The old replace-extension sidecar path (IMG_1234.xmp) — read-only fallback
+    + migration source."""
+    return str(Path(media_path).with_suffix(".xmp"))
+
+
+def _clean_region_name(name: str) -> str:
+    """exiftool struct syntax uses { } [ ] , as delimiters — strip them from a
+    person name so they can't corrupt the RegionList struct."""
+    out = (name or "").strip()
+    for ch in "{}[],":
+        out = out.replace(ch, " ")
+    return " ".join(out.split())
 
 
 def write_sidecar(
@@ -55,89 +74,107 @@ def write_sidecar(
     city: Optional[str] = None,
     country: Optional[str] = None,
     capture_date: Optional[str] = None,
+    faces: Optional[list] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
 ) -> str:
-    """Write an XMP sidecar and return its path.
+    """Create or update the consolidated `<name>.xmp` sidecar and return its path.
 
-    capture_date: ISO-8601 string for exif:DateTimeOriginal (+ photoshop date).
-    Lets sidecar mode carry a capture date without ever touching the original —
-    incl. the "no EXIF date → use the file date" fallback the caller resolves."""
-    photo = Path(photo_path)
-    xmp_path = photo.with_suffix(".xmp")
+    Only the fields actually passed are written; everything already in the sidecar
+    (e.g. face regions from an earlier call) is preserved. `faces` is a list of
+    {cx,cy,w,h (normalized, CENTER-based), name} dicts; width/height are the source
+    pixel dimensions for the MWG AppliedToDimensions.
+    """
+    sc = sidecar_for(photo_path)
+    if not _EXIFTOOL:
+        return sc
 
-    root = ET.Element(_ns("x", "xmpmeta"))
-    root.set(_ns("x", "xmptk"), "PhotoFlow 1.0")
-    rdf = ET.SubElement(root, _ns("rdf", "RDF"))
-    desc = ET.SubElement(rdf, _ns("rdf", "Description"))
-    desc.set(_ns("rdf", "about"), "")
+    legacy = legacy_sidecar_for(photo_path)
+    # Migrate a legacy IMG.xmp into the new IMG.JPG.xmp before the first write, so
+    # description/regions written under the old name are carried over (not lost).
+    if not os.path.exists(sc) and legacy != sc and os.path.exists(legacy):
+        try:
+            subprocess.run([_EXIFTOOL, "-m", "-P", "-tagsFromFile", legacy,
+                            "-all:all", "-o", sc, legacy],
+                           capture_output=True, timeout=60)
+        except Exception:
+            pass
 
-    # XMP core
-    desc.set(_ns("xmp", "MetadataDate"), datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
-    if capture_date:
-        desc.set(_ns("exif", "DateTimeOriginal"), capture_date)
-    if rating is not None:
-        desc.set(_ns("xmp", "Rating"), str(max(0, min(5, rating))))
+    exists = os.path.exists(sc)
+    args = [_EXIFTOOL, "-m", "-P"]
+    if not exists:
+        args += ["-o", sc]          # create a fresh sidecar
+    else:
+        args += ["-overwrite_original"]  # merge into the existing one
 
-    # Dublin Core
-    combined_desc = description or ""
-    if user_description:
-        combined_desc = user_description  # user description takes precedence in XMP
-
-    if combined_desc:
-        dc_desc = ET.SubElement(desc, _ns("dc", "description"))
-        alt = ET.SubElement(dc_desc, _ns("rdf", "Alt"))
-        li = ET.SubElement(alt, _ns("rdf", "li"))
-        li.set("{http://www.w3.org/XML/1998/namespace}lang", "x-default")
-        li.text = combined_desc
-
+    desc = user_description or description  # user text takes precedence
+    if desc:
+        args.append(f"-XMP-dc:Description={desc}")
+    elif caption:
+        args.append(f"-XMP-dc:Description={caption}")
     if title:
-        dc_title = ET.SubElement(desc, _ns("dc", "title"))
-        alt = ET.SubElement(dc_title, _ns("rdf", "Alt"))
-        li = ET.SubElement(alt, _ns("rdf", "li"))
-        li.set("{http://www.w3.org/XML/1998/namespace}lang", "x-default")
-        li.text = title
-
-    if caption:
-        dc_cap = ET.SubElement(desc, _ns("dc", "description"))
-        alt = ET.SubElement(dc_cap, _ns("rdf", "Alt"))
-        li = ET.SubElement(alt, _ns("rdf", "li"))
-        li.set("{http://www.w3.org/XML/1998/namespace}lang", "de")
-        li.text = caption
-
+        args.append(f"-XMP-dc:Title={title}")
     if artist:
-        dc_creator = ET.SubElement(desc, _ns("dc", "creator"))
-        seq = ET.SubElement(dc_creator, _ns("rdf", "Seq"))
-        ET.SubElement(seq, _ns("rdf", "li")).text = artist
-
+        args.append(f"-XMP-dc:Creator={artist}")
+    if rating is not None:
+        args.append(f"-XMP:Rating={max(0, min(5, int(rating)))}")
+    if capture_date:
+        args.append(f"-XMP:DateTimeOriginal={capture_date}")
+        args.append(f"-XMP-photoshop:DateCreated={capture_date}")
     if keywords:
-        dc_subject = ET.SubElement(desc, _ns("dc", "subject"))
-        bag = ET.SubElement(dc_subject, _ns("rdf", "Bag"))
+        args.append("-XMP-dc:Subject=")        # clear, then re-add (idempotent)
         for kw in keywords:
-            ET.SubElement(bag, _ns("rdf", "li")).text = kw
-
-    # GPS via EXIF namespace
+            args.append(f"-XMP-dc:Subject+={kw}")
     if latitude is not None and longitude is not None:
-        lat_ref = "N" if latitude >= 0 else "S"
-        lon_ref = "E" if longitude >= 0 else "W"
-        desc.set(_ns("exif", "GPSLatitude"), _decimal_to_dms(abs(latitude)))
-        desc.set(_ns("exif", "GPSLatitudeRef"), lat_ref)
-        desc.set(_ns("exif", "GPSLongitude"), _decimal_to_dms(abs(longitude)))
-        desc.set(_ns("exif", "GPSLongitudeRef"), lon_ref)
-
-    # IPTC location
+        args += [
+            f"-XMP:GPSLatitude={abs(latitude)}",
+            f"-XMP:GPSLatitudeRef={'N' if latitude >= 0 else 'S'}",
+            f"-XMP:GPSLongitude={abs(longitude)}",
+            f"-XMP:GPSLongitudeRef={'E' if longitude >= 0 else 'W'}",
+        ]
     if city:
-        desc.set(_ns("Iptc4xmpCore", "Location"), city)
+        args.append(f"-XMP-photoshop:City={city}")
+        args.append(f"-XMP-iptcCore:Location={city}")
     if country:
-        desc.set(_ns("Iptc4xmpCore", "CountryName"), country)
+        args.append(f"-XMP-photoshop:Country={country}")
+    if faces:
+        w = int(width or 0) or 1000
+        h = int(height or 0) or 1000
+        items, names = [], []
+        for r in faces:
+            try:
+                area = (f"Area={{X={float(r['cx']):.4f},Y={float(r['cy']):.4f},"
+                        f"W={float(r['w']):.4f},H={float(r['h']):.4f},Unit=normalized}}")
+            except (KeyError, TypeError, ValueError):
+                continue
+            nm = _clean_region_name(r.get("name", ""))
+            if nm:
+                names.append(nm)
+                items.append(f"{{{area},Type=Face,Name={nm}}}")
+            else:
+                items.append(f"{{{area},Type=Face}}")
+        if items:
+            region_info = (f"{{AppliedToDimensions={{W={w},H={h},Unit=pixel}},"
+                           f"RegionList=[{','.join(items)}]}}")
+            args.append(f"-RegionInfo={region_info}")
+            args.append("-XMP:PersonInImage=")     # clear, then re-add
+            for nm in dict.fromkeys(names):
+                args.append(f"-XMP:PersonInImage+={nm}")
 
-    tree = ET.ElementTree(root)
-    ET.indent(tree, space="  ")
-    tree.write(str(xmp_path), xml_declaration=True, encoding="UTF-8")
-    return str(xmp_path)
+    # Create vs update: with -o the tags are written to the NEW sidecar and there
+    # must be NO trailing source file (it doesn't exist yet); when updating, the
+    # existing sidecar is the file to edit and IS passed as the trailing argument.
+    if exists:
+        args.append(sc)
+    try:
+        subprocess.run(args, capture_output=True, timeout=120)
+    except Exception:
+        return sc
 
-
-def _decimal_to_dms(deg: float) -> str:
-    d = int(deg)
-    m_float = (deg - d) * 60
-    m = int(m_float)
-    s = (m_float - m) * 60
-    return f"{d},{m},{s:.4f}"
+    # Remove the now-migrated legacy sidecar so only the canonical one remains.
+    if legacy != sc and os.path.exists(legacy) and os.path.exists(sc):
+        try:
+            os.remove(legacy)
+        except Exception:
+            pass
+    return sc

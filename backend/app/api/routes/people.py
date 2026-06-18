@@ -128,8 +128,9 @@ async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = D
     await db.refresh(person)
     # NOTE: person names are NOT written into files here. During the messy
     # detect → cluster → name phase that would write into thousands of files
-    # prematurely. The user persists names explicitly via POST /people/write-names
-    # (button) once the assignments have settled.
+    # prematurely. The user persists names explicitly via POST /people/write-faces
+    # (the "In Dateien schreiben" button → write_faces_task) once the assignments
+    # have settled — it writes MWG face regions (box + name) into file/sidecar.
     return person
 
 

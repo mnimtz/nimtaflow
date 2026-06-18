@@ -197,6 +197,40 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       PHOTOFLOW_USER: root
 
+  # Dedicated video worker (own "video" queue) so slow transcodes never occupy the
+  # worker-cpu slots that build image thumbnails — the two run fully in parallel.
+  # Gets /dev/dri via docker-compose.override.yml (QSV/Intel Quick Sync); the
+  # transcode falls back to software h264 if QSV init ever fails.
+  worker-video:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    command: ["nice", "-n", "12", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-2}"]
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - /cache-ssd:/cache     # SSD-Auslagerung: web-mp4 transcodes off the LXC root
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      # Intel Quick Sync: select the iHD VA driver explicitly so ffmpeg's QSV
+      # init is deterministic on the Iris Xe (renderD128 passed in via override).
+      LIBVA_DRIVER_NAME: iHD
+      PHOTOFLOW_USER: root
+
   beat:
     build: ./backend
     image: photoflow-app:latest
