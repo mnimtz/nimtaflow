@@ -43,9 +43,26 @@ def _get(url, timeout=60):
 
 def _ollama(prompt, b64, timeout=300):
     out = _post(f"{OLLAMA}/api/generate",
-                {"model": MODEL, "prompt": prompt, "images": [b64], "stream": False},
+                {"model": MODEL, "prompt": prompt, "images": [b64], "stream": False,
+                 "keep_alive": "30m"},  # keep the model resident between photos (no reload)
                 timeout=timeout)
     return (out.get("response") or "").strip()
+
+
+def _split_desc_tags(raw):
+    """Split a combined '<description> … TAGS: a, b, c' response."""
+    low = raw.lower()
+    i = low.rfind("tags:")
+    if i < 0:
+        return raw.strip(), []
+    desc = raw[:i].strip().rstrip("\n").rstrip()
+    tagpart = raw[i + 5:]
+    tags, seen = [], set()
+    for t in tagpart.replace("\n", ",").split(","):
+        t = t.strip().lstrip("-•*").strip().lower()
+        if t and t not in seen:
+            seen.add(t); tags.append(t)
+    return desc, tags[:20]
 
 
 def main():
@@ -62,11 +79,12 @@ def main():
             t = time.time()
             b64 = base64.b64encode(_get(SERVER + job["image_url"])).decode()
             lang = job.get("language", "de")
-            desc = _ollama(job.get("prompt") or f"Beschreibe dieses Foto sachlich auf {lang}.", b64)
-            tprompt = job.get("tag_prompt") or \
-                "Nenne 10-15 kurze Schlagwörter zu diesem Bild, kommagetrennt, nur Stichwörter."
-            tags_raw = _ollama(tprompt, b64) if desc else ""
-            tags = [x.strip().lower() for x in tags_raw.replace("\n", ",").split(",") if x.strip()][:20]
+            dprompt = job.get("prompt") or f"Beschreibe dieses Foto sachlich auf {lang}."
+            tprompt = job.get("tag_prompt") or "10-15 kurze Schlagwörter, kommagetrennt, nur Stichwörter"
+            # ONE call: description + tags together (image processed once, not twice).
+            raw = _ollama(f"{dprompt}\n\nGib anschließend in einer NEUEN Zeile, beginnend mit "
+                          f"'TAGS:', {tprompt}.", b64)
+            desc, tags = _split_desc_tags(raw)
             _post(f"{SERVER}/api/remote/result/{pid}", {
                 "description": desc or None, "tags": tags, "embedding": None,
                 "faces": [], "faces_done": False,
