@@ -990,15 +990,20 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     vw, vh = video_dimensions(photo.path)
                     if vw and vh:
                         photo.width, photo.height = vw, vh
-                    # animated hover preview (best-effort)
-                    preview_ok = False
-                    try:
-                        preview = generate_video_preview_webp(photo.path, settings.cache_path,
-                                                              force=redo_thumbs, source_path=vsrc)
-                        if preview:
-                            photo.video_preview_path = preview; preview_ok = True
-                    except Exception as ve:
-                        flog("video", "WARNING", f"Hover-Vorschau fehlgeschlagen: {photo.filename}: {str(ve)[:120]}")
+                    # animated hover preview (best-effort). The 10-24 ffmpeg seeks make
+                    # this the slow part — SKIP it on a thumbnail-backfill (redo_thumbs)
+                    # so re-attempting a missing thumbnail stays fast and never clogs the
+                    # worker; never force-regenerate it either. It's generated on the
+                    # initial scan, and a present one is kept.
+                    preview_ok = bool(photo.video_preview_path)
+                    if not redo_thumbs:
+                        try:
+                            preview = generate_video_preview_webp(photo.path, settings.cache_path,
+                                                                  force=False, source_path=vsrc)
+                            if preview:
+                                photo.video_preview_path = preview; preview_ok = True
+                        except Exception as ve:
+                            flog("video", "WARNING", f"Hover-Vorschau fehlgeschlagen: {photo.filename}: {str(ve)[:120]}")
                     dur = photo.duration_seconds
                     if photo.thumb_small:
                         flog("video", "INFO",
