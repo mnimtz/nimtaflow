@@ -76,13 +76,17 @@ def _split_desc_tags(raw):
 
 
 def main():
+    import urllib.error
     if not TOKEN:
         print("PHOTOFLOW_REMOTE_TOKEN fehlt — abbruch."); sys.exit(1)
     print(f"[mac] {NAME} → {SERVER}  mode={MODE} media={MEDIA} model={MODEL}")
+    fails = 0   # consecutive connection failures → back off, keep retrying
     while True:
         try:
             job = _post(f"{SERVER}/api/remote/claim",
                         {"worker": NAME, "mode": MODE, "media": MEDIA}, timeout=30)
+            if fails:
+                print(f"[mac] Server wieder erreichbar — mache weiter."); fails = 0
             pid = job.get("photo_id")
             if not pid:
                 time.sleep(POLL); continue
@@ -103,9 +107,17 @@ def main():
                 "error": None if desc else "no description",
             }, timeout=120)
             print(f"[mac] #{pid} {round(time.time()-t,1)}s: {desc[:70]}")
+        except (urllib.error.URLError, OSError, ConnectionError, TimeoutError) as e:
+            # Server/Netz nicht erreichbar (Server aus, Deploy-Neustart, WLAN weg):
+            # PAUSE + Backoff (bis 60s), endlos weiter prüfen, bis er wieder da ist.
+            fails += 1
+            wait = min(60, POLL * 3 * fails)
+            print(f"[mac] Server nicht erreichbar (#{fails}) — pausiere {wait}s, prüfe weiter … ({type(e).__name__})")
+            time.sleep(wait)
         except Exception as e:
-            print(f"[mac] error: {type(e).__name__}: {e}")
-            time.sleep(POLL * 3)
+            # einzelnes Bild kaputt o. Ä. → überspringen, kurz weiter
+            print(f"[mac] Bild übersprungen: {type(e).__name__}: {e}")
+            time.sleep(POLL)
 
 
 if __name__ == "__main__":

@@ -207,6 +207,7 @@ async def main():
         print("[agent] PHOTOFLOW_REMOTE_TOKEN not set — aborting.")
         return
     print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE}, media={MEDIA}, backend={BACKEND})")
+    fails = 0   # consecutive connection failures → back off, keep retrying until the server is back
     async with httpx.AsyncClient() as client:
         while True:
             try:
@@ -214,9 +215,13 @@ async def main():
                                       json={"worker": NAME, "mode": MODE, "media": MEDIA},
                                       headers=HEAD, timeout=30)
                 if r.status_code != 200:
-                    print(f"[agent] claim HTTP {r.status_code}: {r.text[:140]}")
-                    await asyncio.sleep(POLL * 3)
+                    fails += 1
+                    wait = min(60, POLL * 3 * fails)
+                    print(f"[agent] Server nicht erreichbar (HTTP {r.status_code}, #{fails}) — pausiere {wait}s …")
+                    await asyncio.sleep(wait)
                     continue
+                if fails:
+                    print("[agent] Server wieder erreichbar — mache weiter."); fails = 0
                 job = r.json()
                 if not job.get("photo_id"):
                     await asyncio.sleep(POLL)
@@ -228,9 +233,17 @@ async def main():
                 else:
                     desc = await _process(client, job)
                     print(f"[agent] #{job['photo_id']} done in {time.time() - t:.1f}s: {desc[:60]}")
+            except (httpx.TransportError, OSError) as e:
+                # Server/Netz weg (Server aus, Deploy-Neustart, Netz-Blip): PAUSE +
+                # Backoff (bis 60s), endlos weiter prüfen bis er zurück ist.
+                fails += 1
+                wait = min(60, POLL * 3 * fails)
+                print(f"[agent] Server/Netz nicht erreichbar (#{fails}) — pausiere {wait}s … ({type(e).__name__})")
+                await asyncio.sleep(wait)
             except Exception as e:
-                print(f"[agent] error: {type(e).__name__}: {e}")
-                await asyncio.sleep(POLL * 3)
+                # einzelner Job kaputt → überspringen, kurz weiter
+                print(f"[agent] Job übersprungen: {type(e).__name__}: {e}")
+                await asyncio.sleep(POLL)
 
 
 if __name__ == "__main__":
