@@ -93,7 +93,9 @@ def _probe_qsv() -> HWProfile:
         decode_args=[],
         encode_video_codec="h264_qsv",
         encode_h264_codec="h264_qsv",
-        encode_extra=["-global_quality", "28"],
+        # global_quality 23: the 1080p web version now feeds BOTH the player AND
+        # the video-AI frame sampling, so keep it crisp (lower = higher quality).
+        encode_extra=["-global_quality", "23"],
         available=True,
         info="Intel Quick Sync (h264_qsv, sw-decode→qsv-encode)",
     )
@@ -184,7 +186,7 @@ def detect_hw() -> HWProfile:
 def build_transcode_cmd(
     input_path: str,
     output_path: str,
-    resolution: int = 720,
+    resolution: int = 1080,
     codec: str = "h264",   # "h264" | "vp9"
     hw: Optional[HWProfile] = None,
 ) -> List[str]:
@@ -192,7 +194,14 @@ def build_transcode_cmd(
     if hw is None:
         hw = detect_hw()
 
-    scale = f"scale=-2:{resolution}"
+    # Cap the LONGER side to a 16:9-equivalent of `resolution` (1080 → 1920) and
+    # NEVER upscale: the fit-box is clamped to the source size via min(), so small
+    # old videos keep their NATIVE resolution instead of being blown up (upscaling
+    # adds no detail, only bloat). force_original_aspect_ratio=decrease preserves
+    # aspect (works for portrait too); force_divisible_by=2 keeps even dims for h264.
+    _long = int(resolution * 16 / 9)
+    scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
+             ":force_original_aspect_ratio=decrease:force_divisible_by=2")
 
     # QSV: software-decode → scale → upload to QSV surfaces → h264_qsv encode.
     # This is the validated, codec-agnostic path (no HW-decode init that breaks on

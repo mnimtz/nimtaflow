@@ -664,7 +664,7 @@ def backfill_xmp_task(self):
 
 
 @celery_app.task(bind=True, name="transcode_video")
-def transcode_video_task(self, photo_id: int, resolution: int = 720):
+def transcode_video_task(self, photo_id: int, resolution: int = 1080):
     """On-demand: produce a web-optimised H.264 MP4 (HW/QSV, +faststart) so the
     player starts instantly instead of downloading the un-streamable original.
     Triggered lazily by the stream endpoint; single-flight via a Redis lock."""
@@ -701,8 +701,12 @@ def transcode_video_task(self, photo_id: int, resolution: int = 720):
                 cmd = build_transcode_cmd(photo.path, str(out_path), resolution=resolution, codec="h264", hw=hw)
                 proc = subprocess.run(cmd, capture_output=True, timeout=1800)
                 if proc.returncode != 0 or not out_path.exists():
+                    # Software fallback — same no-upscale cap as build_transcode_cmd.
+                    _long = int(resolution * 16 / 9)
+                    sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
+                                ":force_original_aspect_ratio=decrease:force_divisible_by=2")
                     sw = ["ffmpeg", "-y", "-i", photo.path, "-c:v", "libx264",
-                          "-vf", f"scale=-2:{resolution}", "-c:a", "aac", "-b:a", "128k",
+                          "-vf", sw_scale, "-c:a", "aac", "-b:a", "128k",
                           "-movflags", "+faststart", str(out_path)]
                     proc = subprocess.run(sw, capture_output=True, timeout=1800)
                     hwname = "software"
@@ -854,7 +858,7 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     from app.services.settings_loader import load_settings as _ls
                     s_tc = await _ls(db)
                     if str(s_tc.get("video.auto_transcode", "false")).lower() == "true":
-                        res = int(float(s_tc.get("video.transcode_resolution", "720") or 720))
+                        res = int(float(s_tc.get("video.transcode_resolution", "1080") or 1080))
                         transcode_video_task.delay(photo_id, res)
                 except Exception:
                     pass

@@ -1010,13 +1010,16 @@ function VideoAISection() {
           </label>
           <div>
             <Label>Max. Auflösung</Label>
-            <select value={settings['video.transcode_resolution'] ?? '720'} onChange={e => set('video.transcode_resolution', e.target.value)}
+            <select value={settings['video.transcode_resolution'] ?? '1080'} onChange={e => set('video.transcode_resolution', e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="480">480p</option>
-              <option value="720">720p (empfohlen)</option>
-              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="1080">1080p (empfohlen)</option>
               <option value="original">Original</option>
             </select>
+            <p className="text-[11px] text-zinc-400 mt-1">
+              Obergrenze für die längere Seite (1080p ≙ max. 1920 px). Diese eine Web-Version dient <b>Player und Video-KI</b> gemeinsam — daher 1080p (≥ Frame-Budget der KI). Kleinere/ältere Videos behalten ihre <b>native Auflösung</b> (kein Hochskalieren). 4K wird heruntergerechnet.
+            </p>
           </div>
         </div>
 
