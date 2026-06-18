@@ -113,8 +113,13 @@ async def _process(client: httpx.AsyncClient, job: dict) -> str:
 
     faces_enabled = bool(job.get("faces_enabled", True))
     faces = []
-    faces_done = not faces_enabled  # nothing to do → already "done"
-    if faces_enabled and FACES_AVAILABLE:
+    # A describe-only worker (e.g. the Mac) NEVER touches faces → leave faces_scanned
+    # False so the dedicated faces worker (Asus) still claims the photo.
+    if MODE == "describe":
+        faces_done = False
+    else:
+        faces_done = not faces_enabled  # nothing to do → already "done"
+    if faces_enabled and FACES_AVAILABLE and MODE != "describe":
         try:
             from app.services import face_detect_insightface as fi
             if fi.available():
