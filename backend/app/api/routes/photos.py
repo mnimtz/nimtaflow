@@ -263,6 +263,62 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
     return memories
 
 
+@router.get("/trips")
+async def trips(db: AsyncSession = Depends(get_db),
+                user: Optional[User] = Depends(current_user_optional),
+                min_photos: int = 8, gap_hours: int = 20):
+    """Auto-detect events/trips: walk photos by time, start a new event after a gap
+    > gap_hours, keep events with >= min_photos. 'is_trip' = the event's dominant
+    city differs from the library's home (most-common) city. Powers auto albums."""
+    from collections import Counter
+    from datetime import timedelta
+    conds = photo_conditions(user)
+    rows = (await db.execute(
+        select(Photo.id, Photo.taken_at, Photo.city, Photo.is_video).where(
+            Photo.taken_at.isnot(None), Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
+            *conds,
+        ).order_by(Photo.taken_at)
+    )).all()
+    if not rows:
+        return {"home_city": None, "events": []}
+    home = Counter(r[2] for r in rows if r[2]).most_common(1)
+    home_city = home[0][0] if home else None
+    events, cur = [], None
+    for pid, ta, city, is_video in rows:
+        if cur and (ta - cur["last"]) <= timedelta(hours=gap_hours):
+            cur["ids"].append(pid); cur["last"] = ta
+            if city:
+                cur["cities"][city] += 1
+            if not is_video and cur["cover"] is None:
+                cur["cover"] = pid
+        else:
+            if cur:
+                events.append(cur)
+            cur = {"ids": [pid], "first": ta, "last": ta, "cities": Counter(),
+                   "cover": (None if is_video else pid)}
+            if city:
+                cur["cities"][city] += 1
+    if cur:
+        events.append(cur)
+    out = []
+    for ev in events:
+        if len(ev["ids"]) < min_photos:
+            continue
+        dom = ev["cities"].most_common(1)
+        city = dom[0][0] if dom else None
+        out.append({
+            "count": len(ev["ids"]),
+            "date_from": ev["first"].date().isoformat(),
+            "date_to": ev["last"].date().isoformat(),
+            "days": (ev["last"].date() - ev["first"].date()).days + 1,
+            "city": city,
+            "is_trip": bool(city and city != home_city),
+            "cover_photo_id": ev["cover"] or ev["ids"][len(ev["ids"]) // 2],
+        })
+    out.sort(key=lambda e: e["date_from"], reverse=True)
+    return {"home_city": home_city, "events": out}
+
+
 @router.get("/map")
 async def map_points(db: AsyncSession = Depends(get_db),
                      user: Optional[User] = Depends(current_user_optional)):
