@@ -46,7 +46,10 @@ and enriches your library with local or cloud AI.
 ### People & Faces
 - Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people. New faces grow existing people by **nearest-exemplar** match (not a blurred mean), so a person who varies a lot (e.g. a baby across ages) still gets matched.
 - **Merge / rename / hide / delete** people, **bulk** face assignment, **ignore** stray faces.
-- Choose a **display avatar** per person (★ on any of their faces).
+- Choose a **display avatar** per person (★ on any of their faces — also straight from a photo's detail view).
+- **Schnell-Benenn-Modus** — full-screen, keyboard-driven naming of unnamed clusters (biggest first; Enter = name, Tab = skip, dissolve non-faces) to clear hundreds of clusters in minutes.
+- **False-positive filter** (nightly + on-demand) re-checks face crops and removes hand/pattern detections — also from named persons.
+- Person photos **sortable** (newest/oldest); face-crop cache kept warm so the People page never crops on-demand.
 - Configurable engine (facenet / insightface), clustering algorithm + merge threshold; never mixes detectors.
 - Person-based **smart albums** kept current automatically.
 
@@ -57,20 +60,27 @@ and enriches your library with local or cloud AI.
   anonymous "person in the blue shirt" plus recognised "Günter Nimtz" is
   understood as the same person. Answers are grounded in the retrieved photos and
   reference them by `#id`.
-- **Toggle `chat.provider`**: `gemini` (cloud, smart, only text leaves the house)
-  or `local` (private RAG via the local Qwen — slower without a GPU on the host).
-- Builds on the existing pgvector semantic search + people/date/place metadata.
-  *(Backend MVP; chat UI tab to follow.)*
+- **Vision** — the top hits' thumbnails are sent to Gemini so it can *see* the photos and answer visual details no description captured.
+- **Actions** — the assistant can *act*, not just search: "erstelle ein Album mit allen Strandfotos von Lea 2022", "markiere die als Favorit" (album-create + favourite tools; safe & reversible, no delete).
+- **Toggle `chat.provider`** (top of the chat): `gemini` (cloud, smart, only text leaves the house) or `local` (private RAG via the local Qwen — slower without a GPU on the host).
+- Results open **in-app** (lightbox), media-type/year filters, and exact counts via a `zaehle_fotos` tool. Full chat UI tab.
 
 ### Relationships (optional, toggle in settings)
 - Define connections between people (parent, sibling, partner, …).
 - **Derive** siblings & grandparents automatically from parent links.
 - Interactive **graph** + per-person view ("together with", shared photos).
 
+### Trips / Reisen
+- **AI trip planner** — describe a trip/cruise in plain words ("AIDA Mittelmeer ab Mallorca über Barcelona, Marseille, Rom"); Gemini builds a structured route (ports/cities with coordinates + dates from its geographic knowledge — no external geocoder).
+- Saved as an **editable album**: photos in the date range are auto-assigned and can be **individually removed** if they don't fit.
+- **Map route** — the real travelled path drawn from the photos' GPS (chronological line) + numbered, named waypoint markers from the AI route.
+- **Auto-detected events** (time + place clusters) shown as suggestions.
+
 ### Albums
 - **Manual** albums (hand-picked, re-orderable).
 - **Smart** albums (rule-based: date, camera, person, media type, favorites, rating).
 - **AI** albums (free-text prompt matched against descriptions).
+- Albums are creatable from the **chat assistant** too.
 
 ### Library & Gallery
 - **Watched folders** with per-source scan intervals + deletion detection.
@@ -83,6 +93,7 @@ and enriches your library with local or cloud AI.
 ### Map & Globe
 - **2D map** with **7 free no-key tile layers** (OSM, Esri satellite, CARTO dark/light/voyager, OpenTopoMap, Wikimedia); auto fit-to-photos; optional **Street View link** per photo.
 - **3D globe** (react-globe.gl) of **all** photo locations (lightweight `/photos/map`, no 500-row cap); click a point to **fly the camera down** to it.
+- **Place search ("Ort suchen")** over your *own* photo locations — city names come from **offline reverse-geocoding** (bundled city DB, no external request), so you can jump straight to any place you've been; city marker clustering.
 
 ### Users & Profiles
 - **Login** (JWT + refresh; cookie mirror so `<img>` requests authenticate). Optional enforcement.
@@ -173,12 +184,22 @@ Schema migrations are applied automatically on backend startup
 
 - [x] Modern Immich/Google-Photos-style UI + mobile optimization
 - [x] GPU acceleration (CUDA) for local AI
-- [x] Relationships / family tree (toggleable)
+- [x] Relationships / family tree (toggleable) + searchable person picker
 - [x] Full backup + restore (DB + thumbnails + config)
 - [x] Self-service user profiles + avatars
-- [ ] **Richer relationship types** (husband/wife/son/daughter/uncle/colleague…) with searchable picker + typed family/company trees
-- [ ] **Remote GPU worker** — attach an external machine to speed up initial processing (Celery worker over the network)
+- [x] **Remote GPU worker** — external machine over the network (Celery)
+- [x] Video face recognition (adaptive frame sampling)
+- [x] **Trips / Reisen** — AI route planner + editable albums + map route from photo GPS
+- [x] **Offline reverse-geocoding** + map place search
+- [x] **Chat actions** — create albums / favourite from the assistant
+- [x] **Schnell-Benenn-Modus** for unnamed face clusters
+- [x] **Per-photo on-demand reprocess** ("Neu verarbeiten")
+- [ ] **Person timeline** with age (birthdates) — "Lea 2018–2026"
+- [ ] **"Auf Karte zeigen"** from a photo; places **heatmap**
+- [ ] **Quality score** (blur/exposure) → sort out bad shots
+- [ ] **Duplicate-person merge assistant** (suggest similar clusters)
+- [ ] **Near-duplicate / burst detection** (perceptual hash) → keep best
+- [ ] **Shared albums / guest links** (per-user views)
 - [ ] **Smarter thumbnails** — face-aware crop so heads aren't cut off
-- [ ] **Pipeline dashboard** — error queue with one-click reprocess
-- [ ] Video face recognition (adaptive frame sampling)
+- [ ] **Mobile-first overhaul** — structure, menus, everything controllable from the phone
 - [ ] Embedding provider selector (Gemini / Ollama / local)
