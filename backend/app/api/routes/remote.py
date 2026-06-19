@@ -625,7 +625,8 @@ async def status(db: AsyncSession = Depends(get_db)):
     thumb_done = await db.scalar(select(func.count()).where(
         Photo.thumb_large.isnot(None), Photo.is_trashed == False))  # noqa: E712
     thumb_pending = await db.scalar(select(func.count()).where(
-        Photo.thumb_large.is_(None), Photo.is_trashed == False, Photo.is_missing == False))  # noqa: E712
+        Photo.thumb_large.is_(None), Photo.is_trashed == False, Photo.is_missing == False,
+        Photo.status != PhotoStatus.error))  # exclude undecodable/corrupt source files (marked error) so the bar reaches 100%  # noqa: E712
     photos_total = await db.scalar(select(func.count()).where(Photo.is_trashed == False))  # noqa: E712
     with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
     named_persons = await db.scalar(select(func.count()).where(
