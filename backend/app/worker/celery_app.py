@@ -45,6 +45,7 @@ celery_app.conf.update(
         "retry_failed_ai":    {"queue": "cpu"},
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
+        "backfill_geo":       {"queue": "cpu"},   # offline reverse-geocode GPS → city
         # Dedicated queue + worker so slow video transcodes (esp. software h264)
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.
@@ -108,6 +109,13 @@ celery_app.conf.beat_schedule = {
     "backfill-xmp-nightly": {
         "task": "backfill_xmp",
         "schedule": crontab(hour=2, minute=30),
+    },
+    # Nightly offline reverse-geocoding: fill city/region for GPS photos that don't
+    # have a place name yet (so the map's place search stays current as new geo
+    # photos arrive). Idempotent, only touches photos missing a city. 04:45.
+    "backfill-geo-nightly": {
+        "task": "backfill_geo",
+        "schedule": crontab(hour=4, minute=45),
     },
     # Nightly false-positive face filter: re-detect unnamed faces' crops, ignore
     # the ones that aren't faces (hands/patterns). New photos keep arriving, so it

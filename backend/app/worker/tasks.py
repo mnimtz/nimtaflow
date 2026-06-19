@@ -925,6 +925,60 @@ def backfill_xmp_task(self, full: bool = False):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="backfill_geo")
+def backfill_geo_task(self, limit: int = 60000):
+    """Reverse-geocode GPS photos that have no place name yet, OFFLINE (bundled
+    ~150k-city DB, no external request) → sets city + region (location_name) so the
+    map's 'Ort suchen' and the detail 'Ort' line work. Idempotent: only photos
+    still missing a city. Nightly + on-demand."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update as _upd, or_
+        init_db()
+        async for db in get_db():
+            rows = (await db.execute(select(Photo.id, Photo.latitude, Photo.longitude).where(
+                Photo.latitude.isnot(None), Photo.longitude.isnot(None),
+                or_(Photo.city.is_(None), Photo.city == ""),
+                Photo.is_trashed == False,  # noqa: E712
+            ).limit(limit))).all()
+            break
+        if not rows:
+            return {"geocoded": 0}
+        try:
+            import reverse_geocoder as rg
+        except Exception:
+            flog("scanner", "WARNING", "Reverse-Geocoding übersprungen: reverse_geocoder fehlt")
+            return {"skipped": "no reverse_geocoder"}
+        flog("scanner", "INFO", f"Reverse-Geocoding (offline): {len(rows)} Foto(s)")
+        # mode=1 = single-threaded; mode=2 (multiprocessing) can hang in containers.
+        results = rg.search([(float(r[1]), float(r[2])) for r in rows], mode=1)
+        updates = []
+        for r, res in zip(rows, results):
+            city = (res.get("name") or "").strip()
+            region = (res.get("admin1") or "").strip()
+            if city or region:
+                updates.append((r[0], city or None, region or None))
+        done = 0
+        for i in range(0, len(updates), 500):
+            async for db in get_db():
+                for pid, city, region in updates[i:i + 500]:
+                    vals = {}
+                    if city:
+                        vals["city"] = city
+                    if region:
+                        vals["location_name"] = region
+                    if vals:
+                        await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
+                        done += 1
+                await db.commit()
+                break
+        flog("scanner", "INFO", f"Reverse-Geocoding fertig: {done} Orte gesetzt")
+        return {"geocoded": done}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="transcode_video")
 def transcode_video_task(self, photo_id: int, resolution: int = 1080):
     """On-demand: produce a web-optimised H.264 MP4 (HW/QSV, +faststart) so the

@@ -46,3 +46,7 @@ onnxruntime-gpu==1.18.1
 insightface==0.7.3
 # HDBSCAN clustering option (code falls back to DBSCAN if this import fails)
 hdbscan==0.8.40
+
+# Offline reverse-geocoding (bundled ~150k-city DB, no external API) -> fills
+# city/country from GPS for the map place search + the detail "Ort" line.
+reverse_geocoder==1.5.1
