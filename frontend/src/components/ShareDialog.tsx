@@ -1,0 +1,106 @@
+import { useState } from 'react'
+import { X, Copy, Check, Link as LinkIcon, Loader2 } from 'lucide-react'
+import { api } from '../lib/api'
+
+export type ShareTarget =
+  | { kind: 'album'; albumId: number; title?: string }
+  | { kind: 'photo'; photoId: number; title?: string }
+  | { kind: 'trip'; tripFrom: string; tripTo: string; title?: string }
+
+/** Create a public share link for an album, photo or trip — with optional
+ *  password, expiry and download toggle. Shows the resulting link to copy. */
+export default function ShareDialog({ target, onClose }: { target: ShareTarget; onClose: () => void }) {
+  const [usePassword, setUsePassword] = useState(false)
+  const [password, setPassword] = useState('')
+  const [useExpiry, setUseExpiry] = useState(false)
+  const [expiresDays, setExpiresDays] = useState(7)
+  const [allowDownload, setAllowDownload] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [url, setUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const label = target.kind === 'album' ? 'Album' : target.kind === 'photo' ? 'Foto' : 'Reise'
+
+  async function create() {
+    setCreating(true); setError(null)
+    try {
+      const body: Record<string, unknown> = {
+        share_type: target.kind,
+        title: target.title,
+        allow_download: allowDownload,
+        password: usePassword && password ? password : undefined,
+        expires_days: useExpiry ? expiresDays : undefined,
+      }
+      if (target.kind === 'album') body.album_id = target.albumId
+      if (target.kind === 'photo') body.photo_id = target.photoId
+      if (target.kind === 'trip') { body.trip_from = target.tripFrom; body.trip_to = target.tripTo }
+      const res = await api.post('/shares', body)
+      setUrl(res.data.url as string)
+    } catch {
+      setError('Link konnte nicht erstellt werden.')
+    } finally { setCreating(false) }
+  }
+
+  function copy() {
+    if (!url) return
+    navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon size={18} /> {label} teilen</h3>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-zinc-200"><X size={20} /></button>
+        </div>
+
+        {!url ? (
+          <div className="space-y-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={usePassword} onChange={e => setUsePassword(e.target.checked)} />
+              Mit Passwort schützen
+            </label>
+            {usePassword && (
+              <input type="text" value={password} onChange={e => setPassword(e.target.value)}
+                placeholder="Passwort" className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm" />
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={useExpiry} onChange={e => setUseExpiry(e.target.checked)} />
+              Läuft ab nach
+            </label>
+            {useExpiry && (
+              <select value={expiresDays} onChange={e => setExpiresDays(Number(e.target.value))}
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm">
+                <option value={1}>1 Tag</option>
+                <option value={7}>7 Tage</option>
+                <option value={30}>30 Tage</option>
+                <option value={90}>90 Tage</option>
+              </select>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={allowDownload} onChange={e => setAllowDownload(e.target.checked)} />
+              Download der Originale erlauben
+            </label>
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <button onClick={create} disabled={creating}
+              className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
+              {creating ? <Loader2 size={16} className="animate-spin" /> : <LinkIcon size={16} />} Link erstellen
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-400">Link erstellt — wer ihn hat, kann das {label} ansehen{usePassword ? ' (mit Passwort)' : ''}.</p>
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2">
+              <span className="text-sm truncate flex-1">{url}</span>
+              <button onClick={copy} className="p-1.5 text-zinc-500 hover:text-indigo-500 shrink-0">
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            </div>
+            <button onClick={onClose} className="w-full rounded-lg bg-zinc-200 dark:bg-zinc-800 py-2.5 text-sm font-medium">Fertig</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

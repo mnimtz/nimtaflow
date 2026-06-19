@@ -8,8 +8,10 @@ from .job import Job, JobLog, JobStatus
 from .settings import Setting
 from .source import PhotoSource
 from .relationship import PersonRelationship
+from .share import Share, ShareType
 
 __all__ = [
+    "Share", "ShareType",
     "PersonRelationship",
     "Photo", "PhotoStatus",
     "Face", "Person",

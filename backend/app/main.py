@@ -201,6 +201,9 @@ from app.api.routes import relationships as relationships_routes
 app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard)
 from app.api.routes import chat as chat_routes
 app.include_router(chat_routes.router, prefix="/api", dependencies=_guard)
+from app.api.routes import shares as shares_routes
+app.include_router(shares_routes.router, prefix="/api", dependencies=_guard)        # manage (authed)
+app.include_router(shares_routes.public_router, prefix="/api")                       # public (no guard)
 
 # ── iOS / mobile API v1 (also gated by enforce_auth) ─────────────────────────
 app.include_router(v1_router.router, prefix="/api", dependencies=_guard)

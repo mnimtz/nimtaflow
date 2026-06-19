@@ -5,7 +5,7 @@ import {
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
-  MessageCircle, Image as ImageIcon, Plane,
+  MessageCircle, Image as ImageIcon, Plane, Share2, Copy,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -38,6 +38,7 @@ const SECTIONS = [
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
   { id: 'trips',     icon: Plane,     label: 'Reisen' },
+  { id: 'sharing',   icon: Share2,    label: 'Teilen' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'remote',    icon: Network,   label: 'Remote-Worker' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
@@ -1834,6 +1835,88 @@ function TripsSection() {
   )
 }
 
+type ShareRow = {
+  id: number; token: string; url: string; share_type: string; title?: string
+  has_password: boolean; expires_at?: string | null; allow_download: boolean; view_count: number
+}
+
+function SharingSection() {
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState<number | null>(null)
+  const qc = useQueryClient()
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const sharesQuery = useQuery({
+    queryKey: ['shares'],
+    queryFn: () => api.get('/shares').then(r => r.data as ShareRow[]),
+    staleTime: 10_000,
+  })
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['shares'] }) },
+  })
+  const del = useMutation({
+    mutationFn: (id: number) => api.delete(`/shares/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shares'] }),
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+  const copy = (s: ShareRow) => { navigator.clipboard.writeText(s.url); setCopied(s.id); setTimeout(() => setCopied(null), 1500) }
+  const typeLabel = (t: string) => t === 'album' ? 'Album' : t === 'photo' ? 'Foto' : 'Reise'
+
+  return (
+    <div>
+      <SectionHeader title="Teilen" desc="Öffentliche Links für Alben, Fotos und Reisen — login-freier Gäste-Zugriff per geheimem Link." />
+      <div className="space-y-6 max-w-2xl">
+        <div>
+          <Label>Öffentliche Basis-URL</Label>
+          <Input value={settings['share.public_base_url'] ?? ''} onChange={v => set('share.public_base_url', v.trim())}
+                 placeholder="https://fotos.example.com" />
+          <p className="text-xs text-zinc-400 mt-1">
+            Die von außen erreichbare Adresse deiner PhotoFlow-Instanz. Geteilte Links werden damit gebaut
+            (z. B. <code>https://fotos.example.com/s/&lt;token&gt;</code>). Leer lassen = aktuelle Adresse des Browsers.
+          </p>
+          <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+        </div>
+
+        <div>
+          <Label>Aktive Links {sharesQuery.data ? `(${sharesQuery.data.length})` : ''}</Label>
+          <div className="mt-2 space-y-2">
+            {(sharesQuery.data ?? []).length === 0 && (
+              <p className="text-sm text-zinc-400">Noch keine geteilten Links. Teile ein Album, Foto oder eine Reise über das Teilen-Symbol.</p>
+            )}
+            {(sharesQuery.data ?? []).map(s => (
+              <div key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2">
+                <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-500 shrink-0">{typeLabel(s.share_type)}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate">{s.title || s.url}</div>
+                  <div className="text-xs text-zinc-400 truncate">
+                    {s.has_password ? '🔒 Passwort · ' : ''}
+                    {s.expires_at ? `läuft ab ${new Date(s.expires_at).toLocaleDateString()} · ` : ''}
+                    {s.allow_download ? 'Download an' : 'nur ansehen'} · {s.view_count}× aufgerufen
+                  </div>
+                </div>
+                <button onClick={() => copy(s)} title="Link kopieren"
+                  className="p-2 text-zinc-500 hover:text-indigo-500 shrink-0">
+                  {copied === s.id ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+                <button onClick={() => { if (confirm('Diesen Link widerrufen? Gäste verlieren sofort den Zugriff.')) del.mutate(s.id) }}
+                  title="Widerrufen" className="p-2 text-red-500 hover:text-red-400 shrink-0">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MapSection() {
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
@@ -2237,6 +2320,7 @@ export default function SettingsPage() {
         {section === 'faces'    && <FacesSection />}
         {section === 'memories' && <MemoriesSettingsSection />}
         {section === 'trips'    && <TripsSection />}
+        {section === 'sharing'  && <SharingSection />}
         {section === 'pipeline' && <PipelineSection />}
         {section === 'remote'   && <RemoteWorkerSection />}
         {section === 'backup'   && <BackupSection />}

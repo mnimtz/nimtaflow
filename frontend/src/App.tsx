@@ -16,6 +16,7 @@ import LeitstandPage from './pages/LeitstandPage'
 import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
 import LoginPage from './pages/LoginPage'
+import PublicSharePage from './pages/PublicSharePage'
 
 export default function App() {
   // Fresh install → first-run setup screen (create the initial admin).
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/s/:token" element={<PublicSharePage />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/gallery" replace />} />
         <Route path="/gallery" element={<GalleryPage />} />

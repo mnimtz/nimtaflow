@@ -3,9 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2 } from 'lucide-react'
+import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2 } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
+import ShareDialog from '../components/ShareDialog'
 import { useToast, useConfirm } from '../components/ui/dialogs'
 
 type Waypoint = { place: string; country?: string; date?: string; lat: number; lng: number; note?: string }
@@ -33,6 +34,7 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [lbIdx, setLbIdx] = useState<number | null>(null)
+  const [showShare, setShowShare] = useState(false)
   const { data } = useQuery<{ items: Photo[]; total: number }>({
     queryKey: ['album-photos', album.id],
     queryFn: () => api.get(`/albums/${album.id}/photos`, { params: { limit: 1000 } }).then(r => r.data),
@@ -60,9 +62,14 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white text-sm mb-4"><ArrowLeft size={16} /> Zurück</button>
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
-        <button onClick={async () => { if (await confirm({ title: `Reise „${album.name}" löschen?`, message: 'Das Album wird gelöscht. Die Fotos bleiben in deiner Galerie.', danger: true, confirmLabel: 'Löschen' })) delTrip.mutate() }}
-          className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400 shrink-0"><Trash2 size={15} /> Reise löschen</button>
+        <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => setShowShare(true)}
+            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Share2 size={15} /> Teilen</button>
+          <button onClick={async () => { if (await confirm({ title: `Reise „${album.name}" löschen?`, message: 'Das Album wird gelöscht. Die Fotos bleiben in deiner Galerie.', danger: true, confirmLabel: 'Löschen' })) delTrip.mutate() }}
+            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400"><Trash2 size={15} /> Reise löschen</button>
+        </div>
       </div>
+      {showShare && <ShareDialog target={{ kind: 'album', albumId: album.id, title: album.name }} onClose={() => setShowShare(false)} />}
       <p className="text-sm text-zinc-500 mb-4">{photos.length} Fotos{route.length ? ` · ${route.length} Stationen` : ''}</p>
 
       {allPts.length > 0 && (

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X } from 'lucide-react'
+import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2 } from 'lucide-react'
+import ShareDialog from '../components/ShareDialog'
 import { api, thumbUrl } from '../lib/api'
 import { format } from 'date-fns'
 import { de } from 'date-fns/locale'
@@ -368,6 +369,7 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
 // ── Album detail view ─────────────────────────────────────────────────────────
 
 function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
+  const [showShare, setShowShare] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['album-photos', album.id],
     queryFn: () => api.get(`/albums/${album.id}/photos?limit=200`).then(r => r.data),
@@ -390,7 +392,12 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
           </span>
         </div>
         <span className="text-sm text-zinc-500 ml-auto">{album.photo_count} Fotos</span>
+        <button onClick={() => setShowShare(true)}
+          className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300">
+          <Share2 size={15} /> Teilen
+        </button>
       </div>
+      {showShare && <ShareDialog target={{ kind: 'album', albumId: album.id, title: album.name }} onClose={() => setShowShare(false)} />}
 
       {album.ai_prompt && (
         <div className="mb-4 p-3 rounded-lg bg-violet-900/20 border border-violet-800/40 text-sm text-violet-300">
