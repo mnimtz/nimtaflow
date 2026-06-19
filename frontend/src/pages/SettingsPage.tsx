@@ -5,7 +5,7 @@ import {
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
-  MessageCircle, Image as ImageIcon,
+  MessageCircle, Image as ImageIcon, Plane,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -37,6 +37,7 @@ const SECTIONS = [
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
+  { id: 'trips',     icon: Plane,     label: 'Reisen' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
   { id: 'remote',    icon: Network,   label: 'Remote-Worker' },
   { id: 'backup',    icon: HardDrive, label: 'Backup' },
@@ -1780,6 +1781,37 @@ function BackupSection() {
   )
 }
 
+function TripsSection() {
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const qc = useQueryClient()
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['trips'] }) },
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+
+  return (
+    <div>
+      <SectionHeader title="Reisen" desc="Automatisch erkannte Reisen/Events (gruppiert nach Zeit + Ort)." />
+      <div className="space-y-5 max-w-xl">
+        <div>
+          <Label>Minimum Fotos pro Reise</Label>
+          <Input value={settings['trips.min_photos'] ?? '8'} onChange={v => set('trips.min_photos', v.replace(/[^0-9]/g, ''))} type="number" placeholder="8" />
+          <p className="text-xs text-zinc-400 mt-1">Ein automatisch erkannter Zeit-/Ort-Cluster wird erst ab so vielen Fotos als Reise vorgeschlagen. Höher = nur größere Trips; niedriger = auch kurze Ausflüge.</p>
+        </div>
+        <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+      </div>
+    </div>
+  )
+}
+
 function MapSection() {
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
@@ -2182,6 +2214,7 @@ export default function SettingsPage() {
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}
         {section === 'memories' && <MemoriesSettingsSection />}
+        {section === 'trips'    && <TripsSection />}
         {section === 'pipeline' && <PipelineSection />}
         {section === 'remote'   && <RemoteWorkerSection />}
         {section === 'backup'   && <BackupSection />}

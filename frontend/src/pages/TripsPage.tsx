@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2 } from 'lucide-react'
+import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2 } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { useToast, useConfirm } from '../components/ui/dialogs'
@@ -50,11 +50,19 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
     mutationFn: (pid: number) => api.delete(`/albums/${album.id}/photos/${pid}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['album-photos', album.id] }); toast('Foto aus Reise entfernt', 'success') },
   })
+  const delTrip = useMutation({
+    mutationFn: () => api.delete(`/albums/${album.id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Reise gelöscht', 'success'); onBack() },
+  })
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white text-sm mb-4"><ArrowLeft size={16} /> Zurück</button>
-      <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
+        <button onClick={async () => { if (await confirm({ title: `Reise „${album.name}" löschen?`, message: 'Das Album wird gelöscht. Die Fotos bleiben in deiner Galerie.', danger: true, confirmLabel: 'Löschen' })) delTrip.mutate() }}
+          className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400 shrink-0"><Trash2 size={15} /> Reise löschen</button>
+      </div>
       <p className="text-sm text-zinc-500 mb-4">{photos.length} Fotos{route.length ? ` · ${route.length} Stationen` : ''}</p>
 
       {allPts.length > 0 && (

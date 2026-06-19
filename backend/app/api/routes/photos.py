@@ -266,12 +266,20 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
 @router.get("/trips")
 async def trips(db: AsyncSession = Depends(get_db),
                 user: Optional[User] = Depends(current_user_optional),
-                min_photos: int = 8, gap_hours: int = 20):
+                min_photos: Optional[int] = None, gap_hours: int = 20):
     """Auto-detect events/trips: walk photos by time, start a new event after a gap
     > gap_hours, keep events with >= min_photos. 'is_trip' = the event's dominant
-    city differs from the library's home (most-common) city. Powers auto albums."""
+    city differs from the library's home (most-common) city. Powers auto albums.
+    min_photos defaults to the 'trips.min_photos' setting (8)."""
     from collections import Counter
     from datetime import timedelta
+    if min_photos is None:
+        from app.services.settings_loader import load_settings
+        s = await load_settings(db)
+        try:
+            min_photos = max(1, int(s.get("trips.min_photos", "8") or 8))
+        except Exception:
+            min_photos = 8
     conds = photo_conditions(user)
     rows = (await db.execute(
         select(Photo.id, Photo.taken_at, Photo.city, Photo.is_video).where(
