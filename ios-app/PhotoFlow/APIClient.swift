@@ -106,6 +106,30 @@ final class APIClient: ObservableObject {
         try await action("api/relationships", method: "POST", json: ["from_person_id": from, "to_person_id": to, "rel_type": type])
     }
     func deleteRelationship(_ id: Int) async throws { try await action("api/relationships/\(id)", method: "DELETE") }
+
+    // MARK: Single photo
+    func photo(_ id: Int) async throws -> PhotoV1 { try await get("api/v1/photos/\(id)", as: PhotoV1.self) }
+    func setRating(_ id: Int, rating: Int) async throws { try await action("api/v1/photos/\(id)/rating?rating=\(rating)", method: "PATCH") }
+    func reprocess(_ id: Int) async throws { try await action("api/photos/\(id)/reprocess", method: "POST") }
+
+    // MARK: Albums
+    func albums() async throws -> [AlbumV1] { try await get("api/v1/albums", as: [AlbumV1].self) }
+    func albumPhotos(_ id: Int, cursor: Int?) async throws -> PhotoPage {
+        var p = "api/v1/albums/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
+        return try await get(p, as: PhotoPage.self)
+    }
+
+    // MARK: Map
+    func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
+
+    // MARK: Chat
+    func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
+    func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {
+        var body: [String: Any] = ["message": message,
+                                   "history": history.map { ["role": $0.role, "content": $0.content] }]
+        if let provider { body["provider"] = provider }
+        return try await send(makeRequest("api/v1/chat", method: "POST", json: body), as: ChatReply.self)
+    }
 }
 
 extension CharacterSet {

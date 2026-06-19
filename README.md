@@ -109,7 +109,7 @@ and enriches your library with local or cloud AI.
 - Background job pipeline with **per-feature logs** (scanner / ai / faces / video / **remote** / system) shown live in the UI; a **dedicated scan worker** so re-indexing starts immediately instead of waiting behind the thumbnail queue.
 - App **version shown in the sidebar** (matches the running Docker build).
 - **Mobile**: responsive layout, bottom nav, redirect-to-login when unauthenticated.
-- **iOS app** (SwiftUI) talking to the `/api/v1` endpoints.
+- **iOS app** (SwiftUI, `ios-app/PhotoFlow/`) talking to the `/api/v1` endpoints. Tabs: **Galerie · Alben · Suche · Chat · Mehr** (Personen, Karte, Beziehungen, Einstellungen). Albums, the Gemini/local chat assistant (with tappable result thumbnails) and map points are served by dedicated `/api/v1/{albums,albums/{id}/photos,map,chat}` endpoints that return the same `PhotoV1` shape the gallery uses. Build/run via Xcode (no auto-deploy).
 
 ---
 

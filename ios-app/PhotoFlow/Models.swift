@@ -91,3 +91,41 @@ struct TokenResponse: Codable {
     let access_token: String
     let refresh_token: String
 }
+
+// MARK: - Albums
+
+struct AlbumV1: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let description: String?
+    let album_type: String
+    let photo_count: Int
+    let cover_url: String?
+}
+
+// MARK: - Map
+
+struct MapPointV1: Codable, Identifiable, Hashable {
+    let id: Int
+    let latitude: Double
+    let longitude: Double
+    let is_video: Bool
+    let thumb_url: String
+}
+
+// MARK: - Chat
+
+struct ChatStatus: Codable {
+    let provider: String
+    let gemini_ready: Bool
+}
+
+struct ChatTurn: Codable, Hashable {
+    let role: String       // "user" | "assistant"
+    let content: String
+}
+
+struct ChatReply: Codable {
+    let answer: String
+    let photo_ids: [Int]
+}

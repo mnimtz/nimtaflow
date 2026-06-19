@@ -539,3 +539,113 @@ async def person_photos_v1(person_id: int, request: Request,
 async def relationships_v1(db: AsyncSession = Depends(get_db)):
     from app.api.routes.relationships import graph as _graph
     return await _graph(db)
+
+
+# ── Albums (iOS app) ──────────────────────────────────────────────────────────
+
+class AlbumV1(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    album_type: str
+    photo_count: int
+    cover_url: Optional[str]
+
+
+@router.get("/albums", response_model=List[AlbumV1])
+async def albums_v1(request: Request, db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
+    """Album list with cover thumbnails — same shape the gallery grid understands."""
+    from app.models.album import Album, AlbumPhoto
+    from sqlalchemy import func as _f
+    base = str(request.base_url).rstrip("/")
+    albums = (await db.execute(select(Album).order_by(Album.created_at.desc()))).scalars().all()
+    counts = dict((await db.execute(
+        select(AlbumPhoto.album_id, _f.count()).group_by(AlbumPhoto.album_id)
+    )).all())
+    # cover = explicit cover_photo_id, else the first photo in the album
+    first_photo = dict((await db.execute(
+        select(AlbumPhoto.album_id, _f.min(AlbumPhoto.photo_id)).group_by(AlbumPhoto.album_id)
+    )).all())
+    out = []
+    for a in albums:
+        cover_id = a.cover_photo_id or first_photo.get(a.id)
+        out.append(AlbumV1(
+            id=a.id, name=a.name, description=a.description,
+            album_type=a.album_type.value if hasattr(a.album_type, "value") else str(a.album_type),
+            photo_count=counts.get(a.id, 0),
+            cover_url=(f"{base}/api/photos/{cover_id}/thumbnail?size=medium" if cover_id else None),
+        ))
+    return out
+
+
+@router.get("/albums/{album_id}/photos", response_model=PhotoPageV1)
+async def album_photos_v1(album_id: int, request: Request,
+                          cursor: Optional[int] = Query(None), limit: int = Query(60, ge=1, le=200),
+                          db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    from app.models.album import Album, AlbumPhoto
+    from sqlalchemy import func as _f
+    if not await db.get(Album, album_id):
+        raise HTTPException(404)
+    acl = photo_conditions(user)
+    sub = select(AlbumPhoto.photo_id).where(AlbumPhoto.album_id == album_id)
+    q = select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl)  # noqa: E712
+    if cursor:
+        q = q.where(Photo.id < cursor)
+    rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    total = await db.scalar(select(_f.count()).select_from(
+        select(Photo.id).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl).subquery()))  # noqa: E712
+    return PhotoPageV1(items=[_to_v1(p, request) for p in items],
+                       next_cursor=(items[-1].id if has_more and items else None),
+                       total=total or 0, has_more=has_more)
+
+
+# ── Map (iOS app) — lightweight geo points ──────────────────────────────────────
+
+class MapPointV1(BaseModel):
+    id: int
+    latitude: float
+    longitude: float
+    is_video: bool
+    thumb_url: str
+
+
+@router.get("/map", response_model=List[MapPointV1])
+async def map_v1(request: Request, db: AsyncSession = Depends(get_db),
+                 user: Optional[User] = Depends(current_user_optional)):
+    base = str(request.base_url).rstrip("/")
+    acl = photo_conditions(user)
+    rows = (await db.execute(
+        select(Photo.id, Photo.latitude, Photo.longitude, Photo.is_video).where(
+            Photo.latitude.isnot(None), Photo.longitude.isnot(None),
+            Photo.is_trashed == False, *acl)  # noqa: E712
+    )).all()
+    return [MapPointV1(id=r[0], latitude=r[1], longitude=r[2], is_video=r[3],
+                       thumb_url=f"{base}/api/photos/{r[0]}/thumbnail?size=small") for r in rows]
+
+
+# ── Chat (iOS app) — proxies the same Gemini/local assistant the web uses ────────
+
+class ChatRequestV1(BaseModel):
+    message: str
+    history: List[dict] = []
+    provider: Optional[str] = None
+
+
+@router.get("/chat/status")
+async def chat_status_v1(db: AsyncSession = Depends(get_db)):
+    from app.api.routes.chat import chat_status as _status
+    return await _status(db)
+
+
+@router.post("/chat")
+async def chat_v1(body: ChatRequestV1, db: AsyncSession = Depends(get_db)):
+    """Returns {answer, photo_ids}. The app then loads each photo via /v1/photos/{id}."""
+    from app.services import chat as chat_svc
+    from app.services.settings_loader import load_settings
+    s = await load_settings(db)
+    hist = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.history]
+    return await chat_svc.chat(body.message, hist, s, db, provider=body.provider)

@@ -18,13 +18,57 @@ struct RootView: View {
         } else {
         TabView {
             GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
+            AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
             SearchView().tabItem { Label("Suche", systemImage: "magnifyingglass") }
-            PeopleView().tabItem { Label("Personen", systemImage: "person.2.fill") }
-            MapScreen().tabItem { Label("Karte", systemImage: "map.fill") }
-            RelationshipsView().tabItem { Label("Beziehungen", systemImage: "point.3.connected.trianglepath.dotted") }
-            SettingsScreen().tabItem { Label("Einstellungen", systemImage: "gearshape.fill") }
+            ChatView().tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
+            MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
         }
         .tint(.indigo)
+        }
+    }
+}
+
+/// Overflow menu — keeps the tab bar to 5 items (mobile-first) while still
+/// reaching Personen, Karte, Beziehungen and Einstellungen. Each opens as a
+/// full-screen cover so the child's own NavigationStack/title bar is used
+/// directly (no nested-stack double bars).
+struct MoreView: View {
+    private enum Dest: String, Identifiable {
+        case people, map, relationships, settings
+        var id: String { rawValue }
+    }
+    @State private var dest: Dest?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                row("Personen", "person.2.fill", .people)
+                row("Karte", "map.fill", .map)
+                row("Beziehungen", "point.3.connected.trianglepath.dotted", .relationships)
+                row("Einstellungen", "gearshape.fill", .settings)
+            }
+            .navigationTitle("Mehr")
+        }
+        .fullScreenCover(item: $dest) { d in
+            ZStack(alignment: .topTrailing) {
+                switch d {
+                case .people: PeopleView()
+                case .map: MapScreen()
+                case .relationships: RelationshipsView()
+                case .settings: SettingsScreen()
+                }
+                Button { dest = nil } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title2)
+                        .foregroundStyle(.white, .black.opacity(0.4))
+                }
+                .padding(.top, 8).padding(.trailing, 12)
+            }
+        }
+    }
+
+    @ViewBuilder private func row(_ title: String, _ icon: String, _ d: Dest) -> some View {
+        Button { dest = d } label: {
+            Label(title, systemImage: icon).foregroundStyle(.primary)
         }
     }
 }
