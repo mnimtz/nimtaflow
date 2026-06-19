@@ -513,7 +513,7 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
         <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-zinc-600">
           {(person.name || '?').charAt(0).toUpperCase()}
         </span>
-        <img src={`/api/people/${person.id}/avatar`} className="w-full h-full object-cover relative"
+        <img src={`/api/people/${person.id}/avatar?v=${person.profile_face_id ?? 0}`} className="w-full h-full object-cover relative"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         {person.is_hidden && (
           <span className="absolute bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] bg-black/70 text-zinc-200 flex items-center gap-0.5">
@@ -627,7 +627,7 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
       <div className="flex gap-6 mb-8">
         <div className="relative w-28 h-28 rounded-full overflow-hidden bg-zinc-800 ring-2 ring-zinc-700 flex-shrink-0 flex items-center justify-center">
           <span className="text-4xl font-bold text-zinc-600 absolute">{(person.name || '?').charAt(0).toUpperCase()}</span>
-          <img src={`/api/people/${personId}/avatar`} className="w-full h-full object-cover absolute inset-0"
+          <img src={`/api/people/${personId}/avatar?v=${person.profile_face_id ?? 0}`} className="w-full h-full object-cover absolute inset-0"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         </div>
 
@@ -849,7 +849,7 @@ function MergeModal({ people, onClose, onMerged }: {
             className={`w-full flex items-center gap-3 p-2 rounded-lg border text-left transition-colors ${targetId === p.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
             <div className="relative w-10 h-10 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center">
               <span className="absolute text-sm text-zinc-600">{(p.name || '?').charAt(0).toUpperCase()}</span>
-              <img src={`/api/people/${p.id}/avatar`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              <img src={`/api/people/${p.id}/avatar?v=${p.profile_face_id ?? 0}`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             </div>
             <div className="flex-1 min-w-0">
               <p className={`text-sm truncate ${p.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{p.name || 'Unbekannt'}</p>
@@ -934,7 +934,7 @@ function FaceAssignModal({ faceIds, people, onClose, onDone }: {
               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left disabled:opacity-50">
               <div className="relative w-9 h-9 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center">
                 <span className="absolute text-xs text-zinc-600">{p.name.charAt(0).toUpperCase()}</span>
-                <img src={`/api/people/${p.id}/avatar`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                <img src={`/api/people/${p.id}/avatar?v=${p.profile_face_id ?? 0}`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
               </div>
               <span className="text-sm text-zinc-900 dark:text-white flex-1 truncate">{p.name}</span>
               <span className="text-xs text-zinc-500">{p.face_count}</span>
