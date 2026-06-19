@@ -10,6 +10,7 @@ import AlbumsPage from './pages/AlbumsPage'
 import PeoplePage from './pages/PeoplePage'
 import RelationshipsPage from './pages/RelationshipsPage'
 import MapPage from './pages/MapPage'
+import TripsPage from './pages/TripsPage'
 import PipelinePage from './pages/PipelinePage'
 import LeitstandPage from './pages/LeitstandPage'
 import SettingsPage from './pages/SettingsPage'
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/people" element={<PeoplePage />} />
         <Route path="/relationships" element={<RelationshipsPage />} />
         <Route path="/map" element={<MapPage />} />
+        <Route path="/trips" element={<TripsPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
         <Route path="/leitstand" element={<LeitstandPage />} />
         <Route path="/settings" element={<SettingsPage />} />

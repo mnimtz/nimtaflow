@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle } from 'lucide-react'
+import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -69,6 +69,7 @@ const nav = [
   { to: '/albums', icon: BookImage, label: 'Alben' },
   { to: '/people', icon: Users, label: 'Personen' },
   { to: '/map', icon: Map, label: 'Karte' },
+  { to: '/trips', icon: Plane, label: 'Reisen' },
   { to: '/pipeline', icon: Activity, label: 'Pipeline' },
   { to: '/leitstand', icon: Gauge, label: 'Leitstand' },
 ]
