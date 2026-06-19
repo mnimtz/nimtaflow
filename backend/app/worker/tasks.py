@@ -864,7 +864,7 @@ def backfill_xmp_task(self, full: bool = False):
         flog("ai", "INFO", f"XMP-Backfill gestartet: {len(items)} Fotos (Modus={mode})")
 
         # ── phase 2: write files — NO db session held over the slow exiftool work ──
-        from app.services.exif_edit import write_exif as _wx
+        from app.services.exif_edit import write_all as _wall
         from app.services.xmp_sidecar import file_capture_date
         done = failed = 0
         updates = []  # (id, taken_at_or_None, xmp_path_or_None)
@@ -879,24 +879,13 @@ def backfill_xmp_task(self, full: bool = False):
                             new_taken = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
                         except Exception:
                             new_taken = None
-                    if it["description"]:
-                        await _wd(it["path"], it["description"], overwrite=True)
-                    if it["kw"]:
-                        await _wk(it["path"], it["kw"])
-                    # rating + favourite (favourite = 5 stars, our convention)
+                    # ONE exiftool call for description + keywords + rating + title +
+                    # place (favourite = 5 stars, our convention). ~5× faster than the
+                    # old per-field spawns.
                     eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
-                    if eff > 0:
-                        await _wr(it["path"], eff)
-                    # title + place names → embed so they round-trip (read back
-                    # by read_file_location on the next scan).
-                    loc = {}
-                    if it["title"]: loc["XMP:Title"] = it["title"]; loc["IPTC:ObjectName"] = it["title"]
-                    if it["city"]: loc["XMP:City"] = it["city"]; loc["IPTC:City"] = it["city"]
-                    if it["country"]:
-                        loc["XMP:Country"] = it["country"]
-                        loc["IPTC:Country-PrimaryLocationName"] = it["country"]
-                    if loc:
-                        await _wx(it["path"], loc, make_backup=False)
+                    await _wall(it["path"], description=it["description"],
+                                keywords=it["kw"] or None, rating=(eff if eff > 0 else None),
+                                title=it["title"], city=it["city"], country=it["country"])
                 if mode in ("file_sidecar", "sidecar"):
                     cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
                     if cap and it["taken_at"] is None and new_taken is None:

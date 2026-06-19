@@ -292,6 +292,47 @@ async def write_exif(path: str, tags: Dict[str, Any], make_backup: bool = True) 
     return True
 
 
+async def write_all(path: str, description: Optional[str] = None,
+                    keywords: Optional[list[str]] = None, rating: Optional[int] = None,
+                    title: Optional[str] = None, city: Optional[str] = None,
+                    country: Optional[str] = None) -> bool:
+    """Embed description + keywords + rating + title + place into a file in ONE
+    exiftool call (vs. ~4 separate spawns). Same tags/fields as the individual
+    write_* helpers. Keywords use repeated -IPTC:Keywords+= so ALL of them land
+    (the per-call write_keywords collapsed them via a dict key collision — only
+    the last survived; this fixes that too). -m tolerates length warnings, -P
+    preserves the filesystem date, -overwrite_original avoids a backup file."""
+    if not _EXIFTOOL:
+        raise ExifEditError("exiftool not found")
+    args = [_EXIFTOOL, "-m", "-P", "-overwrite_original"]
+    if description:
+        args += [f"-XMP:Description={description}",
+                 f"-IPTC:Caption-Abstract={description}",
+                 f"-EXIF:ImageDescription={description}"]
+    if keywords:
+        args.append("-IPTC:Keywords=")   # clear, then append each so all survive
+        for kw in keywords:
+            args.append(f"-IPTC:Keywords+={kw}")
+        args.append(f"-XMP:Subject={','.join(keywords)}")
+    if rating is not None:
+        args.append(f"-XMP:Rating={max(0, min(5, int(rating)))}")
+    if title:
+        args += [f"-XMP:Title={title}", f"-IPTC:ObjectName={title}"]
+    if city:
+        args += [f"-XMP:City={city}", f"-IPTC:City={city}"]
+    if country:
+        args += [f"-XMP:Country={country}", f"-IPTC:Country-PrimaryLocationName={country}"]
+    if len(args) == 4:   # nothing to write
+        return True
+    args.append(path)
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise ExifEditError(stderr.decode()[:500])
+    return True
+
+
 async def write_description(path: str, description: str, overwrite: bool = True) -> bool:
     """Write AI or user description to XMP:Description (+ IPTC/EXIF mirrors).
 
