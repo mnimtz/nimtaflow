@@ -36,6 +36,7 @@ function buildFilterParams(f: Filters) {
   if (f.mediaType) p.media_type = f.mediaType
   if (f.favorites) p.favorites = 'true'
   if (f.hasGps === true) p.has_gps = 'true'
+  if (f.personId != null) p.person_id = String(f.personId)
   return p
 }
 

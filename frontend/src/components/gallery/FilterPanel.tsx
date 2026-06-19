@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, Camera, Calendar, Heart, Video, MapPin, SlidersHorizontal } from 'lucide-react'
+import { X, Camera, Calendar, Heart, Video, MapPin, SlidersHorizontal, Users } from 'lucide-react'
 import { api, type PhotoStats } from '../../lib/api'
 
 export type Filters = {
@@ -11,6 +11,7 @@ export type Filters = {
   mediaType: '' | 'photo' | 'video' | 'raw'
   favorites: boolean
   hasGps: boolean | null
+  personId: number | null
 }
 
 export const DEFAULT_FILTERS: Filters = {
@@ -21,10 +22,11 @@ export const DEFAULT_FILTERS: Filters = {
   mediaType: '',
   favorites: false,
   hasGps: null,
+  personId: null,
 }
 
 function isActive(f: Filters) {
-  return f.search || f.dateFrom || f.dateTo || f.camera || f.mediaType || f.favorites || f.hasGps !== null
+  return f.search || f.dateFrom || f.dateTo || f.camera || f.mediaType || f.favorites || f.hasGps !== null || f.personId !== null
 }
 
 type Props = {
@@ -40,6 +42,15 @@ export default function FilterPanel({ filters, onChange }: Props) {
     queryFn: () => api.get('/photos/stats').then(r => r.data),
     staleTime: 60_000,
   })
+
+  const [personQuery, setPersonQuery] = useState('')
+  const { data: allPeople = [] } = useQuery<{ id: number; name: string | null }[]>({
+    queryKey: ['people-filter'],
+    queryFn: () => api.get('/people').then(r => r.data),
+    staleTime: 60_000,
+  })
+  const namedPeople = allPeople.filter(p => (p.name || '').trim()).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  const selectedPerson = filters.personId != null ? namedPeople.find(p => p.id === filters.personId) : undefined
 
   const active = isActive(filters)
 
@@ -65,7 +76,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
         Filter
         {active && (
           <span className="bg-white/30 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
-            {[filters.search, filters.dateFrom || filters.dateTo, filters.camera, filters.mediaType, filters.favorites, filters.hasGps !== null].filter(Boolean).length}
+            {[filters.search, filters.dateFrom || filters.dateTo, filters.camera, filters.mediaType, filters.favorites, filters.hasGps !== null, filters.personId !== null].filter(Boolean).length}
           </span>
         )}
       </button>
@@ -84,6 +95,39 @@ export default function FilterPanel({ filters, onChange }: Props) {
                 placeholder="Beschreibung, Ort..."
                 className="mt-1 w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
+            </div>
+
+            {/* Person */}
+            <div>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                <Users size={12} /> Person
+              </label>
+              {selectedPerson ? (
+                <div className="mt-1 flex items-center justify-between px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-700 dark:text-indigo-200 text-sm">
+                  <span className="truncate">{selectedPerson.name}</span>
+                  <button onClick={() => { set({ personId: null }); setPersonQuery('') }} className="hover:text-red-500 shrink-0"><X size={13} /></button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    value={personQuery}
+                    onChange={e => setPersonQuery(e.target.value)}
+                    placeholder={`Person suchen … (${namedPeople.length})`}
+                    className="mt-1 w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  {personQuery.trim() && (
+                    <div className="absolute z-10 mt-1 w-full max-h-44 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+                      {namedPeople.filter(p => (p.name || '').toLowerCase().includes(personQuery.toLowerCase())).slice(0, 50).map(p => (
+                        <button key={p.id} onClick={() => { set({ personId: p.id }); setPersonQuery('') }}
+                          className="block w-full text-left px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">{p.name}</button>
+                      ))}
+                      {namedPeople.filter(p => (p.name || '').toLowerCase().includes(personQuery.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-1.5 text-sm text-gray-500">keine Treffer</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Date range */}
