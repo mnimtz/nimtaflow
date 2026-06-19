@@ -404,6 +404,25 @@ async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     return {"reprocessing": len(ids)}
 
 
+@router.post("/{photo_id}/reprocess")
+async def reprocess_photo(photo_id: int, db: AsyncSession = Depends(get_db)):
+    """On-demand: re-run processing for ONE photo (re-detect faces, re-make
+    thumbnails, and let the AI step re-attempt by clearing ai_error). The detail
+    view polls afterwards so the fresh result appears live. Keeps the existing
+    description until a new one lands (non-destructive)."""
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    photo.ai_error = False
+    photo.faces_scanned = False   # force a fresh face pass
+    if photo.status == PhotoStatus.error:
+        photo.status = PhotoStatus.pending
+    await db.commit()
+    from app.worker.tasks import process_photo_task
+    process_photo_task.delay(photo_id, None, True, True)  # redo_faces + redo_thumbs
+    return {"ok": True, "photo_id": photo_id}
+
+
 @router.post("/reprocess-missing-ai")
 async def reprocess_missing_ai(db: AsyncSession = Depends(get_db)):
     """Re-queue done photos that have no embedding yet (AI never ran / was off) —

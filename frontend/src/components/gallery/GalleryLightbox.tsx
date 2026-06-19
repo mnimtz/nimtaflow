@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
@@ -15,7 +15,7 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
 
@@ -33,6 +33,23 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     staleTime: 0, refetchOnMount: 'always',
   })
   const toast = useToast()
+  const qc = useQueryClient()
+  const [scanning, setScanning] = useState(false)
+  const reprocess = async () => {
+    setScanning(true)
+    try {
+      await api.post(`/photos/${photoId}/reprocess`)
+      toast('Verarbeitung gestartet — Ergebnis erscheint gleich …', 'success')
+      // poll the detail for ~30s so the fresh description/faces/tags show up live
+      let n = 0
+      const iv = setInterval(() => {
+        qc.invalidateQueries({ queryKey: ['photo-detail', photoId] })
+        if (++n >= 10) { clearInterval(iv); setScanning(false) }
+      }, 3000)
+    } catch {
+      toast('Konnte Verarbeitung nicht starten', 'error'); setScanning(false)
+    }
+  }
   const setCover = async (pp: any) => {
     try {
       await api.post(`/people/${pp.person_id}/profile-face/${pp.face_id}`)
@@ -79,6 +96,12 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
           {p.is_video ? 'Original-Video öffnen' : 'Original in voller Qualität öffnen'}
         </a>
+
+        <button onClick={reprocess} disabled={scanning}
+          className="ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white font-medium disabled:opacity-60"
+          title="Dieses Foto neu verarbeiten (Beschreibung, Tags, Gesichter, Thumbnail)">
+          <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? 'Scanne …' : 'Neu verarbeiten'}
+        </button>
 
         {p.description && (
           <div>
