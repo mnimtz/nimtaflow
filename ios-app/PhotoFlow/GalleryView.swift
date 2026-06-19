@@ -190,9 +190,10 @@ struct PhotoPager: View {
     @State private var index: Int = 0
     @State private var favs: Set<Int> = []
     @State private var ratings: [Int: Int] = [:]
-    @State private var reprocessed = false
+    @State private var actionNote: String?
     @State private var showShare = false
     @State private var showInfo = false
+    @State private var showAlbumPicker = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -218,8 +219,15 @@ struct PhotoPager: View {
                 Button { showInfo = true } label: { Image(systemName: "info.circle").foregroundStyle(.white) }
                 Menu {
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
-                    Button { Task { try? await api.reprocess(photos[index].id); reprocessed = true } } label: {
+                    Button { showAlbumPicker = true } label: { Label("Zu Album hinzufügen", systemImage: "rectangle.stack.badge.plus") }
+                    Button { Task { try? await api.archivePhoto(photos[index].id); actionNote = "Archiviert" } } label: {
+                        Label("Archivieren", systemImage: "archivebox")
+                    }
+                    Button { Task { try? await api.reprocess(photos[index].id); actionNote = "Wird neu verarbeitet…" } } label: {
                         Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Button(role: .destructive) { Task { try? await api.trashPhoto(photos[index].id); actionNote = "In Papierkorb" } } label: {
+                        Label("In Papierkorb", systemImage: "trash")
                     }
                 } label: { Image(systemName: "ellipsis.circle.fill").foregroundStyle(.white) }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
@@ -244,7 +252,7 @@ struct PhotoPager: View {
                 .font(.title3).padding(8)
                 .background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 28)
                 .overlay(alignment: .top) {
-                    if reprocessed { Text("Wird neu verarbeitet…").font(.caption).foregroundStyle(.white).offset(y: -22) }
+                    if let actionNote { Text(actionNote).font(.caption).foregroundStyle(.white).offset(y: -22) }
                 }
             }
         }
@@ -253,13 +261,18 @@ struct PhotoPager: View {
             favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
             ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
         }
-        .onChange(of: index) { _, _ in reprocessed = false }
+        .onChange(of: index) { _, _ in actionNote = nil }
         .sheet(isPresented: $showShare) {
             ShareSheetView(target: .photo(id: photos[index].id, title: photos[index].filename))
                 .presentationDetents([.medium])
         }
         .sheet(isPresented: $showInfo) {
             if let p = photos[safe: index] { PhotoInfoView(photo: p).presentationDetents([.medium, .large]) }
+        }
+        .sheet(isPresented: $showAlbumPicker) {
+            AlbumPickerSheet { albumId in
+                Task { try? await api.addPhotosToAlbum(albumId, photoIds: [photos[index].id]); actionNote = "Zu Album hinzugefügt" }
+            }.presentationDetents([.medium, .large])
         }
     }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
@@ -345,5 +358,50 @@ struct PhotoInfoView: View {
 
     @ViewBuilder private func row(_ k: String, _ v: String) -> some View {
         HStack { Text(k).foregroundStyle(.secondary); Spacer(); Text(v).multilineTextAlignment(.trailing) }
+    }
+}
+
+/// Pick an album to add a photo to (or create a new one).
+struct AlbumPickerSheet: View {
+    let onPick: (Int) -> Void
+    @EnvironmentObject var api: APIClient
+    @Environment(\.dismiss) var dismiss
+    @State private var albums: [AlbumV1] = []
+    @State private var showCreate = false
+    @State private var newName = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(albums) { a in
+                    Button { onPick(a.id); dismiss() } label: {
+                        HStack {
+                            Image(systemName: "rectangle.stack").foregroundStyle(.indigo)
+                            Text(a.name); Spacer()
+                            Text("\(a.photo_count)").foregroundStyle(.secondary).font(.caption)
+                        }
+                    }.foregroundStyle(.primary)
+                }
+            }
+            .navigationTitle("Zu Album hinzufügen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button { newName = ""; showCreate = true } label: { Image(systemName: "plus") } }
+            }
+            .alert("Neues Album", isPresented: $showCreate) {
+                TextField("Name", text: $newName)
+                Button("Erstellen & hinzufügen") {
+                    let n = newName.trimmingCharacters(in: .whitespaces)
+                    if !n.isEmpty { Task {
+                        try? await api.createAlbum(name: n)
+                        albums = (try? await api.albums()) ?? []
+                        if let created = albums.first(where: { $0.name == n }) { onPick(created.id); dismiss() }
+                    } }
+                }
+                Button("Abbrechen", role: .cancel) {}
+            }
+            .task { albums = (try? await api.albums()) ?? [] }
+        }
     }
 }

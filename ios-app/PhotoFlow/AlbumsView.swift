@@ -124,6 +124,12 @@ struct AlbumDetailView: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { selected = p }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                Task { try? await api.removeFromAlbum(album.id, photoId: p.id)
+                                       photos.removeAll { $0.id == p.id }; onChange() }
+                            } label: { Label("Aus Album entfernen", systemImage: "minus.circle") }
+                        }
                         .onAppear { if p.id == photos.last?.id { Task { await load() } } }
                 }
             }

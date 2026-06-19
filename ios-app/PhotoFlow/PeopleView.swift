@@ -100,6 +100,7 @@ struct PersonDetailView: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var selected: PhotoV1?
+    @Environment(\.dismiss) private var dismiss
 
     let cols = [GridItem(.adaptive(minimum: 90), spacing: 2)]
 
@@ -112,6 +113,10 @@ struct PersonDetailView: View {
 
                 HStack {
                     Button { newName = person.name; renaming = true } label: { Label("Umbenennen", systemImage: "pencil") }
+                        .buttonStyle(.bordered)
+                    Button(role: .destructive) {
+                        Task { try? await api.hidePerson(person.id, hidden: true); dismiss() }
+                    } label: { Label("Ausblenden", systemImage: "eye.slash") }
                         .buttonStyle(.bordered)
                 }
 
