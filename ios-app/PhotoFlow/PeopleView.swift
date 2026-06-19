@@ -45,7 +45,7 @@ struct PeopleView: View {
             }
             .overlay(alignment: .bottom) {
                 if mergeMode && selection.count >= 2 {
-                    Text("\(selection.count) ausgewählt — „Fertig" führt zusammen")
+                    Text("\(selection.count) ausgewählt — ‚Fertig‘ führt zusammen")
                         .font(.caption).padding(8).background(.ultraThinMaterial, in: Capsule()).padding(.bottom)
                 }
             }

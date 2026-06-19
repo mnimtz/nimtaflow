@@ -1,7 +1,4 @@
-# XcodeGen output / Xcode cruft
-PhotoFlow.xcodeproj/
-*.xcworkspace/
-xcuserdata/
-DerivedData/
 build/
-.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/

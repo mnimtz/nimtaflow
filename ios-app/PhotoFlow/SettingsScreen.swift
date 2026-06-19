@@ -25,7 +25,7 @@ struct SettingsScreen: View {
                             Task { do { try await api.login(username: user, password: pass); pass = "" } catch { loginError = true } }
                         }
                     }
-                    Text("Login ist nur nötig, wenn am Server „Login erzwingen" aktiv ist.")
+                    Text("Login ist nur nötig, wenn am Server ‚Login erzwingen‘ aktiv ist.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section { Text("PhotoFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }

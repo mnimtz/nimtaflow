@@ -54,6 +54,6 @@ struct LoginView: View {
         busy = true; defer { busy = false }; error = nil
         api.serverURL = server.trimmingCharacters(in: .whitespaces)
         do { try await api.login(username: email, password: password); password = "" }
-        catch { error = "Anmeldung fehlgeschlagen — Server/Zugangsdaten prüfen." }
+        catch { self.error = "Anmeldung fehlgeschlagen — Server/Zugangsdaten prüfen." }
     }
 }
