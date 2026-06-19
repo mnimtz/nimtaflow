@@ -15,8 +15,9 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
+import { useToast } from '../ui/dialogs'
 
 function fmtBytes(b?: number) { if (!b) return null; const u = ['B', 'KB', 'MB', 'GB']; let i = 0, n = b; while (n >= 1024 && i < 3) { n /= 1024; i++ } return `${n.toFixed(1)} ${u[i]}` }
 
@@ -31,6 +32,15 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data),
     staleTime: 0, refetchOnMount: 'always',
   })
+  const toast = useToast()
+  const setCover = async (pp: any) => {
+    try {
+      await api.post(`/people/${pp.person_id}/profile-face/${pp.face_id}`)
+      toast(`Titelbild für ${pp.name} gesetzt`, 'success')
+    } catch {
+      toast('Konnte Titelbild nicht setzen', 'error')
+    }
+  }
   if (!p) return null
   const Row = ({ icon: Icon, label, children }: any) => (
     <div className="flex items-start gap-2 text-sm text-zinc-200">
@@ -109,7 +119,15 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         {namedPeople.length > 0 && (
           <Row icon={UsersIcon} label="Personen">
             <div className="flex flex-wrap gap-1.5">
-              {namedPeople.map(pp => <span key={pp.face_id} className="px-2 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">{pp.name}</span>)}
+              {namedPeople.map(pp => (
+                <span key={pp.face_id} className="group flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">
+                  {pp.name}
+                  {pp.person_id && pp.face_id && (
+                    <button onClick={() => setCover(pp)} title={`Als Titelbild für ${pp.name} setzen`}
+                      className="text-indigo-300/70 hover:text-yellow-300 p-0.5"><Star size={11} /></button>
+                  )}
+                </span>
+              ))}
             </div>
           </Row>
         )}
