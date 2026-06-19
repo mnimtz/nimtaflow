@@ -81,6 +81,16 @@ function FitBounds({ points }: { points: [number, number][] }) {
   return null
 }
 
+/** Fly to a searched place when the target changes. */
+function FlyTo({ target }: { target: { lat: number; lng: number; seq: number } | null }) {
+  const map = useMap()
+  useEffect(() => {
+    if (target) map.flyTo([target.lat, target.lng], 13, { duration: 1.2 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.seq])
+  return null
+}
+
 export default function MapPage() {
   const [layer, setLayer] = useState<LayerKey>('osm')
   const [view3d, setView3d] = useState(false)
@@ -119,11 +129,53 @@ export default function MapPage() {
   const withGps = useMemo(() => (data ?? []).filter((p) => p.latitude && p.longitude), [data])
   const points = useMemo(() => withGps.map((p) => [p.latitude!, p.longitude!] as [number, number]), [withGps])
 
+  // Distinct places from the user's OWN photo locations (no external geocoding) —
+  // averaged coordinates + photo count, most photos first.
+  const places = useMemo(() => {
+    const m = new Map<string, { name: string; lat: number; lng: number; n: number }>()
+    for (const p of withGps) {
+      const name = ((p as any).city || (p as any).location_name || (p as any).country || '').trim()
+      if (!name) continue
+      const e = m.get(name) || { name, lat: 0, lng: 0, n: 0 }
+      e.lat += p.latitude!; e.lng += p.longitude!; e.n++
+      m.set(name, e)
+    }
+    return [...m.values()].map(e => ({ name: e.name, lat: e.lat / e.n, lng: e.lng / e.n, n: e.n }))
+      .sort((a, b) => b.n - a.n)
+  }, [withGps])
+  const [placeQuery, setPlaceQuery] = useState('')
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; seq: number } | null>(null)
+  const placeMatches = useMemo(() =>
+    placeQuery.trim() ? places.filter(p => p.name.toLowerCase().includes(placeQuery.toLowerCase())).slice(0, 30) : [],
+    [places, placeQuery])
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-lg font-bold text-gray-900 dark:text-white">Karte</h1>
         <div className="flex items-center gap-3">
+          {!view3d && places.length > 0 && (
+            <div className="relative">
+              <input
+                value={placeQuery}
+                onChange={e => setPlaceQuery(e.target.value)}
+                placeholder={`Ort suchen … (${places.length})`}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-44"
+              />
+              {placeMatches.length > 0 && (
+                <div className="absolute z-[1000] mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
+                  {placeMatches.map(pl => (
+                    <button key={pl.name}
+                      onClick={() => { setFlyTarget({ lat: pl.lat, lng: pl.lng, seq: Date.now() }); setPlaceQuery('') }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-left text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
+                      <span className="truncate">{pl.name}</span>
+                      <span className="text-gray-400 shrink-0">{pl.n}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <span className="text-sm text-gray-500 dark:text-gray-400">{withGps.length} Fotos mit GPS</span>
           <button
             onClick={() => setView3d(v => !v)}
@@ -169,6 +221,7 @@ export default function MapPage() {
           <MapContainer center={[51.1657, 10.4515]} zoom={5} className="h-full w-full">
             <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
             <FitBounds points={points} />
+            <FlyTo target={flyTarget} />
             <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
             {withGps.map((photo) => (
               <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]}>
