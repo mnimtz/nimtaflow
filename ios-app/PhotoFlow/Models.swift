@@ -112,6 +112,14 @@ struct MapPointV1: Codable, Identifiable, Hashable {
     let is_video: Bool
 }
 
+struct MapClusterV1: Codable, Hashable {
+    let latitude: Double
+    let longitude: Double
+    let count: Int
+    let photo_id: Int?
+    let is_video: Bool
+}
+
 // MARK: - Trips / events
 
 struct TripEventV1: Codable, Identifiable, Hashable {

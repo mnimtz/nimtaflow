@@ -659,6 +659,46 @@ async def map_v1(db: AsyncSession = Depends(get_db),
     return [MapPointV1(id=r[0], latitude=r[1], longitude=r[2], is_video=r[3]) for r in rows]
 
 
+class MapClusterV1(BaseModel):
+    latitude: float
+    longitude: float
+    count: int
+    photo_id: Optional[int]   # set only when count == 1 (a single photo to open)
+    is_video: bool
+
+
+@router.get("/map/clusters", response_model=List[MapClusterV1])
+async def map_clusters_v1(
+    min_lat: float = Query(-90), min_lng: float = Query(-180),
+    max_lat: float = Query(90), max_lng: float = Query(180),
+    grid: int = Query(12, ge=2, le=40, description="cells across the viewport"),
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
+):
+    """Server-side grid clustering for the visible bbox. Buckets photos into a
+    grid (≈grid×grid cells) in SQL and returns one centroid+count per cell — so
+    the map transfers a few hundred clusters, not 27k points, and resolves as you
+    zoom (smaller bbox → finer cells)."""
+    from sqlalchemy import func as _f
+    acl = photo_conditions(user)
+    cell_lat = max((max_lat - min_lat) / grid, 1e-6)
+    cell_lng = max((max_lng - min_lng) / grid, 1e-6)
+    gy = _f.floor(Photo.latitude / cell_lat)
+    gx = _f.floor(Photo.longitude / cell_lng)
+    rows = (await db.execute(
+        select(_f.count(), _f.avg(Photo.latitude), _f.avg(Photo.longitude),
+               _f.min(Photo.id), _f.bool_or(Photo.is_video))
+        .where(Photo.latitude.isnot(None), Photo.longitude.isnot(None),
+               Photo.latitude >= min_lat, Photo.latitude <= max_lat,
+               Photo.longitude >= min_lng, Photo.longitude <= max_lng,
+               Photo.is_trashed == False, *acl)  # noqa: E712
+        .group_by(gy, gx)
+    )).all()
+    return [MapClusterV1(count=r[0], latitude=float(r[1]), longitude=float(r[2]),
+                         photo_id=(r[3] if r[0] == 1 else None), is_video=bool(r[4]))
+            for r in rows]
+
+
 # ── Chat (iOS app) — proxies the same Gemini/local assistant the web uses ────────
 
 class ChatRequestV1(BaseModel):

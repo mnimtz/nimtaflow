@@ -155,6 +155,10 @@ final class APIClient: ObservableObject {
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
+    func mapClusters(minLat: Double, minLng: Double, maxLat: Double, maxLng: Double, grid: Int) async throws -> [MapClusterV1] {
+        let p = "api/v1/map/clusters?min_lat=\(minLat)&min_lng=\(minLng)&max_lat=\(maxLat)&max_lng=\(maxLng)&grid=\(grid)"
+        return try await get(p, as: [MapClusterV1].self)
+    }
 
     // MARK: Upload
     func uploadFile(data: Data, filename: String, mime: String) async throws -> UploadResult {
