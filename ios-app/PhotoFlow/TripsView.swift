@@ -12,6 +12,7 @@ struct TripsView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var showSettings = false
+    @State private var showWizard = false
 
     private var dismissed: Set<String> {
         Set(dismissedRaw.split(separator: "\n").map(String.init))
@@ -56,6 +57,9 @@ struct TripsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showWizard = true } label: { Image(systemName: "plus.circle.fill") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Picker("", selection: $tripsOnly) {
                         Text("Reisen").tag(true); Text("Alle").tag(false)
@@ -71,6 +75,7 @@ struct TripsView: View {
                                    onRestore: clearDismissed)
                     .presentationDetents([.medium])
             }
+            .sheet(isPresented: $showWizard) { NewTripWizard() }
             .refreshable { await load() }
             .task { if events.isEmpty { await load() } }
         }
@@ -129,24 +134,28 @@ private struct TripCard: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let c = event.cover_url {
-                Thumb(url: api.url(c)).aspectRatio(16.0/9.0, contentMode: .fill)
-            } else {
-                Color.gray.opacity(0.18).aspectRatio(16.0/9.0, contentMode: .fill)
+        // Fixed 16:9 card — Color.clear sets the size, the image fills + is clipped,
+        // so cards never overflow into each other.
+        Color.clear
+            .aspectRatio(16.0/9.0, contentMode: .fit)
+            .overlay {
+                if let c = event.cover_url { Thumb(url: api.url(c)) }
+                else { Color.gray.opacity(0.18) }
             }
-            LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if event.is_trip { Image(systemName: "airplane").font(.caption2) }
-                    Text(event.city ?? "Unbekannter Ort").font(.headline)
+            .overlay {
+                LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        if event.is_trip { Image(systemName: "airplane").font(.caption2) }
+                        Text(event.city ?? "Unbekannter Ort").font(.headline)
+                    }
+                    Text(subtitle).font(.caption)
                 }
-                Text(subtitle).font(.caption)
+                .foregroundStyle(.white).padding(12)
             }
-            .foregroundStyle(.white).padding(12)
-        }
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -212,4 +221,88 @@ func prettyDate(_ iso: String) -> String {
     guard let d = f.date(from: iso) else { return iso }
     let o = DateFormatter(); o.locale = Locale(identifier: "de_DE"); o.dateFormat = "d. MMM yyyy"
     return o.string(from: d)
+}
+
+/// "Neue Reise" — describe a trip, Gemini plans the itinerary (waypoints), then
+/// create an album that auto-fills with the photos in that date range.
+struct NewTripWizard: View {
+    @EnvironmentObject var api: APIClient
+    @Environment(\.dismiss) var dismiss
+
+    @State private var desc = ""
+    @State private var useDates = false
+    @State private var from = Date()
+    @State private var to = Date()
+    @State private var phase = 0          // 0 = form, 1 = preview
+    @State private var busy = false
+    @State private var plan: TripPlan?
+    @State private var error: String?
+    @State private var createdName: String?
+
+    private var iso: DateFormatter { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let createdName {
+                    Section { Label("Reise „\(createdName)“ erstellt — sie erscheint unter Alben.",
+                                    systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                } else if phase == 0 {
+                    Section("Reise beschreiben") {
+                        TextField("z. B. Kreuzfahrt Norwegen, Juli 2023", text: $desc, axis: .vertical).lineLimit(2...4)
+                        Toggle("Zeitraum angeben", isOn: $useDates)
+                        if useDates {
+                            DatePicker("Von", selection: $from, displayedComponents: .date)
+                            DatePicker("Bis", selection: $to, displayedComponents: .date)
+                        }
+                    }
+                    if let error { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
+                    Section {
+                        Button { Task { await planIt() } } label: {
+                            HStack { if busy { ProgressView() }; Text("Mit Gemini planen") }
+                        }.disabled(busy || desc.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } else if let p = plan {
+                    Section(p.name) {
+                        if let s = p.summary, !s.isEmpty { Text(s).font(.callout) }
+                    }
+                    Section("Stationen (\(p.waypoints.count))") {
+                        ForEach(Array(p.waypoints.enumerated()), id: \.offset) { _, w in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(w.place).font(.subheadline.weight(.medium))
+                                if let n = w.note, !n.isEmpty { Text(n).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                    if let error { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
+                    Section {
+                        Button { Task { await createIt() } } label: {
+                            HStack { if busy { ProgressView() }; Text("Reise-Album erstellen") }
+                        }.disabled(busy)
+                        Button("Zurück") { phase = 0 }
+                    }
+                }
+            }
+            .navigationTitle("Neue Reise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Schließen") { dismiss() } } }
+        }
+    }
+
+    func planIt() async {
+        busy = true; defer { busy = false }; error = nil
+        do {
+            plan = try await api.planTrip(description: desc,
+                dateFrom: useDates ? iso.string(from: from) : nil,
+                dateTo: useDates ? iso.string(from: to) : nil)
+            phase = 1
+        } catch { self.error = "Planung fehlgeschlagen (Gemini-Key in den Einstellungen?)." }
+    }
+
+    func createIt() async {
+        guard let p = plan else { return }
+        busy = true; defer { busy = false }; error = nil
+        do { createdName = try await api.createTrip(p).name }
+        catch { self.error = "Album konnte nicht erstellt werden." }
+    }
 }

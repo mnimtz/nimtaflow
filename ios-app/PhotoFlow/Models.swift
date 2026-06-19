@@ -139,6 +139,29 @@ struct TripsV1: Codable {
     let events: [TripEventV1]
 }
 
+struct TripWaypoint: Codable, Hashable {
+    let place: String
+    let country: String?
+    let date: String?
+    let lat: Double?
+    let lng: Double?
+    let note: String?
+}
+
+struct TripPlan: Codable {
+    let name: String
+    let date_from: String?
+    let date_to: String?
+    let summary: String?
+    let waypoints: [TripWaypoint]
+}
+
+struct CreateTripResult: Codable {
+    let album_id: Int
+    let added: Int
+    let name: String
+}
+
 // MARK: - Upload
 
 struct UploadResult: Codable {

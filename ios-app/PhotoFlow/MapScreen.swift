@@ -7,11 +7,11 @@ import MapKit
 struct MapScreen: View {
     @EnvironmentObject var api: APIClient
     @State private var clusters: [MapClusterV1] = []
-    @State private var globe = false
+    @State private var globe = true   // start on the 3D globe (world view)
     @State private var selected: PhotoV1?
     @State private var camera: MapCameraPosition = .region(
-        MKCoordinateRegion(center: .init(latitude: 51, longitude: 10),
-                           span: MKCoordinateSpan(latitudeDelta: 30, longitudeDelta: 30)))
+        MKCoordinateRegion(center: .init(latitude: 25, longitude: 10),
+                           span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130)))
     @State private var region: MKCoordinateRegion?
     @State private var loading = false
     @State private var mapError: String?

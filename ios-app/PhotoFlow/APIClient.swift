@@ -146,6 +146,29 @@ final class APIClient: ObservableObject {
         return try await get(p, as: PhotoPage.self)
     }
 
+    // MARK: Trip planner (Gemini)
+    func planTrip(description: String, dateFrom: String?, dateTo: String?) async throws -> TripPlan {
+        var body: [String: Any] = ["description": description]
+        if let dateFrom { body["date_from"] = dateFrom }
+        if let dateTo { body["date_to"] = dateTo }
+        return try await send(makeRequest("api/photos/plan-trip", method: "POST", json: body), as: TripPlan.self)
+    }
+    func createTrip(_ plan: TripPlan) async throws -> CreateTripResult {
+        var body: [String: Any] = ["name": plan.name, "description": plan.summary ?? ""]
+        if let f = plan.date_from { body["date_from"] = f }
+        if let t = plan.date_to { body["date_to"] = t }
+        body["waypoints"] = plan.waypoints.map { w -> [String: Any] in
+            var d: [String: Any] = ["place": w.place]
+            if let c = w.country { d["country"] = c }
+            if let dt = w.date { d["date"] = dt }
+            if let la = w.lat { d["lat"] = la }
+            if let ln = w.lng { d["lng"] = ln }
+            if let n = w.note { d["note"] = n }
+            return d
+        }
+        return try await send(makeRequest("api/photos/create-trip", method: "POST", json: body), as: CreateTripResult.self)
+    }
+
     // MARK: Trips / events
     func trips(tripsOnly: Bool = false, minPhotos: Int? = nil) async throws -> TripsV1 {
         var p = "api/v1/trips?trips_only=\(tripsOnly)"
