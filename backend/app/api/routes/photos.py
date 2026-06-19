@@ -240,7 +240,14 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
     person_cond = []
     if person_ids:
         from app.models.face import Face
-        person_cond = [Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(person_ids)))]
+        from app.models.person import Person
+        # Drop hidden persons so hiding someone automatically removes them from
+        # memories (only NAMED + visible persons count). If all selected are hidden,
+        # the result is empty rather than falling back to "all photos".
+        visible = list((await db.execute(
+            select(Person.id).where(Person.id.in_(person_ids), Person.is_hidden == False)  # noqa: E712
+        )).scalars())
+        person_cond = [Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(visible)))]
 
     today = datetime.now(timezone.utc)
     memories = []

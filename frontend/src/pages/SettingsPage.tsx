@@ -1226,29 +1226,50 @@ function MemoriesSettingsSection() {
   }, [settings])
   const save = useMutation({
     mutationFn: () => api.put('/settings', { 'memories.person_ids': ids.join(',') }),
-    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['memories'] }) },
   })
-  const toggle = (id: number) => setIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  const [q, setQ] = useState('')
+  const named = people.filter(p => (p.name || '').trim()).sort((a, b) => a.name.localeCompare(b.name))
+  const selected = named.filter(p => ids.includes(p.id))
+  const matches = q.trim() ? named.filter(p => !ids.includes(p.id) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 30) : []
+  const add = (id: number) => { setIds(s => [...s, id]); setQ('') }
+  const remove = (id: number) => setIds(s => s.filter(x => x !== id))
+  const av = (id: number) => `/api/people/${id}/avatar?v=${id}`
 
   return (
     <div>
-      <SectionHeader title="Erinnerungen" desc="Heute vor 1, 2, … Jahren — in der Galerie. Optional nur Fotos mit bestimmten Personen." />
+      <SectionHeader title="Erinnerungen" desc="Heute vor 1, 2, … Jahren — in der Galerie. Optional nur Fotos mit bestimmten benannten Personen. Ausgeblendete Personen werden automatisch nicht mehr berücksichtigt." />
       <div className="space-y-4 max-w-2xl">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">{ids.length === 0 ? 'Alle Fotos' : `Nur Fotos mit ${ids.length} ausgewählten Person(en)`}</p>
-        <div className="flex flex-wrap gap-2">
-          {[...people].sort((a, b) => b.face_count - a.face_count).map(p => (
-            <button key={p.id} onClick={() => toggle(p.id)}
-              className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors ${ids.includes(p.id)
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
-              <span className="w-5 h-5 rounded-full overflow-hidden bg-zinc-300 dark:bg-zinc-700 flex items-center justify-center text-[9px]">
-                {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : (p.name?.[0] ?? '?')}
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">{selected.length === 0 ? 'Alle Fotos' : `Nur Fotos mit ${selected.length} ausgewählten Person(en)`}</p>
+
+        {selected.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {selected.map(p => (
+              <span key={p.id} className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full bg-indigo-600 text-white text-xs">
+                <span className="w-5 h-5 rounded-full overflow-hidden bg-white/20"><img src={av(p.id)} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} /></span>
+                {p.name}
+                <button onClick={() => remove(p.id)} className="hover:text-red-200" title="Entfernen"><X size={12} /></button>
               </span>
-              {p.name} <span className="opacity-60">{p.face_count}</span>
-            </button>
-          ))}
-          {people.length === 0 && <p className="text-sm text-zinc-400">Noch keine Personen — erst Gesichter clustern.</p>}
+            ))}
+          </div>
+        )}
+
+        <div className="relative max-w-xs">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Person hinzufügen … (${named.length})`}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          {matches.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
+              {matches.map(p => (
+                <button key={p.id} onClick={() => add(p.id)} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-left text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <span className="w-6 h-6 rounded-full overflow-hidden bg-zinc-300 dark:bg-zinc-700 shrink-0"><img src={av(p.id)} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} /></span>
+                  <span className="truncate">{p.name}</span><span className="ml-auto text-zinc-400 text-xs">{p.face_count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {named.length === 0 && <p className="text-sm text-zinc-400 mt-1">Noch keine benannten Personen — erst Gesichter benennen.</p>}
         </div>
+
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           {saved ? '✓ Gespeichert' : 'Speichern'}
