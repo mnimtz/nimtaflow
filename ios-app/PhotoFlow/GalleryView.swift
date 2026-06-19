@@ -27,9 +27,10 @@ struct GalleryView: View {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 2) {
                     ForEach(photos) { p in
-                        Thumb(url: api.url(p.thumb_medium_url))
-                            .aspectRatio(1, contentMode: .fill)
-                            .frame(minHeight: 110)
+                        Color.clear
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
+                            .clipped()
                             .overlay(alignment: .topTrailing) {
                                 if p.is_favorite { Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.red).padding(4) }
                             }
@@ -121,7 +122,18 @@ struct GalleryView: View {
         .frame(maxWidth: .infinity).padding(.top, 80).padding(.horizontal)
     }
 
-    func reload() async { photos = []; cursor = nil; hasMore = true; loadError = nil; await load() }
+    // Refresh: fetch the first page fresh and REPLACE only on success (no wiping
+    // the grid first — avoids the flash + a cancelled refresh keeping old photos).
+    func reload() async {
+        guard !loading else { return }
+        loading = true; defer { loading = false }
+        do {
+            let page = try await api.photos(cursor: nil, favorites: favoritesOnly)
+            photos = page.items; cursor = page.next_cursor; hasMore = page.has_more
+            lastTotal = page.total; loadError = nil
+        } catch { handle(error) }
+    }
+
     func load() async {
         guard hasMore, !loading else { return }
         loading = true; defer { loading = false }
@@ -129,17 +141,23 @@ struct GalleryView: View {
             let page = try await api.photos(cursor: cursor, favorites: favoritesOnly)
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
             lastTotal = page.total; loadError = nil
-        } catch {
-            hasMore = false
-            if let e = error as? APIClient.APIError {
-                switch e {
-                case .status(let c): loadError = "Server antwortet mit Fehler \(c)"
-                case .decode: loadError = "Antwort nicht lesbar (Decode-Fehler)"
-                case .badURL: loadError = "Server-Adresse ungültig"
-                }
-            } else {
-                loadError = "Verbindung fehlgeschlagen: \((error as NSError).localizedDescription)"
+        } catch { handle(error) }
+    }
+
+    private func handle(_ error: Error) {
+        // A cancelled request (pull-to-refresh released, view changed) is NOT a
+        // real failure — ignore it silently and allow another attempt.
+        if error is CancellationError { return }
+        if let u = error as? URLError, u.code == .cancelled { return }
+        hasMore = false
+        if let e = error as? APIClient.APIError {
+            switch e {
+            case .status(let c): loadError = "Server antwortet mit Fehler \(c)"
+            case .decode: loadError = "Antwort nicht lesbar (Decode-Fehler)"
+            case .badURL: loadError = "Server-Adresse ungültig"
             }
+        } else {
+            loadError = "Verbindung fehlgeschlagen: \((error as NSError).localizedDescription)"
         }
     }
 }

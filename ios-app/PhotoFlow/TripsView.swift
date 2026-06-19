@@ -167,8 +167,10 @@ struct TripDetailView: View {
         ScrollView {
             LazyVGrid(columns: cols, spacing: 2) {
                 ForEach(photos) { p in
-                    Thumb(url: api.url(p.thumb_medium_url))
-                        .aspectRatio(1, contentMode: .fill).frame(minHeight: 110)
+                    Color.clear
+                        .aspectRatio(1, contentMode: .fit)
+                        .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
+                        .clipped()
                         .overlay(alignment: .bottomLeading) {
                             if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(4).shadow(radius: 2) }
                         }
