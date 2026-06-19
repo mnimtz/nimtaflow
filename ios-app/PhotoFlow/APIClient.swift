@@ -139,6 +139,16 @@ final class APIClient: ObservableObject {
         var p = "api/v1/albums/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
         return try await get(p, as: PhotoPage.self)
     }
+    func createAlbum(name: String) async throws {
+        try await action("api/albums", method: "POST", json: ["name": name, "album_type": "manual"])
+    }
+    func renameAlbum(_ id: Int, name: String) async throws {
+        try await action("api/albums/\(id)", method: "PATCH", json: ["name": name])
+    }
+    func deleteAlbum(_ id: Int) async throws { try await action("api/albums/\(id)", method: "DELETE") }
+    func removeFromAlbum(_ albumId: Int, photoId: Int) async throws {
+        try await action("api/albums/\(albumId)/photos/\(photoId)", method: "DELETE")
+    }
 
     func photosByDate(from: String, to: String, cursor: Int?) async throws -> PhotoPage {
         var p = "api/v1/photos?limit=60&date_from=\(from)&date_to=\(to)"

@@ -8,6 +8,8 @@ struct AlbumsView: View {
     @State private var albums: [AlbumV1] = []
     @State private var loading = false
     @State private var error: String?
+    @State private var showCreate = false
+    @State private var newName = ""
 
     let cols = [GridItem(.adaptive(minimum: 150), spacing: 12)]
 
@@ -30,7 +32,22 @@ struct AlbumsView: View {
                 }
             }
             .navigationTitle("Alben")
-            .navigationDestination(for: AlbumV1.self) { AlbumDetailView(album: $0) }
+            .navigationDestination(for: AlbumV1.self) { a in
+                AlbumDetailView(album: a) { Task { await load() } }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { newName = ""; showCreate = true } label: { Image(systemName: "plus") }
+                }
+            }
+            .alert("Neues Album", isPresented: $showCreate) {
+                TextField("Name", text: $newName)
+                Button("Erstellen") {
+                    let n = newName.trimmingCharacters(in: .whitespaces)
+                    if !n.isEmpty { Task { try? await api.createAlbum(name: n); await load() } }
+                }
+                Button("Abbrechen", role: .cancel) {}
+            }
             .refreshable { await load() }
             .task { if albums.isEmpty { await load() } }
         }
@@ -80,12 +97,17 @@ private struct AlbumCard: View {
 struct AlbumDetailView: View {
     @EnvironmentObject var api: APIClient
     let album: AlbumV1
+    var onChange: () -> Void = {}
+    @Environment(\.dismiss) private var dismiss
     @State private var photos: [PhotoV1] = []
     @State private var cursor: Int? = nil
     @State private var hasMore = true
     @State private var loading = false
     @State private var selected: PhotoV1?
     @State private var showShare = false
+    @State private var showRename = false
+    @State private var renameText = ""
+    @State private var displayName: String?
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -108,17 +130,33 @@ struct AlbumDetailView: View {
             .padding(2)
             if loading { ProgressView().padding() }
         }
-        .navigationTitle(album.name)
+        .navigationTitle(displayName ?? album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
+                Menu {
+                    Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
+                    Button { renameText = displayName ?? album.name; showRename = true } label: {
+                        Label("Umbenennen", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        Task { try? await api.deleteAlbum(album.id); onChange(); dismiss() }
+                    } label: { Label("Album löschen", systemImage: "trash") }
+                } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        .alert("Album umbenennen", isPresented: $showRename) {
+            TextField("Name", text: $renameText)
+            Button("Speichern") {
+                let n = renameText.trimmingCharacters(in: .whitespaces)
+                if !n.isEmpty { Task { try? await api.renameAlbum(album.id, name: n); displayName = n; onChange() } }
+            }
+            Button("Abbrechen", role: .cancel) {}
         }
         .task { if photos.isEmpty { await load() } }
         .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
         .sheet(isPresented: $showShare) {
-            ShareSheetView(target: .album(id: album.id, title: album.name)).presentationDetents([.medium])
+            ShareSheetView(target: .album(id: album.id, title: displayName ?? album.name)).presentationDetents([.medium])
         }
     }
 
