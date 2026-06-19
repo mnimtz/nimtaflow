@@ -78,6 +78,14 @@ celery_app.conf.beat_schedule = {
         "task": "sweep_faces_local",
         "schedule": 600.0,
     },
+    # Keep the face-crop cache (SSD) warm so the People page never crops on-demand
+    # (the slow/black-tile case). This was a button-only task and never ran on its
+    # own, so new faces — and faces whose person_id changed on re-clustering — had
+    # no cached crop. Idempotent (only generates genuine misses). Every 30 min.
+    "warm-face-crops": {
+        "task": "warm_face_crops",
+        "schedule": 1800.0,
+    },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {
         "task": "reclaim_ai",
