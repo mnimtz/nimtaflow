@@ -70,6 +70,7 @@ struct PhotoPager: View {
     @State private var favs: Set<Int> = []
     @State private var ratings: [Int: Int] = [:]
     @State private var reprocessed = false
+    @State private var showShare = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -85,6 +86,7 @@ struct PhotoPager: View {
                     Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .white)
                 }
                 Menu {
+                    Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button { Task { try? await api.reprocess(photos[index].id); reprocessed = true } } label: {
                         Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
                     }
@@ -121,6 +123,10 @@ struct PhotoPager: View {
             ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
         }
         .onChange(of: index) { _, _ in reprocessed = false }
+        .sheet(isPresented: $showShare) {
+            ShareSheetView(target: .photo(id: photos[index].id, title: photos[index].filename))
+                .presentationDetents([.medium])
+        }
     }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }

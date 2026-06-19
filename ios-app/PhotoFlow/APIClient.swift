@@ -135,6 +135,13 @@ final class APIClient: ObservableObject {
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
 
+    // MARK: Sharing
+    func createShare(_ body: [String: Any]) async throws -> ShareOut {
+        try await send(makeRequest("api/shares", method: "POST", json: body), as: ShareOut.self)
+    }
+    func listShares() async throws -> [ShareOut] { try await get("api/shares", as: [ShareOut].self) }
+    func deleteShare(_ id: Int) async throws { try await action("api/shares/\(id)", method: "DELETE") }
+
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {

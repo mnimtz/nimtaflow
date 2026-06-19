@@ -85,6 +85,7 @@ struct AlbumDetailView: View {
     @State private var hasMore = true
     @State private var loading = false
     @State private var selected: PhotoV1?
+    @State private var showShare = false
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -108,8 +109,16 @@ struct AlbumDetailView: View {
         }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
+            }
+        }
         .task { if photos.isEmpty { await load() } }
         .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
+        .sheet(isPresented: $showShare) {
+            ShareSheetView(target: .album(id: album.id, title: album.name)).presentationDetents([.medium])
+        }
     }
 
     func load() async {

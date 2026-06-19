@@ -159,6 +159,7 @@ struct TripDetailView: View {
     @State private var hasMore = true
     @State private var loading = false
     @State private var selected: PhotoV1?
+    @State private var showShare = false
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -181,8 +182,17 @@ struct TripDetailView: View {
         }
         .navigationTitle(event.city ?? "Reise")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
+            }
+        }
         .task { if photos.isEmpty { await load() } }
         .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
+        .sheet(isPresented: $showShare) {
+            ShareSheetView(target: .trip(from: event.date_from, to: event.date_to,
+                                         title: event.city ?? "Reise")).presentationDetents([.medium])
+        }
     }
 
     func load() async {

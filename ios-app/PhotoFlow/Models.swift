@@ -132,6 +132,20 @@ struct TripsV1: Codable {
     let events: [TripEventV1]
 }
 
+// MARK: - Sharing
+
+struct ShareOut: Codable, Identifiable, Hashable {
+    let id: Int
+    let token: String
+    let url: String
+    let share_type: String
+    let title: String?
+    let has_password: Bool
+    let expires_at: String?
+    let allow_download: Bool
+    let view_count: Int
+}
+
 // MARK: - Chat
 
 struct ChatStatus: Codable {
