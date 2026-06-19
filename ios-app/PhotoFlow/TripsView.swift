@@ -156,6 +156,7 @@ private struct TripCard: View {
                 .foregroundStyle(.white).padding(12)
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())   // make the whole card tappable (Color.clear base)
     }
 }
 
@@ -169,8 +170,16 @@ struct TripDetailView: View {
     @State private var loading = false
     @State private var selected: PhotoV1?
     @State private var showShare = false
+    @AppStorage("trips_dismissed") private var dismissedRaw: String = ""
+    @Environment(\.dismiss) private var dismiss
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
+
+    private func removeFromList() {
+        var s = Set(dismissedRaw.split(separator: "\n").map(String.init))
+        s.insert(event.id); dismissedRaw = s.joined(separator: "\n")
+        dismiss()
+    }
 
     var body: some View {
         ScrollView {
@@ -195,8 +204,17 @@ struct TripDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
+                Menu {
+                    Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
+                    Button(role: .destructive) { removeFromList() } label: {
+                        Label("Aus Liste entfernen", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        .safeAreaInset(edge: .top) {
+            Text("\(event.count) Fotos · \(prettyDate(event.date_from))")
+                .font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
         }
         .task { if photos.isEmpty { await load() } }
         .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
