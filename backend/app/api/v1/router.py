@@ -116,10 +116,12 @@ def _to_v1(photo: Photo, req: Request) -> PhotoV1:
 @router.get("/photos", response_model=PhotoPageV1)
 async def list_photos_v1(
     request: Request,
-    cursor: Optional[int] = Query(None, description="Last photo ID from previous page"),
+    cursor: Optional[int] = Query(None, description="Offset of the next page (pass back next_cursor)"),
     limit: int = Query(50, ge=1, le=200),
     favorites: bool = False,
-    media_type: Optional[str] = Query(None, description="photo|video"),
+    media_type: Optional[str] = Query(None, description="photo|video|raw"),
+    person_id: Optional[int] = Query(None, description="only photos containing this person"),
+    sort: str = Query("newest", description="newest|oldest|added|name"),
     archived: bool = False,
     trashed: bool = False,
     date_from: Optional[str] = Query(None, description="ISO date — taken_at >= this day"),
@@ -127,55 +129,59 @@ async def list_photos_v1(
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
-    """Cursor-paginated photo list. Stable under concurrent uploads.
+    """Offset-paginated photo list with the same filters/sort the web gallery has.
 
-    date_from/date_to (used by the Reisen/trip detail) filter on taken_at; both
-    are inclusive day bounds, so a trip's whole span comes back in one feed.
+    Offset pagination (cursor = rows to skip) instead of id-cursor, so arbitrary
+    sort orders (by taken_at etc.) work. Pass the returned next_cursor back.
     """
     from datetime import datetime as _dt, timedelta as _td
+    from sqlalchemy import or_, func as _f
+    from app.models.face import Face
+
+    def _filtered():
+        q = select(Photo).where(
+            Photo.status == PhotoStatus.done,
+            Photo.is_trashed == trashed,
+            Photo.is_archived == archived,
+            *acl,
+        )
+        if date_from:
+            try: q = q.where(Photo.taken_at >= _dt.fromisoformat(date_from))
+            except ValueError: pass
+        if date_to:
+            try: q = q.where(Photo.taken_at < _dt.fromisoformat(date_to) + _td(days=1))
+            except ValueError: pass
+        if favorites:
+            q = q.where(Photo.is_favorite == True)  # noqa: E712
+        if media_type == "video":
+            q = q.where(Photo.is_video == True)  # noqa: E712
+        elif media_type == "photo":
+            q = q.where(Photo.is_video == False,  # noqa: E712
+                        or_(Photo.mime_type.is_(None), Photo.mime_type.not_like("image/raw%")))
+        elif media_type == "raw":
+            q = q.where(Photo.mime_type.like("image/raw%"))
+        if person_id:
+            q = q.join(Face, Face.photo_id == Photo.id).where(Face.person_id == person_id)
+        return q
+
     acl = photo_conditions(user)
-    date_conds = []
-    if date_from:
-        try: date_conds.append(Photo.taken_at >= _dt.fromisoformat(date_from))
-        except ValueError: pass
-    if date_to:
-        try: date_conds.append(Photo.taken_at < _dt.fromisoformat(date_to) + _td(days=1))
-        except ValueError: pass
-    q = select(Photo).where(
-        Photo.status == PhotoStatus.done,
-        Photo.is_trashed == trashed,
-        Photo.is_archived == archived,
-        *date_conds,
-        *acl,
-    )
-    if favorites:
-        q = q.where(Photo.is_favorite == True)
-    if media_type == "video":
-        q = q.where(Photo.is_video == True)
-    elif media_type == "photo":
-        q = q.where(Photo.is_video == False)
-    if cursor:
-        q = q.where(Photo.id < cursor)
+    q = _filtered()
+    if sort == "oldest":
+        q = q.order_by(Photo.taken_at.asc().nullsfirst(), Photo.id.asc())
+    elif sort == "added":
+        q = q.order_by(Photo.indexed_at.desc().nullslast(), Photo.id.desc())
+    elif sort == "name":
+        q = q.order_by(Photo.filename.asc())
+    else:  # newest
+        q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
 
-    q = q.order_by(Photo.id.desc()).limit(limit + 1)
-    rows = (await db.execute(q)).scalars().all()
-
+    offset = max(0, cursor or 0)
+    rows = (await db.execute(q.offset(offset).limit(limit + 1))).scalars().all()
     has_more = len(rows) > limit
     items = rows[:limit]
-    next_cursor = items[-1].id if has_more and items else None
+    next_cursor = (offset + limit) if has_more else None
 
-    # Total count (no cursor filter, same access + facets)
-    total_q = select(Photo).where(
-        Photo.status == PhotoStatus.done, Photo.is_trashed == trashed, Photo.is_archived == archived,
-        *date_conds, *acl,
-    )
-    if favorites:
-        total_q = total_q.where(Photo.is_favorite == True)  # noqa: E712
-    if media_type == "video":
-        total_q = total_q.where(Photo.is_video == True)  # noqa: E712
-    elif media_type == "photo":
-        total_q = total_q.where(Photo.is_video == False)  # noqa: E712
-    total = await db.scalar(select(__import__("sqlalchemy").func.count()).select_from(total_q.subquery()))
+    total = await db.scalar(select(_f.count()).select_from(_filtered().subquery()))
 
     return PhotoPageV1(
         items=[_to_v1(p, request) for p in items],

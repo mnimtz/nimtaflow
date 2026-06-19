@@ -12,6 +12,13 @@ struct GalleryView: View {
     @State private var selected: PhotoV1?
     @State private var loadError: String?
     @State private var lastTotal: Int?
+    // Filter / sort
+    @State private var sort = "newest"
+    @State private var mediaType: String? = nil
+    @State private var personId: Int? = nil
+    @State private var personName: String? = nil
+    @State private var showFilter = false
+    private var filterActive: Bool { mediaType != nil || personId != nil || sort != "newest" }
 
     // Upload
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -59,6 +66,16 @@ struct GalleryView: View {
                         Image(systemName: favoritesOnly ? "heart.fill" : "heart")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showFilter = true } label: {
+                        Image(systemName: filterActive ? "line.3.horizontal.decrease.circle.fill"
+                                                        : "line.3.horizontal.decrease.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showFilter) {
+                GalleryFilterSheet(sort: $sort, mediaType: $mediaType, personId: $personId,
+                                   personName: $personName, onApply: { Task { await reload() } })
             }
             .overlay(alignment: .bottom) {
                 if uploading || uploadNote != nil {
@@ -138,7 +155,8 @@ struct GalleryView: View {
         guard hasMore, !loading else { return }
         loading = true; defer { loading = false }
         do {
-            let page = try await api.photos(cursor: cursor, favorites: favoritesOnly)
+            let page = try await api.photos(cursor: cursor, favorites: favoritesOnly,
+                                            mediaType: mediaType, sort: sort, personId: personId)
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
             lastTotal = page.total; loadError = nil
         } catch { handle(error) }

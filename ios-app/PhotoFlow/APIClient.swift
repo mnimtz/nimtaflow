@@ -91,11 +91,13 @@ final class APIClient: ObservableObject {
     func logout() async { token = ""; refresh = ""; loggedIn = false }
 
     // MARK: Feeds
-    func photos(cursor: Int?, favorites: Bool = false, mediaType: String? = nil) async throws -> PhotoPage {
-        var p = "api/v1/photos?limit=60"
+    func photos(cursor: Int?, favorites: Bool = false, mediaType: String? = nil,
+                sort: String = "newest", personId: Int? = nil) async throws -> PhotoPage {
+        var p = "api/v1/photos?limit=60&sort=\(sort)"
         if let cursor { p += "&cursor=\(cursor)" }
         if favorites { p += "&favorites=true" }
         if let mediaType { p += "&media_type=\(mediaType)" }
+        if let personId { p += "&person_id=\(personId)" }
         return try await get(p, as: PhotoPage.self)
     }
     func search(_ q: String) async throws -> PhotoPage {
