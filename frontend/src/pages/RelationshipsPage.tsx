@@ -272,7 +272,17 @@ function AddRelationModal({ nodes, preselect, onClose, onSaved }: {
   const [from, setFrom] = useState<number | ''>(preselect ?? '')
   const [to, setTo] = useState<number | ''>('')
   const [type, setType] = useState('parent')
-  const sorted = [...nodes].sort((a, b) => a.name.localeCompare(b.name))
+  // ALL named persons (not just graph nodes) so people not yet in the graph are
+  // selectable — otherwise you could never connect a new person (chicken-and-egg).
+  const { data: allPeople = [] } = useQuery<{ id: number; name: string | null }[]>({
+    queryKey: ['people'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 60_000,
+  })
+  const sorted = useMemo(() => {
+    const m = new Map<number, { id: number; name: string }>()
+    for (const n of nodes) m.set(n.id, { id: n.id, name: n.name })
+    for (const p of allPeople) if ((p.name || '').trim()) m.set(p.id, { id: p.id, name: p.name! })
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [nodes, allPeople])
   const sel = 'w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
   const { data: types = [] } = useQuery<RelType[]>({ queryKey: ['rel-types'], queryFn: () => api.get('/relationships/types').then(r => r.data), staleTime: 600_000 })
   const grouped = useMemo(() => {
