@@ -297,6 +297,17 @@ async def upload_photos(
             results.append(UploadResult(id=None, filename=upload.filename or "?", status=f"error: {e}"))
 
     await db.commit()
+
+    # Kick off the full pipeline (thumbnails + AI + faces) for each newly accepted
+    # photo — without this they'd sit in 'pending' forever with no thumbnail.
+    try:
+        from app.worker.tasks import process_photo_task
+        for r in results:
+            if r.status == "accepted" and r.id:
+                process_photo_task.delay(r.id)
+    except Exception:
+        pass
+
     return results
 
 

@@ -132,6 +132,15 @@ struct TripsV1: Codable {
     let events: [TripEventV1]
 }
 
+// MARK: - Upload
+
+struct UploadResult: Codable {
+    let id: Int?
+    let filename: String
+    let status: String          // "accepted" | "duplicate" | "error..."
+    let duplicate_of: Int?
+}
+
 // MARK: - Sharing
 
 struct ShareOut: Codable, Identifiable, Hashable {

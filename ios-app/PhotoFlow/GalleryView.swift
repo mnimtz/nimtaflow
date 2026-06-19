@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct GalleryView: View {
     @EnvironmentObject var api: APIClient
@@ -8,6 +10,13 @@ struct GalleryView: View {
     @State private var loading = false
     @State private var favoritesOnly = false
     @State private var selected: PhotoV1?
+
+    // Upload
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var uploading = false
+    @State private var uploadDone = 0
+    @State private var uploadTotal = 0
+    @State private var uploadNote: String?
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -36,10 +45,31 @@ struct GalleryView: View {
             .navigationTitle("Galerie")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    PhotosPicker(selection: $pickerItems, maxSelectionCount: 0,
+                                 matching: .any(of: [.images, .videos])) {
+                        Image(systemName: "plus.circle")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { favoritesOnly.toggle(); Task { await reload() } } label: {
                         Image(systemName: favoritesOnly ? "heart.fill" : "heart")
                     }
                 }
+            }
+            .overlay(alignment: .bottom) {
+                if uploading || uploadNote != nil {
+                    HStack(spacing: 10) {
+                        if uploading { ProgressView() }
+                        Text(uploadNote ?? "Lade hoch… \(uploadDone)/\(uploadTotal)")
+                            .font(.footnote)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.bottom, 16)
+                }
+            }
+            .onChange(of: pickerItems) { _, items in
+                if !items.isEmpty { Task { await upload(items) } }
             }
             .refreshable { await reload() }
             .task { if photos.isEmpty { await load() } }
@@ -47,6 +77,32 @@ struct GalleryView: View {
                 PhotoPager(photos: photos, start: p)
             }
         }
+    }
+
+    func upload(_ items: [PhotosPickerItem]) async {
+        uploading = true; uploadDone = 0; uploadTotal = items.count; uploadNote = nil
+        var ok = 0, dup = 0, fail = 0
+        for item in items {
+            defer { uploadDone += 1 }
+            guard let data = try? await item.loadTransferable(type: Data.self) else { fail += 1; continue }
+            let ut = item.supportedContentTypes.first
+            let ext = ut?.preferredFilenameExtension ?? "jpg"
+            let mime = ut?.preferredMIMEType ?? "image/jpeg"
+            let name = "upload_\(UUID().uuidString.prefix(8)).\(ext)"
+            do {
+                let r = try await api.uploadFile(data: data, filename: name, mime: mime)
+                if r.status == "duplicate" { dup += 1 } else if r.status == "accepted" { ok += 1 } else { fail += 1 }
+            } catch { fail += 1 }
+        }
+        pickerItems = []
+        uploading = false
+        var msg = "\(ok) hochgeladen"
+        if dup > 0 { msg += ", \(dup) Duplikate" }
+        if fail > 0 { msg += ", \(fail) fehlgeschlagen" }
+        uploadNote = msg + " · wird verarbeitet…"
+        await reload()
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        uploadNote = nil
     }
 
     func reload() async { photos = []; cursor = nil; hasMore = true; await load() }

@@ -135,6 +135,29 @@ final class APIClient: ObservableObject {
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
 
+    // MARK: Upload
+    func uploadFile(data: Data, filename: String, mime: String) async throws -> UploadResult {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var req = URLRequest(url: base.appendingPathComponent("api/v1/upload"))
+        req.httpMethod = "POST"
+        if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var body = Data()
+        func add(_ s: String) { body.append(s.data(using: .utf8)!) }
+        add("--\(boundary)\r\n")
+        add("Content-Disposition: form-data; name=\"files\"; filename=\"\(filename)\"\r\n")
+        add("Content-Type: \(mime)\r\n\r\n")
+        body.append(data)
+        add("\r\n--\(boundary)--\r\n")
+        let (respData, resp) = try await URLSession.shared.upload(for: req, from: body)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { await logout(); throw APIError.status(401) }
+        guard (200..<300).contains(code) else { throw APIError.status(code) }
+        let results = try JSONDecoder().decode([UploadResult].self, from: respData)
+        guard let first = results.first else { throw APIError.decode }
+        return first
+    }
+
     // MARK: Sharing
     func createShare(_ body: [String: Any]) async throws -> ShareOut {
         try await send(makeRequest("api/shares", method: "POST", json: body), as: ShareOut.self)
