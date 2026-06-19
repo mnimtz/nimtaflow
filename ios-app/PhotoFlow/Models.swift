@@ -162,6 +162,15 @@ struct CreateTripResult: Codable {
     let name: String
 }
 
+// MARK: - Memories
+
+struct MemoryGroupV1: Codable, Identifiable {
+    let years_ago: Int
+    let date: String
+    let items: [PhotoV1]
+    var id: Int { years_ago }
+}
+
 // MARK: - Upload
 
 struct UploadResult: Codable {

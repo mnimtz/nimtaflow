@@ -764,3 +764,22 @@ async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
             cover_url=(f"{base}/api/photos/{cid}/thumbnail?size=medium" if cid else None),
         ))
     return TripsV1(home_city=res.get("home_city"), events=out)
+
+
+# ── Erinnerungen / Memories (iOS app) ───────────────────────────────────────────
+
+class MemoryGroupV1(BaseModel):
+    years_ago: int
+    date: str
+    items: List[PhotoV1]
+
+
+@router.get("/memories", response_model=List[MemoryGroupV1])
+async def memories_v1(request: Request, db: AsyncSession = Depends(get_db),
+                      user: Optional[User] = Depends(current_user_optional)):
+    """'Vor X Jahren heute' — same logic the web uses, as PhotoV1 groups."""
+    from app.api.routes.photos import get_memories
+    groups = await get_memories(db=db)
+    return [MemoryGroupV1(years_ago=g["years_ago"], date=g["date"],
+                          items=[_to_v1(p, request) for p in g["photos"]])
+            for g in groups]

@@ -34,7 +34,7 @@ struct RootView: View {
 /// directly (no nested-stack double bars).
 struct MoreView: View {
     private enum Dest: String, Identifiable {
-        case people, trips, map, relationships, shares, settings
+        case people, memories, trips, map, relationships, shares, settings
         var id: String { rawValue }
     }
     @State private var dest: Dest?
@@ -43,6 +43,7 @@ struct MoreView: View {
         NavigationStack {
             List {
                 row("Personen", "person.2.fill", .people)
+                row("Erinnerungen", "sparkles", .memories)
                 row("Reisen", "airplane", .trips)
                 row("Karte", "map.fill", .map)
                 row("Beziehungen", "point.3.connected.trianglepath.dotted", .relationships)
@@ -57,6 +58,7 @@ struct MoreView: View {
             Group {
                 switch d {
                 case .people: PeopleView()
+                case .memories: MemoriesView()
                 case .trips: TripsView()
                 case .map: MapScreen()
                 case .relationships: RelationshipsView()

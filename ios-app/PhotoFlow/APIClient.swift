@@ -191,6 +191,9 @@ final class APIClient: ObservableObject {
         return try await get(p, as: TripsV1.self)
     }
 
+    // MARK: Memories
+    func memories() async throws -> [MemoryGroupV1] { try await get("api/v1/memories", as: [MemoryGroupV1].self) }
+
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
     func mapClusters(minLat: Double, minLng: Double, maxLat: Double, maxLng: Double, grid: Int) async throws -> [MapClusterV1] {
