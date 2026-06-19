@@ -47,7 +47,18 @@ struct MapScreen: View {
             .navigationTitle("Karte")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { globe.toggle() } label: {
+                    Button {
+                        globe.toggle()
+                        if globe {
+                            // The 3D globe only shows when zoomed far out → pull the
+                            // camera back to a world view so the sphere is visible.
+                            let c = region?.center ?? CLLocationCoordinate2D(latitude: 25, longitude: 10)
+                            withAnimation(.easeInOut(duration: 0.8)) {
+                                camera = .region(MKCoordinateRegion(center: c,
+                                    span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130)))
+                            }
+                        }
+                    } label: {
                         Label(globe ? "Karte" : "Globus", systemImage: globe ? "map" : "globe.europe.africa.fill")
                     }
                 }
