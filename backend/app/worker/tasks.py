@@ -863,62 +863,60 @@ def backfill_xmp_task(self, full: bool = False):
             break
         flog("ai", "INFO", f"XMP-Backfill gestartet: {len(items)} Fotos (Modus={mode})")
 
-        # ── phase 2: write files — NO db session held over the slow exiftool work ──
+        # ── phase 2: write files in CHUNKS — write a chunk (no session), then stamp
+        # just that chunk in a short session. Progress is visible live (stamped count
+        # grows) and an interruption keeps every completed chunk (no all-or-nothing).
         from app.services.exif_edit import write_all as _wall
         from app.services.xmp_sidecar import file_capture_date
         done = failed = 0
-        updates = []  # (id, taken_at_or_None, xmp_path_or_None)
-        for it in items:
-            try:
-                new_taken = None
-                xmp_path = None
-                if mode in ("file", "file_sidecar"):
-                    set_date = await _ecd(it["path"])
-                    if set_date and it["taken_at"] is None:
-                        try:
-                            new_taken = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
-                        except Exception:
-                            new_taken = None
-                    # ONE exiftool call for description + keywords + rating + title +
-                    # place (favourite = 5 stars, our convention). ~5× faster than the
-                    # old per-field spawns.
-                    eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
-                    await _wall(it["path"], description=it["description"],
-                                keywords=it["kw"] or None, rating=(eff if eff > 0 else None),
-                                title=it["title"], city=it["city"], country=it["country"])
-                if mode in ("file_sidecar", "sidecar"):
-                    cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
-                    if cap and it["taken_at"] is None and new_taken is None:
-                        new_taken = cap
-                    xmp_path = write_sidecar(
-                        it["path"], description=it["description"], title=it["title"],
-                        keywords=it["kw"] or None, latitude=it["latitude"], longitude=it["longitude"],
-                        city=it["city"], country=it["country"],
-                        capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
-                    )
-                if new_taken is not None or xmp_path:
-                    updates.append((it["id"], new_taken, xmp_path))
-                done += 1
-                if done % 200 == 0:
-                    flog("ai", "INFO", f"XMP-Backfill: {done}/{len(items)} geschrieben …")
-            except Exception as e:
-                failed += 1
-                flog("ai", "WARNING", f"XMP-Backfill-Fehler: {it['filename']}: {str(e)[:120]}")
-
-        # ── phase 3: persist derived dates + sidecar paths in short batched sessions ──
-        for i in range(0, len(updates), 200):
+        CH = 100
+        for start in range(0, len(items), CH):
+            chunk = items[start:start + CH]
+            stamps = []  # (id, taken_at_or_None, xmp_path_or_None)
+            for it in chunk:
+                try:
+                    new_taken = None
+                    xmp_path = None
+                    if mode in ("file", "file_sidecar"):
+                        set_date = await _ecd(it["path"])
+                        if set_date and it["taken_at"] is None:
+                            try:
+                                new_taken = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
+                            except Exception:
+                                new_taken = None
+                        # ONE exiftool call for description+keywords+rating+title+place
+                        # (favourite = 5 stars) — ~5× faster than the old per-field spawns.
+                        eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
+                        await _wall(it["path"], description=it["description"],
+                                    keywords=it["kw"] or None, rating=(eff if eff > 0 else None),
+                                    title=it["title"], city=it["city"], country=it["country"])
+                    if mode in ("file_sidecar", "sidecar"):
+                        cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
+                        if cap and it["taken_at"] is None and new_taken is None:
+                            new_taken = cap
+                        xmp_path = write_sidecar(
+                            it["path"], description=it["description"], title=it["title"],
+                            keywords=it["kw"] or None, latitude=it["latitude"], longitude=it["longitude"],
+                            city=it["city"], country=it["country"],
+                            capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                        )
+                    stamps.append((it["id"], new_taken, xmp_path))
+                    done += 1
+                except Exception as e:
+                    failed += 1
+                    flog("ai", "WARNING", f"XMP-Backfill-Fehler: {it['filename']}: {str(e)[:120]}")
+            # stamp this chunk (mark written so progress shows + nightly skips it)
             async for db in get_db():
-                for pid, taken, xpath in updates[i:i + 200]:
-                    vals = {}
+                for pid, taken, xpath in stamps:
+                    vals = {"xmp_sidecar_written": True}
                     if taken is not None:
                         vals["taken_at"] = taken
                     if xpath:
-                        vals["xmp_sidecar_written"] = True
                         vals["xmp_sidecar_path"] = xpath
-                    if vals:
-                        await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
+                    await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
                 await db.commit()
                 break
+            flog("ai", "INFO", f"XMP-Backfill: {done}/{len(items)} geschrieben ({failed} Fehler)")
         flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
         # NOTE: person names (XMP:PersonInImage) are intentionally NOT written
         # here — they are persisted separately via the explicit "Namen schreiben"
