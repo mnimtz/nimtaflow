@@ -18,8 +18,19 @@ final class APIClient: ObservableObject {
 
     enum APIError: Error { case status(Int), badURL, decode }
 
+    /// Build an absolute URL from a relative API path. Uses plain string joining
+    /// (NOT URL.appendingPathComponent, which percent-encodes "?" and "&" and so
+    /// mangles query strings → 404 on every request with parameters).
+    func absoluteURL(_ path: String) -> URL {
+        if path.hasPrefix("http") { return URL(string: path) ?? base }
+        let b = serverURL.trimmingCharacters(in: .whitespaces)
+        let base = b.hasSuffix("/") ? String(b.dropLast()) : b
+        let p = path.hasPrefix("/") ? path : "/" + path
+        return URL(string: base + p) ?? URL(string: base)!
+    }
+
     private func makeRequest(_ path: String, method: String = "GET", json: Any? = nil) -> URLRequest {
-        var req = URLRequest(url: base.appendingPathComponent(path))
+        var req = URLRequest(url: absoluteURL(path))
         req.httpMethod = method
         if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let json {
@@ -54,8 +65,7 @@ final class APIClient: ObservableObject {
 
     // Absolute URL for an image path that the API returned (already absolute) or a relative /api path.
     func url(_ s: String) -> URL? {
-        if s.hasPrefix("http") { return URL(string: s) }
-        return base.appendingPathComponent(s)
+        absoluteURL(s)
     }
 
     // MARK: Auth
