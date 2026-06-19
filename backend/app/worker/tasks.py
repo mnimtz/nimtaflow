@@ -8,9 +8,18 @@ from .celery_app import celery_app
 
 def _run(coro):
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(coro)
     finally:
+        # Dispose the async engine on THIS loop so its asyncpg connections are
+        # closed cleanly before the loop dies — otherwise they leak and surface as
+        # "Event loop is closed" / "another operation in progress" on later tasks.
+        try:
+            from app.core.database import dispose_db
+            loop.run_until_complete(dispose_db())
+        except Exception:
+            pass
         loop.close()
 
 
