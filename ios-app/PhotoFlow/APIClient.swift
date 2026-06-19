@@ -119,6 +119,17 @@ final class APIClient: ObservableObject {
         return try await get(p, as: PhotoPage.self)
     }
 
+    func photosByDate(from: String, to: String, cursor: Int?) async throws -> PhotoPage {
+        var p = "api/v1/photos?limit=60&date_from=\(from)&date_to=\(to)"
+        if let cursor { p += "&cursor=\(cursor)" }
+        return try await get(p, as: PhotoPage.self)
+    }
+
+    // MARK: Trips / events
+    func trips(tripsOnly: Bool = false) async throws -> TripsV1 {
+        try await get("api/v1/trips?trips_only=\(tripsOnly)", as: TripsV1.self)
+    }
+
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
 

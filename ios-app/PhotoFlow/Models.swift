@@ -113,6 +113,25 @@ struct MapPointV1: Codable, Identifiable, Hashable {
     let thumb_url: String
 }
 
+// MARK: - Trips / events
+
+struct TripEventV1: Codable, Identifiable, Hashable {
+    let count: Int
+    let date_from: String
+    let date_to: String
+    let days: Int
+    let city: String?
+    let is_trip: Bool
+    let cover_photo_id: Int?
+    let cover_url: String?
+    var id: String { "\(date_from)-\(date_to)" }
+}
+
+struct TripsV1: Codable {
+    let home_city: String?
+    let events: [TripEventV1]
+}
+
 // MARK: - Chat
 
 struct ChatStatus: Codable {

@@ -122,15 +122,30 @@ async def list_photos_v1(
     media_type: Optional[str] = Query(None, description="photo|video"),
     archived: bool = False,
     trashed: bool = False,
+    date_from: Optional[str] = Query(None, description="ISO date — taken_at >= this day"),
+    date_to: Optional[str] = Query(None, description="ISO date — taken_at <= end of this day"),
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
-    """Cursor-paginated photo list. Stable under concurrent uploads."""
+    """Cursor-paginated photo list. Stable under concurrent uploads.
+
+    date_from/date_to (used by the Reisen/trip detail) filter on taken_at; both
+    are inclusive day bounds, so a trip's whole span comes back in one feed.
+    """
+    from datetime import datetime as _dt, timedelta as _td
     acl = photo_conditions(user)
+    date_conds = []
+    if date_from:
+        try: date_conds.append(Photo.taken_at >= _dt.fromisoformat(date_from))
+        except ValueError: pass
+    if date_to:
+        try: date_conds.append(Photo.taken_at < _dt.fromisoformat(date_to) + _td(days=1))
+        except ValueError: pass
     q = select(Photo).where(
         Photo.status == PhotoStatus.done,
         Photo.is_trashed == trashed,
         Photo.is_archived == archived,
+        *date_conds,
         *acl,
     )
     if favorites:
@@ -151,7 +166,8 @@ async def list_photos_v1(
 
     # Total count (no cursor filter, same access + facets)
     total_q = select(Photo).where(
-        Photo.status == PhotoStatus.done, Photo.is_trashed == trashed, Photo.is_archived == archived, *acl,
+        Photo.status == PhotoStatus.done, Photo.is_trashed == trashed, Photo.is_archived == archived,
+        *date_conds, *acl,
     )
     if favorites:
         total_q = total_q.where(Photo.is_favorite == True)  # noqa: E712
@@ -649,3 +665,44 @@ async def chat_v1(body: ChatRequestV1, db: AsyncSession = Depends(get_db)):
     s = await load_settings(db)
     hist = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.history]
     return await chat_svc.chat(body.message, hist, s, db, provider=body.provider)
+
+
+# ── Trips / events (iOS app) ────────────────────────────────────────────────────
+
+class TripEventV1(BaseModel):
+    count: int
+    date_from: str
+    date_to: str
+    days: int
+    city: Optional[str]
+    is_trip: bool
+    cover_photo_id: Optional[int]
+    cover_url: Optional[str]
+
+
+class TripsV1(BaseModel):
+    home_city: Optional[str]
+    events: List[TripEventV1]
+
+
+@router.get("/trips", response_model=TripsV1)
+async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
+                   user: Optional[User] = Depends(current_user_optional),
+                   trips_only: bool = Query(False, description="only events away from home city")):
+    """Auto-detected events with cover thumbs. The detail loads each event's
+    photos via /v1/photos?date_from=&date_to=. trips_only hides everyday clusters."""
+    from app.api.routes.photos import trips as _trips
+    base = str(request.base_url).rstrip("/")
+    res = await _trips(db=db, user=user)
+    events = res.get("events", [])
+    if trips_only:
+        events = [e for e in events if e.get("is_trip")]
+    out = []
+    for e in events:
+        cid = e.get("cover_photo_id")
+        out.append(TripEventV1(
+            count=e["count"], date_from=e["date_from"], date_to=e["date_to"], days=e["days"],
+            city=e.get("city"), is_trip=e.get("is_trip", False), cover_photo_id=cid,
+            cover_url=(f"{base}/api/photos/{cid}/thumbnail?size=medium" if cid else None),
+        ))
+    return TripsV1(home_city=res.get("home_city"), events=out)

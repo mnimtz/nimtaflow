@@ -68,6 +68,8 @@ struct PhotoPager: View {
     @Environment(\.dismiss) var dismiss
     @State private var index: Int = 0
     @State private var favs: Set<Int> = []
+    @State private var ratings: [Int: Int] = [:]
+    @State private var reprocessed = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -82,16 +84,46 @@ struct PhotoPager: View {
                 Button { Task { try? await api.toggleFavorite(photos[index].id); toggleLocal() } } label: {
                     Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .white)
                 }
+                Menu {
+                    Button { Task { try? await api.reprocess(photos[index].id); reprocessed = true } } label: {
+                        Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                } label: { Image(systemName: "ellipsis.circle.fill").foregroundStyle(.white) }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
             }
             .font(.title2).padding()
+
+            // Rating stars — bottom centre, write straight through to the server.
+            VStack {
+                Spacer()
+                HStack(spacing: 6) {
+                    ForEach(1...5, id: \.self) { star in
+                        Image(systemName: star <= curRating ? "star.fill" : "star")
+                            .foregroundStyle(star <= curRating ? .yellow : .white.opacity(0.6))
+                            .onTapGesture {
+                                let id = photos[index].id
+                                let newVal = (curRating == star) ? 0 : star   // tap same star clears
+                                ratings[id] = newVal
+                                Task { try? await api.setRating(id, rating: newVal) }
+                            }
+                    }
+                }
+                .font(.title3).padding(8)
+                .background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 28)
+                .overlay(alignment: .top) {
+                    if reprocessed { Text("Wird neu verarbeitet…").font(.caption).foregroundStyle(.white).offset(y: -22) }
+                }
+            }
         }
         .onAppear {
             index = photos.firstIndex(of: start) ?? 0
             favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
+            ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
         }
+        .onChange(of: index) { _, _ in reprocessed = false }
     }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
+    var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
     func toggleLocal() { let id = photos[index].id; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }
 }
 
