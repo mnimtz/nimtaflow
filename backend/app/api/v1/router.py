@@ -688,12 +688,14 @@ class TripsV1(BaseModel):
 @router.get("/trips", response_model=TripsV1)
 async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
                    user: Optional[User] = Depends(current_user_optional),
-                   trips_only: bool = Query(False, description="only events away from home city")):
+                   trips_only: bool = Query(False, description="only events away from home city"),
+                   min_photos: Optional[int] = Query(None, ge=1, description="override trips.min_photos live")):
     """Auto-detected events with cover thumbs. The detail loads each event's
-    photos via /v1/photos?date_from=&date_to=. trips_only hides everyday clusters."""
+    photos via /v1/photos?date_from=&date_to=. trips_only hides everyday clusters;
+    min_photos overrides the server threshold so the app can tune it live."""
     from app.api.routes.photos import trips as _trips
     base = str(request.base_url).rstrip("/")
-    res = await _trips(db=db, user=user)
+    res = await _trips(db=db, user=user, min_photos=min_photos)
     events = res.get("events", [])
     if trips_only:
         events = [e for e in events if e.get("is_trip")]

@@ -126,8 +126,10 @@ final class APIClient: ObservableObject {
     }
 
     // MARK: Trips / events
-    func trips(tripsOnly: Bool = false) async throws -> TripsV1 {
-        try await get("api/v1/trips?trips_only=\(tripsOnly)", as: TripsV1.self)
+    func trips(tripsOnly: Bool = false, minPhotos: Int? = nil) async throws -> TripsV1 {
+        var p = "api/v1/trips?trips_only=\(tripsOnly)"
+        if let minPhotos { p += "&min_photos=\(minPhotos)" }
+        return try await get(p, as: TripsV1.self)
     }
 
     // MARK: Map

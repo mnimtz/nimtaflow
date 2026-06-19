@@ -4,11 +4,24 @@ import SwiftUI
 /// event's photos (loaded by date range) in the shared full-screen pager.
 struct TripsView: View {
     @EnvironmentObject var api: APIClient
+    @AppStorage("trips_min_photos") private var minPhotos: Int = 8
+    @AppStorage("trips_dismissed") private var dismissedRaw: String = ""
     @State private var events: [TripEventV1] = []
     @State private var homeCity: String?
     @State private var tripsOnly = true
     @State private var loading = false
     @State private var error: String?
+    @State private var showSettings = false
+
+    private var dismissed: Set<String> {
+        Set(dismissedRaw.split(separator: "\n").map(String.init))
+    }
+    private var visibleEvents: [TripEventV1] { events.filter { !dismissed.contains($0.id) } }
+
+    func dismiss(_ e: TripEventV1) {
+        var s = dismissed; s.insert(e.id); dismissedRaw = s.joined(separator: "\n")
+    }
+    func clearDismissed() { dismissedRaw = "" }
 
     var body: some View {
         NavigationStack {
@@ -19,21 +32,30 @@ struct TripsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top, 4)
                 }
                 LazyVStack(spacing: 14) {
-                    ForEach(events) { e in
-                        NavigationLink(value: e) { TripCard(event: e) }.buttonStyle(.plain)
+                    ForEach(visibleEvents) { e in
+                        NavigationLink(value: e) { TripCard(event: e) }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) { dismiss(e) } label: {
+                                    Label("Aus Liste entfernen", systemImage: "trash")
+                                }
+                            }
                     }
                 }
                 .padding(12)
                 if loading { ProgressView().padding() }
-                if !loading && events.isEmpty && error == nil {
+                if !loading && visibleEvents.isEmpty && error == nil {
                     ContentUnavailableView("Keine Reisen", systemImage: "airplane.departure",
-                                           description: Text(tripsOnly ? "Schalte ‚Alle Events‘ ein, um auch Alltags-Cluster zu sehen." : "Noch keine Events erkannt."))
+                                           description: Text(tripsOnly ? "Schalte ‚Alle‘ ein oder senke ‚min. Bilder‘ in den Einstellungen." : "Noch keine Events erkannt."))
                         .padding(.top, 60)
                 }
             }
             .navigationTitle("Reisen")
             .navigationDestination(for: TripEventV1.self) { TripDetailView(event: $0) }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Picker("", selection: $tripsOnly) {
                         Text("Reisen").tag(true); Text("Alle").tag(false)
@@ -41,6 +63,13 @@ struct TripsView: View {
                     .pickerStyle(.segmented).frame(width: 150)
                     .onChange(of: tripsOnly) { _, _ in Task { await load() } }
                 }
+            }
+            .sheet(isPresented: $showSettings) {
+                TripsSettingsSheet(minPhotos: $minPhotos,
+                                   dismissedCount: dismissed.count,
+                                   onChange: { Task { await load() } },
+                                   onRestore: clearDismissed)
+                    .presentationDetents([.medium])
             }
             .refreshable { await load() }
             .task { if events.isEmpty { await load() } }
@@ -50,9 +79,43 @@ struct TripsView: View {
     func load() async {
         loading = true; defer { loading = false }
         do {
-            let r = try await api.trips(tripsOnly: tripsOnly)
+            let r = try await api.trips(tripsOnly: tripsOnly, minPhotos: minPhotos)
             events = r.events; homeCity = r.home_city; error = nil
         } catch { self.error = "Reisen konnten nicht geladen werden." }
+    }
+}
+
+/// Reisen-Einstellungen: Mindestanzahl Fotos pro Event + ausgeblendete wiederherstellen.
+private struct TripsSettingsSheet: View {
+    @Binding var minPhotos: Int
+    let dismissedCount: Int
+    let onChange: () -> Void
+    let onRestore: () -> Void
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Erkennung") {
+                    Stepper(value: $minPhotos, in: 2...100) {
+                        HStack { Text("min. Bilder pro Reise"); Spacer()
+                            Text("\(minPhotos)").foregroundStyle(.secondary) }
+                    }
+                    .onChange(of: minPhotos) { _, _ in onChange() }
+                    Text("Events mit weniger Fotos werden nicht als Reise angezeigt.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Ausgeblendete Reisen") {
+                    HStack { Text("Aus Liste entfernt"); Spacer()
+                        Text("\(dismissedCount)").foregroundStyle(.secondary) }
+                    Button("Alle wieder einblenden") { onRestore() }
+                        .disabled(dismissedCount == 0)
+                }
+            }
+            .navigationTitle("Reisen-Einstellungen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { dismiss() } } }
+        }
     }
 }
 
