@@ -63,9 +63,18 @@ final class APIClient: ObservableObject {
         return true
     }
 
-    // Absolute URL for an image path that the API returned (already absolute) or a relative /api path.
+    // Build a media URL. The server constructs absolute URLs from the request host,
+    // but behind the nginx proxy that host loses the :8090 port (e.g.
+    // "http://your-server/api/photos/…") → unreachable from the device. So we
+    // ALWAYS re-anchor to our own serverURL: take only the path+query and prepend
+    // the configured server. Fixes grey thumbnails/avatars across the whole app.
     func url(_ s: String) -> URL? {
-        absoluteURL(s)
+        if s.hasPrefix("http"), let c = URLComponents(string: s) {
+            var pq = c.path
+            if let q = c.query { pq += "?" + q }
+            return absoluteURL(pq)
+        }
+        return absoluteURL(s)
     }
 
     // MARK: Auth
