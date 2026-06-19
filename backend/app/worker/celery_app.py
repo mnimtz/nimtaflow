@@ -70,6 +70,14 @@ celery_app.conf.beat_schedule = {
         "task": "retry_missing_thumbnails",
         "schedule": 600.0,
     },
+    # Self-heal face gaps: enqueue local face detection for images still lacking a
+    # face pass, INDEPENDENT of the (slow) description backlog. Without this on the
+    # schedule, undescribed images never got a local face pass — their faces sat
+    # stuck for as long as descriptions lagged (days). Every 10 min.
+    "sweep-faces-local": {
+        "task": "sweep_faces_local",
+        "schedule": 600.0,
+    },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {
         "task": "reclaim_ai",
