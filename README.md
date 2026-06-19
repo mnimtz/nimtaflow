@@ -105,6 +105,9 @@ and enriches your library with local or cloud AI.
 - **Restore** the DB or extract config/thumbnails back; optional **rclone** offsite sync.
 - **Verify** — non-destructively confirms a dump is complete & restorable (checks schema + photo rows).
 
+### Teilen
+- **Öffentliche Links** für Alben, einzelne Fotos/Videos und Reisen — login-freier Gäste-Zugriff über einen geheimen Token-Link (`/s/<token>`). Pro Link einstellbar: **Passwort**, **Ablaufdatum**, **Download der Originale**. Jede Anfrage prüft Token + Ablauf + Passwort + Zugehörigkeit (eine ID lässt sich nicht erraten/erweitern). Verwaltung unter **Einstellungen → Teilen** (inkl. öffentlicher Basis-URL für die Link-Erzeugung); widerrufbar mit einem Klick.
+
 ### Other
 - Background job pipeline with **per-feature logs** (scanner / ai / faces / video / **remote** / system) shown live in the UI; a **dedicated scan worker** so re-indexing starts immediately instead of waiting behind the thumbnail queue.
 - App **version shown in the sidebar** (matches the running Docker build).
