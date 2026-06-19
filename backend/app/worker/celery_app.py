@@ -44,6 +44,7 @@ celery_app.conf.update(
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "retry_missing_thumbnails": {"queue": "cpu"},
+        "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
         # Dedicated queue + worker so slow video transcodes (esp. software h264)
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.

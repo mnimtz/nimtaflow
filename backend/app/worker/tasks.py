@@ -788,8 +788,15 @@ def backfill_xmp_task(self):
         from app.services.feature_log import log as flog
         from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd, write_rating as _wr
         from app.services.xmp_sidecar import write_sidecar
-        from sqlalchemy import select, or_
+        from sqlalchemy import select, or_, update as _upd
+        from collections import defaultdict
         init_db()
+        # ── phase 1: snapshot ALL work + tags in a SHORT session, then release it.
+        # The exiftool writes below take ~1-3s EACH over thousands of files (hours);
+        # holding the DB session across that tripped idle_in_transaction_session_timeout
+        # and killed the backfill mid-run. So: snapshot → write files (no session) →
+        # reopen briefly to persist derived dates / sidecar paths.
+        items, mode = [], "off"
         async for db in get_db():
             s = await load_settings(db)
             mode = str(s.get("xmp.write_mode", "off")).lower()
@@ -799,73 +806,100 @@ def backfill_xmp_task(self):
             # Cover everything that carries durable user info: a description, OR a
             # rating/favourite (those may have no description but must still be
             # stamped into the file so they survive a solution switch).
-            rows = (await db.execute(
+            photos = (await db.execute(
                 select(Photo).where(
                     Photo.is_missing == False,  # noqa: E712
                     or_(Photo.description.isnot(None), Photo.is_favorite == True,  # noqa: E712
                         Photo.user_rating.isnot(None)),
                 ).order_by(Photo.id)
             )).scalars().all()
-            flog("ai", "INFO", f"XMP-Backfill gestartet: {len(rows)} beschriebene Fotos (Modus={mode})")
-            done, failed = 0, 0
-            for photo in rows:
-                kw = [t for t in (await db.execute(
-                    select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
-                    .where(PhotoTag.photo_id == photo.id)
-                )).scalars()]
-                try:
-                    if mode in ("file", "file_sidecar"):
-                        set_date = await _ecd(photo.path)
-                        if set_date and photo.taken_at is None:
-                            try:
-                                photo.taken_at = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
-                            except Exception:
-                                pass
-                        if photo.description:
-                            await _wd(photo.path, photo.description, overwrite=True)
-                        if kw:
-                            await _wk(photo.path, kw)
-                        # rating + favourite (favourite = 5 stars, our convention)
-                        eff = 5 if photo.is_favorite else int(photo.user_rating or 0)
-                        if eff > 0:
-                            await _wr(photo.path, eff)
-                        # title + place names → embed so they round-trip (read back
-                        # by read_file_location on the next scan).
-                        loc = {}
-                        if photo.title: loc["XMP:Title"] = photo.title; loc["IPTC:ObjectName"] = photo.title
-                        if photo.city: loc["XMP:City"] = photo.city; loc["IPTC:City"] = photo.city
-                        if photo.country:
-                            loc["XMP:Country"] = photo.country
-                            loc["IPTC:Country-PrimaryLocationName"] = photo.country
-                        if loc:
-                            from app.services.exif_edit import write_exif as _wx
-                            await _wx(photo.path, loc, make_backup=False)
-                    if mode in ("file_sidecar", "sidecar"):
-                        from app.services.xmp_sidecar import file_capture_date
-                        cap = photo.taken_at or file_capture_date(photo.path)
-                        if cap and photo.taken_at is None:
-                            photo.taken_at = cap
-                        xmp_path = write_sidecar(
-                            photo.path, description=photo.description, title=photo.title,
-                            keywords=kw or None, latitude=photo.latitude, longitude=photo.longitude,
-                            city=photo.city, country=photo.country,
-                            capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
-                        )
-                        photo.xmp_sidecar_written = True
-                        photo.xmp_sidecar_path = xmp_path
-                    done += 1
-                    if done % 50 == 0:
-                        await db.commit()
-                        flog("ai", "INFO", f"XMP-Backfill: {done}/{len(rows)} geschrieben …")
-                except Exception as e:
-                    failed += 1
-                    flog("ai", "WARNING", f"XMP-Backfill-Fehler: {photo.filename}: {str(e)[:120]}")
-            await db.commit()
-            flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
-            # NOTE: person names (XMP:PersonInImage) are intentionally NOT written
-            # here — they are persisted separately via the explicit "Namen schreiben"
-            # button (POST /people/write-names) once face clustering has settled.
-            return {"written": done, "failed": failed}
+            tagmap = defaultdict(list)
+            for pid, name in (await db.execute(
+                select(PhotoTag.photo_id, Tag.name).join(Tag, Tag.id == PhotoTag.tag_id)
+            )).all():
+                tagmap[pid].append(name)
+            items = [{
+                "id": p.id, "path": p.path, "filename": p.filename, "description": p.description,
+                "title": p.title, "city": p.city, "country": p.country,
+                "latitude": p.latitude, "longitude": p.longitude,
+                "user_rating": p.user_rating, "is_favorite": p.is_favorite,
+                "taken_at": p.taken_at, "kw": tagmap.get(p.id, []),
+            } for p in photos]
+            break
+        flog("ai", "INFO", f"XMP-Backfill gestartet: {len(items)} Fotos (Modus={mode})")
+
+        # ── phase 2: write files — NO db session held over the slow exiftool work ──
+        from app.services.exif_edit import write_exif as _wx
+        from app.services.xmp_sidecar import file_capture_date
+        done = failed = 0
+        updates = []  # (id, taken_at_or_None, xmp_path_or_None)
+        for it in items:
+            try:
+                new_taken = None
+                xmp_path = None
+                if mode in ("file", "file_sidecar"):
+                    set_date = await _ecd(it["path"])
+                    if set_date and it["taken_at"] is None:
+                        try:
+                            new_taken = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
+                        except Exception:
+                            new_taken = None
+                    if it["description"]:
+                        await _wd(it["path"], it["description"], overwrite=True)
+                    if it["kw"]:
+                        await _wk(it["path"], it["kw"])
+                    # rating + favourite (favourite = 5 stars, our convention)
+                    eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
+                    if eff > 0:
+                        await _wr(it["path"], eff)
+                    # title + place names → embed so they round-trip (read back
+                    # by read_file_location on the next scan).
+                    loc = {}
+                    if it["title"]: loc["XMP:Title"] = it["title"]; loc["IPTC:ObjectName"] = it["title"]
+                    if it["city"]: loc["XMP:City"] = it["city"]; loc["IPTC:City"] = it["city"]
+                    if it["country"]:
+                        loc["XMP:Country"] = it["country"]
+                        loc["IPTC:Country-PrimaryLocationName"] = it["country"]
+                    if loc:
+                        await _wx(it["path"], loc, make_backup=False)
+                if mode in ("file_sidecar", "sidecar"):
+                    cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
+                    if cap and it["taken_at"] is None and new_taken is None:
+                        new_taken = cap
+                    xmp_path = write_sidecar(
+                        it["path"], description=it["description"], title=it["title"],
+                        keywords=it["kw"] or None, latitude=it["latitude"], longitude=it["longitude"],
+                        city=it["city"], country=it["country"],
+                        capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                    )
+                if new_taken is not None or xmp_path:
+                    updates.append((it["id"], new_taken, xmp_path))
+                done += 1
+                if done % 200 == 0:
+                    flog("ai", "INFO", f"XMP-Backfill: {done}/{len(items)} geschrieben …")
+            except Exception as e:
+                failed += 1
+                flog("ai", "WARNING", f"XMP-Backfill-Fehler: {it['filename']}: {str(e)[:120]}")
+
+        # ── phase 3: persist derived dates + sidecar paths in short batched sessions ──
+        for i in range(0, len(updates), 200):
+            async for db in get_db():
+                for pid, taken, xpath in updates[i:i + 200]:
+                    vals = {}
+                    if taken is not None:
+                        vals["taken_at"] = taken
+                    if xpath:
+                        vals["xmp_sidecar_written"] = True
+                        vals["xmp_sidecar_path"] = xpath
+                    if vals:
+                        await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
+                await db.commit()
+                break
+        flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
+        # NOTE: person names (XMP:PersonInImage) are intentionally NOT written
+        # here — they are persisted separately via the explicit "Namen schreiben"
+        # button (POST /people/write-names) once face clustering has settled.
+        return {"written": done, "failed": failed}
     return _run(_main())
 
 
