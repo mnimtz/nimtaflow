@@ -39,7 +39,10 @@ SYSTEM = (
     "Fotos per #id. "
     "Nutze bei Fragen nach VIDEOS den Filter medientyp='video', bei Bildern/Fotos "
     "medientyp='bild'. Für 'wie viele …'-Fragen nutze das Werkzeug zaehle_fotos "
-    "(exakte Anzahl) statt zu schätzen. Jahresangaben → jahr_von/jahr_bis."
+    "(exakte Anzahl) statt zu schätzen. Jahresangaben → jahr_von/jahr_bis. "
+    "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
+    "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
+    "Bestätige danach kurz, was du getan hast (Albumname + Anzahl)."
 )
 
 
@@ -152,6 +155,55 @@ async def _image_parts(db: AsyncSession, ids: List[int], max_n: int) -> list:
     return parts
 
 
+async def _resolve_action_photo_ids(db: AsyncSession, settings: dict, args: dict, limit: int = 1000) -> list:
+    """Photo ids matching a chat action's args (suchbegriff + person + medientyp/jahr)."""
+    from app.models.photo import Photo
+    from app.models.face import Face
+    from app.models.person import Person
+    conds = _filter_conditions(args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"))
+    conds.append(Photo.is_trashed == False)  # noqa: E712
+    person = (args.get("person") or "").strip()
+    if person:
+        conds.append(Photo.id.in_(
+            select(Face.photo_id).join(Person, Person.id == Face.person_id)
+            .where(Person.name.ilike(f"%{person}%"))
+        ))
+    sb = (args.get("suchbegriff") or "").strip()
+    if sb:
+        photos = await search_photos(db, sb, settings, limit=limit, extra_conditions=conds or None)
+        return [p.id for p in photos]
+    rows = (await db.execute(
+        select(Photo.id).where(*conds).order_by(Photo.taken_at.desc().nullslast()).limit(limit)
+    )).all()
+    return [r[0] for r in rows]
+
+
+async def _action_create_album(db: AsyncSession, settings: dict, args: dict) -> dict:
+    from app.models.album import Album, AlbumPhoto, AlbumType
+    name = (args.get("name") or "Album").strip()[:256]
+    ids = await _resolve_action_photo_ids(db, settings, args)
+    if not ids:
+        return {"ok": False, "info": "Keine passenden Fotos gefunden — kein Album erstellt."}
+    album = Album(name=name, album_type=AlbumType.manual, cover_photo_id=ids[0])
+    db.add(album)
+    await db.flush()
+    for i, pid in enumerate(ids):
+        db.add(AlbumPhoto(album_id=album.id, photo_id=pid, sort_order=i))
+    await db.commit()
+    return {"ok": True, "album_id": album.id, "name": name, "anzahl": len(ids)}
+
+
+async def _action_favorite(db: AsyncSession, settings: dict, args: dict) -> dict:
+    from sqlalchemy import update as _upd
+    from app.models.photo import Photo
+    ids = await _resolve_action_photo_ids(db, settings, args)
+    if not ids:
+        return {"ok": False, "info": "Keine passenden Fotos gefunden."}
+    await db.execute(_upd(Photo).where(Photo.id.in_(ids)).values(is_favorite=True))
+    await db.commit()
+    return {"ok": True, "anzahl": len(ids)}
+
+
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession) -> dict:
     key = (settings.get("ai.gemini.api_key") or "").strip()
     if not key:
@@ -183,6 +235,27 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 "person": {"type": "string", "description": "optionaler Personenname, z. B. 'Lea Marie Nimtz'"},
                 **_filter_props,
             }},
+        },
+        {
+            "name": "album_erstellen",
+            "description": "Erstellt ein NEUES Album aus den passenden Fotos. Nutze das, wenn der Nutzer "
+                           "ein Album anlegen/erstellen möchte (z. B. 'mach ein Album mit allen Strandfotos "
+                           "von Lea 2022'). Kombiniert Suchbegriff, Person und Medientyp/Jahr-Filter.",
+            "parameters": {"type": "object", "properties": {
+                "name": {"type": "string", "description": "Name des neuen Albums"},
+                "suchbegriff": {"type": "string", "description": "optional, wonach gefiltert wird"},
+                "person": {"type": "string", "description": "optionaler Personenname"},
+                **_filter_props,
+            }, "required": ["name"]},
+        },
+        {
+            "name": "als_favorit_markieren",
+            "description": "Markiert die passenden Fotos als Favorit (Herz). Reversibel.",
+            "parameters": {"type": "object", "properties": {
+                "suchbegriff": {"type": "string"},
+                "person": {"type": "string"},
+                **_filter_props,
+            }, "required": ["suchbegriff"]},
         },
     ]}
     contents = []
@@ -224,6 +297,14 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     if c.get("name") == "zaehle_fotos":
                         resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
                                             args.get("jahr_bis"), args.get("person"))
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "album_erstellen":
+                        resp = await _action_create_album(db, settings, args)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "als_favorit_markieren":
+                        resp = await _action_favorite(db, settings, args)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     else:
