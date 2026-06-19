@@ -322,35 +322,55 @@ def reembed_imported_faces_task(self):
                 .order_by(Face.photo_id)
             )).all()
             flog("faces", "INFO", f"Re-Embed importierter Gesichter: {len(rows)}")
-            done = failed = 0
-            cache_pid, cache_img = None, None
+            done = failed = via_orig = 0
+            cache_pid, cache_thumb, cache_orig, cache_path = None, None, None, None
+
+            def _embed_from(img, bx, by, bw, bh):
+                """Crop the (margined) face region from img and run insightface.
+                Returns the best embedding or None. Coords are normalised (0–1),
+                so the same box works on a thumb or a full-res original."""
+                if not img:
+                    return None
+                W, H = img.size
+                mx, my = (bw or 0) * 0.6, (bh or 0) * 0.6  # 60% margin → better re-detect
+                crop = img.crop((int(max(0.0, bx - mx) * W), int(max(0.0, by - my) * H),
+                                 int(min(1.0, bx + bw + mx) * W), int(min(1.0, by + bh + my) * H)))
+                faces = fi.detect_faces(crop, 0.3)  # low conf — we know it IS a face
+                best = max(faces, key=lambda f: f.confidence or 0) if faces else None
+                return best.embedding if (best and best.embedding) else None
+
             for fid, pid, bx, by, bw, bh in rows:
                 try:
                     if pid != cache_pid:
                         photo = await db.get(Photo, pid)
-                        cache_img = open_image_for_ai(
+                        cache_thumb = open_image_for_ai(
                             photo.thumb_large or photo.thumb_medium or photo.path) if photo else None
+                        cache_orig, cache_path = None, (photo.path if photo else None)
                         cache_pid = pid
-                    if cache_img is None:
-                        failed += 1; continue
-                    W, H = cache_img.size
-                    mx, my = (bw or 0) * 0.6, (bh or 0) * 0.6  # 60% margin → better re-detect
-                    crop = cache_img.crop((int(max(0.0, bx - mx) * W), int(max(0.0, by - my) * H),
-                                           int(min(1.0, bx + bw + mx) * W), int(min(1.0, by + bh + my) * H)))
-                    faces = fi.detect_faces(crop, 0.3)  # low conf — we know it IS a face
-                    best = max(faces, key=lambda f: f.confidence or 0) if faces else None
-                    if not best or not best.embedding:
+                    emb = _embed_from(cache_thumb, bx, by, bw, bh)
+                    # Fallback: tiny/cropped faces aren't re-detectable on the ~1024px
+                    # thumb. Retry on the ORIGINAL at high res (3000px) — recovers the
+                    # small faces that otherwise stay stuck as 'imported' forever.
+                    if emb is None and cache_path:
+                        if cache_orig is None:
+                            cache_orig = open_image_for_ai(cache_path, max_size=3000) or False
+                        if cache_orig:
+                            emb = _embed_from(cache_orig, bx, by, bw, bh)
+                            if emb is not None:
+                                via_orig += 1
+                    if emb is None:
                         failed += 1; continue
                     await db.execute(update(Face).where(Face.id == fid).values(
-                        embedding=best.embedding, detector="insightface"))
+                        embedding=emb, detector="insightface"))
                     done += 1
                     if (done + failed) % 50 == 0:
                         await db.commit()
                 except Exception:
                     failed += 1
             await db.commit()
-            flog("faces", "INFO", f"Re-Embed fertig: {done} neu eingebettet, {failed} ohne Treffer")
-            return {"reembedded": done, "failed": failed}
+            flog("faces", "INFO",
+                 f"Re-Embed fertig: {done} neu eingebettet ({via_orig} via Original), {failed} ohne Treffer")
+            return {"reembedded": done, "failed": failed, "via_original": via_orig}
     return _run(_main())
 
 
