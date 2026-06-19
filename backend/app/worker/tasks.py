@@ -503,58 +503,74 @@ def warm_face_crops_task(self):
 
 
 @celery_app.task(bind=True, name="verify_unnamed_faces")
-def verify_unnamed_faces_task(self, limit: int = 4000):
-    """False-positive filter: re-run InsightFace on the CROP of each UNNAMED face.
-    A context-triggered false positive (a hand/pattern/skin the full-image detector
-    fired on) usually does NOT re-detect as a face once isolated → mark is_ignored
-    (reversible, removes it from the People grid). Conservative: only ignore when
-    ZERO faces are found at a LOW threshold, so real faces survive. Never touches
-    NAMED persons. Nightly + on-demand; only the crop (SSD) is read, never the HDD."""
+def verify_unnamed_faces_task(self, limit: int = 20000, include_named: bool = True):
+    """False-positive filter: re-run InsightFace on each face's cached CROP. A
+    context-triggered FP (a hand/pattern/skin the full-image detector fired on)
+    usually does NOT re-detect as a face once isolated → remove it. Conservative:
+    only act when ZERO faces are found at a LOW threshold, so real faces survive.
+    Reversible: sets is_ignored (off the grid); for a face that was wrongly
+    clustered into a NAMED person, ALSO unassigns it (person_id=None) so the hand/
+    pattern leaves that person. include_named=False restricts to unnamed only.
+    Newest faces first (recent clusters are the usual FP source). Reads only the
+    SSD crop, never the HDD original."""
     async def _main():
         import os
         from app.core.database import init_db, get_db
-        from app.models.photo import Photo
+        from app.models.photo import Photo as _P
         from app.models.face import Face
-        from app.models.person import Person
         from app.services import face_detect_insightface as fdi
         from app.services.feature_log import log as flog
-        from sqlalchemy import select, or_, func as sfunc
+        from app.services.face_crop import crop_out_path
+        from sqlalchemy import select, update as _upd
         from PIL import Image
         init_db()
         if not fdi.available():
             return {"skipped": "no insightface"}
-        from app.api.routes.people import _face_crop_path  # SSD-only crop path
+        # phase 1: snapshot candidates + crop key in a SHORT session, then release.
+        # (insightface over thousands of crops takes minutes — never hold the session
+        # across it; same idle_in_transaction trap as the other heavy tasks.)
         async for db in get_db():
-            faces = (await db.execute(
-                select(Face).join(Person, Person.id == Face.person_id, isouter=True)
-                .where(Face.is_ignored == False,  # noqa: E712
-                       or_(Face.person_id.is_(None),
-                           Person.name.is_(None),
-                           sfunc.length(sfunc.trim(Person.name)) == 0))
-                .order_by(Face.id).limit(limit)
-            )).scalars().all()
-            flog("faces", "INFO", f"FP-Filter: prüfe {len(faces)} unbenannte Gesicht(er)")
-            checked = ignored = 0
-            for face in faces:
-                photo = await db.get(Photo, face.photo_id)
-                if not photo or photo.is_missing:
-                    continue
-                try:
-                    cp = _face_crop_path(face, photo, face.person_id or 0)
-                    if not cp or not os.path.exists(cp):
-                        continue
-                    found = fdi.detect_faces(Image.open(cp), min_conf=0.35)
-                    checked += 1
-                    if not found:
-                        face.is_ignored = True
-                        ignored += 1
-                except Exception:
-                    pass
-                if checked % 200 == 0:
-                    await db.commit()
-            await db.commit()
-            flog("faces", "INFO", f"FP-Filter fertig: {checked} geprüft, {ignored} als 'kein Gesicht' markiert")
-            return {"checked": checked, "ignored": ignored}
+            rows = (await db.execute(
+                select(Face.id, Face.person_id, _P.path, _P.thumb_large, _P.thumb_medium,
+                       _P.is_video, Face.frame_time)
+                .join(_P, _P.id == Face.photo_id)
+                .where(Face.is_ignored == False, _P.is_missing == False)  # noqa: E712
+                .order_by(Face.id.desc()).limit(limit)
+            )).all()
+            break
+        flog("faces", "INFO", f"FP-Filter: prüfe {len(rows)} Gesicht(er) (inkl. benannte={include_named})")
+        to_ignore, to_unassign = [], []
+        checked = 0
+        for fid, person_id, p_path, p_large, p_medium, p_is_video, ft in rows:
+            if person_id is not None and not include_named:
+                continue
+            use_frame = bool(p_is_video) and ft is not None
+            key_path = p_path if use_frame else (p_large or p_medium or p_path)
+            cp = str(crop_out_path(key_path, person_id or 0, fid))
+            if not os.path.exists(cp):
+                continue  # no cached crop yet → warm task will make it, next run verifies
+            try:
+                found = fdi.detect_faces(Image.open(cp), min_conf=0.35)
+            except Exception:
+                continue
+            checked += 1
+            if not found:
+                to_ignore.append(fid)
+                if person_id is not None:
+                    to_unassign.append(fid)
+        # phase 3: apply removals in short batched sessions
+        unassign_set = set(to_unassign)
+        for i in range(0, len(to_ignore), 300):
+            batch = to_ignore[i:i + 300]
+            unb = [f for f in batch if f in unassign_set]
+            async for db in get_db():
+                await db.execute(_upd(Face).where(Face.id.in_(batch)).values(is_ignored=True))
+                if unb:
+                    await db.execute(_upd(Face).where(Face.id.in_(unb)).values(person_id=None))
+                await db.commit()
+                break
+        flog("faces", "INFO", f"FP-Filter fertig: {checked} geprüft, {len(to_ignore)} entfernt ({len(to_unassign)} von Personen gelöst)")
+        return {"checked": checked, "ignored": len(to_ignore), "unassigned": len(to_unassign)}
     return _run(_main())
 
 
