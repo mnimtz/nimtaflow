@@ -727,6 +727,7 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
   const [adding, setAdding] = useState(false)
   const [type, setType] = useState('parent')
   const [otherId, setOtherId] = useState<number | ''>('')
+  const [q, setQ] = useState('')   // searchable person picker
 
   const { data: settings } = useQuery<Record<string, string>>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000 })
   const on = (settings?.['features.relationships'] ?? 'false') === 'true'
@@ -766,10 +767,31 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
           <select value={type} onChange={e => setType(e.target.value)} className={sel}>
             {REL_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-          <select value={otherId} onChange={e => setOtherId(Number(e.target.value))} className={`${sel} min-w-[10rem]`}>
-            <option value="">— Person —</option>
-            {people.filter(p => p.id !== personId && (p.name || '').trim()).sort((a, b) => a.name.localeCompare(b.name)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          {(() => {
+            const named = people.filter(p => p.id !== personId && (p.name || '').trim())
+              .sort((a, b) => a.name.localeCompare(b.name))
+            const picked = otherId ? named.find(p => p.id === otherId) : undefined
+            const matches = named.filter(p => p.name.toLowerCase().includes(q.toLowerCase()))
+            return (
+              <div className="relative">
+                <input
+                  value={picked ? picked.name : q}
+                  onChange={e => { setQ(e.target.value); setOtherId('') }}
+                  placeholder={`Person suchen … (${named.length})`}
+                  className={`${sel} min-w-[12rem]`} />
+                {!otherId && q.trim() && (
+                  <div className="absolute z-20 mt-1 w-60 max-h-56 overflow-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
+                    {matches.length === 0
+                      ? <div className="px-3 py-1.5 text-sm text-zinc-500">keine Treffer</div>
+                      : matches.slice(0, 80).map(p => (
+                        <button key={p.id} onClick={() => { setOtherId(p.id); setQ('') }}
+                          className="block w-full text-left px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">{p.name}</button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
           <button onClick={() => add.mutate()} disabled={!otherId || add.isPending}
             className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Hinzufügen</button>
         </div>
