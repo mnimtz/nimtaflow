@@ -443,6 +443,22 @@ class BatchAction(_BM):
     action: str  # favorite | unfavorite | archive | unarchive | trash | untrash
 
 
+class TripPlanRequest(_BM):
+    description: str
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+@router.post("/plan-trip")
+async def plan_trip_endpoint(body: TripPlanRequest, db: AsyncSession = Depends(get_db)):
+    """AI trip planner: rough text → structured itinerary (waypoints with coords +
+    dates) via Gemini. Used by the 'Reise anlegen'-Assistent."""
+    from app.services.settings_loader import load_settings
+    from app.services.trip_planner import plan_trip
+    s = await load_settings(db)
+    return await plan_trip(body.description, body.date_from, body.date_to, s)
+
+
 @router.post("/reprocess-failed")
 async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     """Re-queue all photos that errored, never finished, or whose AI step failed
