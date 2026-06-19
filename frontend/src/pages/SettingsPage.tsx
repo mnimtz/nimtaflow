@@ -1571,7 +1571,8 @@ function FacesSection() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <Label>Cluster-Schwelle</Label>
-            <Input value={settings['face.clustering_threshold'] ?? '0.6'} onChange={v => set('face.clustering_threshold', v)} placeholder="0.6" />
+            <Input value={settings['face.clustering_threshold'] ?? '0.5'} onChange={v => set('face.clustering_threshold', v)} placeholder="0.5" />
+            <p className="text-xs text-zinc-400 mt-1">Wie ähnlich Gesichter sein müssen, um zusammen-/zugeordnet zu werden. Für InsightFace ~<b>0.5</b> (niedriger = mehr Treffer, aber Risiko falscher Zuordnungen; höher = strenger). Danach „Clustern" erneut ausführen.</p>
           </div>
           <div>
             <Label>Min. Konfidenz</Label>

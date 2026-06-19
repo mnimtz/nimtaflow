@@ -118,7 +118,10 @@ async def cluster_unassigned(db: AsyncSession, grow_only: bool = False) -> dict:
     await db.commit()
 
     s = await load_settings(db)
-    threshold = float(s.get("face.clustering_threshold", "0.6") or 0.6)
+    # 0.5 default is calibrated for InsightFace/ArcFace, whose same-person cosine
+    # sims peak ~0.45–0.55 (much lower than facenet's). 0.6 (the old facenet value)
+    # was so strict that grow assigned 0 — genuine matches never reached it.
+    threshold = float(s.get("face.clustering_threshold", "0.5") or 0.5)
     min_size = max(2, int(float(s.get("face.min_cluster_size", "3") or 3)))
     algo = str(s.get("face.cluster_algo", "dbscan")).lower()
     engine = str(s.get("face.engine", "facenet")).lower()
