@@ -435,65 +435,70 @@ def warm_face_crops_task(self):
         from app.services.feature_log import log as flog
         from sqlalchemy import select
         init_db()
+        # Fetch EVERYTHING (face boxes + the photo fields crop_face needs) in ONE
+        # query, then release the DB session. Crop generation runs ffmpeg per video
+        # face and takes minutes over 30k faces — holding the session across it
+        # tripped idle_in_transaction_session_timeout, killing the connection mid-run
+        # ("connection was closed in the middle of operation") so warming never
+        # finished. No DB is touched during the loop now.
+        from app.models.photo import Photo as _P
         async for db in get_db():
             rows = (await db.execute(
-                select(Face.id, Face.photo_id, Face.person_id, Face.bbox_x, Face.bbox_y,
-                       Face.bbox_w, Face.bbox_h, Face.frame_time)
+                select(Face.id, Face.person_id, Face.bbox_x, Face.bbox_y, Face.bbox_w,
+                       Face.bbox_h, Face.frame_time, _P.path, _P.thumb_large, _P.thumb_medium,
+                       _P.is_video, _P.is_missing, _P.video_webm_path)
+                .join(_P, _P.id == Face.photo_id)
                 .where(Face.is_ignored == False)  # noqa: E712
                 .order_by(Face.person_id.isnot(None).desc(), Face.photo_id)
             )).all()
-            flog("faces", "INFO", f"Crop-Cache vorbereiten: {len(rows)} Gesicht(er)")
-            done = skipped = failed = 0
-            photo_cache: dict = {}
-            for fid, photo_id, person_id, bx, by, bw, bh, ft in rows:
-                photo = photo_cache.get(photo_id)
-                if photo is None:
-                    photo = await db.get(Photo, photo_id)
-                    photo_cache[photo_id] = photo
-                if not photo or photo.is_missing:
+            break
+        flog("faces", "INFO", f"Crop-Cache vorbereiten: {len(rows)} Gesicht(er)")
+        done = skipped = failed = 0
+        import io, os
+        from PIL import Image
+        for (fid, person_id, bx, by, bw, bh, ft, p_path, p_large, p_medium,
+             p_is_video, p_is_missing, p_webm) in rows:
+            if p_is_missing:
+                failed += 1
+                continue
+            pid = person_id or 0
+            bbox = [bx, by, bw, bh]
+            use_frame = bool(p_is_video) and ft is not None
+            # The cache key matches whatever path crop_face will be called with:
+            # the original video for frame-extracted faces, else the thumbnail.
+            key_path = p_path if use_frame else (p_large or p_medium or p_path)
+            if crop_cached(key_path, pid, fid):
+                skipped += 1
+                continue
+            try:
+                out = None
+                if use_frame:
+                    # SSD only: exact frame from the 1080p web MP4, else the video
+                    # thumbnail — never ffmpeg the 4K original on the HDD.
+                    src_img = None
+                    vsrc = p_webm if (p_webm and os.path.exists(p_webm)) else None
+                    if vsrc:
+                        data = extract_video_frame_bytes(vsrc, float(ft))
+                        if data:
+                            src_img = Image.open(io.BytesIO(data))
+                    if src_img is None:
+                        thumb = p_large or p_medium
+                        if thumb and os.path.exists(thumb):
+                            src_img = Image.open(thumb)
+                    if src_img is not None:
+                        out = crop_face(p_path, bbox, pid, fid, source_image=src_img)
+                else:
+                    out = crop_face(key_path, bbox, pid, fid)
+                if out:
+                    done += 1
+                else:
                     failed += 1
-                    continue
-                pid = person_id or 0
-                bbox = [bx, by, bw, bh]
-                use_frame = bool(getattr(photo, "is_video", False)) and ft is not None
-                # The cache key matches whatever path crop_face will be called with:
-                # the original video for frame-extracted faces, else the thumbnail.
-                key_path = photo.path if use_frame else (photo.thumb_large or photo.thumb_medium or photo.path)
-                if crop_cached(key_path, pid, fid):
-                    skipped += 1
-                    continue
-                try:
-                    out = None
-                    if use_frame:
-                        import io, os
-                        from PIL import Image
-                        # SSD only: exact frame from the 1080p web MP4, else the video
-                        # thumbnail — never ffmpeg the 4K original on the HDD. Key stays
-                        # photo.path (matches the request-time crop path).
-                        src_img = None
-                        vsrc = photo.video_webm_path if (photo.video_webm_path and os.path.exists(photo.video_webm_path)) else None
-                        if vsrc:
-                            data = extract_video_frame_bytes(vsrc, float(ft))
-                            if data:
-                                src_img = Image.open(io.BytesIO(data))
-                        if src_img is None:
-                            thumb = photo.thumb_large or photo.thumb_medium
-                            if thumb and os.path.exists(thumb):
-                                src_img = Image.open(thumb)
-                        if src_img is not None:
-                            out = crop_face(photo.path, bbox, pid, fid, source_image=src_img)
-                    else:
-                        out = crop_face(key_path, bbox, pid, fid)
-                    if out:
-                        done += 1
-                    else:
-                        failed += 1
-                except Exception:
-                    failed += 1
-                if (done + failed) % 200 == 0 and (done + failed) > 0:
-                    flog("faces", "INFO", f"Crop-Cache: {done} erzeugt, {skipped} bereits da, {failed} Fehler …")
-            flog("faces", "INFO", f"Crop-Cache fertig: {done} erzeugt, {skipped} bereits da, {failed} Fehler")
-            return {"warmed": done, "skipped": skipped, "failed": failed}
+            except Exception:
+                failed += 1
+            if (done + failed) % 500 == 0 and (done + failed) > 0:
+                flog("faces", "INFO", f"Crop-Cache: {done} erzeugt, {skipped} bereits da, {failed} Fehler …")
+        flog("faces", "INFO", f"Crop-Cache fertig: {done} erzeugt, {skipped} bereits da, {failed} Fehler")
+        return {"warmed": done, "skipped": skipped, "failed": failed}
     return _run(_main())
 
 
@@ -655,6 +660,13 @@ def detect_video_faces_task(self, photo_id: int):
         from sqlalchemy import select, func as _func
         from PIL import Image
         init_db()
+        # ── phase 1: read params in a SHORT session, then release it. The frame
+        # sampling below runs ffmpeg+insightface for up to 30 frames (often >60s);
+        # holding the DB session across that tripped idle_in_transaction_session_timeout
+        # → "connection was closed in the middle of operation" on commit → the task
+        # failed + retried forever, clogging the cpu queue. So: gather → release →
+        # work → reopen to write.
+        params = None
         async for db in get_db():
             photo = await db.get(Photo, photo_id)
             if not photo or not photo.is_video or photo.is_missing:
@@ -674,37 +686,55 @@ def detect_video_faces_task(self, photo_id: int):
             dur = photo.duration_seconds or video_duration(src) or 0
             if dur <= 0:
                 photo.faces_scanned = True; await db.commit(); return
-            n = max(8, min(30, int(dur / 3) + 1))   # frame count scales with duration
-            min_conf = float(s.get("video.face_min_confidence", "0.6") or 0.6)
-            min_px = float(s.get("face.min_size_px", "40") or 0)
-            sim = float(s.get("video.face_dedup_sim", "0.45") or 0.45)
-            reps = []  # [{emb: np, det: {f, ts}}] — one per distinct person in the clip
-            for i in range(n):
-                ts = round((i + 0.5) * dur / n, 2)
-                data = extract_video_frame_bytes(src, ts)
-                if not data:
+            params = {
+                "src": src, "dur": dur, "filename": photo.filename,
+                "n": max(8, min(30, int(dur / 3) + 1)),   # frame count scales with duration
+                "min_conf": float(s.get("video.face_min_confidence", "0.6") or 0.6),
+                "min_px": float(s.get("face.min_size_px", "40") or 0),
+                "sim": float(s.get("video.face_dedup_sim", "0.45") or 0.45),
+            }
+            break
+        if not params:
+            return
+
+        # ── phase 2: sample frames + detect — NO db session held over this slow work ──
+        src, dur, n = params["src"], params["dur"], params["n"]
+        min_conf, min_px, sim = params["min_conf"], params["min_px"], params["sim"]
+        reps = []  # [{emb: np, det: {f, ts}}] — one per distinct person in the clip
+        for i in range(n):
+            ts = round((i + 0.5) * dur / n, 2)
+            data = extract_video_frame_bytes(src, ts)
+            if not data:
+                continue
+            try:
+                img = Image.open(io.BytesIO(data))
+            except Exception:
+                continue
+            W, H = img.size
+            for f in fi.detect_faces(img, min_conf):
+                if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
                     continue
-                try:
-                    img = Image.open(io.BytesIO(data))
-                except Exception:
+                ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
+                if ar < 0.45 or ar > 1.8:
                     continue
-                W, H = img.size
-                for f in fi.detect_faces(img, min_conf):
-                    if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
-                        continue
-                    ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
-                    if ar < 0.45 or ar > 1.8:
-                        continue
-                    emb = np.asarray(f.embedding, dtype="float32")
-                    matched = False
-                    for rep in reps:
-                        if float(np.dot(emb, rep["emb"])) >= sim:  # ArcFace normed → cosine
-                            if f.confidence > rep["det"]["f"].confidence:
-                                rep["det"] = {"f": f, "ts": ts}; rep["emb"] = emb
-                            matched = True
-                            break
-                    if not matched:
-                        reps.append({"emb": emb, "det": {"f": f, "ts": ts}})
+                emb = np.asarray(f.embedding, dtype="float32")
+                matched = False
+                for rep in reps:
+                    if float(np.dot(emb, rep["emb"])) >= sim:  # ArcFace normed → cosine
+                        if f.confidence > rep["det"]["f"].confidence:
+                            rep["det"] = {"f": f, "ts": ts}; rep["emb"] = emb
+                        matched = True
+                        break
+                if not matched:
+                    reps.append({"emb": emb, "det": {"f": f, "ts": ts}})
+
+        # ── phase 3: persist in a fresh SHORT session ──
+        async for db in get_db():
+            photo = await db.get(Photo, photo_id)
+            if not photo:
+                return
+            if await db.scalar(select(_func.count()).where(Face.photo_id == photo_id)):
+                photo.faces_scanned = True; await db.commit(); return  # a concurrent run won
             added = 0
             for rep in reps:
                 f = rep["det"]["f"]
@@ -716,7 +746,8 @@ def detect_video_faces_task(self, photo_id: int):
             photo.faces_scanned = True
             await db.commit()
             if added:
-                flog("faces", "INFO", f"{added} Person(en) im Video erkannt: {photo.filename}")
+                flog("faces", "INFO", f"{added} Person(en) im Video erkannt: {params['filename']}")
+            break
     return _run(_main())
 
 
