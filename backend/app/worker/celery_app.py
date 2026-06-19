@@ -33,8 +33,12 @@ celery_app.conf.update(
         "auto_cluster_faces": {"queue": "cpu"},
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
-        "detect_video_faces": {"queue": "cpu"},   # video faces from 1080p frames
-        "sweep_video_faces":  {"queue": "cpu"},
+        # Video face detection is SLOW (ffmpeg frame sampling) — keep it on the
+        # video queue (its own worker) so thousands of clips from the nightly sweep
+        # don't starve the fast cpu queue (image faces, crop warming, thumbnails).
+        # It needs the 1080p web MP4 anyway, which the video worker produces.
+        "detect_video_faces": {"queue": "video"},  # video faces from 1080p frames
+        "sweep_video_faces":  {"queue": "cpu"},     # light enqueuer, stays on cpu
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
         "reembed_imported":   {"queue": "cpu"},
