@@ -10,6 +10,8 @@ struct GalleryView: View {
     @State private var loading = false
     @State private var favoritesOnly = false
     @State private var selected: PhotoV1?
+    @State private var loadError: String?
+    @State private var lastTotal: Int?
 
     // Upload
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -41,6 +43,7 @@ struct GalleryView: View {
                 }
                 .padding(2)
                 if loading { ProgressView().padding() }
+                if !loading && photos.isEmpty { emptyState }
             }
             .navigationTitle("Galerie")
             .toolbar {
@@ -105,14 +108,39 @@ struct GalleryView: View {
         uploadNote = nil
     }
 
-    func reload() async { photos = []; cursor = nil; hasMore = true; await load() }
+    @ViewBuilder private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: loadError == nil ? "photo.on.rectangle" : "exclamationmark.triangle")
+                .font(.largeTitle).foregroundStyle(loadError == nil ? Color.secondary : Color.orange)
+            Text(loadError ?? "Keine Fotos geladen").font(.headline).multilineTextAlignment(.center)
+            if let t = lastTotal { Text("Server meldet \(t) Fotos").font(.caption).foregroundStyle(.secondary) }
+            Text("Server: \(api.serverURL)").font(.caption2).foregroundStyle(.secondary)
+            Button("Erneut laden") { Task { await reload() } }
+                .buttonStyle(.borderedProminent).padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity).padding(.top, 80).padding(.horizontal)
+    }
+
+    func reload() async { photos = []; cursor = nil; hasMore = true; loadError = nil; await load() }
     func load() async {
         guard hasMore, !loading else { return }
         loading = true; defer { loading = false }
         do {
             let page = try await api.photos(cursor: cursor, favorites: favoritesOnly)
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
-        } catch { hasMore = false }
+            lastTotal = page.total; loadError = nil
+        } catch {
+            hasMore = false
+            if let e = error as? APIClient.APIError {
+                switch e {
+                case .status(let c): loadError = "Server antwortet mit Fehler \(c)"
+                case .decode: loadError = "Antwort nicht lesbar (Decode-Fehler)"
+                case .badURL: loadError = "Server-Adresse ungültig"
+                }
+            } else {
+                loadError = "Verbindung fehlgeschlagen: \((error as NSError).localizedDescription)"
+            }
+        }
     }
 }
 
