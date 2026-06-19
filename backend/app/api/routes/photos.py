@@ -459,6 +459,55 @@ async def plan_trip_endpoint(body: TripPlanRequest, db: AsyncSession = Depends(g
     return await plan_trip(body.description, body.date_from, body.date_to, s)
 
 
+class CreateTripRequest(_BM):
+    name: str
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    waypoints: Optional[list] = None
+    description: Optional[str] = None
+
+
+@router.post("/create-trip")
+async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db)):
+    """Create a trip = a MANUAL album (photos materialised → removable) whose route
+    (waypoints) is stored in smart_criteria. Auto-fills with all photos in the
+    date range; the user can then remove non-fitting ones via the album."""
+    from datetime import datetime as _dt, timedelta as _td
+    from app.models.album import Album, AlbumPhoto, AlbumType
+
+    def _pd(s):
+        try:
+            return _dt.strptime(s[:10], "%Y-%m-%d") if s else None
+        except Exception:
+            return None
+    df, dt = _pd(body.date_from), _pd(body.date_to)
+    album = Album(
+        name=(body.name or "Reise").strip()[:256],
+        album_type=AlbumType.manual,
+        description=body.description,
+        smart_criteria={"trip": True, "route": body.waypoints or [],
+                        "date_from": body.date_from, "date_to": body.date_to},
+    )
+    db.add(album)
+    await db.flush()
+    added = 0
+    if df and dt:
+        rows = (await db.execute(
+            select(Photo.id).where(
+                Photo.taken_at >= df, Photo.taken_at < dt + _td(days=1),
+                Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
+            ).order_by(Photo.taken_at)
+        )).all()
+        ids = [r[0] for r in rows]
+        for i, pid in enumerate(ids):
+            db.add(AlbumPhoto(album_id=album.id, photo_id=pid, sort_order=i))
+        added = len(ids)
+        if ids:
+            album.cover_photo_id = ids[len(ids) // 2]
+    await db.commit()
+    return {"album_id": album.id, "added": added, "name": album.name}
+
+
 @router.post("/reprocess-failed")
 async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     """Re-queue all photos that errored, never finished, or whose AI step failed
