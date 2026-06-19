@@ -7,6 +7,7 @@ import {
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
+import QuickNameOverlay from '../components/people/QuickNameOverlay'
 import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
 
 interface Person {
@@ -43,6 +44,7 @@ export default function PeoplePage() {
   const [mergeOpen, setMergeOpen] = useState(false)
   const [assignIds, setAssignIds] = useState<number[] | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
+  const [quickName, setQuickName] = useState(false)
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
@@ -201,6 +203,10 @@ export default function PeoplePage() {
             <option value="name">Name (A–Z)</option>
             <option value="recent">Zuletzt hinzugefügt</option>
           </select>
+          <button onClick={() => setQuickName(true)} title="Unbenannte Gruppen schnell durchbenennen"
+            className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
+            Schnell benennen
+          </button>
           {selectMode ? (
             <button onClick={clearSelection} className={`${BTN_PRIMARY}`}>
               <X size={15} /> Fertig
@@ -361,6 +367,7 @@ export default function PeoplePage() {
       )}
 
       {showAdd && <AddPersonModal onClose={() => setShowAdd(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['people'] }); toast('Person erstellt', 'success') }} />}
+      {quickName && <QuickNameOverlay onClose={() => setQuickName(false)} />}
       {mergeOpen && (
         <MergeModal
           people={selectedPeople}
