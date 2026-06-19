@@ -571,7 +571,7 @@ async def person_photos_v1(person_id: int, request: Request,
 @router.get("/relationships")
 async def relationships_v1(db: AsyncSession = Depends(get_db)):
     from app.api.routes.relationships import graph as _graph
-    return await _graph(db)
+    return await _graph(db=db)   # first positional arg is `category`, not db
 
 
 # ── Albums (iOS app) ──────────────────────────────────────────────────────────

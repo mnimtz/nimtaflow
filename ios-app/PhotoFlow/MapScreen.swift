@@ -12,6 +12,7 @@ struct MapScreen: View {
     @State private var region: MKCoordinateRegion?
     @State private var camera: MapCameraPosition = .automatic
     @State private var loading = false
+    @State private var displayClusters: [Cluster] = []
 
     struct Cluster: Identifiable {
         let id: Int
@@ -24,7 +25,7 @@ struct MapScreen: View {
     var body: some View {
         NavigationStack {
             Map(position: $camera) {
-                ForEach(clusters) { c in
+                ForEach(displayClusters) { c in
                     Annotation("", coordinate: c.coordinate) {
                         if c.count == 1 {
                             Circle().fill(c.isVideo ? Color.purple : Color.indigo)
@@ -43,7 +44,10 @@ struct MapScreen: View {
                 }
             }
             .mapStyle(globe ? .imagery(elevation: .realistic) : .standard(elevation: .flat))
-            .onMapCameraChange(frequency: .onEnd) { ctx in region = ctx.region }
+            .onMapCameraChange(frequency: .onEnd) { ctx in
+                region = ctx.region
+                displayClusters = computeClusters()
+            }
             .navigationTitle("Karte")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -73,6 +77,7 @@ struct MapScreen: View {
                     loading = true
                     points = (try? await api.mapPoints()) ?? []
                     loading = false
+                    displayClusters = computeClusters()
                 }
             }
             .fullScreenCover(item: $selected) { p in PhotoPager(photos: [p], start: p) }
@@ -88,8 +93,9 @@ struct MapScreen: View {
         }
     }
 
-    /// Grid-cluster the points that fall inside the current region.
-    private var clusters: [Cluster] {
+    /// Grid-cluster the points that fall inside the current region. Called only
+    /// on load + camera-change (cached in displayClusters), never per render.
+    private func computeClusters() -> [Cluster] {
         guard let region else {
             // Before the first camera event: show a light sample so we never try
             // to draw all 27k at once.
