@@ -575,9 +575,10 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
   })
   const [photoPage, setPhotoPage] = useState(1)
   const [photoPageSize, setPhotoPageSize] = useState(50)
+  const [photoSort, setPhotoSort] = useState<'newest' | 'oldest'>('newest')
   const { data: photosData } = useQuery({
-    queryKey: ['person-photos', personId, photoPage, photoPageSize],
-    queryFn: () => api.get(`/people/${personId}/photos`, { params: { page: photoPage, limit: photoPageSize } }).then(r => r.data),
+    queryKey: ['person-photos', personId, photoPage, photoPageSize, photoSort],
+    queryFn: () => api.get(`/people/${personId}/photos`, { params: { page: photoPage, limit: photoPageSize, sort: photoSort } }).then(r => r.data),
   })
   const [facePage, setFacePage] = useState(1)
   const [facePageSize, setFacePageSize] = useState(50)
@@ -691,7 +692,15 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Fotos ({total})</h2>
+      <div className="flex items-center gap-3 mb-3">
+        <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Fotos ({total})</h2>
+        <div className="ml-auto flex rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs">
+          {([['newest', 'Neueste'], ['oldest', 'Älteste']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => { setPhotoSort(v); setPhotoPage(1) }}
+              className={`px-2.5 py-1 ${photoSort === v ? 'bg-indigo-600 text-white' : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{l}</button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
         {photos.map((photo, i) => (
           <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer" onClick={() => setLightboxIndex(i)}>

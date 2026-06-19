@@ -376,6 +376,7 @@ async def person_photos(
     person_id: int,
     page: int = 1,
     limit: int = 50,
+    sort: str = "newest",  # newest | oldest
     db: AsyncSession = Depends(get_db),
     _acc_user=Depends(current_user_optional),
 ):
@@ -387,11 +388,13 @@ async def person_photos(
     from app.schemas.photo import PhotoBase
     from app.core.access import photo_conditions
 
+    # nullslast so undated photos don't pile up at the very top of "newest".
+    order = Photo.taken_at.asc().nullslast() if sort == "oldest" else Photo.taken_at.desc().nullslast()
     q = (
         select(Photo)
         .join(Face, Face.photo_id == Photo.id)
         .where(Face.person_id == person_id, Photo.is_trashed == False, *photo_conditions(_acc_user))
-        .order_by(Photo.taken_at.desc())
+        .order_by(order)
         .offset((page - 1) * limit).limit(limit)
     )
     photos = (await db.execute(q)).scalars().all()
