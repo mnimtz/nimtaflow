@@ -16,19 +16,35 @@ final class AuthImageLoader: ObservableObject {
 
     func load(_ url: URL?, token: String) {
         guard let url else { failed = true; return }
-        if let cached = imageCache.object(forKey: url as NSURL) { image = cached; return }
+        if let cached = imageCache.object(forKey: url as NSURL) { image = cached; failed = false; return }
         image = nil; failed = false
         task?.cancel()
         task = Task {
             var req = URLRequest(url: url)
+            req.timeoutInterval = 20
             if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-            do {
-                let (data, resp) = try await URLSession.shared.data(for: req)
-                let ok = (resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
-                guard ok, let img = UIImage(data: data) else { if !Task.isCancelled { failed = true }; return }
-                imageCache.setObject(img, forKey: url as NSURL)
-                if !Task.isCancelled { image = img }
-            } catch { if !Task.isCancelled { failed = true } }
+            // Retry transient failures with backoff: a thumbnail still being
+            // generated returns 404 ("not ready"), and server load / network blips
+            // are momentary. Without this they'd show as a permanent grey box during
+            // bulk processing. 401/403 (auth) are NOT retried.
+            let delays: [UInt64] = [400_000_000, 1_200_000_000, 3_000_000_000]  // 0.4s, 1.2s, 3s
+            for attempt in 0...delays.count {
+                if Task.isCancelled { return }
+                do {
+                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    if (200..<300).contains(code), let img = UIImage(data: data) {
+                        imageCache.setObject(img, forKey: url as NSURL)
+                        if !Task.isCancelled { image = img; failed = false }
+                        return
+                    }
+                    if code == 401 || code == 403 { if !Task.isCancelled { failed = true }; return }
+                    // 404 (not ready) / 5xx → fall through to retry
+                } catch is CancellationError { return }
+                catch { /* network blip → retry */ }
+                if attempt < delays.count { try? await Task.sleep(nanoseconds: delays[attempt]) }
+            }
+            if !Task.isCancelled { failed = true }
         }
     }
 }
