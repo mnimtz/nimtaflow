@@ -6,14 +6,29 @@ struct PeopleView: View {
     @State private var mergeMode = false
     @State private var selection: Set<Int> = []
     @State private var error: String?
+    @AppStorage("people_filter") private var filter = "named"
 
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 16)]
+
+    private func isNamed(_ p: PersonV1) -> Bool { !p.name.isEmpty && p.name != "Unbekannt" }
+    private var filtered: [PersonV1] {
+        switch filter {
+        case "named":   return people.filter { isNamed($0) }
+        case "unknown": return people.filter { !isNamed($0) && $0.face_count > 1 }
+        case "single":  return people.filter { $0.face_count == 1 }
+        default:        return people   // "all"
+        }
+    }
+    private let filters: [(String, String)] = [
+        ("named", "Erkannte Personen"), ("unknown", "Unbekannte Personen"),
+        ("single", "Einzelgesichter"), ("all", "Alle"),
+    ]
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 16) {
-                    ForEach(people) { p in
+                    ForEach(filtered) { p in
                         let cell = VStack(spacing: 6) {
                             Avatar(url: api.url(p.avatar_url), initials: p.name.firstInitial, size: 72)
                                 .overlay {
@@ -36,6 +51,16 @@ struct PeopleView: View {
             .navigationTitle("Personen")
             .navigationDestination(for: PersonV1.self) { p in PersonDetailView(person: p) }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Filter", selection: $filter) {
+                            ForEach(filters, id: \.0) { Text($0.1).tag($0.0) }
+                        }
+                    } label: {
+                        Label(filters.first { $0.0 == filter }?.1 ?? "Filter",
+                              systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(mergeMode ? "Fertig" : "Auswählen") {
                         if mergeMode && selection.count >= 2 { Task { await merge() } }

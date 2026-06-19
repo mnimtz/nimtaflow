@@ -51,8 +51,10 @@ struct MoreView: View {
             }
             .navigationTitle("Mehr")
         }
-        .fullScreenCover(item: $dest) { d in
-            ZStack(alignment: .topTrailing) {
+        // Sheet with a drag handle to dismiss (swipe down) — no floating X that
+        // would collide with each screen's own top-right toolbar buttons.
+        .sheet(item: $dest) { d in
+            Group {
                 switch d {
                 case .people: PeopleView()
                 case .trips: TripsView()
@@ -61,12 +63,9 @@ struct MoreView: View {
                 case .shares: SharesListView()
                 case .settings: SettingsScreen()
                 }
-                Button { dest = nil } label: {
-                    Image(systemName: "xmark.circle.fill").font(.title2)
-                        .foregroundStyle(.white, .black.opacity(0.4))
-                }
-                .padding(.top, 8).padding(.trailing, 12)
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 
