@@ -46,7 +46,7 @@ struct MapScreen: View {
             .onMapCameraChange(frequency: .onEnd) { ctx in region = ctx.region }
             .navigationTitle("Karte")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         globe.toggle()
                         if globe {
