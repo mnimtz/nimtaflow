@@ -101,6 +101,14 @@ celery_app.conf.beat_schedule = {
         "task": "scheduled_backup",
         "schedule": 3600.0,
     },
+    # Nightly self-heal of the durable round-trip: stamp DB description/tags/rating
+    # into any described photo that isn't in its file yet (xmp_sidecar_written not
+    # True). Incremental + idempotent — closes gaps from any description that landed
+    # while xmp.write_mode was off. 02:30, before the FP/video face sweeps.
+    "backfill-xmp-nightly": {
+        "task": "backfill_xmp",
+        "schedule": crontab(hour=2, minute=30),
+    },
     # Nightly false-positive face filter: re-detect unnamed faces' crops, ignore
     # the ones that aren't faces (hands/patterns). New photos keep arriving, so it
     # runs every night at 03:30 to keep the People grid clean.

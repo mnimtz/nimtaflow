@@ -775,11 +775,16 @@ def sweep_video_faces_task(self, limit: int = 400):
 
 
 @celery_app.task(bind=True, name="backfill_xmp")
-def backfill_xmp_task(self):
+def backfill_xmp_task(self, full: bool = False):
     """Write the existing DB AI description + tags INTO the image files for every
     described photo (honours xmp.write_mode). One-off repair for photos that were
-    processed by the remote worker before it wrote files itself, or after turning
-    xmp.write_mode on. Idempotent — exiftool overwrites."""
+    described while xmp.write_mode was still 'off' (the default) and only got the
+    description in the DB. Idempotent — exiftool overwrites.
+
+    full=False (nightly self-heal): only photos NOT yet stamped
+    (xmp_sidecar_written is not True) → cheap, just closes new gaps.
+    full=True (manual one-off): re-stamp EVERY described photo, also fixing stale
+    in-file copies that lag behind a re-description."""
     async def _main():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
@@ -806,12 +811,17 @@ def backfill_xmp_task(self):
             # Cover everything that carries durable user info: a description, OR a
             # rating/favourite (those may have no description but must still be
             # stamped into the file so they survive a solution switch).
+            conds = [
+                Photo.is_missing == False,  # noqa: E712
+                or_(Photo.description.isnot(None), Photo.is_favorite == True,  # noqa: E712
+                    Photo.user_rating.isnot(None)),
+            ]
+            if not full:
+                # nightly self-heal: only photos that were never stamped into a file
+                conds.append(or_(Photo.xmp_sidecar_written == False,  # noqa: E712
+                                 Photo.xmp_sidecar_written.is_(None)))
             photos = (await db.execute(
-                select(Photo).where(
-                    Photo.is_missing == False,  # noqa: E712
-                    or_(Photo.description.isnot(None), Photo.is_favorite == True,  # noqa: E712
-                        Photo.user_rating.isnot(None)),
-                ).order_by(Photo.id)
+                select(Photo).where(*conds).order_by(Photo.id)
             )).scalars().all()
             tagmap = defaultdict(list)
             for pid, name in (await db.execute(
