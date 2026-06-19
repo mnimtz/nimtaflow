@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import AVKit
 
 struct GalleryView: View {
     @EnvironmentObject var api: APIClient
@@ -191,13 +192,22 @@ struct PhotoPager: View {
     @State private var ratings: [Int: Int] = [:]
     @State private var reprocessed = false
     @State private var showShare = false
+    @State private var showInfo = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { i, p in
-                    ZoomableImage(url: api.url(p.original_url) ?? api.url(p.thumb_medium_url)).tag(i)
+                    Group {
+                        if p.is_video {
+                            VideoPlayerView(url: api.url("api/photos/\(p.id)/video/stream"), token: api.token)
+                        } else {
+                            // Large thumbnail (always JPEG) — works for RAW too, where the
+                            // original isn't displayable by iOS.
+                            ZoomableImage(url: api.url("api/photos/\(p.id)/thumbnail?size=large"))
+                        }
+                    }.tag(i)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -205,6 +215,7 @@ struct PhotoPager: View {
                 Button { Task { try? await api.toggleFavorite(photos[index].id); toggleLocal() } } label: {
                     Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .white)
                 }
+                Button { showInfo = true } label: { Image(systemName: "info.circle").foregroundStyle(.white) }
                 Menu {
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button { Task { try? await api.reprocess(photos[index].id); reprocessed = true } } label: {
@@ -247,6 +258,9 @@ struct PhotoPager: View {
             ShareSheetView(target: .photo(id: photos[index].id, title: photos[index].filename))
                 .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showInfo) {
+            if let p = photos[safe: index] { PhotoInfoView(photo: p).presentationDetents([.medium, .large]) }
+        }
     }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
@@ -266,3 +280,70 @@ struct ZoomableImage: View {
 }
 
 extension Array { subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil } }
+
+/// Streams a video. The stream endpoint needs auth, and AVPlayer can't send a
+/// Bearer header on its own → pass it via the asset's HTTP header options.
+struct VideoPlayerView: View {
+    let url: URL?
+    let token: String
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        Group {
+            if let player {
+                VideoPlayer(player: player)
+                    .onAppear { player.play() }
+                    .onDisappear { player.pause() }
+            } else {
+                Color.black.overlay(ProgressView().tint(.white))
+            }
+        }
+        .task(id: url) {
+            guard let url else { return }
+            let asset = AVURLAsset(url: url, options:
+                token.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
+            player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        }
+    }
+}
+
+/// Read-only metadata for a photo/video (date, resolution, rating, GPS, …).
+struct PhotoInfoView: View {
+    let photo: PhotoV1
+    @Environment(\.dismiss) var dismiss
+
+    private var dateStr: String {
+        guard let t = photo.taken_at else { return "—" }
+        let iso = ISO8601DateFormatter()
+        guard let d = iso.date(from: t) ?? ISO8601DateFormatter().date(from: String(t.prefix(19)) + "Z") else { return t }
+        let o = DateFormatter(); o.locale = Locale(identifier: "de_DE"); o.dateStyle = .long; o.timeStyle = .short
+        return o.string(from: d)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                row("Dateiname", photo.filename)
+                row("Typ", photo.is_video ? "Video" : "Foto")
+                row("Aufgenommen", dateStr)
+                if let w = photo.width, let h = photo.height { row("Auflösung", "\(w) × \(h)") }
+                if let d = photo.duration_seconds, photo.is_video {
+                    row("Dauer", String(format: "%d:%02d", Int(d) / 60, Int(d) % 60))
+                }
+                if let r = photo.user_rating, r > 0 { row("Bewertung", String(repeating: "★", count: r)) }
+                row("Favorit", photo.is_favorite ? "Ja" : "Nein")
+                if let lat = photo.latitude, let lng = photo.longitude {
+                    row("Standort", String(format: "%.5f, %.5f", lat, lng))
+                }
+                row("Status", photo.status)
+            }
+            .navigationTitle("Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { dismiss() } } }
+        }
+    }
+
+    @ViewBuilder private func row(_ k: String, _ v: String) -> some View {
+        HStack { Text(k).foregroundStyle(.secondary); Spacer(); Text(v).multilineTextAlignment(.trailing) }
+    }
+}
