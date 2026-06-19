@@ -110,7 +110,6 @@ struct MapPointV1: Codable, Identifiable, Hashable {
     let latitude: Double
     let longitude: Double
     let is_video: Bool
-    let thumb_url: String
 }
 
 // MARK: - Trips / events

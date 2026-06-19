@@ -643,21 +643,20 @@ class MapPointV1(BaseModel):
     latitude: float
     longitude: float
     is_video: bool
-    thumb_url: str
 
 
 @router.get("/map", response_model=List[MapPointV1])
-async def map_v1(request: Request, db: AsyncSession = Depends(get_db),
+async def map_v1(db: AsyncSession = Depends(get_db),
                  user: Optional[User] = Depends(current_user_optional)):
-    base = str(request.base_url).rstrip("/")
+    """Lightweight geo points (no thumb URL — the map renders dots/clusters, and
+    the per-point thumbnail bloated the response to several MB)."""
     acl = photo_conditions(user)
     rows = (await db.execute(
         select(Photo.id, Photo.latitude, Photo.longitude, Photo.is_video).where(
             Photo.latitude.isnot(None), Photo.longitude.isnot(None),
             Photo.is_trashed == False, *acl)  # noqa: E712
     )).all()
-    return [MapPointV1(id=r[0], latitude=r[1], longitude=r[2], is_video=r[3],
-                       thumb_url=f"{base}/api/photos/{r[0]}/thumbnail?size=small") for r in rows]
+    return [MapPointV1(id=r[0], latitude=r[1], longitude=r[2], is_video=r[3]) for r in rows]
 
 
 # ── Chat (iOS app) — proxies the same Gemini/local assistant the web uses ────────

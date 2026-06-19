@@ -12,6 +12,7 @@ struct MapScreen: View {
     @State private var region: MKCoordinateRegion?
     @State private var camera: MapCameraPosition = .automatic
     @State private var loading = false
+    @State private var mapError: String?
     @State private var displayClusters: [Cluster] = []
 
     struct Cluster: Identifiable {
@@ -68,20 +69,30 @@ struct MapScreen: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                Text(loading ? "lädt…" : "\(points.count) Fotos mit GPS")
-                    .font(.caption).padding(8)
-                    .background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 4)
-            }
-            .task {
-                if points.isEmpty {
-                    loading = true
-                    points = (try? await api.mapPoints()) ?? []
-                    loading = false
-                    displayClusters = computeClusters()
+                Button {
+                    if !loading { Task { await loadPoints() } }
+                } label: {
+                    Text(loading ? "lädt…" : (mapError ?? "\(points.count) Fotos mit GPS"))
+                        .font(.caption).padding(8)
+                        .background(.ultraThinMaterial, in: Capsule())
                 }
+                .disabled(loading).padding(.bottom, 4)
             }
+            .task { if points.isEmpty { await loadPoints() } }
             .fullScreenCover(item: $selected) { p in PhotoPager(photos: [p], start: p) }
         }
+    }
+
+    private func loadPoints() async {
+        loading = true; mapError = nil
+        do {
+            points = try await api.mapPoints()
+            displayClusters = computeClusters()
+        } catch is CancellationError {
+        } catch {
+            mapError = "Karte: \((error as NSError).localizedDescription) — tippen für erneut"
+        }
+        loading = false
     }
 
     private func zoomIn(_ c: CLLocationCoordinate2D) {
