@@ -139,8 +139,12 @@ async def list_photos_v1(
     from app.models.face import Face
 
     def _filtered():
+        # Show every photo that has a thumbnail (= viewable), not only fully-'done'
+        # ones. During bulk import a photo gets its thumbnail early but stays
+        # 'processing' while AI/faces finish — the web shows these, so the app must
+        # too (otherwise the app looks like it's missing thousands of new photos).
         q = select(Photo).where(
-            Photo.status == PhotoStatus.done,
+            Photo.thumb_small.isnot(None),
             Photo.is_trashed == trashed,
             Photo.is_archived == archived,
             *acl,
@@ -224,7 +228,7 @@ async def sync_v1(
     # Key off updated_at (bumped by a DB trigger on every change) so favorites,
     # ratings, descriptions, trashing etc. all surface in incremental sync —
     # not just newly-imported photos (indexed_at never changes).
-    q = select(Photo).where(Photo.status == PhotoStatus.done, Photo.is_trashed == False, *acl)  # noqa: E712
+    q = select(Photo).where(Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
     if since_dt:
         q = q.where(Photo.updated_at >= since_dt)
     q = q.order_by(Photo.updated_at.desc()).limit(limit)
@@ -553,7 +557,7 @@ async def person_photos_v1(person_id: int, request: Request,
     from sqlalchemy import func as _f
     acl = photo_conditions(user)
     sub = select(Face.photo_id).where(Face.person_id == person_id)
-    q = select(Photo).where(Photo.id.in_(sub), Photo.status == PhotoStatus.done, Photo.is_trashed == False, *acl)  # noqa: E712
+    q = select(Photo).where(Photo.id.in_(sub), Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
     if cursor:
         q = q.where(Photo.id < cursor)
     rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
