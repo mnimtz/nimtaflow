@@ -15,6 +15,26 @@ from typing import Any, Dict, Optional
 
 _EXIFTOOL = shutil.which("exiftool")
 
+# exiftool can hang indefinitely on a corrupt/truncated file. These reads run 4×
+# per new file during the library scan, on the SAME async loop that drives the
+# walk — so one hanging file freezes the ENTIRE scan (this is exactly what
+# stalled the /photos scan before it reached Foto_OldLife). Always bound the
+# subprocess and kill it on timeout.
+_EXIFTOOL_TIMEOUT = 20.0
+
+
+async def _communicate(proc, timeout: float = _EXIFTOOL_TIMEOUT):
+    """await proc.communicate() but never hang forever — kill on timeout."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.communicate()
+        except Exception:
+            pass
+        raise
+
 
 def _sidecar_paths(path: str):
     """Candidate sidecar paths, preferred first: the canonical full-name form
@@ -45,7 +65,7 @@ async def read_existing_ai_metadata(path: str):
                 "-EXIF:ImageDescription", "-XMP:Subject", "-IPTC:Keywords", target,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            out, _ = await proc.communicate()
+            out, _ = await _communicate(proc)
             if proc.returncode != 0 or not out:
                 return None, []
             d = (json.loads(out) or [{}])[0]
@@ -83,7 +103,7 @@ async def read_file_location(path: str):
                 "-IPTC:Country-PrimaryLocationName", "-Iptc4xmpCore:Location", target,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            out, _ = await proc.communicate()
+            out, _ = await _communicate(proc)
             if proc.returncode != 0 or not out:
                 return None, None, None
             d = (json.loads(out) or [{}])[0]
@@ -120,7 +140,7 @@ async def read_existing_extras(path: str):
                 "-XMP:PersonInImage", "-XMP-iptcExt:PersonInImage", target,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            out, _ = await proc.communicate()
+            out, _ = await _communicate(proc)
             if proc.returncode != 0 or not out:
                 return None, []
             d = (json.loads(out) or [{}])[0]
@@ -161,7 +181,7 @@ async def read_face_regions(path: str):
                 _EXIFTOOL, "-json", "-struct", "-RegionInfo", target,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            out, _ = await proc.communicate()
+            out, _ = await _communicate(proc)
             if proc.returncode != 0 or not out:
                 return []
             d = (json.loads(out) or [{}])[0].get("RegionInfo") or {}
@@ -362,7 +382,7 @@ async def ensure_capture_date(path: str) -> Optional[str]:
             _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        out, _ = await proc.communicate()
+        out, _ = await _communicate(proc)
         if out.decode(errors="replace").strip():
             return None  # capture date already present — leave it untouched
         # Copy the filesystem mod-date into the EXIF capture-date tags.
@@ -379,7 +399,7 @@ async def ensure_capture_date(path: str) -> Optional[str]:
             _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        out, _ = await proc.communicate()
+        out, _ = await _communicate(proc)
         return out.decode(errors="replace").strip() or None
     except Exception:
         return None

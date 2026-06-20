@@ -4,7 +4,14 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
-from PIL import Image
+from PIL import Image, ImageFile
+
+# The library contains known truncated/corrupt source files. Decode whatever is
+# present instead of erroring, and cap the pixel count so a malformed/huge image
+# can't pin a CPU (the thumbnail step runs synchronously inside the scan walk, so
+# a slow decode there stalls indexing of everything after it).
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.MAX_IMAGE_PIXELS = 300_000_000
 
 try:
     from pillow_heif import register_heif_opener
