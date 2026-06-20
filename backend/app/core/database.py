@@ -37,9 +37,15 @@ def get_engine():
         # between DB ops; a 60s idle_session reap killed its connection mid-scan and
         # the next query crashed, so the big folders never got indexed. Generous
         # timeouts here let long tasks run; shutdown_asyncgens still frees sessions.
+        # 180s is the sweet spot: long enough for the scan's longest no-DB-op gap
+        # (the count pre-pass over the whole tree completes in <2min) now that the
+        # scan is robust to a reaped connection (source attrs are captured into
+        # locals and deletion-detection commits in batches), but short enough that
+        # the per-photo process flood's transient idle connections are reaped well
+        # before they can pile up toward max_connections (the recurring lockout).
         worker_connect_args = {"server_settings": {
-            "idle_in_transaction_session_timeout": "300000",  # 5min (covers deletion-detection loop)
-            "idle_session_timeout": "600000",                 # 10min — backstop only
+            "idle_in_transaction_session_timeout": "120000",  # 2min
+            "idle_session_timeout": "180000",                 # 3min
         }}
         return create_async_engine(settings.database_url, echo=False,
                                    poolclass=NullPool, connect_args=worker_connect_args)

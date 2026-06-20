@@ -317,20 +317,49 @@ async def scan_source(
     # un-flag any that reappeared. (Recursive sources match the whole subtree.)
     if src_detect_deletions:
         root_prefix = str(root)
-        result = await session.execute(
-            select(Photo).where(Photo.path.startswith(root_prefix))
+        from sqlalchemy import update as _sa_upd_del
+
+        async def _apply(missing_ids, restored_ids):
+            # Apply a batch and COMMIT, so we never hold one transaction open
+            # across an os.path.exists() loop over the whole library (137k rows)
+            # — that long idle-in-transaction got the connection reaped and
+            # crashed the scan. Batching also keeps memory flat.
+            if missing_ids:
+                await session.execute(
+                    _sa_upd_del(Photo).where(Photo.id.in_(missing_ids))
+                    .values(is_missing=True, missing_at=datetime.now(timezone.utc))
+                )
+                stats["missing"] += len(missing_ids)
+            if restored_ids:
+                await session.execute(
+                    _sa_upd_del(Photo).where(Photo.id.in_(restored_ids))
+                    .values(is_missing=False, missing_at=None)
+                )
+                stats["restored"] += len(restored_ids)
+            if missing_ids or restored_ids:
+                await session.commit()
+
+        # Stream only the columns we need (id/path/is_missing) — not full ORM rows
+        # incl. the 768-dim embedding vector — and process in batches.
+        result = await session.stream(
+            select(Photo.id, Photo.path, Photo.is_missing)
+            .where(Photo.path.startswith(root_prefix))
+            .execution_options(yield_per=2000)
         )
-        for photo in result.scalars():
-            on_disk = os.path.exists(photo.path)
-            if not on_disk and not photo.is_missing:
-                photo.is_missing = True
-                photo.missing_at = datetime.now(timezone.utc)
-                stats["missing"] += 1
-            elif on_disk and photo.is_missing:
-                photo.is_missing = False
-                photo.missing_at = None
-                stats["restored"] += 1
-        await session.commit()
+        batch_missing: List[int] = []
+        batch_restored: List[int] = []
+        checked = 0
+        async for pid, ppath, is_missing in result:
+            on_disk = os.path.exists(ppath)
+            if not on_disk and not is_missing:
+                batch_missing.append(pid)
+            elif on_disk and is_missing:
+                batch_restored.append(pid)
+            checked += 1
+            if checked % 2000 == 0:
+                await _apply(batch_missing, batch_restored)
+                batch_missing, batch_restored = [], []
+        await _apply(batch_missing, batch_restored)
 
     # Update via explicit UPDATE (not ORM attribute set) so we never lazy-load the
     # possibly-expired `source` object after the long-running loop.
