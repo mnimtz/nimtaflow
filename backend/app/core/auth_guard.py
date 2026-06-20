@@ -24,7 +24,10 @@ _optional_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=F
 
 
 def _extract_token(request: Request, header_token: Optional[str]) -> Optional[str]:
-    return header_token or request.cookies.get("pf_token")
+    # Query param `access_token` lets media players that can't send an
+    # Authorization header (iOS AVPlayer for video streaming) authenticate via a
+    # plain URL. Same security posture as the web's pf_token cookie for <img>.
+    return header_token or request.cookies.get("pf_token") or request.query_params.get("access_token")
 
 
 async def _user_from_token(token: Optional[str], db: AsyncSession) -> Optional[User]:

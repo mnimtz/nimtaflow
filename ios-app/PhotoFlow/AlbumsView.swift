@@ -74,19 +74,22 @@ private struct AlbumCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottomLeading) {
-                if let c = album.cover_url {
-                    Thumb(url: api.url(c)).aspectRatio(1, contentMode: .fill)
-                } else {
-                    RoundedRectangle(cornerRadius: 0).fill(Color.gray.opacity(0.18))
-                        .aspectRatio(1, contentMode: .fill)
-                        .overlay(Image(systemName: "photo.stack").font(.largeTitle).foregroundStyle(.secondary))
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)        // fixed square cell
+                .overlay {
+                    if let c = album.cover_url { Thumb(url: api.url(c)) }
+                    else {
+                        Color.gray.opacity(0.18)
+                            .overlay(Image(systemName: "photo.stack").font(.largeTitle).foregroundStyle(.secondary))
+                    }
                 }
-                Image(systemName: typeIcon)
-                    .font(.caption).foregroundStyle(.white)
-                    .padding(6).background(.black.opacity(0.45), in: Circle()).padding(8)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipped()
+                .overlay(alignment: .bottomLeading) {
+                    Image(systemName: typeIcon)
+                        .font(.caption).foregroundStyle(.white)
+                        .padding(6).background(.black.opacity(0.45), in: Circle()).padding(8)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14))
             Text(album.name).font(.subheadline.weight(.semibold)).lineLimit(1)
             Text("\(album.photo_count) Fotos").font(.caption).foregroundStyle(.secondary)
         }

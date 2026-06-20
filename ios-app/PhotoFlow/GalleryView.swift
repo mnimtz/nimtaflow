@@ -202,7 +202,9 @@ struct PhotoPager: View {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { i, p in
                     Group {
                         if p.is_video {
-                            VideoPlayerView(url: api.url("api/photos/\(p.id)/video/stream"), token: api.token)
+                            // v1 stream = proper HTTP Range for AVPlayer; auth via
+                            // ?access_token= since AVPlayer can't send a Bearer header.
+                            VideoPlayerView(url: api.url("api/v1/photos/\(p.id)/stream?access_token=\(api.token)"))
                         } else {
                             // Large thumbnail (always JPEG) — works for RAW too, where the
                             // original isn't displayable by iOS.
@@ -297,8 +299,7 @@ extension Array { subscript(safe i: Int) -> Element? { indices.contains(i) ? sel
 /// Streams a video. The stream endpoint needs auth, and AVPlayer can't send a
 /// Bearer header on its own → pass it via the asset's HTTP header options.
 struct VideoPlayerView: View {
-    let url: URL?
-    let token: String
+    let url: URL?              // already carries ?access_token= for auth
     @State private var player: AVPlayer?
 
     var body: some View {
@@ -313,9 +314,7 @@ struct VideoPlayerView: View {
         }
         .task(id: url) {
             guard let url else { return }
-            let asset = AVURLAsset(url: url, options:
-                token.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
-            player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+            player = AVPlayer(url: url)
         }
     }
 }
