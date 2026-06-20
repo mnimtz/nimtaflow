@@ -40,6 +40,17 @@ SYSTEM = (
     "Nutze bei Fragen nach VIDEOS den Filter medientyp='video', bei Bildern/Fotos "
     "medientyp='bild'. Für 'wie viele …'-Fragen nutze das Werkzeug zaehle_fotos "
     "(exakte Anzahl) statt zu schätzen. Jahresangaben → jahr_von/jahr_bis. "
+    "WICHTIG zu Personen: Enthält die Frage einen NAMEN (z. B. 'Lea'), setze immer "
+    "den Parameter person='Lea' (schränkt auf Fotos MIT Lea ein) und nutze den "
+    "suchbegriff nur für den Inhalt (z. B. 'Lea traurig' → person='Lea', "
+    "suchbegriff='traurig weinen weint'; 'Lea am Strand' → person='Lea', "
+    "suchbegriff='Strand'). "
+    "Zu DATUM/EREIGNISSEN: Für konkrete Anlässe rechne den Zeitraum selbst aus und "
+    "nutze datum_von/datum_bis (YYYY-MM-DD), z. B. 'Lea an Ostern 2022' → person='Lea', "
+    "datum_von='2022-04-15', datum_bis='2022-04-18'. "
+    "Zu 'WANN …'-Fragen (z. B. 'wann lernte Lea laufen'): suche mit person + passendem "
+    "suchbegriff ('erste Schritte laufen lernen krabbeln'), schau dir die DATEN der "
+    "Treffer an und nenne das früheste passende Datum als Antwort (Monat/Jahr). "
     "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
     "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
     "Bestätige danach kurz, was du getan hast (Albumname + Anzahl)."
@@ -89,9 +100,12 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
     return out
 
 
-def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_bis: Optional[int]):
+def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_bis: Optional[int],
+                       person: Optional[str] = None, datum_von: Optional[str] = None,
+                       datum_bis: Optional[str] = None):
     """SQLAlchemy conditions for the structured filters the chat tools expose.
     (No is_trashed here — search_photos adds its own; _count adds it explicitly.)"""
+    from datetime import datetime as _dt, timedelta as _td
     conds = []
     mt = (medientyp or "").lower()
     if mt in ("video", "videos"):
@@ -102,13 +116,27 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
         conds.append(Photo.taken_at >= date(int(jahr_von), 1, 1))
     if jahr_bis:
         conds.append(Photo.taken_at < date(int(jahr_bis) + 1, 1, 1))
+    if datum_von:
+        try: conds.append(Photo.taken_at >= _dt.fromisoformat(datum_von))
+        except ValueError: pass
+    if datum_bis:
+        try: conds.append(Photo.taken_at < _dt.fromisoformat(datum_bis) + _td(days=1))
+        except ValueError: pass
+    # Restrict to photos that CONTAIN a named, recognised person (subquery, so no
+    # join needed on the caller) — this is what makes "Lea traurig", "Lea an Ostern"
+    # actually search within Lea's photos instead of for the word "Lea".
+    if person and person.strip():
+        conds.append(Photo.id.in_(
+            select(Face.photo_id).join(Person, Person.id == Face.person_id)
+            .where(Person.name.ilike(f"%{person.strip()}%"))))
     return conds
 
 
 async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 20,
                     medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
-                    jahr_bis: Optional[int] = None) -> List[dict]:
-    extra = _filter_conditions(medientyp, jahr_von, jahr_bis)
+                    jahr_bis: Optional[int] = None, person: Optional[str] = None,
+                    datum_von: Optional[str] = None, datum_bis: Optional[str] = None) -> List[dict]:
+    extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis)
     photos = await search_photos(db, query or "", settings, limit=limit,
                                  extra_conditions=extra or None)
     return await _fused_records(db, photos)
@@ -211,10 +239,13 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     model = settings.get("ai.gemini.model", "gemini-2.5-flash")
     base = "https://generativelanguage.googleapis.com/v1beta"
     _filter_props = {
+        "person": {"type": "string", "description": "Name einer ERKANNTEN Person — schränkt auf Fotos MIT dieser Person ein. Nutze das IMMER, wenn die Frage einen Namen enthält (z. B. 'Lea traurig' → person='Lea', suchbegriff='traurig weinen')."},
         "medientyp": {"type": "string", "enum": ["bild", "video", "beide"],
                       "description": "Nur Bilder, nur Videos, oder beide. WICHTIG: fragt der Nutzer nach Videos → 'video', nach Bildern/Fotos → 'bild'."},
         "jahr_von": {"type": "integer", "description": "frühestes Jahr (inkl.), z. B. 2018"},
         "jahr_bis": {"type": "integer", "description": "spätestes Jahr (inkl.), z. B. 2020"},
+        "datum_von": {"type": "string", "description": "Frühestes Datum (inkl.) als YYYY-MM-DD. Für konkrete Ereignisse/Feiertage rechne den Zeitraum SELBST aus, z. B. Ostern 2022 → datum_von='2022-04-15', datum_bis='2022-04-18'; Weihnachten 2021 → 2021-12-24..2021-12-26."},
+        "datum_bis": {"type": "string", "description": "Spätestes Datum (inkl.) als YYYY-MM-DD."},
     }
     tool = {"function_declarations": [
         {
@@ -310,7 +341,9 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     else:
                         recs = await _retrieve(db, args.get("suchbegriff", ""), settings,
                                                medientyp=args.get("medientyp"),
-                                               jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"))
+                                               jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"),
+                                               person=args.get("person"),
+                                               datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
                         seen_ids.extend([rrec["id"] for rrec in recs])
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": {"treffer": recs}}}]})
