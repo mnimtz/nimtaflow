@@ -27,27 +27,67 @@ struct GalleryView: View {
     @State private var uploadDone = 0
     @State private var uploadTotal = 0
     @State private var uploadNote: String?
+    @AppStorage("gallery_group") private var groupMode = "none"   // none|day|month|year
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
+    private let groupOpts: [(String, String)] = [
+        ("none", "Keine Gruppierung"), ("day", "Nach Tag"), ("month", "Nach Monat"), ("year", "Nach Jahr"),
+    ]
+
+    private var sections: [(key: String, items: [PhotoV1])] {
+        if groupMode == "none" { return [("", photos)] }
+        var order: [String] = []; var map: [String: [PhotoV1]] = [:]
+        for p in photos {
+            let k = groupKey(p.taken_at)
+            if map[k] == nil { map[k] = []; order.append(k) }
+            map[k]!.append(p)
+        }
+        return order.map { (key: $0, items: map[$0]!) }
+    }
+    private func groupKey(_ iso: String?) -> String {
+        guard let iso, iso.count >= 7 else { return "—" }
+        switch groupMode {
+        case "day": return String(iso.prefix(10))
+        case "month": return String(iso.prefix(7))
+        case "year": return String(iso.prefix(4))
+        default: return ""
+        }
+    }
+    private func groupLabel(_ key: String) -> String {
+        if key == "—" { return "Ohne Datum" }
+        let f = DateFormatter(); f.locale = Locale(identifier: "de_DE")
+        let o = DateFormatter(); o.locale = Locale(identifier: "de_DE")
+        switch groupMode {
+        case "day":   f.dateFormat = "yyyy-MM-dd"; o.dateFormat = "EEEE, d. MMMM yyyy"
+        case "month": f.dateFormat = "yyyy-MM";    o.dateFormat = "LLLL yyyy"
+        default:      return key   // year
+        }
+        return f.date(from: key).map { o.string(from: $0) } ?? key
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: cols, spacing: 2) {
-                    ForEach(photos) { p in
-                        Color.clear
-                            .aspectRatio(1, contentMode: .fit)
-                            .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
-                            .clipped()
-                            .overlay(alignment: .topTrailing) {
-                                if p.is_favorite { Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.red).padding(4) }
+                LazyVStack(alignment: .leading, spacing: 2,
+                           pinnedViews: groupMode == "none" ? [] : [.sectionHeaders]) {
+                    ForEach(sections, id: \.key) { sec in
+                        Section {
+                            LazyVGrid(columns: cols, spacing: 2) {
+                                ForEach(sec.items) { p in
+                                    PhotoTile(photo: p)
+                                        .onTapGesture { selected = p }
+                                        .onAppear { if p.id == photos.last?.id { Task { await load() } } }
+                                }
                             }
-                            .overlay(alignment: .bottomLeading) {
-                                if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(4).shadow(radius: 2) }
+                        } header: {
+                            if !sec.key.isEmpty {
+                                Text(groupLabel(sec.key))
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(.ultraThinMaterial)
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { selected = p }
-                            .onAppear { if p.id == photos.last?.id { Task { await load() } } }
+                        }
                     }
                 }
                 .padding(2)
@@ -56,6 +96,13 @@ struct GalleryView: View {
             }
             .navigationTitle("Galerie")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Gruppierung", selection: $groupMode) {
+                            ForEach(groupOpts, id: \.0) { Text($0.1).tag($0.0) }
+                        }
+                    } label: { Image(systemName: "calendar") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     PhotosPicker(selection: $pickerItems, maxSelectionCount: 0,
                                  matching: .any(of: [.images, .videos])) {
