@@ -5,6 +5,7 @@ struct PeopleView: View {
     @State private var people: [PersonV1] = []
     @State private var mergeMode = false
     @State private var selection: Set<Int> = []
+    @State private var showMergeSheet = false
     @State private var error: String?
     @AppStorage("people_filter") private var filter = "named"
 
@@ -62,16 +63,27 @@ struct PeopleView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(mergeMode ? "Fertig" : "Auswählen") {
-                        if mergeMode && selection.count >= 2 { Task { await merge() } }
+                    Button(mergeMode ? "Abbrechen" : "Zusammenführen") {
                         mergeMode.toggle(); if !mergeMode { selection.removeAll() }
                     }
                 }
             }
             .overlay(alignment: .bottom) {
-                if mergeMode && selection.count >= 2 {
-                    Text("\(selection.count) ausgewählt — ‚Fertig‘ führt zusammen")
-                        .font(.caption).padding(8).background(.ultraThinMaterial, in: Capsule()).padding(.bottom)
+                if mergeMode {
+                    HStack(spacing: 12) {
+                        Text(selection.count < 2 ? "Mind. 2 Personen wählen" : "\(selection.count) gewählt")
+                            .font(.callout)
+                        if selection.count >= 2 {
+                            Button("Weiter") { showMergeSheet = true }.buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 8)
+                }
+            }
+            .sheet(isPresented: $showMergeSheet) {
+                MergeConfirmSheet(candidates: people.filter { selection.contains($0.id) }) { targetId in
+                    Task { await merge(target: targetId); mergeMode = false; selection.removeAll() }
                 }
             }
             .task { await load() }
@@ -82,11 +94,60 @@ struct PeopleView: View {
 
     func toggle(_ id: Int) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
     func load() async { do { people = try await api.people() } catch { self.error = "Laden fehlgeschlagen" } }
-    func merge() async {
-        let ids = Array(selection)
-        guard let target = ids.first else { return }
-        do { try await api.mergePeople(target: target, sources: Array(ids.dropFirst())); selection.removeAll(); await load() }
+    func merge(target: Int) async {
+        let sources = Array(selection).filter { $0 != target }
+        guard !sources.isEmpty else { return }
+        do { try await api.mergePeople(target: target, sources: sources); await load() }
         catch { self.error = "Zusammenführen fehlgeschlagen" }
+    }
+}
+
+/// Pick which person to KEEP when merging — the others fold into it (their photos
+/// move over, then they're removed). Defaults to the one with the most faces.
+struct MergeConfirmSheet: View {
+    @EnvironmentObject var api: APIClient
+    let candidates: [PersonV1]
+    let onMerge: (Int) -> Void
+    @Environment(\.dismiss) var dismiss
+    @State private var targetId: Int?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Behalten (Ziel)") {
+                    ForEach(candidates) { p in
+                        Button {
+                            targetId = p.id
+                        } label: {
+                            HStack {
+                                Avatar(url: api.url(p.avatar_url), initials: p.name.firstInitial, size: 40)
+                                VStack(alignment: .leading) {
+                                    Text(p.name.isEmpty ? "Unbekannt" : p.name)
+                                    Text("\(p.face_count) Gesichter").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: targetId == p.id ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(targetId == p.id ? .indigo : .secondary)
+                            }
+                        }.foregroundStyle(.primary)
+                    }
+                }
+                Section {
+                    Text("Die übrigen \(max(0, candidates.count - 1)) Person(en) werden in die gewählte zusammengeführt (Fotos wandern mit, danach werden sie entfernt).")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Zusammenführen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Zusammenführen") { if let t = targetId { onMerge(t); dismiss() } }
+                        .bold().disabled(targetId == nil)
+                }
+            }
+            .onAppear { targetId = candidates.max { $0.face_count < $1.face_count }?.id }
+        }
     }
 }
 
