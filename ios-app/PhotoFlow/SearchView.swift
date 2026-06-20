@@ -25,12 +25,7 @@ struct SearchView: View {
                     ScrollView {
                         LazyVGrid(columns: cols, spacing: 2) {
                             ForEach(results) { p in
-                                Thumb(url: api.url(p.thumb_medium_url))
-                                    .aspectRatio(1, contentMode: .fill).frame(minHeight: 110)
-                                    .overlay(alignment: .bottomLeading) {
-                                        if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(4).shadow(radius: 2) }
-                                    }
-                                    .contentShape(Rectangle()).onTapGesture { selected = p }
+                                PhotoTile(photo: p).onTapGesture { selected = p }
                             }
                         }.padding(2)
                     }

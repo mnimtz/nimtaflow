@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var sending = false
     @State private var status: ChatStatus?
     @State private var opened: PhotoV1?
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,7 @@ struct ChatView: View {
                         }
                         .padding(.vertical, 12)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: messages.count) { _, _ in
                         if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                     }
@@ -38,6 +40,7 @@ struct ChatView: View {
                 HStack(spacing: 8) {
                     TextField("Frag etwas über deine Fotos…", text: $draft, axis: .vertical)
                         .textFieldStyle(.roundedBorder).lineLimit(1...4)
+                        .focused($inputFocused)
                         .onSubmit { Task { await sendIt() } }
                     Button { Task { await sendIt() } } label: {
                         Image(systemName: "arrow.up.circle.fill").font(.title2)
@@ -47,6 +50,12 @@ struct ChatView: View {
                 .padding(10)
             }
             .navigationTitle("Chat")
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Fertig") { inputFocused = false }
+                }
+            }
             .task { status = try? await api.chatStatus() }
             .fullScreenCover(item: $opened) { p in PhotoPager(photos: [p], start: p) }
         }

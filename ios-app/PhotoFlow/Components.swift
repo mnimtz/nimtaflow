@@ -96,3 +96,29 @@ struct Avatar: View {
 extension String {
     var firstInitial: String { String(prefix(1)).uppercased() }
 }
+
+/// Reusable square photo/video tile — the one true grid cell used everywhere
+/// (gallery, search, albums, trips, person, …) so results always look uniform.
+/// Color.clear sets the square size; the image fills + is clipped → never overflows.
+struct PhotoTile: View {
+    @EnvironmentObject var api: APIClient
+    let photo: PhotoV1
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay { Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium")) }
+            .clipped()
+            .overlay(alignment: .bottomLeading) {
+                if photo.is_video {
+                    Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white)
+                        .padding(4).shadow(radius: 2)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if photo.is_favorite {
+                    Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.red).padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+    }
+}
