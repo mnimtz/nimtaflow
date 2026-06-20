@@ -55,8 +55,21 @@ async def scan_source(
     session: AsyncSession,
     cache_root: str,
 ) -> dict:
-    patterns = [p for p in (source.exclusion_patterns or "").split(",") if p.strip()]
-    root = Path(source.path)
+    # Capture every source attribute we need into plain locals NOW, while the
+    # ORM object is still attached and fresh. The scan runs for a long time and
+    # commits per file; if the connection is reaped (idle timeout) mid-walk the
+    # `source` object becomes expired, and a later attribute access would trigger
+    # a *sync* lazy-load inside the async loop → MissingGreenlet, killing the
+    # whole scan before the big folders are indexed. Reading scalars up front and
+    # never touching `source` again after the loop avoids that entirely.
+    src_id = source.id
+    src_path = source.path
+    src_recursive = source.recursive
+    src_exclusion = source.exclusion_patterns or ""
+    src_detect_deletions = getattr(source, "detect_deletions", True)
+
+    patterns = [p for p in src_exclusion.split(",") if p.strip()]
+    root = Path(src_path)
     stats = {"new": 0, "skipped": 0, "errors": 0, "missing": 0, "restored": 0}
 
     def _slog(level, msg):
@@ -66,7 +79,7 @@ async def scan_source(
         except Exception:
             pass
 
-    _slog("INFO", f"Scan gestartet: {root} (rekursiv={source.recursive})")
+    _slog("INFO", f"Scan gestartet: {root} (rekursiv={src_recursive})")
 
     # Read existing AI metadata (embedded XMP/IPTC or a .xmp sidecar) and import
     # it instead of re-running the AI — unless the user forces a re-index.
@@ -81,12 +94,58 @@ async def scan_source(
         # Most common cause of "noch nicht gescannt": the path doesn't exist
         # inside the container (wrong mount/typo). Make it visible.
         _slog("ERROR", f"Pfad existiert nicht im Container: {root} — Mount/Schreibweise prüfen")
-        source.last_scan_at = datetime.now(timezone.utc)
-        source.last_scan_count = 0
+        from sqlalchemy import update as _sa_update0
+        await session.execute(
+            _sa_update0(PhotoSource).where(PhotoSource.id == src_id)
+            .values(last_scan_at=datetime.now(timezone.utc), last_scan_count=0)
+        )
         await session.commit()
         return stats
 
-    walk_fn = root.rglob("*") if source.recursive else root.iterdir()
+    # ── Live progress (so the UI can show "X / Y gescannt" during a long scan) ──
+    # The user couldn't see a grand total during the multi-hour initial scan. We
+    # do one fast count-only pre-pass to get the total, then publish running
+    # counters to Redis. ALL of this is best-effort: a progress failure must never
+    # break the actual scan.
+    import json as _json
+    _pr = None
+    try:
+        import redis.asyncio as _aioredis
+        from app.core.config import get_settings as _gs
+        _pr = _aioredis.from_url(_gs().redis_url)
+    except Exception:
+        _pr = None
+
+    total_files = 0
+    try:
+        _count_walk = root.rglob("*") if src_recursive else root.iterdir()
+        for _e in _count_walk:
+            try:
+                if (_e.is_file() and _e.suffix.lower() in SUPPORTED_EXTENSIONS
+                        and not _should_exclude(_e, patterns)):
+                    total_files += 1
+            except Exception:
+                continue
+    except Exception:
+        total_files = 0
+
+    async def _progress(running=True):
+        if _pr is None:
+            return
+        try:
+            await _pr.set(f"scan:progress:{src_id}", _json.dumps({
+                "root": str(root), "total": total_files,
+                "scanned": stats["new"] + stats["skipped"] + stats["errors"],
+                "new": stats["new"], "skipped": stats["skipped"],
+                "errors": stats["errors"], "running": running,
+            }), ex=24 * 3600)
+        except Exception:
+            pass
+
+    await _progress(running=True)
+    _slog("INFO", f"Scan: {total_files} Mediendateien gefunden unter {root}")
+
+    walk_fn = root.rglob("*") if src_recursive else root.iterdir()
     new_photo_ids: List[int] = []
 
     for entry in walk_fn:
@@ -104,6 +163,8 @@ async def scan_source(
         existing = await session.scalar(select(Photo).where(Photo.path == path_str))
         if existing:
             stats["skipped"] += 1
+            if stats["skipped"] % 500 == 0:
+                await _progress(running=True)
             continue
 
         try:
@@ -237,6 +298,7 @@ async def scan_source(
             process_photo_task.delay(photo.id)
             if stats["new"] % 100 == 0:
                 _slog("INFO", f"Scan läuft ({root.name}): {stats['new']} neu, {stats['skipped']} übersprungen …")
+                await _progress(running=True)
 
         except IntegrityError:
             # Another scan (overlapping/nested source, parallel cpu worker) already
@@ -253,7 +315,7 @@ async def scan_source(
     # ── Deletion detection ──────────────────────────────────────────────
     # Flag DB photos under this source root whose files vanished from disk;
     # un-flag any that reappeared. (Recursive sources match the whole subtree.)
-    if getattr(source, "detect_deletions", True):
+    if src_detect_deletions:
         root_prefix = str(root)
         result = await session.execute(
             select(Photo).where(Photo.path.startswith(root_prefix))
@@ -270,11 +332,25 @@ async def scan_source(
                 stats["restored"] += 1
         await session.commit()
 
-    source.last_scan_at = datetime.now(timezone.utc)
-    source.last_scan_count = stats["new"]
+    # Update via explicit UPDATE (not ORM attribute set) so we never lazy-load the
+    # possibly-expired `source` object after the long-running loop.
+    from sqlalchemy import update as _sa_update
+    await session.execute(
+        _sa_update(PhotoSource)
+        .where(PhotoSource.id == src_id)
+        .values(last_scan_at=datetime.now(timezone.utc), last_scan_count=stats["new"])
+    )
     await session.commit()
 
     # (process_photo is now enqueued per-photo during the scan loop above.)
+
+    # Final progress snapshot (running=False) + release the Redis client.
+    await _progress(running=False)
+    if _pr is not None:
+        try:
+            await _pr.aclose()
+        except Exception:
+            pass
 
     try:
         from app.services.feature_log import log as flog

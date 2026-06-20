@@ -16,6 +16,40 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+@router.get("/scan-progress")
+async def scan_progress(db: AsyncSession = Depends(get_db)):
+    """Live scan progress per source (published to Redis by scan_source during a
+    long-running scan), plus a grand total of files found vs. scanned across all
+    sources — so the UI can show "X / Y gescannt" during the initial library scan."""
+    import json
+    from app.core.config import get_settings
+    result = await db.execute(select(PhotoSource).order_by(PhotoSource.id))
+    sources = result.scalars().all()
+    per_source = []
+    grand_total = grand_scanned = 0
+    any_running = False
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(get_settings().redis_url)
+        try:
+            for s in sources:
+                raw = await r.get(f"scan:progress:{s.id}")
+                prog = json.loads(raw) if raw else None
+                per_source.append({"id": s.id, "name": s.name, "path": s.path,
+                                   "progress": prog})
+                if prog:
+                    grand_total += int(prog.get("total") or 0)
+                    grand_scanned += int(prog.get("scanned") or 0)
+                    any_running = any_running or bool(prog.get("running"))
+        finally:
+            await r.aclose()
+    except Exception:
+        per_source = [{"id": s.id, "name": s.name, "path": s.path, "progress": None}
+                      for s in sources]
+    return {"sources": per_source, "total": grand_total,
+            "scanned": grand_scanned, "running": any_running}
+
+
 @router.post("", response_model=SourceOut, status_code=201)
 async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db)):
     source = PhotoSource(**data.model_dump())

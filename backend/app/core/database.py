@@ -24,20 +24,29 @@ def get_engine():
     # connection left idle-in-transaction > 60s or simply idle > 5min, so a leaked
     # session can never pile up to "too many clients" or hold locks. pool_pre_ping
     # then transparently replaces any reaped connection.
-    connect_args = {"server_settings": {
-        "idle_in_transaction_session_timeout": "60000",   # 60s
-        "idle_session_timeout": "60000",                  # 60s — reap leaked idle conns
-    }}
     if _is_celery_worker():
         # Worker: NullPool. A bounded async pool here broke long-running tasks with
         # "MissingGreenlet: greenlet_spawn has not been called" (pool pre_ping/recycle
         # do connection IO outside the per-task greenlet on the fresh event loops
         # Celery creates per task) — which crashed the library scan mid-run. NullPool
         # avoids cross-loop reuse entirely. The connection LEAK under heavy load is
-        # contained by shutdown_asyncgens() in _run() + Postgres idle reaping
-        # (idle_session_timeout) below — not by capping the pool.
+        # now contained primarily by shutdown_asyncgens() in _run() — so we DON'T
+        # need aggressive idle reaping here. Aggressive 60s reaping actually KILLED
+        # the long library scan: the scan walks the tree + runs deletion-detection
+        # (an os.path.exists loop over all photos under the root) with long gaps
+        # between DB ops; a 60s idle_session reap killed its connection mid-scan and
+        # the next query crashed, so the big folders never got indexed. Generous
+        # timeouts here let long tasks run; shutdown_asyncgens still frees sessions.
+        worker_connect_args = {"server_settings": {
+            "idle_in_transaction_session_timeout": "300000",  # 5min (covers deletion-detection loop)
+            "idle_session_timeout": "600000",                 # 10min — backstop only
+        }}
         return create_async_engine(settings.database_url, echo=False,
-                                   poolclass=NullPool, connect_args=connect_args)
+                                   poolclass=NullPool, connect_args=worker_connect_args)
+    connect_args = {"server_settings": {
+        "idle_in_transaction_session_timeout": "60000",   # 60s
+        "idle_session_timeout": "60000",                  # 60s — reap leaked idle conns
+    }}
     # Web backend: a BOUNDED pool on its single persistent loop. Hard ceiling of
     # pool_size + max_overflow connections means the API can NEVER exhaust Postgres,
     # regardless of any session leak — the structural fix for the recurring
