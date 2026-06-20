@@ -1,9 +1,25 @@
 import SwiftUI
 import UIKit
 
-// Shared in-memory image cache (thread-safe).
+// Shared in-memory image cache (decoded UIImages, fast path).
 private let imageCache: NSCache<NSURL, UIImage> = {
-    let c = NSCache<NSURL, UIImage>(); c.countLimit = 600; return c
+    let c = NSCache<NSURL, UIImage>(); c.countLimit = 800; return c
+}()
+
+// Dedicated URLSession with a big on-DISK cache. Thumbnails are served with a
+// long immutable Cache-Control, so once fetched they're reused from disk across
+// scrolls AND app launches — no constant re-fetching = no more grey-placeholder
+// dropouts under load. Backs the in-memory NSCache.
+private let imageSession: URLSession = {
+    let cache = URLCache(memoryCapacity: 64 * 1024 * 1024,      // 64 MB RAM
+                         diskCapacity: 1024 * 1024 * 1024,      // 1 GB disk
+                         diskPath: "photoflow-thumbs")
+    let cfg = URLSessionConfiguration.default
+    cfg.urlCache = cache
+    cfg.requestCachePolicy = .returnCacheDataElseLoad
+    cfg.httpMaximumConnectionsPerHost = 8
+    cfg.timeoutIntervalForRequest = 20
+    return URLSession(configuration: cfg)
 }()
 
 /// Loads an image with the Bearer token (the server enforces login, so plain
@@ -31,7 +47,7 @@ final class AuthImageLoader: ObservableObject {
             for attempt in 0...delays.count {
                 if Task.isCancelled { return }
                 do {
-                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    let (data, resp) = try await imageSession.data(for: req)
                     let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
                     if (200..<300).contains(code), let img = UIImage(data: data) {
                         imageCache.setObject(img, forKey: url as NSURL)

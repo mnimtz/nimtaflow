@@ -44,21 +44,48 @@ final class APIClient: ObservableObject {
         try await send(makeRequest(path), as: type)
     }
 
+    /// On 401, refresh the access token with the stored refresh token (long-lived)
+    /// and retry once — so an expired access token NEVER forces a re-login. Returns
+    /// false if there's no refresh token or the refresh itself failed.
+    private func refreshToken() async -> Bool {
+        guard !refresh.isEmpty else { return false }
+        var req = URLRequest(url: absoluteURL("api/auth/refresh?refresh_token=\(refresh)"))
+        req.httpMethod = "POST"
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return false }
+            let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
+            token = tok.access_token; refresh = tok.refresh_token
+            return true
+        } catch { return false }
+    }
+
     @discardableResult
-    func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+    func send<T: Decodable>(_ request: URLRequest, as type: T.Type, allowRetry: Bool = true) async throws -> T {
         let (data, resp) = try await URLSession.shared.data(for: request)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { await logout(); throw APIError.status(401) }
+        if code == 401 {
+            if allowRetry, await refreshToken() {
+                var r = request; r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                return try await send(r, as: type, allowRetry: false)
+            }
+            await logout(); throw APIError.status(401)
+        }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch { throw APIError.decode }
     }
 
     @discardableResult
-    func action(_ path: String, method: String, json: Any? = nil) async throws -> Bool {
+    func action(_ path: String, method: String, json: Any? = nil, allowRetry: Bool = true) async throws -> Bool {
         let (_, resp) = try await URLSession.shared.data(for: makeRequest(path, method: method, json: json))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { await logout(); throw APIError.status(401) }
+        if code == 401 {
+            if allowRetry, await refreshToken() {
+                return try await action(path, method: method, json: json, allowRetry: false)
+            }
+            await logout(); throw APIError.status(401)
+        }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         return true
     }
