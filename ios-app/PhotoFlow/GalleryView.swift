@@ -367,7 +367,9 @@ struct ZoomableImage: View {
 extension Array { subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil } }
 
 /// Streams a video. The stream endpoint needs auth, and AVPlayer can't send a
-/// Bearer header on its own → pass it via the asset's HTTP header options.
+/// Bearer header on its own → the URL already carries the token as a
+/// `?access_token=` query param (built by the caller), which the backend's
+/// auth guard accepts. So a plain AVPlayer(url:) is all that's needed here.
 struct VideoPlayerView: View {
     let url: URL?              // already carries ?access_token= for auth
     @State private var player: AVPlayer?

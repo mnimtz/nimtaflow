@@ -186,6 +186,14 @@ struct LibraryStats: Codable {
     let date_max: String?
 }
 
+// MARK: - Scan progress (GET /api/sources/scan-progress)
+
+struct ScanProgress: Codable {
+    let total: Int        // media files found on disk across all sources
+    let scanned: Int      // files walked so far
+    let running: Bool
+}
+
 // MARK: - Memories
 
 struct MemoryGroupV1: Codable, Identifiable {

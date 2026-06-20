@@ -6,6 +6,7 @@ struct MemoriesView: View {
     @EnvironmentObject var api: APIClient
     @State private var groups: [MemoryGroupV1] = []
     @State private var loading = false
+    @State private var loadError: String?
     @State private var selected: PhotoV1?
     @State private var pagerItems: [PhotoV1] = []
 
@@ -13,7 +14,13 @@ struct MemoriesView: View {
         NavigationStack {
             ScrollView {
                 if loading && groups.isEmpty { ProgressView().padding(.top, 60) }
-                if !loading && groups.isEmpty {
+                if let loadError, groups.isEmpty {
+                    ContentUnavailableView {
+                        Label("Erinnerungen konnten nicht geladen werden", systemImage: "exclamationmark.triangle")
+                    } description: { Text(loadError) } actions: {
+                        Button("Erneut versuchen") { Task { await load() } }
+                    }.padding(.top, 60)
+                } else if !loading && groups.isEmpty {
                     ContentUnavailableView("Keine Erinnerungen heute", systemImage: "sparkles",
                         description: Text("Hier erscheinen Fotos, die vor 1, 2, 3 … Jahren an diesem Tag entstanden sind."))
                         .padding(.top, 60)
@@ -30,12 +37,11 @@ struct MemoriesView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 6) {
                                     ForEach(g.items) { p in
-                                        Thumb(url: api.url("api/photos/\(p.id)/thumbnail?size=medium"))
+                                        // Shared PhotoTile so the strip stays consistent with
+                                        // every other grid (play + favourite badge, medium thumb).
+                                        PhotoTile(photo: p)
                                             .frame(width: 140, height: 140)
                                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            .overlay(alignment: .bottomLeading) {
-                                                if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(5) }
-                                            }
                                             .onTapGesture { pagerItems = g.items; selected = p }
                                     }
                                 }.padding(.horizontal)
@@ -53,6 +59,7 @@ struct MemoriesView: View {
 
     func load() async {
         loading = true; defer { loading = false }
-        groups = (try? await api.memories()) ?? []
+        do { groups = try await api.memories(); loadError = nil }
+        catch { loadError = (error as NSError).localizedDescription }
     }
 }

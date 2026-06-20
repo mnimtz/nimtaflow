@@ -49,7 +49,10 @@ final class APIClient: ObservableObject {
     /// false if there's no refresh token or the refresh itself failed.
     private func refreshToken() async -> Bool {
         guard !refresh.isEmpty else { return false }
-        var req = URLRequest(url: absoluteURL("api/auth/refresh?refresh_token=\(refresh)"))
+        // Percent-encode the token: JWTs are URL-safe today, but a reserved char
+        // would otherwise silently break refresh → spurious force-logout.
+        let enc = refresh.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? refresh
+        var req = URLRequest(url: absoluteURL("api/auth/refresh?refresh_token=\(enc)"))
         req.httpMethod = "POST"
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
@@ -226,6 +229,7 @@ final class APIClient: ObservableObject {
 
     // MARK: Library stats
     func libraryStats() async throws -> LibraryStats { try await get("api/v1/stats", as: LibraryStats.self) }
+    func scanProgress() async throws -> ScanProgress { try await get("api/sources/scan-progress", as: ScanProgress.self) }
 
     // MARK: Memories
     func memories() async throws -> [MemoryGroupV1] { try await get("api/v1/memories", as: [MemoryGroupV1].self) }

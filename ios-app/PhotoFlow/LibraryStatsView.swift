@@ -5,7 +5,9 @@ import SwiftUI
 struct LibraryStatsView: View {
     @EnvironmentObject var api: APIClient
     @State private var s: LibraryStats?
+    @State private var scan: ScanProgress?
     @State private var loading = false
+    @State private var loadError: String?
 
     private let cols = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -13,8 +15,32 @@ struct LibraryStatsView: View {
         NavigationStack {
             ScrollView {
                 if loading && s == nil { ProgressView().padding(.top, 60) }
+                if let loadError, s == nil {
+                    ContentUnavailableView {
+                        Label("Statistik konnte nicht geladen werden", systemImage: "exclamationmark.triangle")
+                    } description: { Text(loadError) } actions: {
+                        Button("Erneut versuchen") { Task { await load() } }
+                    }.padding(.top, 60)
+                }
                 if let s {
                     VStack(spacing: 16) {
+                        // Live scan banner — addresses "no total shown during the scan".
+                        if let scan, scan.running, scan.total > 0 {
+                            let pct = Int(Double(scan.scanned) / Double(scan.total) * 100)
+                            VStack(spacing: 6) {
+                                HStack {
+                                    Image(systemName: "magnifyingglass.circle.fill").foregroundStyle(.blue)
+                                    Text("Scan läuft").font(.subheadline.bold())
+                                    Spacer()
+                                    Text("\(scan.scanned) / \(scan.total)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                                ProgressView(value: Double(scan.scanned), total: Double(scan.total))
+                                Text("\(pct)% durchsucht – neue Medien erscheinen laufend").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(14)
+                            .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                        }
+
                         // Headline: total
                         VStack(spacing: 2) {
                             Text("\(s.total)").font(.system(size: 44, weight: .bold)).contentTransition(.numericText())
@@ -69,6 +95,9 @@ struct LibraryStatsView: View {
 
     func load() async {
         loading = true; defer { loading = false }
-        s = try? await api.libraryStats()
+        do { s = try await api.libraryStats(); loadError = nil }
+        catch { loadError = (error as NSError).localizedDescription }
+        // Scan progress is best-effort — never block the stats screen on it.
+        scan = try? await api.scanProgress()
     }
 }
