@@ -166,7 +166,9 @@ final class APIClient: ObservableObject {
         var body: [String: Any] = ["description": description]
         if let dateFrom { body["date_from"] = dateFrom }
         if let dateTo { body["date_to"] = dateTo }
-        return try await send(makeRequest("api/photos/plan-trip", method: "POST", json: body), as: TripPlan.self)
+        var req = makeRequest("api/photos/plan-trip", method: "POST", json: body)
+        req.timeoutInterval = 90   // Gemini structured-output can take 10–40s
+        return try await send(req, as: TripPlan.self)
     }
     func createTrip(_ plan: TripPlan) async throws -> CreateTripResult {
         var body: [String: Any] = ["name": plan.name, "description": plan.summary ?? ""]

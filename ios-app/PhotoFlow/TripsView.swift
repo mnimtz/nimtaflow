@@ -314,7 +314,17 @@ struct NewTripWizard: View {
                 dateFrom: useDates ? iso.string(from: from) : nil,
                 dateTo: useDates ? iso.string(from: to) : nil)
             phase = 1
-        } catch { self.error = "Planung fehlgeschlagen (Gemini-Key in den Einstellungen?)." }
+        } catch {
+            if let e = error as? APIClient.APIError {
+                switch e {
+                case .status(let c): self.error = "Server-Fehler \(c) bei der Planung."
+                case .decode: self.error = "Antwort von Gemini nicht lesbar — bitte nochmal versuchen."
+                case .badURL: self.error = "Server-Adresse ungültig."
+                }
+            } else {
+                self.error = "Planung fehlgeschlagen: \((error as NSError).localizedDescription)"
+            }
+        }
     }
 
     func createIt() async {
