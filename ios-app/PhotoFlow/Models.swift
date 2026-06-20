@@ -162,6 +162,21 @@ struct CreateTripResult: Codable {
     let name: String
 }
 
+// MARK: - Library stats
+
+struct LibraryStats: Codable {
+    let total: Int
+    let images: Int
+    let videos: Int
+    let processing: Int
+    let described: Int
+    let with_faces: Int
+    let favorites: Int
+    let with_gps: Int
+    let date_min: String?
+    let date_max: String?
+}
+
 // MARK: - Memories
 
 struct MemoryGroupV1: Codable, Identifiable {

@@ -191,6 +191,9 @@ final class APIClient: ObservableObject {
         return try await get(p, as: TripsV1.self)
     }
 
+    // MARK: Library stats
+    func libraryStats() async throws -> LibraryStats { try await get("api/v1/stats", as: LibraryStats.self) }
+
     // MARK: Memories
     func memories() async throws -> [MemoryGroupV1] { try await get("api/v1/memories", as: [MemoryGroupV1].self) }
 

@@ -766,6 +766,40 @@ async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
     return TripsV1(home_city=res.get("home_city"), events=out)
 
 
+# ── Library stats (iOS app) ─────────────────────────────────────────────────────
+
+class LibraryStatsV1(BaseModel):
+    total: int
+    images: int
+    videos: int
+    processing: int
+    described: int
+    with_faces: int
+    favorites: int
+    with_gps: int
+    date_min: Optional[str]
+    date_max: Optional[str]
+
+
+@router.get("/stats", response_model=LibraryStatsV1)
+async def stats_v1(db: AsyncSession = Depends(get_db),
+                   user: Optional[User] = Depends(current_user_optional)):
+    """Library totals for the app's overview: images vs videos, processing,
+    AI/faces coverage, date span — the 'what did the scan find' summary."""
+    from app.api.routes.photos import get_stats
+    s = await get_stats(db=db)
+    by = s.get("by_status", {})
+    processing = int(by.get("processing", 0)) + int(by.get("pending", 0))
+    total_idx = int(s["total_indexed"]); videos = int(s["videos"])
+    return LibraryStatsV1(
+        total=total_idx, videos=videos, images=max(0, total_idx - videos),
+        processing=processing, described=int(s["coverage"]["described"]),
+        with_faces=int(s["coverage"]["with_faces"]),
+        favorites=int(s["favorites"]), with_gps=int(s["with_gps"]),
+        date_min=s["date_min"], date_max=s["date_max"],
+    )
+
+
 # ── Erinnerungen / Memories (iOS app) ───────────────────────────────────────────
 
 class MemoryGroupV1(BaseModel):
