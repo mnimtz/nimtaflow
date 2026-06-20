@@ -12,9 +12,18 @@ def _run(coro):
     try:
         return loop.run_until_complete(coro)
     finally:
-        # Dispose the async engine on THIS loop so its asyncpg connections are
-        # closed cleanly before the loop dies — otherwise they leak and surface as
-        # "Event loop is closed" / "another operation in progress" on later tasks.
+        # 1) Finalize any still-open async generators (notably get_db()): their
+        #    `finally: await session.close()` only runs on generator finalization.
+        #    `loop.close()` alone NEVER finalizes them — so a task using
+        #    `async for db in get_db(): … return` leaked its DB connection, which
+        #    piled up as idle/ROLLBACK sessions until Postgres hit "too many
+        #    clients". asyncio.run() does this step; our manual loop must too.
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            pass
+        # 2) Dispose the async engine on THIS loop so its asyncpg connections are
+        #    closed cleanly before the loop dies.
         try:
             from app.core.database import dispose_db
             loop.run_until_complete(dispose_db())
