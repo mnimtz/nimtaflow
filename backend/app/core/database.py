@@ -29,9 +29,21 @@ def get_engine():
         "idle_session_timeout": "300000",                 # 5min
     }}
     if _is_celery_worker():
-        # No pooling: nothing to leak across the per-task event loops.
-        return create_async_engine(settings.database_url, echo=False,
-                                   poolclass=NullPool, connect_args=connect_args)
+        # Worker: a SMALL bounded pool, NOT NullPool. NullPool opens a fresh
+        # connection per checkout and closes on release — but a session that
+        # isn't cleanly closed (the high-throughput process_photo flood during a
+        # full-library scan) leaves its connection open, and with NO pool each is
+        # a distinct physical connection → they pile up to "too many clients" in
+        # seconds. A bounded pool REUSES a handful of connections instead, so the
+        # worker process can never hold more than pool_size+overflow regardless of
+        # any leak. Cross-loop safety (each Celery task runs on a fresh loop) is
+        # preserved because _run() calls dispose_db() after every task → the engine
+        # + its pool are torn down and rebuilt per task, never reused across loops.
+        return create_async_engine(
+            settings.database_url, echo=False,
+            pool_size=3, max_overflow=2, pool_timeout=30,
+            pool_pre_ping=True, pool_recycle=120,
+            connect_args=connect_args)
     # Web backend: a BOUNDED pool on its single persistent loop. Hard ceiling of
     # pool_size + max_overflow connections means the API can NEVER exhaust Postgres,
     # regardless of any session leak — the structural fix for the recurring
