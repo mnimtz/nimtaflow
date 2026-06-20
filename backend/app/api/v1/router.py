@@ -726,6 +726,27 @@ async def map_photos_v1(
                        next_cursor=None, total=len(rows), has_more=False)
 
 
+class PhotoFaceV1(BaseModel):
+    face_id: int
+    person_id: int
+    person_name: str
+
+
+@router.get("/photos/{photo_id}/faces", response_model=List[PhotoFaceV1])
+async def photo_faces_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    """Recognised, named persons in this photo (with their face id) — so the app
+    can offer 'set this as <name>'s profile picture' from the photo detail."""
+    from app.models.face import Face
+    from app.models.person import Person
+    rows = (await db.execute(
+        select(Face.id, Face.person_id, Person.name)
+        .join(Person, Person.id == Face.person_id)
+        .where(Face.photo_id == photo_id, Person.name.isnot(None), Person.name != "")  # noqa: E712
+    )).all()
+    return [PhotoFaceV1(face_id=r[0], person_id=r[1], person_name=r[2]) for r in rows]
+
+
 # ── Chat (iOS app) — proxies the same Gemini/local assistant the web uses ────────
 
 class ChatRequestV1(BaseModel):

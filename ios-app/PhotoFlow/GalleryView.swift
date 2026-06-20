@@ -241,6 +241,8 @@ struct PhotoPager: View {
     @State private var showShare = false
     @State private var showInfo = false
     @State private var showAlbumPicker = false
+    @State private var profileFaces: [PhotoFace] = []
+    @State private var showProfileDialog = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -269,6 +271,7 @@ struct PhotoPager: View {
                 Menu {
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button { showAlbumPicker = true } label: { Label("Zu Album hinzufügen", systemImage: "rectangle.stack.badge.plus") }
+                    Button { Task { await loadProfileFaces() } } label: { Label("Als Personen-Titelbild", systemImage: "person.crop.circle.badge.checkmark") }
                     Button { Task { try? await api.archivePhoto(photos[index].id); actionNote = "Archiviert" } } label: {
                         Label("Archivieren", systemImage: "archivebox")
                     }
@@ -323,7 +326,23 @@ struct PhotoPager: View {
                 Task { try? await api.addPhotosToAlbum(albumId, photoIds: [photos[index].id]); actionNote = "Zu Album hinzugefügt" }
             }.presentationDetents([.medium, .large])
         }
+        .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
+            ForEach(profileFaces) { f in
+                Button(f.person_name) {
+                    Task { try? await api.setProfileFace(personId: f.person_id, faceId: f.face_id)
+                           actionNote = "Titelbild gesetzt: \(f.person_name)" }
+                }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        }
     }
+
+    func loadProfileFaces() async {
+        let faces = (try? await api.photoFaces(photos[index].id)) ?? []
+        if faces.isEmpty { actionNote = "Keine erkannte Person im Bild" }
+        else { profileFaces = faces; showProfileDialog = true }
+    }
+
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
     func toggleLocal() { let id = photos[index].id; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }

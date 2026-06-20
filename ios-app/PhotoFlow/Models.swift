@@ -162,6 +162,15 @@ struct CreateTripResult: Codable {
     let name: String
 }
 
+// MARK: - Faces in a photo
+
+struct PhotoFace: Codable, Identifiable {
+    let face_id: Int
+    let person_id: Int
+    let person_name: String
+    var id: Int { face_id }
+}
+
 // MARK: - Library stats
 
 struct LibraryStats: Codable {

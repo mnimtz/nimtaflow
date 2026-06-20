@@ -159,6 +159,10 @@ final class APIClient: ObservableObject {
     func photo(_ id: Int) async throws -> PhotoV1 { try await get("api/v1/photos/\(id)", as: PhotoV1.self) }
     func setRating(_ id: Int, rating: Int) async throws { try await action("api/v1/photos/\(id)/rating?rating=\(rating)", method: "PATCH") }
     func reprocess(_ id: Int) async throws { try await action("api/photos/\(id)/reprocess", method: "POST") }
+    func photoFaces(_ id: Int) async throws -> [PhotoFace] { try await get("api/v1/photos/\(id)/faces", as: [PhotoFace].self) }
+    func setProfileFace(personId: Int, faceId: Int) async throws {
+        try await action("api/people/\(personId)/profile-face/\(faceId)", method: "POST")
+    }
     func archivePhoto(_ id: Int) async throws { try await action("api/photos/\(id)/archive", method: "PATCH") }
     func trashPhoto(_ id: Int) async throws { try await action("api/photos/\(id)/trash", method: "PATCH") }
     func addPhotosToAlbum(_ albumId: Int, photoIds: [Int]) async throws {
