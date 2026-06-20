@@ -160,6 +160,7 @@ struct PersonDetailView: View {
     @State private var rels: [PersonRel] = []
     @State private var renaming = false
     @State private var newName = ""
+    @State private var displayName = ""   // reflects renames immediately (person is a let)
     @State private var selected: PhotoV1?
     @Environment(\.dismiss) private var dismiss
 
@@ -168,8 +169,8 @@ struct PersonDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Avatar(url: api.url(person.avatar_url), initials: person.name.firstInitial, size: 96)
-                Text(person.name).font(.title2.bold())
+                Avatar(url: api.url(person.avatar_url), initials: (displayName.isEmpty ? person.name : displayName).firstInitial, size: 96)
+                Text(displayName.isEmpty ? person.name : displayName).font(.title2.bold())
                 Text("\(person.face_count) Fotos").foregroundStyle(.secondary)
 
                 HStack {
@@ -204,12 +205,21 @@ struct PersonDetailView: View {
                 }.padding(2)
             }
         }
-        .navigationTitle(person.name).navigationBarTitleDisplayMode(.inline)
-        .task { await loadPhotos(); rels = (try? await api.personRelationships(person.id)) ?? [] }
+        .navigationTitle(displayName.isEmpty ? person.name : displayName).navigationBarTitleDisplayMode(.inline)
+        .task {
+            if displayName.isEmpty { displayName = person.name }
+            await loadPhotos(); rels = (try? await api.personRelationships(person.id)) ?? []
+        }
         .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
         .alert("Umbenennen", isPresented: $renaming) {
             TextField("Name", text: $newName)
-            Button("Speichern") { Task { try? await api.renamePerson(person.id, name: newName) } }
+            Button("Speichern") {
+                let target = newName
+                Task {
+                    do { try await api.renamePerson(person.id, name: target); displayName = target }
+                    catch { /* keep old name shown on failure */ }
+                }
+            }
             Button("Abbrechen", role: .cancel) {}
         }
     }

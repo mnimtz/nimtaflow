@@ -104,7 +104,7 @@ struct GalleryView: View {
                     } label: { Image(systemName: "calendar") }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    PhotosPicker(selection: $pickerItems, maxSelectionCount: 0,
+                    PhotosPicker(selection: $pickerItems, maxSelectionCount: nil,
                                  matching: .any(of: [.images, .videos])) {
                         Image(systemName: "plus.circle")
                     }
@@ -193,7 +193,11 @@ struct GalleryView: View {
         guard !loading else { return }
         loading = true; defer { loading = false }
         do {
-            let page = try await api.photos(cursor: nil, favorites: favoritesOnly)
+            // The first page MUST carry the same filters as load(); otherwise an
+            // active sort / media-type / person / favourites filter is ignored for
+            // page 1 and only kicks in on scroll → a visibly jumbled grid.
+            let page = try await api.photos(cursor: nil, favorites: favoritesOnly,
+                                            mediaType: mediaType, sort: sort, personId: personId)
             photos = page.items; cursor = page.next_cursor; hasMore = page.has_more
             lastTotal = page.total; loadError = nil
         } catch { handle(error) }
