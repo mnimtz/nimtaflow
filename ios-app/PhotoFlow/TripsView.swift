@@ -182,24 +182,7 @@ struct TripDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: cols, spacing: 2) {
-                ForEach(photos) { p in
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
-                        .clipped()
-                        .overlay(alignment: .bottomLeading) {
-                            if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(4).shadow(radius: 2) }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { selected = p }
-                        .onAppear { if p.id == photos.last?.id { Task { await load() } } }
-                }
-            }
-            .padding(2)
-            if loading { ProgressView().padding() }
-        }
+        PhotoGridView(photos: photos, onReachEnd: { Task { await load() } })
         .navigationTitle(event.city ?? "Reise")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -217,7 +200,6 @@ struct TripDetailView: View {
                 .font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
         }
         .task { if photos.isEmpty { await load() } }
-        .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
         .sheet(isPresented: $showShare) {
             ShareSheetView(target: .trip(from: event.date_from, to: event.date_to,
                                          title: event.city ?? "Reise")).presentationDetents([.medium])

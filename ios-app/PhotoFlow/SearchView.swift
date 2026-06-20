@@ -22,19 +22,12 @@ struct SearchView: View {
                 } else if results.isEmpty {
                     suggestionList
                 } else {
-                    ScrollView {
-                        LazyVGrid(columns: cols, spacing: 2) {
-                            ForEach(results) { p in
-                                PhotoTile(photo: p).onTapGesture { selected = p }
-                            }
-                        }.padding(2)
-                    }
+                    PhotoGridView(photos: results)
                 }
             }
             .navigationTitle("Suche")
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Suchen — z. B. „Bilder meiner Ehefrau\"")
             .onSubmit(of: .search) { Task { await run() } }
-            .fullScreenCover(item: $selected) { p in PhotoPager(photos: results, start: p) }
         }
     }
 

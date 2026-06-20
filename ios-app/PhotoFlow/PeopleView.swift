@@ -197,11 +197,7 @@ struct PersonDetailView: View {
 
                 LazyVGrid(columns: cols, spacing: 2) {
                     ForEach(photos) { p in
-                        Color.clear
-                            .aspectRatio(1, contentMode: .fit)
-                            .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
-                            .clipped()
-                            .contentShape(Rectangle())
+                        PhotoTile(photo: p)
                             .onTapGesture { selected = p }
                             .onAppear { if p.id == photos.last?.id { Task { await loadPhotos() } } }
                     }

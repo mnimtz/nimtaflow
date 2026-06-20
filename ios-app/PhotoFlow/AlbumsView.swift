@@ -115,30 +115,13 @@ struct AlbumDetailView: View {
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: cols, spacing: 2) {
-                ForEach(photos) { p in
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay { Thumb(url: api.url(p.thumb_medium_url)) }
-                        .clipped()
-                        .overlay(alignment: .bottomLeading) {
-                            if p.is_video { Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white).padding(4).shadow(radius: 2) }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { selected = p }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                Task { try? await api.removeFromAlbum(album.id, photoId: p.id)
-                                       photos.removeAll { $0.id == p.id }; onChange() }
-                            } label: { Label("Aus Album entfernen", systemImage: "minus.circle") }
-                        }
-                        .onAppear { if p.id == photos.last?.id { Task { await load() } } }
-                }
-            }
-            .padding(2)
-            if loading { ProgressView().padding() }
-        }
+        PhotoGridView(photos: photos,
+                      onReachEnd: { Task { await load() } },
+                      removeLabel: "Aus Album entfernen",
+                      onRemove: { p in
+                          Task { try? await api.removeFromAlbum(album.id, photoId: p.id)
+                                 photos.removeAll { $0.id == p.id }; onChange() }
+                      })
         .navigationTitle(displayName ?? album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -163,7 +146,6 @@ struct AlbumDetailView: View {
             Button("Abbrechen", role: .cancel) {}
         }
         .task { if photos.isEmpty { await load() } }
-        .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
         .sheet(isPresented: $showShare) {
             ShareSheetView(target: .album(id: album.id, title: displayName ?? album.name)).presentationDetents([.medium])
         }

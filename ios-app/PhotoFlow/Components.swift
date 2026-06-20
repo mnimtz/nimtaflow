@@ -113,6 +113,41 @@ extension String {
     var firstInitial: String { String(prefix(1)).uppercased() }
 }
 
+/// THE one photo/video grid used across the app (albums, person, trips, search,
+/// map drilldown) so every result list looks + behaves identically: uniform
+/// square tiles, the same full-screen viewer (with details/share/rating), the
+/// same pagination + optional long-press action. Gallery has its own variant only
+/// because it adds date-section grouping.
+struct PhotoGridView: View {
+    let photos: [PhotoV1]
+    var onReachEnd: (() -> Void)? = nil
+    var removeLabel: String? = nil          // e.g. "Aus Album entfernen"
+    var onRemove: ((PhotoV1) -> Void)? = nil
+    @State private var selected: PhotoV1?
+    private let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: cols, spacing: 2) {
+                ForEach(photos) { p in
+                    PhotoTile(photo: p)
+                        .onTapGesture { selected = p }
+                        .contextMenu {
+                            if let onRemove, let removeLabel {
+                                Button(role: .destructive) { onRemove(p) } label: {
+                                    Label(removeLabel, systemImage: "minus.circle")
+                                }
+                            }
+                        }
+                        .onAppear { if p.id == photos.last?.id { onReachEnd?() } }
+                }
+            }
+            .padding(2)
+        }
+        .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
+    }
+}
+
 /// Reusable square photo/video tile — the one true grid cell used everywhere
 /// (gallery, search, albums, trips, person, …) so results always look uniform.
 /// Color.clear sets the square size; the image fills + is clipped → never overflows.
