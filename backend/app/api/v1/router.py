@@ -703,6 +703,29 @@ async def map_clusters_v1(
             for r in rows]
 
 
+@router.get("/map/photos", response_model=PhotoPageV1)
+async def map_photos_v1(
+    request: Request,
+    min_lat: float = Query(...), min_lng: float = Query(...),
+    max_lat: float = Query(...), max_lng: float = Query(...),
+    limit: int = Query(300, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
+):
+    """All geo-tagged photos inside a bbox — for the map's cluster drilldown
+    (tap a small cluster → see its photos), newest first."""
+    acl = photo_conditions(user)
+    rows = (await db.execute(
+        select(Photo).where(
+            Photo.latitude >= min_lat, Photo.latitude <= max_lat,
+            Photo.longitude >= min_lng, Photo.longitude <= max_lng,
+            Photo.is_trashed == False, Photo.thumb_small.isnot(None), *acl)  # noqa: E712
+        .order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc()).limit(limit)
+    )).scalars().all()
+    return PhotoPageV1(items=[_to_v1(p, request) for p in rows],
+                       next_cursor=None, total=len(rows), has_more=False)
+
+
 # ── Chat (iOS app) — proxies the same Gemini/local assistant the web uses ────────
 
 class ChatRequestV1(BaseModel):

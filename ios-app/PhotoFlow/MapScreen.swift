@@ -15,6 +15,9 @@ struct MapScreen: View {
     @State private var region: MKCoordinateRegion?
     @State private var loading = false
     @State private var mapError: String?
+    @State private var clusterPhotos: [PhotoV1] = []
+    @State private var showClusterSheet = false
+    private let gridCols = [GridItem(.adaptive(minimum: 100), spacing: 2)]
 
     var body: some View {
         NavigationStack {
@@ -32,7 +35,10 @@ struct MapScreen: View {
                                 .padding(8).frame(minWidth: 36, minHeight: 36)
                                 .background(Color.indigo.opacity(0.9), in: Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 2))
-                                .onTapGesture { zoomIn(.init(latitude: c.latitude, longitude: c.longitude)) }
+                                .onTapGesture {
+                                    if c.count <= 30 { Task { await openCluster(c) } }
+                                    else { zoomIn(.init(latitude: c.latitude, longitude: c.longitude)) }
+                                }
                         }
                     }
                 }
@@ -66,7 +72,34 @@ struct MapScreen: View {
                 }
             }
             .fullScreenCover(item: $selected) { p in PhotoPager(photos: [p], start: p) }
+            .sheet(isPresented: $showClusterSheet) {
+                NavigationStack {
+                    ScrollView {
+                        LazyVGrid(columns: gridCols, spacing: 2) {
+                            ForEach(clusterPhotos) { p in
+                                PhotoTile(photo: p).onTapGesture { selected = p; showClusterSheet = false }
+                            }
+                        }.padding(2)
+                    }
+                    .navigationTitle("\(clusterPhotos.count) Fotos hier")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { showClusterSheet = false } } }
+                }
+            }
         }
+    }
+
+    private func openCluster(_ c: MapClusterV1) async {
+        // bbox = one grid cell around the cluster centroid (captures its points)
+        let span = region?.span ?? MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
+        let dLat = max(span.latitudeDelta / 11, 0.0005)
+        let dLng = max(span.longitudeDelta / 11, 0.0005)
+        loading = true
+        let photos = (try? await api.mapPhotos(minLat: c.latitude - dLat, minLng: c.longitude - dLng,
+                                               maxLat: c.latitude + dLat, maxLng: c.longitude + dLng)) ?? []
+        loading = false
+        if !photos.isEmpty { clusterPhotos = photos; showClusterSheet = true }
+        else { zoomIn(.init(latitude: c.latitude, longitude: c.longitude)) }
     }
 
     private func loadClusters(_ r: MKCoordinateRegion) async {
