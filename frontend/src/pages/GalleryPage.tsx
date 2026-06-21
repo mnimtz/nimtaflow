@@ -291,9 +291,9 @@ export default function GalleryPage() {
         {viewMode === 'grid' && (
           <>
             {/* Layout mode */}
-            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5" title="Layout">
-              {([['rows', Rows3], ['masonry', Columns3]] as const).map(([id, Icon]) => (
-                <button key={id} onClick={() => setLayout(id)}
+            <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5" title="Galerie-Layout">
+              {([['rows', Rows3, 'Justified (Google-Fotos-Stil — gleiche Zeilenhöhe)'], ['masonry', Columns3, 'Masonry (Pinterest-Stil — versetzte Spalten)']] as const).map(([id, Icon, tip]) => (
+                <button key={id} onClick={() => setLayout(id)} title={tip}
                   className={`p-1.5 rounded-md transition-colors ${layout === id ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                   <Icon size={14} />
                 </button>

@@ -940,13 +940,18 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     except Exception:
         out["stats"] = None
 
-    # 2) on this day
+    # 2) on this day — MUST respect the user's folder/person/date restrictions:
+    # a restricted user must never see memories from folders they can't access.
     try:
         from app.api.routes.photos import get_memories
         groups = await get_memories(db=db)
-        out["on_this_day"] = [{"years_ago": g["years_ago"], "date": g["date"],
-                               "items": [_to_v1(p, request).model_dump() for p in g["photos"][:12]]}
-                              for g in groups]
+        od = []
+        for g in groups:
+            vis = [p for p in g["photos"] if can_see_photo(p, user)][:12]
+            if vis:
+                od.append({"years_ago": g["years_ago"], "date": g["date"],
+                           "items": [_to_v1(p, request).model_dump() for p in vis]})
+        out["on_this_day"] = od
     except Exception:
         out["on_this_day"] = []
 
@@ -988,8 +993,11 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     for a in albums:
         cnt = await db.scalar(select(_f.count()).select_from(
             select(AlbumPhoto).where(AlbumPhoto.album_id == a.id).subquery()))
-        cover = a.cover_photo_id or await db.scalar(
-            select(AlbumPhoto.photo_id).where(AlbumPhoto.album_id == a.id).limit(1))
+        # Cover must be a photo the user may actually see (folder/person ACL).
+        cover = await db.scalar(
+            select(Photo.id).join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
+            .where(AlbumPhoto.album_id == a.id, Photo.thumb_small.isnot(None),
+                   Photo.is_trashed == False, *acl).limit(1))  # noqa: E712
         fa.append({"id": a.id, "name": a.name, "photo_count": int(cnt or 0),
                    "cover_url": (f"{base}/api/photos/{cover}/thumbnail?size=medium" if cover else None)})
     out["featured_albums"] = fa
