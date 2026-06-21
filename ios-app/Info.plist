@@ -44,5 +44,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PhotoFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>PhotoFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
