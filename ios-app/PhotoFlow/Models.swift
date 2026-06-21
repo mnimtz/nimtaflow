@@ -186,6 +186,39 @@ struct LibraryStats: Codable {
     let date_max: String?
 }
 
+// MARK: - Photo detail (GET /api/v1/photos/{id}/detail)
+
+struct PhotoPersonV1: Codable, Identifiable, Hashable {
+    let person_id: Int
+    let name: String
+    var id: Int { person_id }
+}
+
+struct PhotoDetailV1: Codable {
+    let id: Int
+    let filename: String
+    let taken_at: String?
+    let width: Int?
+    let height: Int?
+    let is_video: Bool
+    let latitude: Double?
+    let longitude: Double?
+    let description: String?
+    let city: String?
+    let country: String?
+    let location_name: String?
+    let camera_make: String?
+    let camera_model: String?
+    let lens_model: String?
+    let focal_length: Double?
+    let aperture: Double?
+    let shutter_speed: String?
+    let iso: Int?
+    let file_size: Int?
+    let tags: [String]
+    let people: [PhotoPersonV1]
+}
+
 // MARK: - Scan progress (GET /api/sources/scan-progress)
 
 struct ScanProgress: Codable {

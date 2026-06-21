@@ -161,6 +161,8 @@ struct PersonDetailView: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var displayName = ""   // reflects renames immediately (person is a let)
+    @State private var meNote = false
+    @State private var showDelete = false
     @State private var selected: PhotoV1?
     @Environment(\.dismiss) private var dismiss
 
@@ -174,13 +176,22 @@ struct PersonDetailView: View {
                 Text("\(person.face_count) Fotos").foregroundStyle(.secondary)
 
                 HStack {
-                    Button { newName = person.name; renaming = true } label: { Label("Umbenennen", systemImage: "pencil") }
+                    Button { newName = displayName.isEmpty ? person.name : displayName; renaming = true } label: { Label("Umbenennen", systemImage: "pencil") }
                         .buttonStyle(.bordered)
-                    Button(role: .destructive) {
-                        Task { try? await api.hidePerson(person.id, hidden: true); dismiss() }
-                    } label: { Label("Ausblenden", systemImage: "eye.slash") }
+                    Button {
+                        Task { try? await api.setAsMe(person.id); meNote = true }
+                    } label: { Label("Das bin ich", systemImage: "person.fill.checkmark") }
                         .buttonStyle(.bordered)
+                    Menu {
+                        Button { Task { try? await api.hidePerson(person.id, hidden: true); dismiss() } } label: {
+                            Label("Ausblenden", systemImage: "eye.slash")
+                        }
+                        Button(role: .destructive) { showDelete = true } label: {
+                            Label("Person löschen", systemImage: "trash")
+                        }
+                    } label: { Image(systemName: "ellipsis.circle").font(.title3) }
                 }
+                if meNote { Text("Als „ich“ verknüpft – die KI weiß jetzt, wer du bist.").font(.caption).foregroundStyle(.green) }
 
                 if !rels.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -210,7 +221,16 @@ struct PersonDetailView: View {
             if displayName.isEmpty { displayName = person.name }
             await loadPhotos(); rels = (try? await api.personRelationships(person.id)) ?? []
         }
-        .fullScreenCover(item: $selected) { p in PhotoPager(photos: photos, start: p) }
+        .fullScreenCover(item: $selected) { p in
+            PhotoPager(photos: photos, start: p, onRemoved: { id in photos.removeAll { $0.id == id } })
+        }
+        .confirmationDialog("Diese Person löschen? Die Fotos bleiben erhalten, nur die Personen-Zuordnung wird entfernt.",
+                            isPresented: $showDelete, titleVisibility: .visible) {
+            Button("Person löschen", role: .destructive) {
+                Task { try? await api.deletePerson(person.id); dismiss() }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        }
         .alert("Umbenennen", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Speichern") {

@@ -157,6 +157,8 @@ final class APIClient: ObservableObject {
         try await action("api/relationships", method: "POST", json: ["from_person_id": from, "to_person_id": to, "rel_type": type])
     }
     func deleteRelationship(_ id: Int) async throws { try await action("api/relationships/\(id)", method: "DELETE") }
+    func deletePerson(_ id: Int) async throws { try await action("api/people/\(id)", method: "DELETE") }
+    func setAsMe(_ personId: Int) async throws { try await action("api/people/\(personId)/set-as-me", method: "POST") }
 
     // MARK: Single photo
     func photo(_ id: Int) async throws -> PhotoV1 { try await get("api/v1/photos/\(id)", as: PhotoV1.self) }
@@ -168,6 +170,11 @@ final class APIClient: ObservableObject {
     }
     func archivePhoto(_ id: Int) async throws { try await action("api/photos/\(id)/archive", method: "PATCH") }
     func trashPhoto(_ id: Int) async throws { try await action("api/photos/\(id)/trash", method: "PATCH") }
+    func deletePhoto(_ id: Int) async throws { try await action("api/v1/photos/\(id)", method: "DELETE") }
+    func photoDetail(_ id: Int) async throws -> PhotoDetailV1 { try await get("api/v1/photos/\(id)/detail", as: PhotoDetailV1.self) }
+    func batch(_ action: String, ids: [Int]) async throws {
+        try await self.action("api/photos/batch", method: "POST", json: ["action": action, "ids": ids])
+    }
     func addPhotosToAlbum(_ albumId: Int, photoIds: [Int]) async throws {
         try await action("api/albums/\(albumId)/photos", method: "POST", json: ["photo_ids": photoIds])
     }
@@ -178,8 +185,12 @@ final class APIClient: ObservableObject {
         var p = "api/v1/albums/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
         return try await get(p, as: PhotoPage.self)
     }
-    func createAlbum(name: String) async throws {
-        try await action("api/albums", method: "POST", json: ["name": name, "album_type": "manual"])
+    func createAlbum(name: String, type: String = "manual",
+                     smartCriteria: [String: Any]? = nil, aiPrompt: String? = nil) async throws {
+        var body: [String: Any] = ["name": name, "album_type": type]
+        if let smartCriteria { body["smart_criteria"] = smartCriteria }
+        if let aiPrompt { body["ai_prompt"] = aiPrompt }
+        try await action("api/albums", method: "POST", json: body)
     }
     func renameAlbum(_ id: Int, name: String) async throws {
         try await action("api/albums/\(id)", method: "PATCH", json: ["name": name])
@@ -196,14 +207,16 @@ final class APIClient: ObservableObject {
     }
 
     // MARK: Trip planner (Gemini)
-    func planTrip(description: String, dateFrom: String?, dateTo: String?) async throws -> TripPlan {
+    func planTrip(description: String, dateFrom: String?, dateTo: String?, tripType: String? = nil) async throws -> TripPlan {
         var body: [String: Any] = ["description": description]
         if let dateFrom { body["date_from"] = dateFrom }
         if let dateTo { body["date_to"] = dateTo }
+        if let tripType { body["trip_type"] = tripType }
         var req = makeRequest("api/photos/plan-trip", method: "POST", json: body)
-        req.timeoutInterval = 90   // Gemini structured-output can take 10–40s
+        req.timeoutInterval = 120   // grounded search can take longer
         return try await send(req, as: TripPlan.self)
     }
+    func deleteTrip(_ albumId: Int) async throws { try await action("api/albums/\(albumId)", method: "DELETE") }
     func createTrip(_ plan: TripPlan) async throws -> CreateTripResult {
         var body: [String: Any] = ["name": plan.name, "description": plan.summary ?? ""]
         if let f = plan.date_from { body["date_from"] = f }
@@ -274,6 +287,14 @@ final class APIClient: ObservableObject {
     }
     func listShares() async throws -> [ShareOut] { try await get("api/shares", as: [ShareOut].self) }
     func deleteShare(_ id: Int) async throws { try await action("api/shares/\(id)", method: "DELETE") }
+    func updateShare(_ id: Int, title: String?, allowDownload: Bool?, expiresDays: Int?, password: String?) async throws {
+        var body: [String: Any] = [:]
+        if let title { body["title"] = title }
+        if let allowDownload { body["allow_download"] = allowDownload }
+        if let expiresDays { body["expires_days"] = expiresDays }
+        if let password { body["password"] = password }
+        try await action("api/shares/\(id)", method: "PATCH", json: body)
+    }
 
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }

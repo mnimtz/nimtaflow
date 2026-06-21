@@ -27,7 +27,7 @@ struct GalleryView: View {
     @State private var uploadDone = 0
     @State private var uploadTotal = 0
     @State private var uploadNote: String?
-    @AppStorage("gallery_group") private var groupMode = "none"   // none|day|month|year
+    @AppStorage("gallery_group") private var groupMode = "day"   // none|day|month|year (default: Tag)
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
     private let groupOpts: [(String, String)] = [
@@ -143,7 +143,8 @@ struct GalleryView: View {
             .refreshable { await reload() }
             .task { if photos.isEmpty { await load() } }
             .fullScreenCover(item: $selected) { p in
-                PhotoPager(photos: photos, start: p)
+                PhotoPager(photos: photos, start: p,
+                           onRemoved: { id in photos.removeAll { $0.id == id } })
             }
         }
     }
@@ -237,6 +238,7 @@ struct PhotoPager: View {
     @EnvironmentObject var api: APIClient
     let photos: [PhotoV1]
     let start: PhotoV1
+    var onRemoved: ((Int) -> Void)? = nil   // tell the grid to drop a trashed/deleted photo
     @Environment(\.dismiss) var dismiss
     @State private var index: Int = 0
     @State private var favs: Set<Int> = []
@@ -245,6 +247,7 @@ struct PhotoPager: View {
     @State private var showShare = false
     @State private var showInfo = false
     @State private var showAlbumPicker = false
+    @State private var showDeleteConfirm = false
     @State private var profileFaces: [PhotoFace] = []
     @State private var showProfileDialog = false
 
@@ -282,8 +285,12 @@ struct PhotoPager: View {
                     Button { Task { try? await api.reprocess(photos[index].id); actionNote = "Wird neu verarbeitet…" } } label: {
                         Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    Button(role: .destructive) { Task { try? await api.trashPhoto(photos[index].id); actionNote = "In Papierkorb" } } label: {
-                        Label("In Papierkorb", systemImage: "trash")
+                    Button(role: .destructive) {
+                        let id = photos[index].id
+                        Task { try? await api.trashPhoto(id); onRemoved?(id); dismiss() }
+                    } label: { Label("In Papierkorb", systemImage: "trash") }
+                    Button(role: .destructive) { showDeleteConfirm = true } label: {
+                        Label("Endgültig löschen", systemImage: "trash.slash")
                     }
                 } label: { Image(systemName: "ellipsis.circle.fill").foregroundStyle(.white) }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
@@ -339,6 +346,14 @@ struct PhotoPager: View {
             }
             Button("Abbrechen", role: .cancel) {}
         }
+        .confirmationDialog("Dieses Medium endgültig löschen? Datei und Eintrag werden entfernt – das kann nicht rückgängig gemacht werden.",
+                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Endgültig löschen", role: .destructive) {
+                let id = photos[index].id
+                Task { try? await api.deletePhoto(id); onRemoved?(id); dismiss() }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        }
     }
 
     func loadProfileFaces() async {
@@ -391,10 +406,13 @@ struct VideoPlayerView: View {
     }
 }
 
-/// Read-only metadata for a photo/video (date, resolution, rating, GPS, …).
+/// Read-only metadata for a photo/video — date, resolution, place, people, tags,
+/// description, camera/EXIF, GPS. Loads the full /detail payload on appear.
 struct PhotoInfoView: View {
     let photo: PhotoV1
+    @EnvironmentObject var api: APIClient
     @Environment(\.dismiss) var dismiss
+    @State private var detail: PhotoDetailV1?
 
     private var dateStr: String {
         guard let t = photo.taken_at else { return "—" }
@@ -403,27 +421,61 @@ struct PhotoInfoView: View {
         let o = DateFormatter(); o.locale = Locale(identifier: "de_DE"); o.dateStyle = .long; o.timeStyle = .short
         return o.string(from: d)
     }
+    private var placeStr: String? {
+        let parts = [detail?.location_name, detail?.city, detail?.country].compactMap { $0 }.filter { !$0.isEmpty }
+        var seen = Set<String>(); let uniq = parts.filter { seen.insert($0).inserted }
+        return uniq.isEmpty ? nil : uniq.joined(separator: ", ")
+    }
+    private var cameraStr: String? {
+        let c = [detail?.camera_make, detail?.camera_model].compactMap { $0 }.filter { !$0.isEmpty }
+        return c.isEmpty ? nil : c.joined(separator: " ")
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                row("Dateiname", photo.filename)
-                row("Typ", photo.is_video ? "Video" : "Foto")
-                row("Aufgenommen", dateStr)
-                if let w = photo.width, let h = photo.height { row("Auflösung", "\(w) × \(h)") }
-                if let d = photo.duration_seconds, photo.is_video {
-                    row("Dauer", String(format: "%d:%02d", Int(d) / 60, Int(d) % 60))
+                Section {
+                    row("Dateiname", photo.filename)
+                    row("Typ", photo.is_video ? "Video" : "Foto")
+                    row("Aufgenommen", dateStr)
+                    if let w = photo.width, let h = photo.height { row("Auflösung", "\(w) × \(h)") }
+                    if let d = photo.duration_seconds, photo.is_video {
+                        row("Dauer", String(format: "%d:%02d", Int(d) / 60, Int(d) % 60))
+                    }
+                    if let fs = detail?.file_size, fs > 0 {
+                        row("Größe", ByteCountFormatter.string(fromByteCount: Int64(fs), countStyle: .file))
+                    }
+                    if let r = photo.user_rating, r > 0 { row("Bewertung", String(repeating: "★", count: r)) }
+                    row("Favorit", photo.is_favorite ? "Ja" : "Nein")
                 }
-                if let r = photo.user_rating, r > 0 { row("Bewertung", String(repeating: "★", count: r)) }
-                row("Favorit", photo.is_favorite ? "Ja" : "Nein")
-                if let lat = photo.latitude, let lng = photo.longitude {
-                    row("Standort", String(format: "%.5f, %.5f", lat, lng))
+                if let desc = detail?.description, !desc.isEmpty {
+                    Section("Beschreibung") { Text(desc).font(.callout) }
                 }
-                row("Status", photo.status)
+                if let people = detail?.people, !people.isEmpty {
+                    Section("Personen") {
+                        Text(people.map { $0.name }.joined(separator: ", "))
+                    }
+                }
+                if let tags = detail?.tags, !tags.isEmpty {
+                    Section("Tags") { Text(tags.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary) }
+                }
+                Section("Ort & Aufnahme") {
+                    if let p = placeStr { row("Ort", p) }
+                    if let lat = photo.latitude, let lng = photo.longitude {
+                        row("GPS", String(format: "%.5f, %.5f", lat, lng))
+                    }
+                    if let c = cameraStr { row("Kamera", c) }
+                    if let l = detail?.lens_model, !l.isEmpty { row("Objektiv", l) }
+                    if let f = detail?.focal_length { row("Brennweite", String(format: "%.0f mm", f)) }
+                    if let a = detail?.aperture { row("Blende", String(format: "ƒ/%.1f", a)) }
+                    if let s = detail?.shutter_speed, !s.isEmpty { row("Belichtung", s) }
+                    if let i = detail?.iso { row("ISO", "\(i)") }
+                }
             }
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { dismiss() } } }
+            .task { detail = try? await api.photoDetail(photo.id) }
         }
     }
 
