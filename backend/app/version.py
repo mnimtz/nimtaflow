@@ -3,4 +3,4 @@
 Bump this on every change so the running container can be identified.
 Scheme: MAJOR.MINOR.PATCH — bump PATCH for normal changes.
 """
-__version__ = "1.253.1"
+__version__ = "1.254.0"

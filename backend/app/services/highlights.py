@@ -41,9 +41,15 @@ MOTTOS: List[dict] = [
     {"motto": "person_happy",      "label": "Die schönsten Lächeln einer Person",
      "params": ["person"],
      "description": "Fröhliche Momente, Lachen und glückliche Gesichter."},
-    {"motto": "parent_child",      "label": "Zwei Menschen gemeinsam (z. B. Eltern & Kind)",
+    {"motto": "parent_child",      "label": "Mutter/Vater & Kind im Laufe der Jahre",
      "params": ["person", "person2"],
      "description": "Fotos, auf denen beide zusammen sind — über die Jahre."},
+    {"motto": "muttertag",         "label": "Muttertag — Tribut an die Mama",
+     "params": ["person"],
+     "description": "Eine Hommage: die schönsten Momente der Mama, am liebsten mit der Familie."},
+    {"motto": "vatertag",          "label": "Vatertag — Tribut an den Papa",
+     "params": ["person"],
+     "description": "Eine Hommage: die schönsten Momente des Papas, am liebsten mit der Familie."},
     {"motto": "year_review",       "label": "Jahresrückblick",
      "params": ["year"],
      "description": "Die Highlights eines Jahres (Favoriten & bestbewertet zuerst)."},
@@ -241,6 +247,27 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
         # evenly subsample across the timeline so the whole span is represented
         step = len(photos) / cap
         return [photos[int(i * step)] for i in range(cap)]
+
+    # ── Muttertag / Vatertag: a tribute to one parent, preferring photos that
+    #    also show the family (≥2 people), spread across the years ──────────────
+    if motto in ("muttertag", "vatertag"):
+        pid = _opt(opts, "person_id")
+        if not pid:
+            return []
+        from app.models.face import Face
+        ids = await _person_photo_ids(db, int(pid))
+        if not ids:
+            return []
+        with_family = set((await db.execute(
+            select(Face.photo_id).where(Face.photo_id.in_(ids), Face.person_id.isnot(None))
+            .group_by(Face.photo_id).having(func.count(func.distinct(Face.person_id)) > 1)
+        )).scalars().all())
+        photos = list((await db.execute(
+            select(Photo).where(*base, Photo.id.in_(ids)))).scalars().all())
+        family = [p for p in photos if p.id in with_family]
+        # use the with-family set if it's rich enough, else fall back to all of them
+        pool = family if len(family) >= max(8, cap // 2) else photos
+        return _spread_across_years(pool, cap)
 
     # ── best of a single year ────────────────────────────────────────────────
     if motto == "year_review":
