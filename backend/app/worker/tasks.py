@@ -1154,10 +1154,24 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 await r.aclose(); return {"skipped": "running"}
         except Exception:
             r = None
+        tmp_path = None
         try:
             out_dir = pathlib.Path(settings.cache_path) / "videos"
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{photo_id}_{resolution}.mp4"
+            tmp_path = out_dir / f"{photo_id}_{resolution}.mp4.part"
+
+            def _probe_ok(p):
+                """A transcode is only usable if ffprobe reads a positive duration —
+                catches truncated / no-moov files left by an interrupted ffmpeg run."""
+                try:
+                    pr = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "csv=p=0", str(p)], capture_output=True, timeout=60)
+                    d = (pr.stdout or b"").decode().strip()
+                    return pr.returncode == 0 and d not in ("", "N/A") and float(d) > 0
+                except Exception:
+                    return False
             # 1) SHORT session: resolve the source path / early-exit if cached. We
             #    must NOT hold a DB transaction open across the long ffmpeg run —
             #    idle_in_transaction_session_timeout (60s) would kill the connection
@@ -1170,28 +1184,39 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                     return {"error": "not a video"}
                 src_path, fname = photo.path, photo.filename
                 if out_path.exists():
-                    photo.video_webm_path = str(out_path); await db.commit()
-                    return {"cached": True}
+                    if _probe_ok(out_path):
+                        photo.video_webm_path = str(out_path); await db.commit()
+                        return {"cached": True}
+                    # Broken leftover from an interrupted run — drop it (and clear a
+                    # stale path) so we re-transcode instead of serving a no-moov torso.
+                    try: out_path.unlink()
+                    except Exception: pass
+                    if photo.video_webm_path:
+                        photo.video_webm_path = None; await db.commit()
                 break
-            # 2) Transcode — NO DB session held while ffmpeg runs.
+            # 2) Transcode to a .part file — NO DB session held while ffmpeg runs.
             hw = detect_hw()
             t0 = _t.time()
-            cmd = build_transcode_cmd(src_path, str(out_path), resolution=resolution, codec="h264", hw=hw)
+            cmd = build_transcode_cmd(src_path, str(tmp_path), resolution=resolution, codec="h264", hw=hw)
             proc = subprocess.run(cmd, capture_output=True, timeout=1800)
-            if proc.returncode != 0 or not out_path.exists():
+            ok = proc.returncode == 0 and tmp_path.exists() and _probe_ok(tmp_path)
+            if not ok:
                 # Software fallback — same no-upscale cap as build_transcode_cmd.
                 _long = int(resolution * 16 / 9)
                 sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
                             ":force_original_aspect_ratio=decrease:force_divisible_by=2")
                 sw = ["ffmpeg", "-y", "-i", src_path, "-c:v", "libx264",
                       "-vf", sw_scale, "-c:a", "aac", "-b:a", "128k",
-                      "-movflags", "+faststart", str(out_path)]
+                      "-movflags", "+faststart", str(tmp_path)]
                 proc = subprocess.run(sw, capture_output=True, timeout=1800)
+                ok = proc.returncode == 0 and tmp_path.exists() and _probe_ok(tmp_path)
                 hwname = "software"
             else:
                 hwname = hw.name
-            # 3) SHORT session: persist the result.
-            if proc.returncode == 0 and out_path.exists():
+            # 3) Only a VALIDATED transcode becomes the served file (atomic rename), so
+            #    a crashed / timed-out ffmpeg never leaves a no-moov torso at out_path.
+            if ok:
+                os.replace(str(tmp_path), str(out_path))
                 async for db in get_db():
                     photo = await db.get(Photo, photo_id)
                     if photo:
@@ -1202,12 +1227,76 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
             flog("video", "WARNING", f"Transkodierung fehlgeschlagen: {fname}: {proc.stderr.decode(errors='replace')[-200:]}")
             return {"error": "ffmpeg"}
         finally:
+            try:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
             if r is not None:
                 try:
                     await r.delete(f"transcode:lock:{photo_id}"); await r.aclose()
                 except Exception:
                     pass
     return _run(_run_tc())
+
+
+@celery_app.task(bind=True, name="revalidate_transcodes")
+def revalidate_transcodes_task(self, resolution: int = 1080):
+    """Self-heal the web-MP4 backlog: ffprobe every video that has a video_webm_path
+    and, for any unreadable / no-moov torso (left by older interrupted transcodes),
+    delete the file, clear the path, reset ai_error, and re-enqueue a fresh transcode.
+    Idempotent — safe to re-run; only touches broken files."""
+    async def _run_rv():
+        import os, subprocess, pathlib
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+
+        def _probe_ok(p):
+            try:
+                pr = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "csv=p=0", str(p)], capture_output=True, timeout=60)
+                d = (pr.stdout or b"").decode().strip()
+                return pr.returncode == 0 and d not in ("", "N/A") and float(d) > 0
+            except Exception:
+                return False
+
+        checked = broken = missing = 0
+        # Collect ids first (short read), then probe without holding a session.
+        rows = []
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Photo.id, Photo.video_webm_path).where(
+                    Photo.is_video == True,                      # noqa: E712
+                    Photo.video_webm_path.isnot(None)))).all()
+            break
+        for pid, wp in rows:
+            checked += 1
+            if wp and os.path.exists(wp):
+                if _probe_ok(wp):
+                    continue
+                try: os.unlink(wp)
+                except Exception: pass
+                broken += 1
+            else:
+                missing += 1  # path set but file gone — also re-transcode
+            async for db in get_db():
+                photo = await db.get(Photo, pid)
+                if photo:
+                    photo.video_webm_path = None
+                    photo.ai_error = False
+                    await db.commit()
+                break
+            transcode_video_task.delay(pid, resolution)
+        flog("video", "INFO",
+             f"Transcode-Revalidierung: {checked} geprüft, {broken} kaputt, "
+             f"{missing} fehlend → neu eingereiht.")
+        return {"checked": checked, "broken": broken, "missing": missing,
+                "requeued": broken + missing}
+    return _run(_run_rv())
 
 
 @celery_app.task(bind=True, name="process_photo")

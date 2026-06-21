@@ -256,6 +256,40 @@ async def video(photo_id: int, db: AsyncSession = Depends(get_db),
     return FileResponse(wp, media_type="video/mp4")
 
 
+@router.post("/video-broken/{photo_id}")
+async def video_broken(photo_id: int, db: AsyncSession = Depends(get_db),
+                       x_remote_token: Optional[str] = Header(None)):
+    """A video worker couldn't open the served web-MP4 (truncated / no moov). Drop the
+    bad transcode and re-enqueue a fresh one instead of letting the worker skip it
+    forever. NOT an ai_error — the source is usually fine, only the transcode broke."""
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+    wp = photo.video_webm_path
+    if wp and os.path.exists(wp):
+        try: os.unlink(wp)
+        except Exception: pass
+    photo.video_webm_path = None
+    photo.ai_error = False
+    photo.ai_claimed_at = None
+    await db.commit()
+    from app.worker.tasks import transcode_video_task
+    transcode_video_task.delay(photo_id)
+    return {"ok": True, "requeued": True}
+
+
+@router.post("/revalidate-transcodes")
+async def revalidate_transcodes(db: AsyncSession = Depends(get_db),
+                                x_remote_token: Optional[str] = Header(None)):
+    """Maintenance: ffprobe every web-MP4 and re-transcode the broken ones. Runs in the
+    background (celery) so the request returns immediately."""
+    await _require_token(db, x_remote_token)
+    from app.worker.tasks import revalidate_transcodes_task
+    revalidate_transcodes_task.delay()
+    return {"ok": True, "queued": True}
+
+
 @router.get("/frame/{photo_id}/{idx}")
 async def video_frame(photo_id: int, idx: int, n: Optional[int] = None,
                       db: AsyncSession = Depends(get_db),

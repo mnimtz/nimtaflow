@@ -47,11 +47,17 @@ def _post(url, data, timeout=180):
 def _download(url, dest, timeout=300):
     req = urllib.request.Request(url, headers=H)
     with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+        clen = r.headers.get("Content-Length")
+        expected = int(clen) if (clen and clen.isdigit()) else None
+        got = 0
         while True:
             chunk = r.read(1 << 20)
             if not chunk:
                 break
-            f.write(chunk)
+            f.write(chunk); got += len(chunk)
+    # A short read = a truncated transfer → raise so the loop retries (OSError path).
+    if expected is not None and got != expected:
+        raise IOError(f"incomplete download: {got}/{expected} bytes")
 
 
 def _split_desc_tags(raw):
@@ -94,7 +100,7 @@ def main():
 
     fails = 0
     while True:
-        tmp = None
+        tmp = None; pid = None
         try:
             job = _post(f"{SERVER}/api/remote/claim",
                         {"worker": NAME, "mode": MODE, "media": MEDIA}, timeout=30)
@@ -148,7 +154,20 @@ def main():
                   f"({type(e).__name__})")
             time.sleep(wait)
         except Exception as e:
-            print(f"[m3-video] Video übersprungen: {type(e).__name__}: {e}")
+            msg = f"{type(e).__name__}: {e}"
+            low = str(e).lower()
+            # An unreadable web-MP4 (truncated / no moov / invalid data): ask the server
+            # to drop & re-transcode it, instead of skipping it forever — otherwise the
+            # broken file stays claimable and the worker loops on it endlessly.
+            if pid and any(k in low for k in
+                           ("cannot open video", "no frames", "moov", "invalid data")):
+                try:
+                    _post(f"{SERVER}/api/remote/video-broken/{pid}", {}, timeout=30)
+                    print(f"[m3-video] #{pid} kaputtes Web-MP4 → re-transcode angefordert ({msg})")
+                except Exception as e2:
+                    print(f"[m3-video] #{pid} video-broken-Meldung fehlgeschlagen: {e2}")
+            else:
+                print(f"[m3-video] Video übersprungen: {msg}")
             time.sleep(POLL)
         finally:
             if tmp and os.path.exists(tmp):
