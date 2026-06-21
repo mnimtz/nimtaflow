@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { api } from '../lib/api'
 import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock } from 'lucide-react'
+import PipelinePage from './PipelinePage'
 
 type Role = {
   role: string; label: string; pending: number; done?: number
@@ -33,6 +35,7 @@ function fmtEta(s: number | null | undefined): string {
 const de = (n: number) => (n ?? 0).toLocaleString('de')
 
 export default function LeitstandPage() {
+  const [tab, setTab] = useState<'overview' | 'pipeline'>('overview')
   const { data, dataUpdatedAt } = useQuery<Status>({
     queryKey: ['leitstand'],
     queryFn: () => api.get('/remote/status').then(r => r.data),
@@ -58,6 +61,17 @@ export default function LeitstandPage() {
 
   return (
     <div className="p-4 max-w-6xl mx-auto space-y-6">
+      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {([['overview', 'Übersicht'], ['pipeline', 'Pipeline (Jobs)']] as const).map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === k
+              ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+              : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+      {tab === 'pipeline' ? <PipelinePage /> : (<>
       {/* Header + Gesamt-ETA */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -149,6 +163,7 @@ export default function LeitstandPage() {
           {!lib && <p className="text-sm text-zinc-400 col-span-full">Lade Kennzahlen…</p>}
         </div>
       </section>
+      </>)}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import ErrorBoundary from '../ErrorBoundary'
-import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane } from 'lucide-react'
+import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane, Home } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -64,6 +64,7 @@ function VersionBadge() {
 }
 
 const nav = [
+  { to: '/start', icon: Home, label: 'Start' },
   { to: '/gallery', icon: Images, label: 'Galerie' },
   { to: '/search', icon: Sparkles, label: 'Suche' },
   { to: '/chat', icon: MessageCircle, label: 'Chat' },
@@ -71,7 +72,6 @@ const nav = [
   { to: '/people', icon: Users, label: 'Personen' },
   { to: '/map', icon: Map, label: 'Karte' },
   { to: '/trips', icon: Plane, label: 'Reisen' },
-  { to: '/pipeline', icon: Activity, label: 'Pipeline' },
   { to: '/leitstand', icon: Gauge, label: 'Leitstand' },
 ]
 

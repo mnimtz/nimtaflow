@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from './lib/api'
 import SetupPage from './pages/SetupPage'
 import Layout from './components/layout/Layout'
+import DashboardPage from './pages/DashboardPage'
 import GalleryPage from './pages/GalleryPage'
 import SearchPage from './pages/SearchPage'
 import ChatPage from './pages/ChatPage'
@@ -34,7 +35,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/s/:token" element={<PublicSharePage />} />
       <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/gallery" replace />} />
+        <Route path="/" element={<Navigate to="/start" replace />} />
+        <Route path="/start" element={<DashboardPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/chat" element={<ChatPage />} />

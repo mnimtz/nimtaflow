@@ -914,3 +914,101 @@ async def memories_v1(request: Request, db: AsyncSession = Depends(get_db),
     return [MemoryGroupV1(years_ago=g["years_ago"], date=g["date"],
                           items=[_to_v1(p, request) for p in g["photos"]])
             for g in groups]
+
+
+# ── Dashboard / Startseite (web + iOS) ──────────────────────────────────────────
+
+@router.get("/dashboard")
+async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """Everything the home screen needs in ONE call: library stats, 'on this day'
+    memories, a rotating Person of the Week (+ sample photos), featured people &
+    albums, the newest additions, and a few random highlights."""
+    import datetime
+    from sqlalchemy import func as _f, or_
+    from app.models.person import Person
+    from app.models.face import Face
+    from app.models.album import Album, AlbumPhoto
+    base = str(request.base_url).rstrip("/")
+    acl = photo_conditions(user)
+
+    out: dict = {}
+
+    # 1) stats
+    try:
+        out["stats"] = (await stats_v1(db=db, user=user)).model_dump()
+    except Exception:
+        out["stats"] = None
+
+    # 2) on this day
+    try:
+        from app.api.routes.photos import get_memories
+        groups = await get_memories(db=db)
+        out["on_this_day"] = [{"years_ago": g["years_ago"], "date": g["date"],
+                               "items": [_to_v1(p, request).model_dump() for p in g["photos"][:12]]}
+                              for g in groups]
+    except Exception:
+        out["on_this_day"] = []
+
+    # named, visible people + their face counts
+    ppl = (await db.execute(select(Person).where(
+        Person.is_hidden == False, _f.length(_f.coalesce(Person.name, "")) > 0))).scalars().all()  # noqa: E712
+    if user is not None and user.role != UserRole.admin:
+        vis = (user.access_config or {}).get("visible_person_ids")
+        if vis:
+            ppl = [p for p in ppl if p.id in set(vis)]
+    counts = dict((await db.execute(
+        select(Face.person_id, _f.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id))).all())
+    named_sorted = sorted(ppl, key=lambda p: -counts.get(p.id, 0))
+
+    def _person_obj(p):
+        return {"id": p.id, "name": p.name, "face_count": counts.get(p.id, 0),
+                "avatar_url": f"{base}/api/people/{p.id}/avatar"}
+
+    # 3) Person of the Week — rotates by ISO week so it changes weekly
+    out["person_of_week"] = None
+    pool = [p for p in named_sorted if counts.get(p.id, 0) >= 5] or named_sorted
+    if pool:
+        wk = datetime.date.today().isocalendar()[1]
+        pw = pool[wk % len(pool)]
+        sub = select(Face.photo_id).where(Face.person_id == pw.id)
+        ph = (await db.execute(select(Photo).where(
+            Photo.id.in_(sub), Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
+            .order_by(Photo.id.desc()).limit(9))).scalars().all()
+        out["person_of_week"] = {**_person_obj(pw),
+                                 "items": [_to_v1(p, request).model_dump() for p in ph]}
+
+    # 4) featured people — the most-photographed named people (spotlight strip)
+    pow_id = out["person_of_week"]["id"] if out["person_of_week"] else None
+    out["featured_people"] = [_person_obj(p) for p in named_sorted if p.id != pow_id][:12]
+
+    # 5) featured albums (random, with cover)
+    albums = (await db.execute(select(Album).order_by(_f.random()).limit(8))).scalars().all()
+    fa = []
+    for a in albums:
+        cnt = await db.scalar(select(_f.count()).select_from(
+            select(AlbumPhoto).where(AlbumPhoto.album_id == a.id).subquery()))
+        cover = a.cover_photo_id or await db.scalar(
+            select(AlbumPhoto.photo_id).where(AlbumPhoto.album_id == a.id).limit(1))
+        fa.append({"id": a.id, "name": a.name, "photo_count": int(cnt or 0),
+                   "cover_url": (f"{base}/api/photos/{cover}/thumbnail?size=medium" if cover else None)})
+    out["featured_albums"] = fa
+
+    # 6) recent additions
+    recent = (await db.execute(select(Photo).where(
+        Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
+        .order_by(Photo.id.desc()).limit(12))).scalars().all()
+    out["recent"] = [_to_v1(p, request).model_dump() for p in recent]
+
+    # 7) random highlights (favourites / well-rated, else random)
+    hi = (await db.execute(select(Photo).where(
+        Photo.thumb_small.isnot(None), Photo.is_trashed == False,
+        or_(Photo.is_favorite == True, Photo.user_rating >= 4), *acl)  # noqa: E712
+        .order_by(_f.random()).limit(12))).scalars().all()
+    if len(hi) < 6:
+        hi = (await db.execute(select(Photo).where(
+            Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
+            .order_by(_f.random()).limit(12))).scalars().all()
+    out["highlights"] = [_to_v1(p, request).model_dump() for p in hi]
+
+    return out
