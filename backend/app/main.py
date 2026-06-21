@@ -64,9 +64,12 @@ _COLUMN_MIGRATIONS = [
           ALTER TABLE photos ALTER COLUMN file_size TYPE BIGINT;
         END IF;
     END $$""",
-    # ── users: self-service profile ───────────────────────────────────────────
+    # ── photos: trash timestamp (drives retention auto-purge) ─────────────────
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ",
+    # ── users: self-service profile + "this is me" person link ────────────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(32)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(512)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS person_id INTEGER",
     # ── photos: updated_at + trigger (drives iOS incremental sync) ────────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "CREATE OR REPLACE FUNCTION pf_touch_updated_at() RETURNS trigger AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql",

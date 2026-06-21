@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, distinct, extract, text
-from datetime import date
+from datetime import date, datetime, timezone
 import os, subprocess, pathlib, mimetypes
 
 from app.core.database import get_db
@@ -250,8 +250,12 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
         person_cond = [Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(visible)))]
 
     today = datetime.now(timezone.utc)
+    try:
+        max_years = int(settings.get("memories.max_years") or 30)
+    except (TypeError, ValueError):
+        max_years = 30
     memories = []
-    for years_ago in range(1, 11):
+    for years_ago in range(1, max(2, max_years + 1)):
         try:
             target = today.replace(year=today.year - years_ago)
         except ValueError:  # Feb 29 → Feb 28
@@ -443,8 +447,65 @@ async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db)):
     if not photo:
         raise HTTPException(404)
     photo.is_trashed = not photo.is_trashed
+    photo.trashed_at = datetime.now(timezone.utc) if photo.is_trashed else None
     await db.commit()
     return {"is_trashed": photo.is_trashed}
+
+
+async def _source_roots(db: AsyncSession) -> list:
+    """Configured source roots — we only ever unlink files UNDER these, so a bug
+    can never delete an arbitrary path."""
+    from app.models.source import PhotoSource
+    return [r for (r,) in (await db.execute(select(PhotoSource.path))).all() if r]
+
+
+def _safe_unlink(path: str, roots: list) -> bool:
+    """Delete a file only if it sits under a configured source root. Best-effort."""
+    import os
+    try:
+        rp = os.path.realpath(path)
+        if not any(rp == os.path.realpath(r) or rp.startswith(os.path.realpath(r) + os.sep)
+                   for r in roots):
+            return False
+        if os.path.isfile(rp):
+            os.remove(rp)
+        # sidecars next to the file
+        for sc in (path + ".xmp", os.path.splitext(path)[0] + ".xmp"):
+            if os.path.isfile(sc):
+                try: os.remove(sc)
+                except OSError: pass
+        return True
+    except OSError:
+        return False
+
+
+async def _hard_delete(db: AsyncSession, photo: Photo, delete_file: bool, roots: list):
+    """Permanently remove a photo: optionally unlink the original file (+sidecars)
+    and its cached thumbnails, then delete the DB row (faces/tags/album-entries
+    cascade per the model)."""
+    import os
+    if delete_file:
+        _safe_unlink(photo.path, roots)
+    for t in (photo.thumb_small, photo.thumb_medium, photo.thumb_large,
+              getattr(photo, "video_preview_path", None)):
+        if t and os.path.isabs(t) and os.path.isfile(t):
+            try: os.remove(t)
+            except OSError: pass
+    await db.delete(photo)
+
+
+@router.delete("/{photo_id}")
+async def delete_photo(photo_id: int, delete_file: bool = True,
+                       db: AsyncSession = Depends(get_db)):
+    """Hard-delete a single photo (DB row + cached thumbnails, and the original
+    file unless delete_file=false). This is the 'endgültig löschen' action."""
+    photo = await db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404)
+    roots = await _source_roots(db)
+    await _hard_delete(db, photo, delete_file, roots)
+    await db.commit()
+    return {"deleted": photo_id}
 
 
 # ── Bulk actions ──────────────────────────────────────────────────────────────
@@ -462,16 +523,17 @@ class TripPlanRequest(_BM):
     description: str
     date_from: Optional[str] = None
     date_to: Optional[str] = None
+    trip_type: Optional[str] = None  # kreuzfahrt | pauschalurlaub | flugreise | roadtrip | …
 
 
 @router.post("/plan-trip")
 async def plan_trip_endpoint(body: TripPlanRequest, db: AsyncSession = Depends(get_db)):
     """AI trip planner: rough text → structured itinerary (waypoints with coords +
-    dates) via Gemini. Used by the 'Reise anlegen'-Assistent."""
+    dates) via Gemini with Google-Search grounding. Used by the 'Reise anlegen'-Assistent."""
     from app.services.settings_loader import load_settings
     from app.services.trip_planner import plan_trip
     s = await load_settings(db)
-    return await plan_trip(body.description, body.date_from, body.date_to, s)
+    return await plan_trip(body.description, body.date_from, body.date_to, s, body.trip_type)
 
 
 class CreateTripRequest(_BM):
@@ -480,6 +542,7 @@ class CreateTripRequest(_BM):
     date_to: Optional[str] = None
     waypoints: Optional[list] = None
     description: Optional[str] = None
+    trip_type: Optional[str] = None
 
 
 @router.post("/create-trip")
@@ -501,6 +564,7 @@ async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db
         album_type=AlbumType.manual,
         description=body.description,
         smart_criteria={"trip": True, "route": body.waypoints or [],
+                        "trip_type": body.trip_type,
                         "date_from": body.date_from, "date_to": body.date_to},
     )
     db.add(album)
@@ -590,6 +654,15 @@ async def backfill_xmp(db: AsyncSession = Depends(get_db)):
 @router.post("/batch")
 async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
     """Apply an action to many photos at once (selection bar in the gallery)."""
+    # Bulk hard-delete (endgültig löschen) — selection bar "Löschen".
+    if body.action == "delete":
+        roots = await _source_roots(db)
+        photos = (await db.execute(select(Photo).where(Photo.id.in_(body.ids)))).scalars().all()
+        for p in photos:
+            await _hard_delete(db, p, delete_file=True, roots=roots)
+        await db.commit()
+        return {"deleted": len(photos), "action": "delete"}
+
     field_value = {
         "favorite": ("is_favorite", True),
         "unfavorite": ("is_favorite", False),
@@ -605,6 +678,8 @@ async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
     photos = result.scalars().all()
     for p in photos:
         setattr(p, field, value)
+        if field == "is_trashed":
+            p.trashed_at = datetime.now(timezone.utc) if value else None
     await db.commit()
     return {"updated": len(photos), "action": body.action}
 

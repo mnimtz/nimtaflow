@@ -57,6 +57,46 @@ SYSTEM = (
 )
 
 
+async def _identity_context(db: AsyncSession, settings: dict) -> str:
+    """Tell the assistant WHO the user is (the person linked via
+    relationships.self_person_id) and their relations, so 'meine Frau' / 'mein
+    Sohn' resolve instantly instead of the model asking 'wer ist deine Frau?'."""
+    try:
+        sid = int(settings.get("relationships.self_person_id"))
+    except (TypeError, ValueError):
+        return ""
+    from sqlalchemy import or_
+    from app.models.relationship import PersonRelationship, LABEL, INVERSE_LABEL
+    me = await db.get(Person, sid)
+    if not me:
+        return ""
+    rels = (await db.execute(select(PersonRelationship).where(or_(
+        PersonRelationship.from_person_id == sid,
+        PersonRelationship.to_person_id == sid,
+    )))).scalars().all()
+    pairs = []
+    for r in rels:
+        if r.to_person_id == sid:
+            pairs.append((LABEL.get(r.rel_type, ""), r.from_person_id))
+        else:
+            pairs.append((INVERSE_LABEL.get(r.rel_type, ""), r.to_person_id))
+    ids = {oid for _, oid in pairs}
+    names = {}
+    if ids:
+        names = {i: n for i, n in (await db.execute(
+            select(Person.id, Person.name).where(Person.id.in_(ids)))).all()}
+    rel_str = ", ".join(f"{role} = {names[oid]}" for role, oid in pairs
+                        if role and names.get(oid))
+    ctx = f"\n\nIDENTITÄT DES NUTZERS: Du sprichst mit {me.name} — das ist der Nutzer selbst."
+    if rel_str:
+        ctx += (f" Bekannte Beziehungen von {me.name}: {rel_str}. Wenn der Nutzer "
+                "Verwandtschaftsbegriffe wie 'meine Frau', 'mein Mann', 'mein Sohn', "
+                "'meine Tochter', 'meine Mutter', 'mein Vater' verwendet, löse sie ÜBER "
+                "DIESE BEZIEHUNGEN zur konkreten Person auf und setze person=<Name>. "
+                "Frage NICHT zurück, wer gemeint ist.")
+    return ctx
+
+
 async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
     """Bundle description + recognised people + tags + date/place per photo so the
     LLM can reason over everything at once."""
@@ -300,12 +340,19 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     # total images across the conversation to bound token cost (chat.vision=off disables).
     vision = str(settings.get("chat.vision", "true")).lower() != "false"
     img_budget = 8
+    # Identity block (who is the user + relations) so 'meine Frau' resolves without
+    # a clarifying round-trip.
+    system_text = SYSTEM + await _identity_context(db, settings)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {
-                "system_instruction": {"parts": [{"text": SYSTEM}]},
+                "system_instruction": {"parts": [{"text": system_text}]},
                 "contents": contents,
                 "tools": [tool],
+                # gemini-2.5-flash runs dynamic "thinking" by default — with a heavy
+                # tool/system prompt it burned ~2 min even for a one-line reply.
+                # Disable it: this is retrieval-grounded Q&A, not a reasoning task.
+                "generationConfig": {"thinkingConfig": {"thinkingBudget": 0}},
             }
             r = None
             for attempt in range(4):  # Gemini 503/429 spikes are usually transient

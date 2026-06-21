@@ -126,6 +126,33 @@ async def list_shares(request: Request, db: AsyncSession = Depends(get_db)):
     return [_out(s, base) for s in shares]
 
 
+class ShareUpdate(BaseModel):
+    title: Optional[str] = None
+    password: Optional[str] = None          # "" clears the password
+    expires_days: Optional[int] = None      # 0 = never; -1 = leave unchanged
+    allow_download: Optional[bool] = None
+
+
+@router.patch("/{share_id}", response_model=ShareOut)
+async def update_share(share_id: int, body: ShareUpdate, request: Request,
+                       db: AsyncSession = Depends(get_db)):
+    share = await db.get(Share, share_id)
+    if not share:
+        raise HTTPException(404)
+    if body.title is not None:
+        share.title = body.title
+    if body.allow_download is not None:
+        share.allow_download = body.allow_download
+    if body.password is not None:
+        share.password_hash = hash_password(body.password) if body.password else None
+    if body.expires_days is not None and body.expires_days >= 0:
+        share.expires_at = (datetime.now(timezone.utc) + timedelta(days=body.expires_days)
+                            if body.expires_days > 0 else None)
+    await db.commit()
+    await db.refresh(share)
+    return _out(share, await _base_url(request, db))
+
+
 @router.delete("/{share_id}", status_code=204)
 async def delete_share(share_id: int, db: AsyncSession = Depends(get_db)):
     share = await db.get(Share, share_id)

@@ -206,6 +206,55 @@ async def get_photo_v1(photo_id: int, request: Request, db: AsyncSession = Depen
     return _to_v1(photo, request)
 
 
+@router.get("/photos/{photo_id}/detail")
+async def photo_detail_v1(photo_id: int, request: Request, db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    """Full detail for the iOS photo-info sheet: description, place, people, tags,
+    camera/EXIF — everything the thin PhotoV1 omits."""
+    from app.models.tag import Tag, PhotoTag
+    from app.models.face import Face
+    from app.models.person import Person
+    photo = await db.get(Photo, photo_id)
+    if not photo or not can_see_photo(photo, user):
+        raise HTTPException(404)
+    tags = [t for (t,) in (await db.execute(
+        select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
+        .where(PhotoTag.photo_id == photo_id))).all()]
+    people = [{"person_id": pid, "name": nm} for (pid, nm) in (await db.execute(
+        select(Face.person_id, Person.name).join(Person, Person.id == Face.person_id)
+        .where(Face.photo_id == photo_id, Person.name.isnot(None)).distinct())).all()]
+    base = _to_v1(photo, request).model_dump()
+    base.update({
+        "description": photo.user_description or photo.description,
+        "city": getattr(photo, "city", None),
+        "country": getattr(photo, "country", None),
+        "location_name": getattr(photo, "location_name", None),
+        "camera_make": photo.camera_make, "camera_model": photo.camera_model,
+        "lens_model": getattr(photo, "lens_model", None),
+        "focal_length": getattr(photo, "focal_length", None),
+        "aperture": getattr(photo, "aperture", None),
+        "shutter_speed": getattr(photo, "shutter_speed", None),
+        "iso": getattr(photo, "iso", None),
+        "file_size": photo.file_size,
+        "tags": tags, "people": people,
+    })
+    return base
+
+
+@router.delete("/photos/{photo_id}")
+async def delete_photo_v1(photo_id: int, delete_file: bool = True,
+                          db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    """Hard-delete from the iOS app (endgültig löschen)."""
+    from app.api.routes.photos import _hard_delete, _source_roots
+    photo = await db.get(Photo, photo_id)
+    if not photo or not can_see_photo(photo, user):
+        raise HTTPException(404)
+    await _hard_delete(db, photo, delete_file, await _source_roots(db))
+    await db.commit()
+    return {"deleted": photo_id}
+
+
 # ── Sync endpoint (incremental pull for iOS background fetch) ─────────────────
 
 @router.get("/sync", response_model=SyncResultV1)

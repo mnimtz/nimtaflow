@@ -24,6 +24,7 @@ class User(Base):
     # Self-service profile
     birthdate: Mapped[Optional[str]] = mapped_column(String(32))    # ISO "YYYY-MM-DD"
     avatar_path: Mapped[Optional[str]] = mapped_column(String(512))
+    person_id: Mapped[Optional[int]] = mapped_column(Integer)       # "this is me" → Person link
 
     # 2FA
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64))

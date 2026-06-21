@@ -119,6 +119,7 @@ class Photo(Base):
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_trashed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    trashed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # for retention auto-purge
     # File no longer present on disk (detected during scan)
     is_missing: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     missing_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

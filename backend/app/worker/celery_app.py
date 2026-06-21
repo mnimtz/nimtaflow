@@ -129,4 +129,10 @@ celery_app.conf.beat_schedule = {
         "task": "sweep_video_faces",
         "schedule": crontab(hour=4, minute=0),
     },
+    # Nightly trash retention: permanently delete photos that have been in the trash
+    # longer than trash.retention_days (0 = keep forever). 05:15.
+    "purge-trash-nightly": {
+        "task": "purge_trash",
+        "schedule": crontab(hour=5, minute=15),
+    },
 }

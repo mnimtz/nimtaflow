@@ -79,6 +79,41 @@ def scan_source_task(self, source_id: int):
     return _run(_run_scan())
 
 
+@celery_app.task(bind=True, name="purge_trash")
+def purge_trash_task(self):
+    """Permanently delete photos trashed longer than trash.retention_days
+    (0/empty = keep forever). Removes the original file (+sidecars), cached
+    thumbnails and the DB row."""
+    async def _run_purge():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.settings_loader import load_settings
+        from app.api.routes.photos import _hard_delete, _source_roots
+        from sqlalchemy import select
+        from datetime import timedelta
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            try:
+                days = int(s.get("trash.retention_days") or 0)
+            except (TypeError, ValueError):
+                days = 0
+            if days <= 0:
+                return {"skipped": "retention off"}
+            delete_files = str(s.get("trash.delete_files", "true")).lower() != "false"
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            roots = await _source_roots(db)
+            rows = (await db.execute(select(Photo).where(
+                Photo.is_trashed == True,                       # noqa: E712
+                Photo.trashed_at.isnot(None), Photo.trashed_at < cutoff,
+            ).limit(2000))).scalars().all()
+            for p in rows:
+                await _hard_delete(db, p, delete_files, roots)
+            await db.commit()
+            return {"purged": len(rows)}
+    return _run(_run_purge())
+
+
 @celery_app.task(bind=True, name="watch_sources")
 def watch_sources_task(self):
     """Beat task: trigger a re-scan for every watched source whose interval elapsed."""

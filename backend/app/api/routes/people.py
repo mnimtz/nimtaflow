@@ -570,3 +570,27 @@ async def cluster_faces(db: AsyncSession = Depends(get_db)):
         return await cluster_unassigned(db)
     except ImportError:
         raise HTTPException(500, "scikit-learn nicht verfügbar")
+
+
+@router.post("/{person_id}/set-as-me")
+async def set_as_me(person_id: int, db: AsyncSession = Depends(get_db),
+                    user=Depends(current_user_optional)):
+    """Mark this person as 'the user' → links the PhotoFlow profile to a Person so
+    the chat AI knows who 'ich'/'meine Frau' refers to. Stores the global
+    relationships.self_person_id (read by chat) and, if logged in, User.person_id."""
+    from app.models.settings import Setting
+    from app.models.user import User as _User
+    person = await db.get(Person, person_id)
+    if not person:
+        raise HTTPException(404)
+    existing = await db.scalar(select(Setting).where(Setting.key == "relationships.self_person_id"))
+    if existing:
+        existing.value = str(person_id)
+    else:
+        db.add(Setting(key="relationships.self_person_id", value=str(person_id)))
+    if user:
+        u = await db.get(_User, user.id)
+        if u:
+            u.person_id = person_id
+    await db.commit()
+    return {"self_person_id": person_id, "name": person.name}
