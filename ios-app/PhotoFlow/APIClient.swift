@@ -302,6 +302,24 @@ final class APIClient: ObservableObject {
     // MARK: Dashboard
     func dashboard() async throws -> DashboardV1 { try await get("api/v1/dashboard", as: DashboardV1.self) }
 
+    // MARK: Highlights (video assistant)
+    private struct MottosWrap: Codable { let mottos: [MottoV1] }
+    func mottos() async throws -> [MottoV1] { try await get("api/highlights/mottos", as: MottosWrap.self).mottos }
+    func highlights() async throws -> [HighlightV1] { try await get("api/highlights", as: [HighlightV1].self) }
+    func createHighlight(motto: String, title: String?, durationSec: Double,
+                         personId: Int? = nil, personId2: Int? = nil, year: Int? = nil,
+                         albumId: Int? = nil, season: String? = nil) async throws -> HighlightV1 {
+        var body: [String: Any] = ["motto": motto, "duration_sec": durationSec]
+        if let title, !title.isEmpty { body["title"] = title }
+        if let personId { body["person_id"] = personId }
+        if let personId2 { body["person_id2"] = personId2 }
+        if let year { body["year"] = year }
+        if let albumId { body["album_id"] = albumId }
+        if let season { body["season"] = season }
+        return try await send(makeRequest("api/highlights", method: "POST", json: body), as: HighlightV1.self)
+    }
+    func deleteHighlight(_ id: Int) async throws { try await action("api/highlights/\(id)", method: "DELETE") }
+
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {

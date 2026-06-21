@@ -346,3 +346,51 @@ struct ChatReply: Codable {
     let answer: String
     let photo_ids: [Int]
 }
+
+// MARK: - Highlights (video assistant)
+
+/// A motto offered by GET /api/highlights/mottos. `params` lists which inputs
+/// the motto needs — subset of {person, person2, year, album, season}.
+struct MottoV1: Codable, Identifiable, Hashable {
+    let key: String
+    let label: String
+    let params: [String]
+    var id: String { key }
+
+    enum CodingKeys: String, CodingKey { case key, label, params }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? key
+        params = (try? c.decodeIfPresent([String].self, forKey: .params)) ?? []
+    }
+}
+
+struct HighlightV1: Codable, Identifiable, Hashable {
+    let id: Int
+    let title: String
+    let motto: String
+    let status: String           // pending | rendering | done | error
+    let duration_sec: Double
+    let photo_count: Int
+    let cover_photo_id: Int?
+    let error_message: String?
+    let created_at: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, motto, status, duration_sec, photo_count
+        case cover_photo_id, error_message, created_at
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        motto = (try? c.decodeIfPresent(String.self, forKey: .motto)) ?? ""
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "pending"
+        duration_sec = (try? c.decodeIfPresent(Double.self, forKey: .duration_sec)) ?? 0
+        photo_count = (try? c.decodeIfPresent(Int.self, forKey: .photo_count)) ?? 0
+        cover_photo_id = try? c.decodeIfPresent(Int.self, forKey: .cover_photo_id)
+        error_message = try? c.decodeIfPresent(String.self, forKey: .error_message)
+        created_at = try? c.decodeIfPresent(String.self, forKey: .created_at)
+    }
+}
