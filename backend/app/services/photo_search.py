@@ -101,7 +101,9 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     if not q:
         return []
     base = [Photo.status == PhotoStatus.done, Photo.is_missing == False,  # noqa: E712
-            Photo.is_trashed == False, *(extra_conditions or [])]
+            Photo.is_trashed == False,
+            Photo.thumb_small.isnot(None),   # never return thumbnail-less photos → no grey tiles
+            *(extra_conditions or [])]
     tokens = _tokens(q)
 
     # ── semantic (jina-clip-v2) ───────────────────────────────────────────────
@@ -114,7 +116,7 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         from app.services import jina_embed
         vec = jina_embed.embed_text(q)
         if vec and len(vec) == 768:
-            max_dist = float(settings.get("search.max_distance", "0.78") or 0.78)
+            max_dist = float(settings.get("search.max_distance", "0.62") or 0.62)
             for col in (Photo.embedding, Photo.embedding_text):
                 dist = col.cosine_distance(vec)
                 rows = (await db.execute(
@@ -173,11 +175,17 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         await db.rollback()  # don't poison the session for the final fetch below
 
     # ── combine & rank ────────────────────────────────────────────────────────
+    # Relevance floor: a photo that ONLY matched semantically with a weak score is
+    # noise (the old behaviour filled the list to `limit` with ~irrelevant images).
+    # Keep it only if it had a keyword/person/relationship hit OR a decent semantic
+    # score. Tunable via search.min_score.
+    sem_floor = float(settings.get("search.min_score", "0.28") or 0.28)
     scores: dict = {}
     for pid, c in kw.items():
         scores[pid] = scores.get(pid, 0.0) + 10.0 + c * 2.0   # precise hits dominate
     for pid, s in sem.items():
-        scores[pid] = scores.get(pid, 0.0) + s                 # semantic 0..1 fills in
+        if pid in kw or s >= sem_floor:                        # drop weak semantic-only noise
+            scores[pid] = scores.get(pid, 0.0) + s             # semantic 0..1 fills in
     if not scores:
         return []
     top = sorted(scores, key=lambda p: -scores[p])[:limit]

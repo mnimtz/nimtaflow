@@ -270,6 +270,30 @@ def auto_cluster_faces_task(self):
     return _run(_run_cluster())
 
 
+@celery_app.task(bind=True, name="cluster_faces_full")
+def cluster_faces_full_task(self):
+    """Nightly FULL clustering — forms NEW people from the loose-face pool (the
+    heavy HDBSCAN the 'Clustern' button runs), not just grow. This is why ~13k
+    faces with embeddings sat unassigned: auto-cluster only grows existing people,
+    and new-cluster formation was manual-only. Runs in the CPU worker at a quiet
+    hour so it never blocks the website. Opt-out: face.auto_cluster_full=false."""
+    async def _run_full():
+        from app.core.database import init_db, get_db
+        from app.services.settings_loader import load_settings
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            if str(s.get("face.auto_cluster_full", "true")).lower() == "false":
+                return {"skipped": "disabled"}
+            try:
+                from app.services.face_cluster import cluster_unassigned
+                res = await cluster_unassigned(db)  # full: grow + form new clusters
+            except ImportError:
+                return {"skipped": "no sklearn"}
+            return res
+    return _run(_run_full())
+
+
 @celery_app.task(bind=True, name="retry_failed_ai")
 def retry_failed_ai_task(self):
     """Retry queue: re-enqueue photos whose AI failed (e.g. a Gemini outage) so a

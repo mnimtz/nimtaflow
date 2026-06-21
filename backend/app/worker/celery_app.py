@@ -1,8 +1,22 @@
+import os
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_process_init
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+@worker_process_init.connect
+def _flag_celery_worker(**_kwargs):
+    """Mark every prefork CHILD as a worker. In a child, sys.argv is rewritten to
+    ['-c', ...] (no 'celery'), so the argv sniff in _is_celery_worker() returned
+    False and the children wrongly used the bounded pool — each keeping ~20 idle
+    connections → the recurring 'too many clients already'. This env flag (read by
+    _is_celery_worker) forces NullPool in the children, which closes its connection
+    after every task. The worker-main and beat keep an intact argv, so the fallback
+    still covers them; the web backend never fires this signal → bounded pool."""
+    os.environ["PF_CELERY_WORKER"] = "1"
 
 celery_app = Celery(
     "photoflow",
@@ -134,5 +148,17 @@ celery_app.conf.beat_schedule = {
     "purge-trash-nightly": {
         "task": "purge_trash",
         "schedule": crontab(hour=5, minute=15),
+    },
+    # Nightly FULL face clustering — forms NEW people from the loose-face pool (the
+    # 13k unassigned faces). Heavy HDBSCAN, so off-peak + on the CPU worker. 03:50.
+    "cluster-faces-full-nightly": {
+        "task": "cluster_faces_full",
+        "schedule": crontab(hour=3, minute=50),
+    },
+    # Nightly: backfill ArcFace embeddings for imported (XMP-region) faces that have
+    # none, so they become clusterable instead of stuck as 'unbekannt'. 03:10.
+    "reembed-imported-nightly": {
+        "task": "reembed_imported",
+        "schedule": crontab(hour=3, minute=10),
     },
 }

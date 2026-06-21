@@ -13,7 +13,18 @@ def _is_celery_worker() -> bool:
     """True inside a Celery worker/beat process. Those run each task on a NEW event
     loop, so a pooled (loop-bound) asyncpg connection breaks ("Event loop is closed")
     → they MUST use NullPool. The web backend runs ONE persistent loop and uses a
-    bounded pool instead (see get_engine)."""
+    bounded pool instead (see get_engine).
+
+    CRITICAL: in a Celery PREFORK child, sys.argv is rewritten to ['-c', ...] — the
+    word "celery" is gone — so the argv check returned False in exactly the
+    processes that do the work. They then used the BOUNDED pool, and each of the N
+    prefork children kept up to pool_size+overflow idle connections → the recurring
+    "too many clients already" lockout (82 idle ROLLBACK connections). The compose
+    files now set PF_CELERY_WORKER=1 on every worker/beat service; trust that first,
+    fall back to the argv sniff for safety."""
+    import os
+    if os.environ.get("PF_CELERY_WORKER") == "1":
+        return True
     argv = " ".join(sys.argv).lower()
     return "celery" in argv
 
