@@ -57,12 +57,18 @@ SYSTEM = (
 )
 
 
-async def _identity_context(db: AsyncSession, settings: dict) -> str:
-    """Tell the assistant WHO the user is (the person linked via
-    relationships.self_person_id) and their relations, so 'meine Frau' / 'mein
-    Sohn' resolve instantly instead of the model asking 'wer ist deine Frau?'."""
+async def _identity_context(db: AsyncSession, settings: dict, user=None) -> str:
+    """Tell the assistant WHO the user is and their relations, so 'meine Frau' /
+    'mein Sohn' resolve instantly instead of 'wer ist deine Frau?'. Prefers the
+    LOGGED-IN user's linked person (access_config.person_id or User.person_id) so
+    multi-user installs answer per-user; falls back to the global
+    relationships.self_person_id."""
+    sid = None
+    if user is not None:
+        sid = (getattr(user, "access_config", None) or {}).get("person_id") if getattr(user, "access_config", None) else None
+        sid = sid or getattr(user, "person_id", None)
     try:
-        sid = int(settings.get("relationships.self_person_id"))
+        sid = int(sid if sid is not None else settings.get("relationships.self_person_id"))
     except (TypeError, ValueError):
         return ""
     from sqlalchemy import or_
@@ -272,7 +278,7 @@ async def _action_favorite(db: AsyncSession, settings: dict, args: dict) -> dict
     return {"ok": True, "anzahl": len(ids)}
 
 
-async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession) -> dict:
+async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession, user=None) -> dict:
     key = (settings.get("ai.gemini.api_key") or "").strip()
     if not key:
         return {"answer": "Kein Gemini-API-Key hinterlegt (Einstellungen → KI).", "photo_ids": []}
@@ -342,7 +348,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     img_budget = 8
     # Identity block (who is the user + relations) so 'meine Frau' resolves without
     # a clarifying round-trip.
-    system_text = SYSTEM + await _identity_context(db, settings)
+    system_text = SYSTEM + await _identity_context(db, settings, user)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {
@@ -430,8 +436,8 @@ async def _local_rag(message: str, settings: dict, db: AsyncSession) -> dict:
 
 
 async def chat(message: str, history: list, settings: dict, db: AsyncSession,
-               provider: Optional[str] = None) -> dict:
+               provider: Optional[str] = None, user=None) -> dict:
     prov = (provider or settings.get("chat.provider") or "gemini").lower()
     if prov == "local":
         return await _local_rag(message, settings, db)
-    return await _gemini_agent(message, history, settings, db)
+    return await _gemini_agent(message, history, settings, db, user=user)

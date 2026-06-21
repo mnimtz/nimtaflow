@@ -2114,6 +2114,13 @@ function UsersSection() {
   }
 
   const usersQuery = useQuery<AppUser[]>({ queryKey: ['users'], queryFn: () => api.get('/users').then(r => r.data), retry: false })
+  const peopleQuery = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 60_000 })
+  const srcQuery = useQuery<{ id: number; path: string }[]>({ queryKey: ['sources'], queryFn: () => api.get('/sources').then(r => r.data), staleTime: 60_000 })
+  const namedPeople = (peopleQuery.data || []).filter(p => (p.name || '').trim())
+  const sourcePaths = (srcQuery.data || []).map(s => s.path)
+  const toggleIn = (arr: any[] | undefined, v: any) => {
+    const s = new Set(arr || []); s.has(v) ? s.delete(v) : s.add(v); return [...s]
+  }
   const inval = () => qc.invalidateQueries({ queryKey: ['users'] })
   const createU = useMutation({ mutationFn: () => api.post('/users', add), onSuccess: () => { inval(); setShowAdd(false); setAdd({ email: '', name: '', password: '', role: 'user' }) } })
   const patchU = useMutation({ mutationFn: ({ id, body }: { id: number; body: Partial<AppUser> }) => api.patch(`/users/${id}`, body), onSuccess: inval })
@@ -2202,23 +2209,46 @@ function UsersSection() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-500 mb-1">Nur diese Personen-IDs (kommagetrennt, leer = alle)</label>
-                      <input type="text" value={(acc.visible_person_ids || []).join(',')}
-                        onChange={e => setAcc(a => ({ ...a, visible_person_ids: e.target.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) }))}
-                        placeholder="z.B. 19,20" className={sel + ' w-full'} />
+                      <label className="block text-xs text-zinc-500 mb-1">Dieser Benutzer IST Person (KI weiß dann, wer fragt → „meine Frau" etc.)</label>
+                      <select value={acc.person_id ?? ''} onChange={e => setAcc(a => ({ ...a, person_id: e.target.value ? Number(e.target.value) : undefined }))} className={sel + ' w-full'}>
+                        <option value="">— nicht verknüpft —</option>
+                        {namedPeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Nur diese Personen sichtbar (keine Auswahl = alle)</label>
+                      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                        {namedPeople.map(p => {
+                          const on = (acc.visible_person_ids || []).includes(p.id)
+                          return <button key={p.id} type="button" onClick={() => setAcc(a => ({ ...a, visible_person_ids: toggleIn(a.visible_person_ids, p.id) }))}
+                            className={`px-2 py-0.5 rounded-full text-xs ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{p.name}</button>
+                        })}
+                        {namedPeople.length === 0 && <span className="text-xs text-zinc-400">Keine benannten Personen.</span>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Nur diese Ordner (ein Pfad pro Zeile, leer = alle)</label>
-                        <textarea rows={2} value={(acc.folder_whitelist || []).join('\n')}
-                          onChange={e => setAcc(a => ({ ...a, folder_whitelist: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
-                          placeholder="/photos/Familie" className={sel + ' w-full resize-none'} />
+                        <label className="block text-xs text-zinc-500 mb-1">Nur diese Ordner (keine = alle)</label>
+                        <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                          {sourcePaths.map(path => (
+                            <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+                              <input type="checkbox" checked={(acc.folder_whitelist || []).includes(path)} onChange={() => setAcc(a => ({ ...a, folder_whitelist: toggleIn(a.folder_whitelist, path) }))} className="accent-indigo-500" />
+                              <span className="truncate">{path}</span>
+                            </label>
+                          ))}
+                          {sourcePaths.length === 0 && <span className="text-xs text-zinc-400">Keine Quellen.</span>}
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Diese Ordner ausblenden (ein Pfad pro Zeile)</label>
-                        <textarea rows={2} value={(acc.folder_blacklist || []).join('\n')}
-                          onChange={e => setAcc(a => ({ ...a, folder_blacklist: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
-                          placeholder="/photos/Privat" className={sel + ' w-full resize-none'} />
+                        <label className="block text-xs text-zinc-500 mb-1">Diese Ordner ausblenden</label>
+                        <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                          {sourcePaths.map(path => (
+                            <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+                              <input type="checkbox" checked={(acc.folder_blacklist || []).includes(path)} onChange={() => setAcc(a => ({ ...a, folder_blacklist: toggleIn(a.folder_blacklist, path) }))} className="accent-indigo-500" />
+                              <span className="truncate">{path}</span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
