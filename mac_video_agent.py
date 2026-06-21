@@ -85,6 +85,21 @@ def _plan(duration):
     return fps, max_tokens
 
 
+def _degenerate(text):
+    """True for model junk like '!!!!!…' or near-single-character repetition: almost
+    no letters, or one character dominating a long string. Such output must NOT be
+    stored — it pollutes the library and floods the logs."""
+    import re as _re
+    t = (text or "").strip()
+    if len(t) < 12:
+        return False
+    letters = len(_re.sub(r"[^A-Za-zÀ-ÿ]", "", t))
+    if letters < max(8, int(0.15 * len(t))):
+        return True
+    top = max(t.count(c) for c in set(t))
+    return top > 0.5 * len(t)
+
+
 def main():
     print(f"[m3-video] lade Modell {MODEL} … (einmalig)", flush=True)
     from mlx_vlm import load, generate
@@ -125,12 +140,15 @@ def main():
             r = generate(model, processor, fmt, video=tmp, fps=fps,
                          max_tokens=max_tokens, verbose=False)
             desc, tags = _split_desc_tags(r.text or "")
+            if desc and _degenerate(desc):
+                print(f"[m3-video] #{pid} degenerierte Ausgabe verworfen: {desc[:24]!r}…")
+                desc, tags = None, []
             _post(f"{SERVER}/api/remote/result/{pid}", {
                 "description": desc or None, "tags": tags, "embedding": None,
                 "faces": [], "faces_done": False,
                 "provider": f"remote:mlx:{MODEL.split('/')[-1]}", "worker": NAME,
                 "duration": round(time.time() - t, 1),
-                "error": None if desc else "no description",
+                "error": None if desc else "degenerate output",
             }, timeout=120)
             print(f"[m3-video] #{pid} {round(time.time()-t,1)}s (fps={fps}, "
                   f"{r.generation_tokens}tok): {desc[:70]}", flush=True)
@@ -166,6 +184,19 @@ def main():
                     print(f"[m3-video] #{pid} kaputtes Web-MP4 → re-transcode angefordert ({msg})")
                 except Exception as e2:
                     print(f"[m3-video] #{pid} video-broken-Meldung fehlgeschlagen: {e2}")
+            elif pid and ("nframes" in low or "must be in" in low):
+                # Too few frames to describe a video temporally (≈1-frame clip) → mark
+                # errored so it isn't re-served forever (re-transcode wouldn't help).
+                try:
+                    _post(f"{SERVER}/api/remote/result/{pid}", {
+                        "description": None, "tags": [], "embedding": None,
+                        "faces": [], "faces_done": False,
+                        "provider": f"remote:mlx:{MODEL.split('/')[-1]}", "worker": NAME,
+                        "error": f"too few frames: {msg}",
+                    }, timeout=60)
+                    print(f"[m3-video] #{pid} zu wenige Frames → als Fehler markiert ({msg})")
+                except Exception as e2:
+                    print(f"[m3-video] #{pid} Fehler-Meldung fehlgeschlagen: {e2}")
             else:
                 print(f"[m3-video] Video übersprungen: {msg}")
             time.sleep(POLL)

@@ -257,30 +257,33 @@ def generate_video_thumbnail(
 
     if at_second is None:
         dur = video_duration(src)
-        at_second = max(1.0, (dur or 10) * 0.1)
+        # 10% mark — but NEVER past the clip. A sub-second clip (Live Photo, tiny
+        # MOV) seeked to a 1.0s floor would land past EOF → empty frame → the video
+        # was wrongly flagged "thumbnail not generatable". Clamp to just inside the end.
+        at_second = max(0.0, (dur or 10) * 0.1)
+        if dur and at_second > dur - 0.05:
+            at_second = 0.0
 
     w, h = SIZES[size]
-    try:
-        r = subprocess.run(
-            [
-                _FFMPEG, "-y",
-                "-ss", str(at_second),
-                "-i", src,
-                "-vframes", "1",
-                # yadif deinterlaces AVCHD/.MTS frames — the comb artifacts of
-                # interlaced video otherwise make the face detector hallucinate
-                # high-confidence non-faces (walls/scenery). deint=1 = only touch
-                # frames flagged interlaced, so progressive video is untouched.
-                "-vf", f"yadif=deint=1,scale={w}:{h}:force_original_aspect_ratio=decrease",
-                "-q:v", "3",
-                str(out),
-            ],
-            capture_output=True, timeout=30,
-        )
-        if r.returncode == 0 and out.exists():
-            return str(out)
-    except Exception:
-        pass
+    # yadif deinterlaces AVCHD/.MTS frames — the comb artifacts of interlaced video
+    # otherwise make the face detector hallucinate high-confidence non-faces
+    # (walls/scenery). deint=1 = only touch frames flagged interlaced, so
+    # progressive video is untouched.
+    vf = f"yadif=deint=1,scale={w}:{h}:force_original_aspect_ratio=decrease"
+    # Try the chosen mark first; fall back to frame 0 — rescues tiny/odd clips whose
+    # only decodable frame is the very first one.
+    seeks = [at_second, 0.0] if at_second and at_second > 0 else [0.0]
+    for ss in seeks:
+        try:
+            r = subprocess.run(
+                [_FFMPEG, "-y", "-ss", str(max(0.0, ss)), "-i", src,
+                 "-vframes", "1", "-vf", vf, "-q:v", "3", str(out)],
+                capture_output=True, timeout=30,
+            )
+            if r.returncode == 0 and out.exists() and out.stat().st_size > 0:
+                return str(out)
+        except Exception:
+            pass
     return None
 
 

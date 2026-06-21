@@ -1247,11 +1247,11 @@ def revalidate_transcodes_task(self, resolution: int = 1080):
     delete the file, clear the path, reset ai_error, and re-enqueue a fresh transcode.
     Idempotent — safe to re-run; only touches broken files."""
     async def _run_rv():
-        import os, subprocess, pathlib
+        import os, subprocess
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
         from app.services.feature_log import log as flog
-        from sqlalchemy import select
+        from sqlalchemy import select, update
         init_db()
 
         def _probe_ok(p):
@@ -1265,7 +1265,7 @@ def revalidate_transcodes_task(self, resolution: int = 1080):
                 return False
 
         checked = broken = missing = 0
-        # Collect ids first (short read), then probe without holding a session.
+        # 1) One short read for all candidate ids.
         rows = []
         async for db in get_db():
             rows = (await db.execute(
@@ -1273,6 +1273,9 @@ def revalidate_transcodes_task(self, resolution: int = 1080):
                     Photo.is_video == True,                      # noqa: E712
                     Photo.video_webm_path.isnot(None)))).all()
             break
+        # 2) ffprobe each WITHOUT holding a DB session (the slow part). Collect the
+        #    broken ids — do NOT open a session per item (that leaks async generators).
+        bad = []
         for pid, wp in rows:
             checked += 1
             if wp and os.path.exists(wp):
@@ -1283,14 +1286,16 @@ def revalidate_transcodes_task(self, resolution: int = 1080):
                 broken += 1
             else:
                 missing += 1  # path set but file gone — also re-transcode
+            bad.append(pid)
+        # 3) One session: bulk-clear the broken ones, then re-enqueue transcodes.
+        if bad:
             async for db in get_db():
-                photo = await db.get(Photo, pid)
-                if photo:
-                    photo.video_webm_path = None
-                    photo.ai_error = False
-                    await db.commit()
+                await db.execute(update(Photo).where(Photo.id.in_(bad)).values(
+                    video_webm_path=None, ai_error=False))
+                await db.commit()
                 break
-            transcode_video_task.delay(pid, resolution)
+            for pid in bad:
+                transcode_video_task.delay(pid, resolution)
         flog("video", "INFO",
              f"Transcode-Revalidierung: {checked} geprüft, {broken} kaputt, "
              f"{missing} fehlend → neu eingereiht.")
