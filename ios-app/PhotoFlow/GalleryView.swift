@@ -28,10 +28,16 @@ struct GalleryView: View {
     @State private var uploadTotal = 0
     @State private var uploadNote: String?
     @AppStorage("gallery_group") private var groupMode = "day"   // none|day|month|year (default: Tag)
+    @AppStorage("gallery_layout") private var layoutMode = "grid" // grid|justified|masonry
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
     private let groupOpts: [(String, String)] = [
         ("none", "Keine Gruppierung"), ("day", "Nach Tag"), ("month", "Nach Monat"), ("year", "Nach Jahr"),
+    ]
+    private let layoutOpts: [(String, String, String)] = [
+        ("grid", "Raster", "square.grid.2x2"),
+        ("justified", "Justified", "rectangle.grid.1x2"),
+        ("masonry", "Masonry", "rectangle.grid.3x2"),
     ]
 
     private var sections: [(key: String, items: [PhotoV1])] {
@@ -72,13 +78,7 @@ struct GalleryView: View {
                            pinnedViews: groupMode == "none" ? [] : [.sectionHeaders]) {
                     ForEach(sections, id: \.key) { sec in
                         Section {
-                            LazyVGrid(columns: cols, spacing: 2) {
-                                ForEach(sec.items) { p in
-                                    PhotoTile(photo: p)
-                                        .onTapGesture { selected = p }
-                                        .onAppear { if p.id == photos.last?.id { Task { await load() } } }
-                                }
-                            }
+                            sectionBody(sec.items)
                         } header: {
                             if !sec.key.isEmpty {
                                 Text(groupLabel(sec.key))
@@ -102,6 +102,17 @@ struct GalleryView: View {
                             ForEach(groupOpts, id: \.0) { Text($0.1).tag($0.0) }
                         }
                     } label: { Image(systemName: "calendar") }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Layout", selection: $layoutMode) {
+                            ForEach(layoutOpts, id: \.0) { opt in
+                                Label(opt.1, systemImage: opt.2).tag(opt.0)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: layoutOpts.first { $0.0 == layoutMode }?.2 ?? "square.grid.2x2")
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     PhotosPicker(selection: $pickerItems, maxSelectionCount: nil,
@@ -147,6 +158,27 @@ struct GalleryView: View {
                            onRemoved: { id in photos.removeAll { $0.id == id } })
             }
         }
+    }
+
+    // MARK: - Section layout dispatch
+
+    @ViewBuilder private func sectionBody(_ items: [PhotoV1]) -> some View {
+        switch layoutMode {
+        case "masonry":   MasonrySection(items: items, onTap: { selected = $0 }, onLast: { onAppearLast($0) })
+        case "justified": JustifiedSection(items: items, onTap: { selected = $0 }, onLast: { onAppearLast($0) })
+        default:
+            LazyVGrid(columns: cols, spacing: 2) {
+                ForEach(items) { p in
+                    PhotoTile(photo: p)
+                        .onTapGesture { selected = p }
+                        .onAppear { onAppearLast(p) }
+                }
+            }
+        }
+    }
+
+    private func onAppearLast(_ p: PhotoV1) {
+        if p.id == photos.last?.id { Task { await load() } }
     }
 
     func upload(_ items: [PhotosPickerItem]) async {
@@ -230,6 +262,172 @@ struct GalleryView: View {
         } else {
             loadError = "Verbindung fehlgeschlagen: \((error as NSError).localizedDescription)"
         }
+    }
+}
+
+// MARK: - Variable-size photo cell (for masonry & justified)
+
+/// A photo cell that fills the size it is given (no forced square), reusing the
+/// same image loader + play/favorite badges as `PhotoTile`. Tapping opens the pager.
+struct VarPhotoCell: View {
+    @EnvironmentObject var api: APIClient
+    let photo: PhotoV1
+    let width: CGFloat
+    let height: CGFloat
+    let onTap: () -> Void
+
+    var body: some View {
+        Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"))
+            .frame(width: width, height: height)
+            .clipped()
+            .overlay(alignment: .bottomLeading) {
+                if photo.is_video {
+                    Image(systemName: "play.fill").font(.caption2).foregroundStyle(.white)
+                        .padding(4).shadow(radius: 2)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if photo.is_favorite {
+                    Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.red).padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+    }
+}
+
+private func clampedAspect(_ p: PhotoV1) -> Double {
+    // aspect = width / height. Guard against nil/0/extreme panoramas.
+    let a = p.aspect_ratio ?? 0
+    if a > 0.01 { return min(max(a, 0.4), 3.0) }
+    if let w = p.width, let h = p.height, h > 0 { return min(max(Double(w) / Double(h), 0.4), 3.0) }
+    return 1.0
+}
+
+// MARK: - Masonry (Pinterest-style columns)
+
+/// Splits the section's photos into N columns (2 compact / 3 regular) and renders
+/// each column as a VStack of variable-height cells. Items are placed into the
+/// currently shortest column for a balanced layout. Packing is computed once per
+/// width from the photo list (no per-frame recompute).
+struct MasonrySection: View {
+    let items: [PhotoV1]
+    let onTap: (PhotoV1) -> Void
+    let onLast: (PhotoV1) -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        GeometryReader { geo in
+            let spacing: CGFloat = 2
+            let colCount = (sizeClass == .compact) ? 2 : 3
+            let colWidth = (geo.size.width - spacing * CGFloat(colCount - 1)) / CGFloat(colCount)
+            let columns = pack(into: colCount, colWidth: colWidth)
+            HStack(alignment: .top, spacing: spacing) {
+                ForEach(0..<colCount, id: \.self) { ci in
+                    VStack(spacing: spacing) {
+                        ForEach(columns[ci]) { p in
+                            VarPhotoCell(photo: p, width: colWidth,
+                                         height: colWidth / CGFloat(clampedAspect(p)),
+                                         onTap: { onTap(p) })
+                                .onAppear { onLast(p) }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: totalHeight())
+    }
+
+    private func pack(into colCount: Int, colWidth: CGFloat) -> [[PhotoV1]] {
+        var cols = Array(repeating: [PhotoV1](), count: colCount)
+        var heights = Array(repeating: CGFloat(0), count: colCount)
+        for p in items {
+            let i = heights.firstIndex(of: heights.min()!) ?? 0
+            cols[i].append(p)
+            heights[i] += colWidth / CGFloat(clampedAspect(p)) + 2
+        }
+        return cols
+    }
+
+    // Approximate total height so GeometryReader gets a real height inside LazyVStack.
+    private func totalHeight() -> CGFloat {
+        let colCount = (sizeClass == .compact) ? 2 : 3
+        // Width unknown here; use screen width as a reasonable estimate.
+        let spacing: CGFloat = 2
+        let screenW = UIScreen.main.bounds.width - 4
+        let colWidth = (screenW - spacing * CGFloat(colCount - 1)) / CGFloat(colCount)
+        var heights = Array(repeating: CGFloat(0), count: colCount)
+        for p in items {
+            let i = heights.firstIndex(of: heights.min()!) ?? 0
+            heights[i] += colWidth / CGFloat(clampedAspect(p)) + spacing
+        }
+        return (heights.max() ?? 0)
+    }
+}
+
+// MARK: - Justified (Google-Photos style rows)
+
+/// Greedily packs photos into rows scaled to fill the container width at a target
+/// row height, keeping each item's aspect ratio. Packing is computed once per
+/// width from the photo list.
+struct JustifiedSection: View {
+    let items: [PhotoV1]
+    let onTap: (PhotoV1) -> Void
+    let onLast: (PhotoV1) -> Void
+
+    private let targetH: CGFloat = 140
+    private let spacing: CGFloat = 2
+
+    var body: some View {
+        GeometryReader { geo in
+            let rows = buildRows(width: geo.size.width)
+            VStack(spacing: spacing) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: spacing) {
+                        ForEach(row.items) { p in
+                            VarPhotoCell(photo: p,
+                                         width: CGFloat(clampedAspect(p)) * row.height,
+                                         height: row.height,
+                                         onTap: { onTap(p) })
+                                .onAppear { onLast(p) }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: totalHeight())
+    }
+
+    private struct Row { var items: [PhotoV1]; var height: CGFloat }
+
+    private func buildRows(width: CGFloat) -> [Row] {
+        guard width > 1 else { return [] }
+        var rows: [Row] = []
+        var cur: [PhotoV1] = []
+        var sumAspect: Double = 0
+        for p in items {
+            cur.append(p)
+            sumAspect += clampedAspect(p)
+            // gaps between items at target height
+            let gaps = Double(cur.count - 1) * Double(spacing)
+            let projectedWidth = sumAspect * Double(targetH) + gaps
+            if projectedWidth >= Double(width) {
+                let avail = Double(width) - gaps
+                let h = CGFloat(avail / sumAspect)
+                rows.append(Row(items: cur, height: min(h, targetH * 1.6)))
+                cur = []; sumAspect = 0
+            }
+        }
+        if !cur.isEmpty {
+            // last partial row keeps target height (don't stretch a lonely image)
+            rows.append(Row(items: cur, height: targetH))
+        }
+        return rows
+    }
+
+    private func totalHeight() -> CGFloat {
+        let rows = buildRows(width: UIScreen.main.bounds.width - 4)
+        return rows.reduce(0) { $0 + $1.height + spacing }
     }
 }
 
