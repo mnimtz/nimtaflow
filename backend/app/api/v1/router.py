@@ -636,6 +636,7 @@ class AlbumV1(BaseModel):
     album_type: str
     photo_count: int
     cover_url: Optional[str]
+    is_trip: bool = False   # stored manual trip (smart_criteria.trip) → iOS Reisen tab
 
 
 @router.get("/albums", response_model=List[AlbumV1])
@@ -661,6 +662,7 @@ async def albums_v1(request: Request, db: AsyncSession = Depends(get_db),
             album_type=a.album_type.value if hasattr(a.album_type, "value") else str(a.album_type),
             photo_count=counts.get(a.id, 0),
             cover_url=(f"{base}/api/photos/{cover_id}/thumbnail?size=medium" if cover_id else None),
+            is_trip=bool((a.smart_criteria or {}).get("trip")),
         ))
     return out
 

@@ -164,6 +164,8 @@ struct PersonDetailView: View {
     @State private var meNote = false
     @State private var showDelete = false
     @State private var selected: PhotoV1?
+    @State private var sort: GridSort = .newest
+    @State private var mediaFilter: GridMediaFilter = .all
     @Environment(\.dismiss) private var dismiss
 
     let cols = [GridItem(.adaptive(minimum: 90), spacing: 2)]
@@ -207,6 +209,27 @@ struct PersonDetailView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
                 }
 
+                HStack(spacing: 8) {
+                    Menu {
+                        Picker("Sortierung", selection: $sort) {
+                            ForEach(GridSort.allCases) { Text($0.label).tag($0) }
+                        }
+                    } label: {
+                        Label(sort.label, systemImage: "arrow.up.arrow.down").font(.subheadline)
+                    }
+                    Menu {
+                        Picker("Medientyp", selection: $mediaFilter) {
+                            ForEach(GridMediaFilter.allCases) { Text($0.label).tag($0) }
+                        }
+                    } label: {
+                        Label(mediaFilter.label, systemImage: "line.3.horizontal.decrease.circle").font(.subheadline)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .onChange(of: sort) { _ in Task { await reloadPhotos() } }
+                .onChange(of: mediaFilter) { _ in Task { await reloadPhotos() } }
+
                 LazyVGrid(columns: cols, spacing: 2) {
                     ForEach(photos) { p in
                         PhotoTile(photo: p)
@@ -234,10 +257,24 @@ struct PersonDetailView: View {
         .alert("Umbenennen", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Speichern") {
-                let target = newName
+                let target = newName.trimmingCharacters(in: .whitespaces)
+                guard !target.isEmpty else { return }
                 Task {
-                    do { try await api.renamePerson(person.id, name: target); displayName = target }
-                    catch { /* keep old name shown on failure */ }
+                    // If the typed name already belongs to a DIFFERENT person, merge
+                    // this one into it instead of creating a duplicate name.
+                    let all = (try? await api.people()) ?? []
+                    if let existing = all.first(where: {
+                        $0.id != person.id &&
+                        $0.name.compare(target, options: .caseInsensitive) == .orderedSame
+                    }) {
+                        do {
+                            try await api.mergePeople(target: existing.id, sources: [person.id])
+                            dismiss()
+                        } catch { /* keep old name shown on failure */ }
+                    } else {
+                        do { try await api.renamePerson(person.id, name: target); displayName = target }
+                        catch { /* keep old name shown on failure */ }
+                    }
                 }
             }
             Button("Abbrechen", role: .cancel) {}
@@ -245,8 +282,18 @@ struct PersonDetailView: View {
     }
     func loadPhotos() async {
         guard hasMore else { return }
-        do { let pg = try await api.personPhotos(person.id, cursor: cursor); photos += pg.items; cursor = pg.next_cursor; hasMore = pg.has_more }
+        do {
+            let pg = try await api.personPhotos(person.id, cursor: cursor,
+                                                sort: sort.rawValue, mediaType: mediaFilter.mediaType)
+            photos += pg.items; cursor = pg.next_cursor; hasMore = pg.has_more
+        }
         catch { hasMore = false }
+    }
+
+    /// Sort/filter changed → restart the feed.
+    func reloadPhotos() async {
+        photos = []; cursor = nil; hasMore = true
+        await loadPhotos()
     }
 }
 

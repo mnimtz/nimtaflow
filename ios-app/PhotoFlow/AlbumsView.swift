@@ -218,6 +218,7 @@ struct AlbumDetailView: View {
     @State private var showRename = false
     @State private var renameText = ""
     @State private var displayName: String?
+    @State private var sort: GridSort = .newest
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
@@ -228,7 +229,9 @@ struct AlbumDetailView: View {
                       onRemove: { p in
                           Task { try? await api.removeFromAlbum(album.id, photoId: p.id)
                                  photos.removeAll { $0.id == p.id }; onChange() }
-                      })
+                      },
+                      sort: $sort,
+                      onControlsChange: { Task { await reload() } })
         .navigationTitle(displayName ?? album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -262,8 +265,14 @@ struct AlbumDetailView: View {
         guard hasMore, !loading else { return }
         loading = true; defer { loading = false }
         do {
-            let page = try await api.albumPhotos(album.id, cursor: cursor)
+            let page = try await api.albumPhotos(album.id, cursor: cursor, sort: sort.rawValue)
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
         } catch { hasMore = false }
+    }
+
+    /// Sort changed → start the feed over with the new ordering.
+    func reload() async {
+        photos = []; cursor = nil; hasMore = true
+        await load()
     }
 }

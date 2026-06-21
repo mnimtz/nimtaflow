@@ -118,16 +118,68 @@ extension String {
 /// square tiles, the same full-screen viewer (with details/share/rating), the
 /// same pagination + optional long-press action. Gallery has its own variant only
 /// because it adds date-section grouping.
+/// Sort options offered by the shared grid toolbar. Maps to the backend `sort`
+/// query param ("newest" is the default everywhere).
+enum GridSort: String, CaseIterable, Identifiable {
+    case newest, oldest
+    var id: String { rawValue }
+    var label: String { self == .newest ? "Neueste" : "Älteste" }
+}
+
+/// Media-type filter offered by the shared grid toolbar. `nil` = Alle.
+enum GridMediaFilter: String, CaseIterable, Identifiable {
+    case all, photos, videos
+    var id: String { rawValue }
+    var label: String { self == .all ? "Alle" : (self == .photos ? "Fotos" : "Videos") }
+    /// Backend `media_type` value; nil means "no filter".
+    var mediaType: String? { self == .photos ? "image" : (self == .videos ? "video" : nil) }
+}
+
 struct PhotoGridView: View {
     let photos: [PhotoV1]
     var onReachEnd: (() -> Void)? = nil
     var removeLabel: String? = nil          // e.g. "Aus Album entfernen"
     var onRemove: ((PhotoV1) -> Void)? = nil
+    // Optional sort/filter controls. When a binding is supplied a small toolbar
+    // is shown above the grid; `onControlsChange` fires so the parent can re-fetch.
+    var sort: Binding<GridSort>? = nil
+    var mediaFilter: Binding<GridMediaFilter>? = nil
+    var onControlsChange: (() -> Void)? = nil
     @State private var selected: PhotoV1?
     private let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
+    private var showControls: Bool { sort != nil || mediaFilter != nil }
+
     var body: some View {
         ScrollView {
+            if showControls {
+                HStack(spacing: 8) {
+                    if let sort {
+                        Menu {
+                            Picker("Sortierung", selection: sort) {
+                                ForEach(GridSort.allCases) { Text($0.label).tag($0) }
+                            }
+                        } label: {
+                            Label(sort.wrappedValue.label, systemImage: "arrow.up.arrow.down")
+                                .font(.subheadline)
+                        }
+                    }
+                    if let mediaFilter {
+                        Menu {
+                            Picker("Medientyp", selection: mediaFilter) {
+                                ForEach(GridMediaFilter.allCases) { Text($0.label).tag($0) }
+                            }
+                        } label: {
+                            Label(mediaFilter.wrappedValue.label, systemImage: "line.3.horizontal.decrease.circle")
+                                .font(.subheadline)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .onChange(of: sort?.wrappedValue) { _ in onControlsChange?() }
+                .onChange(of: mediaFilter?.wrappedValue) { _ in onControlsChange?() }
+            }
             LazyVGrid(columns: cols, spacing: 2) {
                 ForEach(photos) { p in
                     PhotoTile(photo: p)

@@ -135,8 +135,10 @@ final class APIClient: ObservableObject {
         return try await get("api/v1/search?limit=80&q=\(enc)", as: PhotoPage.self)
     }
     func people() async throws -> [PersonV1] { try await get("api/v1/people", as: [PersonV1].self) }
-    func personPhotos(_ id: Int, cursor: Int?) async throws -> PhotoPage {
+    func personPhotos(_ id: Int, cursor: Int?, sort: String? = nil, mediaType: String? = nil) async throws -> PhotoPage {
         var p = "api/v1/people/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
+        if let sort { p += "&sort=\(sort)" }
+        if let mediaType { p += "&media_type=\(mediaType)" }
         return try await get(p, as: PhotoPage.self)
     }
     func relationshipsGraph() async throws -> RelGraph { try await get("api/v1/relationships", as: RelGraph.self) }
@@ -181,8 +183,9 @@ final class APIClient: ObservableObject {
 
     // MARK: Albums
     func albums() async throws -> [AlbumV1] { try await get("api/v1/albums", as: [AlbumV1].self) }
-    func albumPhotos(_ id: Int, cursor: Int?) async throws -> PhotoPage {
+    func albumPhotos(_ id: Int, cursor: Int?, sort: String? = nil) async throws -> PhotoPage {
         var p = "api/v1/albums/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
+        if let sort { p += "&sort=\(sort)" }
         return try await get(p, as: PhotoPage.self)
     }
     func createAlbum(name: String, type: String = "manual",
