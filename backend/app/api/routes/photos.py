@@ -786,8 +786,12 @@ async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = 
     if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     exact = getattr(photo, f"thumb_{size}", None)
-    thumb = exact or photo.thumb_medium or photo.thumb_small
-    if not thumb or not os.path.exists(thumb):
+    # Serve the requested size if its FILE exists, else fall back to ANY size whose
+    # file is actually on disk (a set-but-missing thumb_medium must not 404 when
+    # thumb_small exists — that was the grey-tile cause in search/grids).
+    thumb = next((t for t in (exact, photo.thumb_large, photo.thumb_medium, photo.thumb_small)
+                  if t and os.path.exists(t)), None)
+    if not thumb:
         raise HTTPException(404, "Thumbnail not ready")
     # Cache forever ONLY when we serve the exact size requested. If the requested
     # size isn't ready yet and we fall back to a smaller one, send no-cache so the

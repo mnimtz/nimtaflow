@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2 } from 'lucide-react'
+import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2, Pencil } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import ShareDialog from '../components/ShareDialog'
@@ -56,6 +56,10 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
     mutationFn: () => api.delete(`/albums/${album.id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Reise gelöscht', 'success'); onBack() },
   })
+  const renameTrip = useMutation({
+    mutationFn: (name: string) => api.patch(`/albums/${album.id}`, { name }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Reise umbenannt', 'success') },
+  })
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -63,6 +67,8 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
         <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => { const n = window.prompt('Reise umbenennen:', album.name); if (n && n.trim() && n !== album.name) renameTrip.mutate(n.trim()) }}
+            className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><Pencil size={15} /> Umbenennen</button>
           <button onClick={() => setShowShare(true)}
             className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Share2 size={15} /> Teilen</button>
           <button onClick={async () => { if (await confirm({ title: `Reise „${album.name}" löschen?`, message: 'Das Album wird gelöscht. Die Fotos bleiben in deiner Galerie.', danger: true, confirmLabel: 'Löschen' })) delTrip.mutate() }}

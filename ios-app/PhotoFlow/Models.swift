@@ -101,6 +101,27 @@ struct AlbumV1: Codable, Identifiable, Hashable {
     let album_type: String
     let photo_count: Int
     let cover_url: String?
+    let is_trip: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, album_type, photo_count, cover_url, is_trip
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        album_type = try c.decode(String.self, forKey: .album_type)
+        photo_count = try c.decode(Int.self, forKey: .photo_count)
+        cover_url = try c.decodeIfPresent(String.self, forKey: .cover_url)
+        is_trip = (try? c.decodeIfPresent(Bool.self, forKey: .is_trip)) ?? false
+    }
+    init(id: Int, name: String, description: String?, album_type: String,
+         photo_count: Int, cover_url: String?, is_trip: Bool = false) {
+        self.id = id; self.name = name; self.description = description
+        self.album_type = album_type; self.photo_count = photo_count
+        self.cover_url = cover_url; self.is_trip = is_trip
+    }
 }
 
 // MARK: - Map

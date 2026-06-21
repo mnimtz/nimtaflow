@@ -1,0 +1,473 @@
+"""Highlights / memory-video assistant.
+
+Builds a short slideshow MP4 from a user's photos for a chosen "motto"
+(e.g. one person across the years, a year-in-review, a trip album, a season).
+
+Two layers:
+  • select_photos_for_motto() — picks the right photos for a motto (async, DB)
+  • render_slideshow()        — turns their cached LARGE thumbnails into an MP4
+                                via ffmpeg (xfade crossfades, concat fallback).
+
+The slideshow always renders from the cached `thumb_large` JPEGs (already sized,
+no original decode), and NEVER hard-fails: if the xfade chain errors it falls
+back to a plain concat so a file is always produced.
+"""
+import os
+import shutil
+import subprocess
+import tempfile
+from typing import List, Optional, Any
+
+from sqlalchemy import select, or_, and_, func, extract
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.photo import Photo, PhotoStatus
+from app.models.face import Face
+from app.models.album import AlbumPhoto
+
+_FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+_RENDER_TIMEOUT = 360  # 6 minutes
+
+
+# ── Motto catalogue ────────────────────────────────────────────────────────────
+# label: German UI label
+# params: which form fields the UI must collect for this motto
+#   person  → person_id      person2 → person_id2
+#   year    → year           album   → album_id        season → season
+MOTTOS: List[dict] = [
+    {"motto": "person_years",      "label": "Eine Person im Laufe der Jahre",
+     "params": ["person"],
+     "description": "Ein Mensch, quer durch alle Jahre — chronologisch."},
+    {"motto": "person_happy",      "label": "Die schönsten Lächeln einer Person",
+     "params": ["person"],
+     "description": "Fröhliche Momente, Lachen und glückliche Gesichter."},
+    {"motto": "parent_child",      "label": "Zwei Menschen gemeinsam (z. B. Eltern & Kind)",
+     "params": ["person", "person2"],
+     "description": "Fotos, auf denen beide zusammen sind — über die Jahre."},
+    {"motto": "year_review",       "label": "Jahresrückblick",
+     "params": ["year"],
+     "description": "Die Highlights eines Jahres (Favoriten & bestbewertet zuerst)."},
+    {"motto": "through_the_years", "label": "Quer durch alle Jahre",
+     "params": [],
+     "description": "Ein Bild pro Jahr aus der gesamten Mediathek."},
+    {"motto": "trip",              "label": "Eine Reise / ein Album",
+     "params": ["album"],
+     "description": "Die Fotos einer Reise in Aufnahme-Reihenfolge."},
+    {"motto": "season",            "label": "Jahreszeit / Feiertag",
+     "params": ["season"],
+     "description": "Weihnachten, Ostern, Sommer … über mehrere Jahre."},
+    {"motto": "newest_50",         "label": "Die neuesten Aufnahmen",
+     "params": [],
+     "description": "Die zuletzt aufgenommenen Fotos."},
+    {"motto": "most_favorited",    "label": "Deine Favoriten",
+     "params": [],
+     "description": "Alle als Favorit markierten Fotos, neueste zuerst."},
+    {"motto": "top_rated",         "label": "Bestbewertete Fotos",
+     "params": [],
+     "description": "Die am höchsten bewerteten Fotos."},
+    {"motto": "random_memories",   "label": "Zufällige Erinnerungen",
+     "params": [],
+     "description": "Eine bunte, zufällige Auswahl aus der ganzen Mediathek."},
+]
+
+# season name → list of (month, day) anchor windows (±~3 weeks) across all years
+_SEASON_MONTHS = {
+    "christmas": [12],
+    "weihnachten": [12],
+    "easter": [3, 4],
+    "ostern": [3, 4],
+    "summer": [6, 7, 8],
+    "sommer": [6, 7, 8],
+    "winter": [12, 1, 2],
+    "spring": [3, 4, 5],
+    "fruehling": [3, 4, 5],
+    "frühling": [3, 4, 5],
+    "autumn": [9, 10, 11],
+    "fall": [9, 10, 11],
+    "herbst": [9, 10, 11],
+    "halloween": [10],
+}
+
+
+def _cap_from_duration(duration_sec: Optional[float]) -> int:
+    """How many images fit in `duration_sec` (~2.5 s each), clamped 8..120."""
+    d = duration_sec or 60.0
+    n = int(round(d / 2.5))
+    return max(8, min(120, n))
+
+
+def _base_conditions(extra_conditions: Optional[list]) -> list:
+    return [
+        Photo.status == PhotoStatus.done,
+        Photo.is_trashed == False,            # noqa: E712
+        Photo.is_missing == False,            # noqa: E712
+        Photo.thumb_large.isnot(None),
+        *(extra_conditions or []),
+    ]
+
+
+def _opt(opts: Any, key: str, default=None):
+    """Read a value from opts whether it's a dict or an object."""
+    if opts is None:
+        return default
+    if isinstance(opts, dict):
+        return opts.get(key, default)
+    return getattr(opts, key, default)
+
+
+def _spread_across_years(photos: List[Photo], cap: int) -> List[Photo]:
+    """One+ representative photo per year, chronological, capped to `cap`.
+
+    Picks at least one per year (favorites/rated first within a year), then, if
+    room remains, fills more from the busiest years — always returned in
+    chronological order so the video reads as a timeline.
+    """
+    from collections import defaultdict
+    by_year: dict = defaultdict(list)
+    for p in photos:
+        y = p.taken_at.year if p.taken_at else 0
+        by_year[y].append(p)
+    for y in by_year:
+        by_year[y].sort(key=lambda p: (
+            0 if p.is_favorite else 1,
+            -(p.user_rating or 0),
+            p.taken_at or _MIN_DT(),
+        ))
+    years = sorted(by_year.keys())
+    chosen: List[Photo] = []
+    # round-robin: take the i-th best of each year until we hit the cap
+    idx = 0
+    while len(chosen) < cap:
+        added = False
+        for y in years:
+            if idx < len(by_year[y]):
+                chosen.append(by_year[y][idx])
+                added = True
+                if len(chosen) >= cap:
+                    break
+        if not added:
+            break
+        idx += 1
+    chosen.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+    return chosen
+
+
+def _MIN_DT():
+    from datetime import datetime, timezone
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+async def _person_photo_ids(db: AsyncSession, person_id: int) -> List[int]:
+    rows = (await db.execute(
+        select(Face.photo_id).where(Face.person_id == person_id)
+    )).all()
+    return [r[0] for r in rows]
+
+
+# ── Motto selectors ─────────────────────────────────────────────────────────────
+
+async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
+                                   extra_conditions: Optional[list] = None) -> List[Photo]:
+    """Pick the photos for a given motto. Returns an ordered list of Photo.
+
+    `opts` may be a dict or an object exposing: person_id, person_id2, year,
+    album_id, season, duration_sec.
+    `extra_conditions` is a list of SQLAlchemy WHERE clauses (ACL) to AND in.
+    """
+    cap = _cap_from_duration(_opt(opts, "duration_sec"))
+    base = _base_conditions(extra_conditions)
+
+    # ── person across the years ──────────────────────────────────────────────
+    if motto == "person_years":
+        pid = _opt(opts, "person_id")
+        if not pid:
+            return []
+        photo_ids = await _person_photo_ids(db, int(pid))
+        if not photo_ids:
+            return []
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.id.in_(photo_ids))
+        )).scalars().all()
+        return _spread_across_years(list(photos), cap)
+
+    # ── person, happy/smiling moments ────────────────────────────────────────
+    if motto == "person_happy":
+        pid = _opt(opts, "person_id")
+        if not pid:
+            return []
+        photo_ids = set(await _person_photo_ids(db, int(pid)))
+        if not photo_ids:
+            return []
+        try:
+            from app.services.photo_search import search_photos
+            from app.services.settings_loader import load_settings
+            s = await load_settings(db)
+            hits = await search_photos(
+                db, "lächeln fröhlich lachen glücklich", s,
+                limit=cap * 4, extra_conditions=extra_conditions,
+            )
+        except Exception:
+            await db.rollback()
+            hits = []
+        happy = [p for p in hits if p.id in photo_ids and p.thumb_large]
+        if not happy:
+            # fallback: just that person's photos, chronological
+            photos = (await db.execute(
+                select(Photo).where(*base, Photo.id.in_(list(photo_ids)))
+                .order_by(Photo.taken_at)
+            )).scalars().all()
+            return list(photos)[:cap]
+        happy.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return happy[:cap]
+
+    # ── two people together (parent & child) over the years ──────────────────
+    if motto == "parent_child":
+        p1 = _opt(opts, "person_id")
+        p2 = _opt(opts, "person_id2")
+        if not p1 or not p2:
+            return []
+        ids1 = set(await _person_photo_ids(db, int(p1)))
+        ids2 = set(await _person_photo_ids(db, int(p2)))
+        both = ids1 & ids2
+        if not both:
+            return []
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.id.in_(list(both)))
+            .order_by(Photo.taken_at)
+        )).scalars().all()
+        photos = list(photos)
+        if len(photos) <= cap:
+            return photos
+        # evenly subsample across the timeline so the whole span is represented
+        step = len(photos) / cap
+        return [photos[int(i * step)] for i in range(cap)]
+
+    # ── best of a single year ────────────────────────────────────────────────
+    if motto == "year_review":
+        year = _opt(opts, "year")
+        if not year:
+            return []
+        photos = (await db.execute(
+            select(Photo).where(*base, extract("year", Photo.taken_at) == int(year))
+            .order_by(
+                Photo.is_favorite.desc(),
+                Photo.user_rating.desc().nullslast(),
+                Photo.taken_at,
+            )
+        )).scalars().all()
+        photos = list(photos)
+        # keep the best `cap`, then re-sort chronologically for a timeline feel
+        best = photos[:cap]
+        best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return best
+
+    # ── one representative per year, whole library ───────────────────────────
+    if motto == "through_the_years":
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.taken_at.isnot(None))
+        )).scalars().all()
+        return _spread_across_years(list(photos), cap)
+
+    # ── a trip / album in capture order ──────────────────────────────────────
+    if motto == "trip":
+        album_id = _opt(opts, "album_id")
+        if not album_id:
+            return []
+        photos = (await db.execute(
+            select(Photo)
+            .join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
+            .where(*base, AlbumPhoto.album_id == int(album_id))
+            .order_by(Photo.taken_at, AlbumPhoto.sort_order)
+        )).scalars().all()
+        photos = list(photos)
+        if len(photos) <= cap:
+            return photos
+        step = len(photos) / cap
+        return [photos[int(i * step)] for i in range(cap)]
+
+    # ── a season / holiday across years ──────────────────────────────────────
+    if motto == "season":
+        season = (_opt(opts, "season") or "").strip().lower()
+        months: List[int] = []
+        if season in _SEASON_MONTHS:
+            months = _SEASON_MONTHS[season]
+        else:
+            m = _opt(opts, "month")
+            if m:
+                try:
+                    months = [int(m)]
+                except (TypeError, ValueError):
+                    months = []
+        if not months:
+            return []
+        photos = (await db.execute(
+            select(Photo).where(
+                *base,
+                Photo.taken_at.isnot(None),
+                extract("month", Photo.taken_at).in_(months),
+            ).order_by(Photo.taken_at)
+        )).scalars().all()
+        photos = list(photos)
+        if len(photos) <= cap:
+            return photos
+        step = len(photos) / cap
+        return [photos[int(i * step)] for i in range(cap)]
+
+    # ── newest N ─────────────────────────────────────────────────────────────
+    if motto == "newest_50":
+        n = min(cap, 50) if cap < 50 else cap
+        photos = (await db.execute(
+            select(Photo).where(*base)
+            .order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+            .limit(n)
+        )).scalars().all()
+        photos = list(photos)
+        photos.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return photos
+
+    # ── favorites ────────────────────────────────────────────────────────────
+    if motto == "most_favorited":
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.is_favorite == True)   # noqa: E712
+            .order_by(Photo.taken_at.desc().nullslast()).limit(cap)
+        )).scalars().all()
+        photos = list(photos)
+        photos.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return photos
+
+    # ── top rated ────────────────────────────────────────────────────────────
+    if motto == "top_rated":
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.user_rating.isnot(None), Photo.user_rating > 0)
+            .order_by(Photo.user_rating.desc(), Photo.taken_at.desc().nullslast())
+            .limit(cap)
+        )).scalars().all()
+        photos = list(photos)
+        photos.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return photos
+
+    # ── random memories ──────────────────────────────────────────────────────
+    if motto == "random_memories":
+        photos = (await db.execute(
+            select(Photo).where(*base).order_by(func.random()).limit(cap)
+        )).scalars().all()
+        return list(photos)
+
+    return []
+
+
+# ── Slideshow rendering ─────────────────────────────────────────────────────────
+
+def _scale_pad(w: int, h: int) -> str:
+    return (f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+            f"fps=30,format=yuv420p")
+
+
+def render_slideshow(image_paths: List[str], out_path: str, seconds_per: float,
+                     width: int = 1920, height: int = 1080) -> bool:
+    """Render a slideshow MP4 from `image_paths` (cached large thumbnails).
+
+    Tries an xfade crossfade chain first; on any failure falls back to a plain
+    concat slideshow so a file is ALWAYS produced. Output: H.264 + yuv420p +
+    faststart. Returns True if an MP4 was written, else False.
+    """
+    images = [p for p in image_paths if p and os.path.exists(p)]
+    if not images:
+        return False
+
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    seconds_per = max(0.8, float(seconds_per or 2.5))
+
+    # Try the nicer crossfade version first; fall back to concat on any problem.
+    if len(images) >= 2 and _render_xfade(images, out_path, seconds_per, width, height):
+        return True
+    if _render_concat(images, out_path, seconds_per, width, height):
+        return True
+    # Last resort: xfade for the single-image / edge case (concat handles 1 img too)
+    return os.path.exists(out_path) and os.path.getsize(out_path) > 1000
+
+
+def _render_xfade(images: List[str], out_path: str, seconds_per: float,
+                  width: int, height: int) -> bool:
+    """Crossfade chain. Each still shows for `seconds_per`, with a short fade
+    between consecutive stills. Kept modest in size to avoid a huge filtergraph."""
+    # A very long filtergraph (hundreds of inputs) is fragile/slow; cap xfade use.
+    if len(images) > 80:
+        return False
+    fade = min(0.6, seconds_per * 0.4)
+    hold = seconds_per                      # full-visibility time per still
+    clip = hold + fade                      # each input loops this long
+
+    cmd = [_FFMPEG, "-y", "-hide_banner", "-loglevel", "error"]
+    for img in images:
+        cmd += ["-loop", "1", "-t", f"{clip:.3f}", "-i", img]
+
+    sp = _scale_pad(width, height)
+    filt = []
+    for i in range(len(images)):
+        filt.append(f"[{i}:v]{sp}[v{i}]")
+
+    # Chain xfades: offset accumulates by `hold` each step.
+    last = "v0"
+    offset = hold
+    for i in range(1, len(images)):
+        out_lbl = "outv" if i == len(images) - 1 else f"x{i}"
+        filt.append(
+            f"[{last}][v{i}]xfade=transition=fade:duration={fade:.3f}:"
+            f"offset={offset:.3f}[{out_lbl}]"
+        )
+        last = out_lbl
+        offset += hold
+
+    cmd += [
+        "-filter_complex", ";".join(filt),
+        "-map", "[outv]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        out_path,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
+        return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
+    except Exception:
+        return False
+
+
+def _render_concat(images: List[str], out_path: str, seconds_per: float,
+                   width: int, height: int) -> bool:
+    """Plain concat slideshow — robust, no transitions. Each image held
+    `seconds_per` seconds. This is the always-works fallback."""
+    tmp = tempfile.mkdtemp(prefix="pfhl_")
+    list_file = os.path.join(tmp, "list.txt")
+    try:
+        lines = []
+        for img in images:
+            lines.append(f"file '{img}'")
+            lines.append(f"duration {seconds_per:.3f}")
+        # concat demuxer drops the last image's duration → repeat it once.
+        lines.append(f"file '{images[-1]}'")
+        with open(list_file, "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+        cmd = [
+            _FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", list_file,
+            "-vf", _scale_pad(width, height),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            out_path,
+        ]
+        r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
+        return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def highlight_output_path(cache_path: str, highlight_id: int) -> str:
+    return os.path.join(cache_path, "highlights", f"{highlight_id}.mp4")

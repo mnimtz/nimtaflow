@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Heart, Play, Star, Check } from 'lucide-react'
+import { Heart, Play, Star, Check, ImageOff } from 'lucide-react'
 import { thumbUrl, type Photo } from '../../lib/api'
 
 export type Indexed = { photo: Photo; index: number }
@@ -29,12 +29,25 @@ export function buildRows(items: Indexed[], containerWidth: number, targetHeight
 
 function TileImage({ photo, isSelected }: { photo: Photo; isSelected: boolean }) {
   const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [triedSmall, setTriedSmall] = useState(false)
   const [hover, setHover] = useState(false)
   return (
     <div className="absolute inset-0" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {!loaded && <div className="absolute inset-0 animate-pulse bg-gray-200 dark:bg-gray-800" />}
+      {!loaded && !failed && <div className="absolute inset-0 animate-pulse bg-gray-200 dark:bg-gray-800" />}
+      {failed && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400">
+          <ImageOff size={20} />
+        </div>
+      )}
       <img
         src={thumbUrl(photo, 'medium')} alt={photo.filename} onLoad={() => setLoaded(true)} loading="lazy" draggable={false}
+        onError={e => {
+          // medium missing → try small once; if that fails too, show a placeholder
+          // instead of an endless grey pulse.
+          if (!triedSmall) { setTriedSmall(true); (e.currentTarget as HTMLImageElement).src = thumbUrl(photo, 'small') }
+          else setFailed(true)
+        }}
         className={`w-full h-full object-cover transition-all duration-500 ${loaded ? 'opacity-100' : 'opacity-0'} ${isSelected ? 'scale-[0.92]' : 'group-hover:scale-[1.04]'}`}
       />
       {photo.is_video && hover && (

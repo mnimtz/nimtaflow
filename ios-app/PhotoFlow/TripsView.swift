@@ -7,12 +7,15 @@ struct TripsView: View {
     @AppStorage("trips_min_photos") private var minPhotos: Int = 8
     @AppStorage("trips_dismissed") private var dismissedRaw: String = ""
     @State private var events: [TripEventV1] = []
+    @State private var storedTrips: [AlbumV1] = []
     @State private var homeCity: String?
     @State private var tripsOnly = true
     @State private var loading = false
     @State private var error: String?
     @State private var showSettings = false
     @State private var showWizard = false
+    @State private var renaming: AlbumV1?
+    @State private var renameText = ""
 
     private var dismissed: Set<String> {
         Set(dismissedRaw.split(separator: "\n").map(String.init))
@@ -33,6 +36,26 @@ struct TripsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top, 4)
                 }
                 LazyVStack(spacing: 14) {
+                    if !storedTrips.isEmpty {
+                        Text("Gespeicherte Reisen").font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(storedTrips) { t in
+                            NavigationLink(value: t) { StoredTripCard(album: t) }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button { renameText = t.name; renaming = t } label: {
+                                        Label("Umbenennen", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        Task { try? await api.deleteTrip(t.id); await load() }
+                                    } label: { Label("Reise löschen", systemImage: "trash") }
+                                }
+                        }
+                        if !visibleEvents.isEmpty {
+                            Text("Automatisch erkannt").font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                        }
+                    }
                     ForEach(visibleEvents) { e in
                         NavigationLink(value: e) { TripCard(event: e) }
                             .buttonStyle(.plain)
@@ -45,7 +68,7 @@ struct TripsView: View {
                 }
                 .padding(12)
                 if loading { ProgressView().padding() }
-                if !loading && visibleEvents.isEmpty && error == nil {
+                if !loading && visibleEvents.isEmpty && storedTrips.isEmpty && error == nil {
                     ContentUnavailableView("Keine Reisen", systemImage: "airplane.departure",
                                            description: Text(tripsOnly ? "Schalte ‚Alle‘ ein oder senke ‚min. Bilder‘ in den Einstellungen." : "Noch keine Events erkannt."))
                         .padding(.top, 60)
@@ -53,6 +76,7 @@ struct TripsView: View {
             }
             .navigationTitle("Reisen")
             .navigationDestination(for: TripEventV1.self) { TripDetailView(event: $0) }
+            .navigationDestination(for: AlbumV1.self) { AlbumDetailView(album: $0) { Task { await load() } } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
@@ -76,6 +100,18 @@ struct TripsView: View {
                     .presentationDetents([.medium])
             }
             .sheet(isPresented: $showWizard) { NewTripWizard() }
+            .alert("Reise umbenennen", isPresented: Binding(get: { renaming != nil },
+                                                            set: { if !$0 { renaming = nil } })) {
+                TextField("Name", text: $renameText)
+                Button("Speichern") {
+                    if let t = renaming {
+                        let n = renameText.trimmingCharacters(in: .whitespaces)
+                        if !n.isEmpty { Task { try? await api.renameAlbum(t.id, name: n); await load() } }
+                    }
+                    renaming = nil
+                }
+                Button("Abbrechen", role: .cancel) { renaming = nil }
+            }
             .refreshable { await load() }
             .task { if events.isEmpty { await load() } }
         }
@@ -84,9 +120,42 @@ struct TripsView: View {
     func load() async {
         loading = true; defer { loading = false }
         do {
-            let r = try await api.trips(tripsOnly: tripsOnly, minPhotos: minPhotos)
+            async let tripsResp = api.trips(tripsOnly: tripsOnly, minPhotos: minPhotos)
+            async let albumsResp = api.albums()
+            let r = try await tripsResp
             events = r.events; homeCity = r.home_city; error = nil
+            storedTrips = ((try? await albumsResp) ?? []).filter { $0.is_trip }
         } catch { self.error = "Reisen konnten nicht geladen werden." }
+    }
+}
+
+/// Card for a stored trip-album (cover + name + photo count).
+private struct StoredTripCard: View {
+    @EnvironmentObject var api: APIClient
+    let album: AlbumV1
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(16.0/9.0, contentMode: .fit)
+            .overlay {
+                if let c = album.cover_url { Thumb(url: api.url(c)) }
+                else { Color.gray.opacity(0.18) }
+            }
+            .overlay {
+                LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "airplane").font(.caption2)
+                        Text(album.name).font(.headline)
+                    }
+                    Text("\(album.photo_count) Fotos").font(.caption)
+                }
+                .foregroundStyle(.white).padding(12)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
     }
 }
 

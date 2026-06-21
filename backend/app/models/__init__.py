@@ -9,8 +9,10 @@ from .settings import Setting
 from .source import PhotoSource
 from .relationship import PersonRelationship
 from .share import Share, ShareType
+from .highlight import Highlight, HighlightStatus
 
 __all__ = [
+    "Highlight", "HighlightStatus",
     "Share", "ShareType",
     "PersonRelationship",
     "Photo", "PhotoStatus",

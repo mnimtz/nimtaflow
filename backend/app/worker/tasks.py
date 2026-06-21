@@ -1682,3 +1682,82 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         pass
 
     _run(_run_ai())
+
+
+@celery_app.task(bind=True, name="render_highlight")
+def render_highlight_task(self, highlight_id: int):
+    """Render a highlight slideshow MP4: select photos for the motto, build the
+    video from their cached large thumbnails, and update the Highlight record."""
+    async def _run_render():
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.models.highlight import Highlight, HighlightStatus
+        from app.services import highlights as hl
+        from app.services.feature_log import log as flog
+
+        init_db()
+        cache_path = get_settings().cache_path
+
+        async for db in get_db():
+            h = await db.get(Highlight, highlight_id)
+            if not h:
+                return {"error": "Highlight not found"}
+            h.status = HighlightStatus.rendering
+            await db.commit()
+
+            try:
+                opts = dict(h.params or {})
+                opts.setdefault("duration_sec", h.duration_sec or 60.0)
+                photos = await hl.select_photos_for_motto(db, h.motto, opts)
+                if not photos:
+                    h.status = HighlightStatus.error
+                    h.error_message = "Keine passenden Fotos für dieses Motto gefunden."
+                    await db.commit()
+                    flog("highlights", "WARNING",
+                         f"Highlight {highlight_id} ({h.motto}): keine Fotos")
+                    return {"error": "no photos"}
+
+                image_paths = [p.thumb_large for p in photos if p.thumb_large]
+                duration = float(h.duration_sec or 60.0)
+                seconds_per = max(0.8, duration / max(1, len(image_paths)))
+
+                out_path = hl.highlight_output_path(cache_path, highlight_id)
+                ok = hl.render_slideshow(image_paths, out_path, seconds_per)
+                if not ok:
+                    h.status = HighlightStatus.error
+                    h.error_message = "Video-Erstellung (ffmpeg) fehlgeschlagen."
+                    await db.commit()
+                    flog("highlights", "ERROR",
+                         f"Highlight {highlight_id} ({h.motto}): ffmpeg fehlgeschlagen")
+                    return {"error": "render failed"}
+
+                from app.services.processing.thumbnails import video_duration
+                actual = video_duration(out_path)
+
+                h.file_path = out_path
+                h.photo_count = len(image_paths)
+                h.cover_photo_id = photos[0].id
+                if actual:
+                    h.duration_sec = round(actual, 1)
+                h.status = HighlightStatus.done
+                h.error_message = None
+                await db.commit()
+                flog("highlights", "INFO",
+                     f"Highlight {highlight_id} ({h.motto}) fertig: "
+                     f"{len(image_paths)} Fotos, {h.duration_sec}s")
+                return {"ok": True, "photos": len(image_paths)}
+            except Exception as e:
+                try:
+                    await db.rollback()
+                    h2 = await db.get(Highlight, highlight_id)
+                    if h2:
+                        h2.status = HighlightStatus.error
+                        h2.error_message = str(e)[:500]
+                        await db.commit()
+                except Exception:
+                    pass
+                flog("highlights", "ERROR",
+                     f"Highlight {highlight_id} fehlgeschlagen: {str(e)[:200]}")
+                return {"error": str(e)[:200]}
+
+    return _run(_run_render())

@@ -65,6 +65,9 @@ celery_app.conf.update(
         # now run fully in parallel. worker-video has /dev/dri for QSV.
         "transcode_video":    {"queue": "video"},
         "mirror_originals":   {"queue": "cpu"},   # rclone one-way mirror of originals
+        # Highlight slideshow rendering (ffmpeg xfade/concat from cached thumbs).
+        # On the video queue/worker so a long render never blocks the fast cpu work.
+        "render_highlight":   {"queue": "video"},
     },
 )
 
