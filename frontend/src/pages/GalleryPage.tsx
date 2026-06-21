@@ -423,6 +423,12 @@ export default function GalleryPage() {
               <Trash2 size={16} /> <span className="hidden sm:inline">Papierkorb</span>
             </button>
           )}
+          <button
+            onClick={() => { if (window.confirm(`${selected.size} Medien endgültig löschen? Dateien werden entfernt – nicht umkehrbar.`)) batchMutation.mutate('delete') }}
+            disabled={batchMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50" title="Endgültig löschen">
+            <Trash2 size={16} /> <span className="hidden sm:inline">Löschen</span>
+          </button>
         </div>
       )}
 
