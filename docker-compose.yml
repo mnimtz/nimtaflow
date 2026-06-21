@@ -68,7 +68,7 @@ services:
     # exactly one 3B VLM. Prefork with >1 worker would load N copies → OOM
     # (SIGKILL). Keep concurrency at 1 and consume ONLY the gpu queue (AI +
     # face detection). Scans/thumbnails run on worker-cpu so they never wait.
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "gpu", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-1}"]
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "gpu", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-1}", "--max-tasks-per-child=50"]
     restart: unless-stopped
     runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
     # Safety net: a host without enough RAM/GPU that tried to load the 11 GB Qwen
@@ -129,7 +129,7 @@ services:
     build: ./backend
     image: photoflow-app:latest
     init: true
-    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "cpu,celery", "--loglevel=${LOG_LEVEL:-info}", "-c", "${CPU_WORKER_CONCURRENCY:-4}"]
+    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "cpu,celery", "--loglevel=${LOG_LEVEL:-info}", "-c", "${CPU_WORKER_CONCURRENCY:-4}", "--max-tasks-per-child=50"]
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
@@ -173,7 +173,7 @@ services:
     build: ./backend
     image: photoflow-app:latest
     init: true
-    command: ["nice", "-n", "10", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "scan", "--loglevel=${LOG_LEVEL:-info}", "-c", "1"]
+    command: ["nice", "-n", "10", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "scan", "--loglevel=${LOG_LEVEL:-info}", "-c", "1", "--max-tasks-per-child=50"]
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
@@ -208,7 +208,7 @@ services:
     build: ./backend
     image: photoflow-app:latest
     init: true
-    command: ["nice", "-n", "12", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-2}"]
+    command: ["nice", "-n", "12", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-2}", "--max-tasks-per-child=50"]
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
