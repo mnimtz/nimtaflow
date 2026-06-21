@@ -1157,11 +1157,11 @@ function PipelineSection() {
           <div>
             <Label>Remote-Verarbeitung (KI auf der GPU)</Label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
-              <QCard label="Beschreibungen offen" val={remote?.pending} hint="in der Warteschlange für die Describe-Worker" cls="text-violet-500" />
-              <QCard label="Gesichter offen" val={remote?.faces_pending} hint="in der Warteschlange für die Faces-Worker" cls="text-sky-500" />
+              <QCard label="Beschreibungen offen" val={remote?.pending} hint="Fotos, die noch eine KI-Beschreibung brauchen" cls="text-violet-500" />
+              <QCard label="Gesichts-Erkennung offen" val={remote?.faces_pending} hint="Fotos ohne Gesichts-Durchlauf — NICHT die unzugeordneten Gesichter (die gruppieren nachts unter Personen)" cls="text-sky-500" />
               <QCard label="Worker verbunden" val={remote?.workers?.length} hint="Details: Einstellungen → Remote-Worker" cls="text-emerald-500" />
             </div>
-            <p className="text-[11px] text-zinc-400 mt-1">Beschreibung + Gesichter laufen über den Remote-Worker (Pull über HTTP) — deshalb ist die lokale GPU-Queue leer, der Rückstau steht hier.</p>
+            <p className="text-[11px] text-zinc-400 mt-1"><b>0 ist normal</b>, wenn alles erledigt ist. Beschreibung + Gesichtserkennung laufen über den Remote-Worker — deshalb ist die lokale GPU-Queue leer. Unzugeordnete Gesichter siehst du unter <b>Personen</b> (nicht hier); sie werden nachts automatisch geclustert.</p>
           </div>
         )}
 
