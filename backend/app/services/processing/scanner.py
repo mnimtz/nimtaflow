@@ -168,7 +168,15 @@ async def scan_source(
             continue
 
         try:
-            exif = extract_exif(path_str)
+            # KEEP THE SCAN LIGHTWEIGHT: insert the row + enqueue, nothing heavy.
+            # EXIF extraction and ALL thumbnail sizes are (re)done by
+            # process_photo_task on the parallel worker pool — doing them here too
+            # was pure duplication that pinned the single-threaded walk at ~1 file/s
+            # (a full-library scan then took ~a day). The gallery only shows photos
+            # once thumb_small exists, and process_photo sets thumb_small together
+            # with the real capture date/dimensions/GPS — so there is no window where
+            # a photo appears with missing data. The initial scan is now just
+            # "count + insert rows + enqueue", which finishes in minutes.
             stat = entry.stat()
             ext = entry.suffix.lower()
             is_video = ext in VIDEO_EXTENSIONS
@@ -183,28 +191,10 @@ async def scan_source(
                 is_video=is_video,
                 mime_type=mime_type,
                 status=PhotoStatus.pending,
-                taken_at=exif.taken_at,
-                width=exif.width,
-                height=exif.height,
-                camera_make=exif.camera_make,
-                camera_model=exif.camera_model,
-                lens_model=exif.lens_model,
-                focal_length=exif.focal_length,
-                aperture=exif.aperture,
-                shutter_speed=exif.shutter_speed,
-                iso=exif.iso,
-                latitude=exif.latitude,
-                longitude=exif.longitude,
-                altitude=exif.altitude,
                 indexed_at=datetime.now(timezone.utc),
             )
             session.add(photo)
             await session.flush()
-
-            # Generate small thumbnail synchronously during scan
-            thumb = generate_thumbnail(path_str, cache_root, "small")
-            if thumb:
-                photo.thumb_small = thumb
 
             # Import already-present metadata (embedded XMP/IPTC or .xmp sidecar)
             # so we don't re-run the AI on already-described media. Setting the

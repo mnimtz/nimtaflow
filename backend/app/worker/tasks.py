@@ -1131,6 +1131,18 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         photo.camera_make = ex.camera_make[:120]
                     if not photo.camera_model and ex.camera_model:
                         photo.camera_model = ex.camera_model[:120]
+                    # The scan no longer extracts EXIF (kept lightweight), so populate
+                    # the finer photographic fields here too — not just on reprocess.
+                    if not photo.lens_model and ex.lens_model:
+                        photo.lens_model = ex.lens_model[:120]
+                    if photo.focal_length is None and ex.focal_length is not None:
+                        photo.focal_length = ex.focal_length
+                    if photo.aperture is None and ex.aperture is not None:
+                        photo.aperture = ex.aperture
+                    if not photo.shutter_speed and ex.shutter_speed:
+                        photo.shutter_speed = ex.shutter_speed
+                    if photo.iso is None and ex.iso is not None:
+                        photo.iso = ex.iso
                 except Exception:
                     pass
 
