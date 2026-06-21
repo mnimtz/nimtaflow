@@ -370,9 +370,11 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
 
 function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
   const [showShare, setShowShare] = useState(false)
+  const [sort, setSort] = useState('newest')
+  const [lightbox, setLightbox] = useState<AlbumPhoto | null>(null)
   const { data, isLoading } = useQuery({
-    queryKey: ['album-photos', album.id],
-    queryFn: () => api.get(`/albums/${album.id}/photos?limit=200`).then(r => r.data),
+    queryKey: ['album-photos', album.id, sort],
+    queryFn: () => api.get(`/albums/${album.id}/photos?limit=500&sort=${sort}`).then(r => r.data),
   })
 
   const photos: AlbumPhoto[] = data?.items || []
@@ -392,6 +394,13 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
           </span>
         </div>
         <span className="text-sm text-zinc-500 ml-auto">{album.photo_count} Fotos</span>
+        <select value={sort} onChange={e => setSort(e.target.value)}
+          className="text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-2 py-1">
+          <option value="newest">Neueste zuerst</option>
+          <option value="oldest">Älteste zuerst</option>
+          <option value="order">Album-Reihenfolge</option>
+          <option value="name">Name</option>
+        </select>
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300">
           <Share2 size={15} /> Teilen
@@ -420,14 +429,23 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
           {photos.map(photo => (
-            <div key={photo.id} className="aspect-square rounded-md overflow-hidden bg-zinc-800">
+            <button key={photo.id} onClick={() => setLightbox(photo)}
+              className="aspect-square rounded-md overflow-hidden bg-zinc-800 group">
               <img
                 src={thumbUrl(photo, 'small')}
-                className="w-full h-full object-cover hover:scale-105 transition-transform"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 loading="lazy"
               />
-            </div>
+            </button>
           ))}
+        </div>
+      )}
+
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={28} /></button>
+          <img src={`/api/photos/${lightbox.id}/thumbnail?size=large`}
+            className="max-h-[90vh] max-w-[95vw] object-contain" onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>

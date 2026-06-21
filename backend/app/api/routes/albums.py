@@ -140,6 +140,7 @@ async def album_photos(
     album_id: int,
     page: int = 1,
     limit: int = 50,
+    sort: str = "order",   # order | newest | oldest | name
     db: AsyncSession = Depends(get_db),
     user=Depends(_current_user_optional),
 ):
@@ -150,11 +151,16 @@ async def album_photos(
     # Respect per-user access restrictions (folder/date/person) — an album
     # must not expose photos a restricted user otherwise can't see.
     acl = _photo_conditions(user)
+    _order = {
+        "newest": Photo.taken_at.desc().nullslast(),
+        "oldest": Photo.taken_at.asc().nullsfirst(),
+        "name": Photo.filename.asc(),
+    }.get(sort)
     q = (
         select(Photo)
         .join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
         .where(AlbumPhoto.album_id == album_id, *acl)
-        .order_by(AlbumPhoto.sort_order, AlbumPhoto.added_at)
+        .order_by(_order if _order is not None else AlbumPhoto.sort_order, AlbumPhoto.added_at)
         .offset((page - 1) * limit).limit(limit)
     )
     photos = (await db.execute(q)).scalars().all()
