@@ -88,6 +88,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
       DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
@@ -142,6 +143,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
       DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
@@ -184,6 +186,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
       DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
@@ -218,6 +221,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
       DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
@@ -243,6 +247,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
       DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
