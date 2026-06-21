@@ -254,8 +254,33 @@ async def _resolve_action_photo_ids(db: AsyncSession, settings: dict, args: dict
 
 async def _action_create_album(db: AsyncSession, settings: dict, args: dict) -> dict:
     from app.models.album import Album, AlbumPhoto, AlbumType
+    from app.models.person import Person
     name = (args.get("name") or "Album").strip()[:256]
-    ids = await _resolve_action_photo_ids(db, settings, args)
+    person = (args.get("person") or "").strip()
+    sb = (args.get("suchbegriff") or "").strip()
+
+    # Person-only request (e.g. "Album mit allen Fotos von Lea") → a SMART album:
+    # auto-updating, holds ALL of that person's photos (no 1000 cap — that was the
+    # "Lea Marie hat nur 1000 Bilder" bug).
+    if person and not sb:
+        pids = [r[0] for r in (await db.execute(
+            select(Person.id).where(Person.name.ilike(f"%{person}%")))).all()]
+        if pids:
+            crit: dict = {"person_ids": pids, "person_match": "any"}
+            mt = args.get("medientyp")
+            if mt in ("bild", "video"):
+                crit["media_type"] = "photo" if mt == "bild" else "video"
+            album = Album(name=name, album_type=AlbumType.smart, smart_criteria=crit)
+            db.add(album)
+            await db.flush()
+            from app.api.routes.albums import _populate_smart
+            await _populate_smart(album, db)
+            await db.commit()
+            cnt = await db.scalar(select(func.count()).where(AlbumPhoto.album_id == album.id))
+            return {"ok": True, "album_id": album.id, "name": name, "anzahl": int(cnt or 0), "smart": True}
+
+    # Otherwise (free-text search etc.) → a manual album, but with a generous cap.
+    ids = await _resolve_action_photo_ids(db, settings, args, limit=20000)
     if not ids:
         return {"ok": False, "info": "Keine passenden Fotos gefunden — kein Album erstellt."}
     album = Album(name=name, album_type=AlbumType.manual, cover_photo_id=ids[0])

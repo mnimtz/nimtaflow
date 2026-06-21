@@ -30,6 +30,7 @@ class AlbumUpdate(BaseModel):
     cover_photo_id: Optional[int] = None
     smart_criteria: Optional[Any] = None
     ai_prompt: Optional[str] = None
+    album_type: Optional[str] = None   # allow converting manual ↔ smart
 
 class AlbumOut(BaseModel):
     id: int
@@ -116,9 +117,21 @@ async def update_album(album_id: int, body: AlbumUpdate, db: AsyncSession = Depe
     album = await db.get(Album, album_id)
     if not album:
         raise HTTPException(404)
-    for field, val in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    criteria_changed = "smart_criteria" in data or "album_type" in data
+    for field, val in data.items():
+        if field == "album_type":
+            try:
+                val = AlbumType(val)
+            except ValueError:
+                continue
         setattr(album, field, val)
     album.updated_at = datetime.utcnow()
+    # If this is (now) a SMART album and the criteria/type were touched, REPOPULATE
+    # immediately — otherwise changing the person did nothing (the old bug) and a
+    # converted album stayed empty/capped.
+    if criteria_changed and album.album_type == AlbumType.smart:
+        await _populate_smart(album, db)
     await db.commit()
     count = await db.scalar(select(func.count()).where(AlbumPhoto.album_id == album_id))
     return _album_out(album, count or 0)
@@ -284,7 +297,8 @@ async def _populate_smart(album: Album, db: AsyncSession):
             sub = select(Face.photo_id).where(Face.person_id.in_(pids))
         q = q.where(Photo.id.in_(sub))
 
-    photos = (await db.execute(q.order_by(Photo.taken_at.desc()).limit(500))).scalars().all()
+    # No artificial 500 cap — a person's album should hold ALL their photos.
+    photos = (await db.execute(q.order_by(Photo.taken_at.desc()).limit(20000))).scalars().all()
 
     # Clear old entries
     await db.execute(delete(AlbumPhoto).where(AlbumPhoto.album_id == album.id))

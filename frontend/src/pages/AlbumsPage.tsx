@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2 } from 'lucide-react'
+import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2, Pencil } from 'lucide-react'
 import ShareDialog from '../components/ShareDialog'
 import { api, thumbUrl } from '../lib/api'
 import { format } from 'date-fns'
@@ -369,7 +369,9 @@ function CreateAlbumModal({ onClose }: { onClose: () => void }) {
 // ── Album detail view ─────────────────────────────────────────────────────────
 
 function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
+  const qc = useQueryClient()
   const [showShare, setShowShare] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [sort, setSort] = useState('newest')
   const [lightbox, setLightbox] = useState<AlbumPhoto | null>(null)
   const { data, isLoading } = useQuery({
@@ -401,12 +403,19 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
           <option value="order">Album-Reihenfolge</option>
           <option value="name">Name</option>
         </select>
+        <button onClick={() => setShowEdit(true)}
+          className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
+          <Pencil size={15} /> Bearbeiten
+        </button>
         <button onClick={() => setShowShare(true)}
           className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300">
           <Share2 size={15} /> Teilen
         </button>
       </div>
       {showShare && <ShareDialog target={{ kind: 'album', albumId: album.id, title: album.name }} onClose={() => setShowShare(false)} />}
+      {showEdit && <AlbumEditModal album={album} onClose={() => setShowEdit(false)}
+        onSaved={() => { setShowEdit(false); qc.invalidateQueries({ queryKey: ['albums'] }); qc.invalidateQueries({ queryKey: ['album-photos', album.id] }) }}
+        onDeleted={() => { setShowEdit(false); qc.invalidateQueries({ queryKey: ['albums'] }); onBack() }} />}
 
       {album.ai_prompt && (
         <div className="mb-4 p-3 rounded-lg bg-violet-900/20 border border-violet-800/40 text-sm text-violet-300">
@@ -448,6 +457,87 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
             className="max-h-[90vh] max-w-[95vw] object-contain" onClick={e => e.stopPropagation()} />
         </div>
       )}
+    </div>
+  )
+}
+
+function AlbumEditModal({ album, onClose, onSaved, onDeleted }:
+  { album: Album; onClose: () => void; onSaved: () => void; onDeleted: () => void }) {
+  const [name, setName] = useState(album.name)
+  const [type, setType] = useState<AlbumType>(album.album_type)
+  const [aiPrompt, setAiPrompt] = useState(album.ai_prompt || '')
+  const [personIds, setPersonIds] = useState<number[]>(((album.smart_criteria?.person_ids as number[]) || []))
+  const [mediaType, setMediaType] = useState<string>(((album.smart_criteria?.media_type as string) || 'all'))
+  const { data: people = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data) })
+  const named = people.filter(p => (p.name || '').trim())
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body: any = { name, album_type: type }
+      if (type === 'smart') body.smart_criteria = { person_ids: personIds, person_match: 'any', ...(mediaType !== 'all' ? { media_type: mediaType } : {}) }
+      if (type === 'ai') body.ai_prompt = aiPrompt
+      return api.patch(`/albums/${album.id}`, body)
+    },
+    onSuccess: onSaved,
+  })
+  const refresh = useMutation({ mutationFn: () => api.post(`/albums/${album.id}/refresh`), onSuccess: onSaved })
+  const del = useMutation({ mutationFn: () => api.delete(`/albums/${album.id}`), onSuccess: onDeleted })
+  const sel = 'w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-md border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Album bearbeiten</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
+        </div>
+        <div><label className="block text-xs text-zinc-500 mb-1">Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} className={sel} /></div>
+        <div><label className="block text-xs text-zinc-500 mb-1">Typ</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['manual', 'smart', 'ai'] as AlbumType[]).map(t => (
+              <button key={t} onClick={() => setType(t)}
+                className={`py-1.5 rounded-lg text-sm ${type === t ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{TYPE_LABELS[t]}</button>
+            ))}
+          </div></div>
+        {type === 'smart' && (
+          <>
+            <div><label className="block text-xs text-zinc-500 mb-1">Personen (alle deren Fotos — ohne Limit)</label>
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                {named.map(p => {
+                  const on = personIds.includes(p.id)
+                  return <button key={p.id} type="button" onClick={() => setPersonIds(s => on ? s.filter(x => x !== p.id) : [...s, p.id])}
+                    className={`px-2 py-0.5 rounded-full text-xs ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{p.name}</button>
+                })}
+              </div></div>
+            <div><label className="block text-xs text-zinc-500 mb-1">Medientyp</label>
+              <select value={mediaType} onChange={e => setMediaType(e.target.value)} className={sel}>
+                <option value="all">Alle</option><option value="photo">Nur Fotos</option><option value="video">Nur Videos</option>
+              </select></div>
+          </>
+        )}
+        {type === 'ai' && (
+          <div><label className="block text-xs text-zinc-500 mb-1">KI-Prompt</label>
+            <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} className={sel} placeholder="z. B. Sonnenuntergänge am Meer" /></div>
+        )}
+        <button onClick={() => save.mutate()} disabled={save.isPending}
+          className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40">
+          {save.isPending ? 'Speichern…' : 'Speichern'}
+        </button>
+        <div className="flex gap-2">
+          {type !== 'manual' && (
+            <button onClick={() => refresh.mutate()} disabled={refresh.isPending}
+              className="flex-1 py-2 rounded-xl border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">
+              <RefreshCw size={14} className="inline mr-1" /> Aktualisieren
+            </button>
+          )}
+          <button onClick={() => { if (window.confirm('Album löschen? Die Fotos bleiben erhalten.')) del.mutate() }}
+            className="flex-1 py-2 rounded-xl text-sm text-red-500 border border-red-300 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">
+            <Trash2 size={14} className="inline mr-1" /> Löschen
+          </button>
+        </div>
+        <p className="text-[11px] text-zinc-400">Tipp: Ein Personen-Album als <b>Smart</b> mit der Person speichern → enthält automatisch <b>alle</b> Fotos dieser Person (kein 1000er-Limit) und aktualisiert sich.</p>
+      </div>
     </div>
   )
 }

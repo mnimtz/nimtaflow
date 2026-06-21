@@ -198,6 +198,16 @@ final class APIClient: ObservableObject {
     func renameAlbum(_ id: Int, name: String) async throws {
         try await action("api/albums/\(id)", method: "PATCH", json: ["name": name])
     }
+    /// Full album edit: name + type + criteria. Server repopulates smart albums
+    /// (no 1000-Limit) when the type or criteria change.
+    func updateAlbum(_ id: Int, name: String, type: String,
+                     smartCriteria: [String: Any]? = nil, aiPrompt: String? = nil) async throws {
+        var body: [String: Any] = ["name": name, "album_type": type]
+        if let smartCriteria { body["smart_criteria"] = smartCriteria }
+        if let aiPrompt { body["ai_prompt"] = aiPrompt }
+        try await action("api/albums/\(id)", method: "PATCH", json: body)
+    }
+    func refreshAlbum(_ id: Int) async throws { try await action("api/albums/\(id)/refresh", method: "POST") }
     func deleteAlbum(_ id: Int) async throws { try await action("api/albums/\(id)", method: "DELETE") }
     func removeFromAlbum(_ albumId: Int, photoId: Int) async throws {
         try await action("api/albums/\(albumId)/photos/\(photoId)", method: "DELETE")
