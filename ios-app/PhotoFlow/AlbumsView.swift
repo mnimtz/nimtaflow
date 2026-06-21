@@ -9,7 +9,6 @@ struct AlbumsView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var showCreate = false
-    @State private var newName = ""
 
     let cols = [GridItem(.adaptive(minimum: 150), spacing: 12)]
 
@@ -37,16 +36,12 @@ struct AlbumsView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { newName = ""; showCreate = true } label: { Image(systemName: "plus") }
+                    Button { showCreate = true } label: { Image(systemName: "plus") }
                 }
             }
-            .alert("Neues Album", isPresented: $showCreate) {
-                TextField("Name", text: $newName)
-                Button("Erstellen") {
-                    let n = newName.trimmingCharacters(in: .whitespaces)
-                    if !n.isEmpty { Task { try? await api.createAlbum(name: n); await load() } }
-                }
-                Button("Abbrechen", role: .cancel) {}
+            .sheet(isPresented: $showCreate) {
+                CreateAlbumSheet { await load() }
+                    .presentationDetents([.medium, .large])
             }
             .refreshable { await load() }
             .task { if albums.isEmpty { await load() } }
@@ -57,6 +52,118 @@ struct AlbumsView: View {
         loading = true; defer { loading = false }
         do { albums = try await api.albums(); error = nil }
         catch { self.error = "Alben konnten nicht geladen werden." }
+    }
+}
+
+/// Create an album with a type: Normal (manual), Smart (by person) or KI
+/// (freetext prompt). Calls api.createAlbum(name:type:smartCriteria:aiPrompt:).
+private struct CreateAlbumSheet: View {
+    @EnvironmentObject var api: APIClient
+    @Environment(\.dismiss) var dismiss
+    let onCreated: () async -> Void
+
+    @State private var name = ""
+    @State private var type = "manual"        // manual | smart | ai
+    @State private var aiPrompt = ""
+    @State private var people: [PersonV1] = []
+    @State private var selectedPeople: Set<Int> = []
+    @State private var requireAll = false
+    @State private var busy = false
+
+    private var canCreate: Bool {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !busy else { return false }
+        switch type {
+        case "smart": return !selectedPeople.isEmpty
+        case "ai":    return !aiPrompt.trimmingCharacters(in: .whitespaces).isEmpty
+        default:      return true
+        }
+    }
+
+    private func isNamed(_ p: PersonV1) -> Bool { !p.name.isEmpty && p.name != "Unbekannt" }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Album-Name", text: $name)
+                }
+                Section("Typ") {
+                    Picker("Typ", selection: $type) {
+                        Text("Normal").tag("manual")
+                        Text("Smart").tag("smart")
+                        Text("KI").tag("ai")
+                    }
+                    .pickerStyle(.segmented)
+                    switch type {
+                    case "manual": Text("Fotos später manuell hinzufügen.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                    case "smart":  Text("Füllt sich automatisch mit Fotos der gewählten Personen.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                    case "ai":     Text("Gemini wählt passende Fotos zur Beschreibung aus.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                    default: EmptyView()
+                    }
+                }
+                if type == "smart" {
+                    Section("Personen") {
+                        if selectedPeople.count > 1 {
+                            Toggle("Müssen alle gemeinsam vorkommen", isOn: $requireAll)
+                        }
+                        ForEach(people.filter(isNamed)) { p in
+                            Button {
+                                if selectedPeople.contains(p.id) { selectedPeople.remove(p.id) }
+                                else { selectedPeople.insert(p.id) }
+                            } label: {
+                                HStack {
+                                    Avatar(url: api.url(p.avatar_url), initials: p.name.firstInitial, size: 32)
+                                    Text(p.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    if selectedPeople.contains(p.id) {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.indigo)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if type == "ai" {
+                    Section("Beschreibung") {
+                        TextField("z. B. Sonnenuntergänge am Strand", text: $aiPrompt, axis: .vertical)
+                            .lineLimit(2...5)
+                    }
+                }
+                Section {
+                    Button {
+                        Task { await create() }
+                    } label: {
+                        HStack { if busy { ProgressView() }; Text("Erstellen") }
+                    }.disabled(!canCreate)
+                }
+            }
+            .navigationTitle("Neues Album")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Abbrechen") { dismiss() } } }
+            .task { if people.isEmpty { people = (try? await api.people()) ?? [] } }
+        }
+    }
+
+    func create() async {
+        busy = true; defer { busy = false }
+        let n = name.trimmingCharacters(in: .whitespaces)
+        var smart: [String: Any]? = nil
+        var prompt: String? = nil
+        switch type {
+        case "smart":
+            var c: [String: Any] = ["person_ids": Array(selectedPeople)]
+            if selectedPeople.count > 1 && requireAll { c["person_match"] = "all" }
+            smart = c
+        case "ai":
+            prompt = aiPrompt.trimmingCharacters(in: .whitespaces)
+        default: break
+        }
+        try? await api.createAlbum(name: n, type: type, smartCriteria: smart, aiPrompt: prompt)
+        await onCreated()
+        dismiss()
     }
 }
 

@@ -216,7 +216,7 @@ def scheduled_backup_task(self):
             try:
                 res = await run_full_backup(os.getenv("DATABASE_URL"), os.getenv("CONFIG_PATH", "/config"),
                                             remote, os.getenv("CACHE_PATH", "/cache"),
-                                            include_thumbnails=incl_thumbs)
+                                            include_thumbnails=incl_thumbs, settings=s)
                 deleted = prune_backups(keep)
                 ok = res["db"]["ok"] and res["config"]["ok"] and (res["cache"]["ok"] or res["cache"].get("skipped"))
                 flog("system", "INFO" if ok else "WARNING",
@@ -226,6 +226,69 @@ def scheduled_backup_task(self):
                 flog("system", "ERROR", f"Geplantes Backup fehlgeschlagen: {str(e)[:200]}")
                 return {"error": str(e)[:200]}
     return _run(_run_backup())
+
+
+@celery_app.task(bind=True, name="mirror_originals")
+def mirror_originals_task(self, force: bool = False):
+    """Offsite mirror of the ORIGINAL photo/video files (one-way rclone sync with a
+    recoverable dated remote trash). Self-paced like scheduled_backup: the beat tick
+    is hourly, but a sync only runs when due per backup.mirror_schedule
+    (off|daily|weekly), tracked via the backup.mirror_last timestamp setting.
+    force=True (on-demand endpoint) bypasses the due check."""
+    async def _run_mirror():
+        import datetime as _dt
+        from app.core.database import init_db, get_db
+        from app.models.source import PhotoSource
+        from app.models.settings import Setting
+        from app.services.settings_loader import load_settings
+        from app.services.backup import mirror_originals_to_remote
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            remote = (s.get("backup.mirror_remote") or "").strip()
+            if not remote:
+                return {"skipped": "no remote"}
+            sched = str(s.get("backup.mirror_schedule", "off")).lower()
+            if not force:
+                if sched not in ("daily", "weekly"):
+                    return {"skipped": "disabled"}
+                interval_h = 24 if sched == "daily" else 168
+                last = (s.get("backup.mirror_last") or "").strip()
+                if last:
+                    try:
+                        age = (_dt.datetime.utcnow() - _dt.datetime.fromisoformat(last)).total_seconds()
+                        if age < interval_h * 3600 - 600:  # 10-min grace
+                            return {"skipped": "not due"}
+                    except Exception:
+                        pass
+            # Collect enabled source paths.
+            sources = [r for (r,) in (await db.execute(
+                select(PhotoSource.path).where(PhotoSource.enabled == True)  # noqa: E712
+            )).all()]
+            if not sources:
+                return {"skipped": "no enabled sources"}
+            flog("system", "INFO", f"Originale-Spiegelung gestartet → {remote} ({len(sources)} Quelle(n))")
+            try:
+                res = await mirror_originals_to_remote(sources, remote)
+            except Exception as e:
+                flog("system", "ERROR", f"Originale-Spiegelung fehlgeschlagen: {str(e)[:200]}")
+                return {"error": str(e)[:200]}
+            # Persist the last-run timestamp only on success (so a failure retries
+            # next tick rather than waiting a full interval).
+            if res.get("ok"):
+                now = _dt.datetime.utcnow().isoformat()
+                row = await db.get(Setting, "backup.mirror_last")
+                if row:
+                    row.value = now
+                else:
+                    db.add(Setting(key="backup.mirror_last", value=now))
+                await db.commit()
+            flog("system", "INFO" if res.get("ok") else "WARNING",
+                 f"Originale-Spiegelung fertig: ok={res.get('ok')} ({len(res.get('sources', []))} Quelle(n))")
+            return res
+    return _run(_run_mirror())
 
 
 @celery_app.task(bind=True, name="auto_cluster_faces")

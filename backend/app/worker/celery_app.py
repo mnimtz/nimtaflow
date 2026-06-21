@@ -64,6 +64,7 @@ celery_app.conf.update(
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.
         "transcode_video":    {"queue": "video"},
+        "mirror_originals":   {"queue": "cpu"},   # rclone one-way mirror of originals
     },
 )
 
@@ -115,6 +116,14 @@ celery_app.conf.beat_schedule = {
     "scheduled-backup": {
         "task": "scheduled_backup",
         "schedule": 3600.0,
+    },
+    # Offsite mirror of the ORIGINAL photo/video files (rclone one-way sync with a
+    # recoverable dated remote trash). Self-paced: hourly tick; the task only runs
+    # when due per backup.mirror_schedule. Runs at 05:40, after the DB backup +
+    # trash purge so deletions have already settled in the DB/library.
+    "mirror-originals": {
+        "task": "mirror_originals",
+        "schedule": crontab(hour=5, minute=40),
     },
     # Nightly self-heal of the durable round-trip: stamp DB description/tags/rating
     # into any described photo that isn't in its file yet (xmp_sidecar_written not

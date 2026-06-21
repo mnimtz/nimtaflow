@@ -230,14 +230,19 @@ struct NewTripWizard: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var desc = ""
+    @State private var tripType = "Pauschalurlaub"
     @State private var useDates = false
     @State private var from = Date()
     @State private var to = Date()
     @State private var phase = 0          // 0 = form, 1 = preview
+
+    private let tripTypes = ["Pauschalurlaub", "Kreuzfahrt", "Flugreise", "Roadtrip",
+                             "Rundreise", "Dienstreise", "Städtereise"]
     @State private var busy = false
     @State private var plan: TripPlan?
     @State private var error: String?
     @State private var createdName: String?
+    @State private var createdAlbumId: Int?
 
     private var iso: DateFormatter { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }
 
@@ -247,9 +252,26 @@ struct NewTripWizard: View {
                 if let createdName {
                     Section { Label("Reise „\(createdName)“ erstellt — sie erscheint unter Alben.",
                                     systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                    if let aid = createdAlbumId {
+                        Section {
+                            Button(role: .destructive) {
+                                Task {
+                                    busy = true; defer { busy = false }
+                                    try? await api.deleteTrip(aid)
+                                    dismiss()
+                                }
+                            } label: {
+                                HStack { if busy { ProgressView() }
+                                    Text("Reise wieder löschen") }
+                            }.disabled(busy)
+                        }
+                    }
                 } else if phase == 0 {
                     Section("Reise beschreiben") {
                         TextField("z. B. Kreuzfahrt Norwegen, Juli 2023", text: $desc, axis: .vertical).lineLimit(2...4)
+                        Picker("Art der Reise", selection: $tripType) {
+                            ForEach(tripTypes, id: \.self) { Text($0).tag($0) }
+                        }
                         Toggle("Zeitraum angeben", isOn: $useDates)
                         if useDates {
                             DatePicker("Von", selection: $from, displayedComponents: .date)
@@ -294,7 +316,8 @@ struct NewTripWizard: View {
         do {
             plan = try await api.planTrip(description: desc,
                 dateFrom: useDates ? iso.string(from: from) : nil,
-                dateTo: useDates ? iso.string(from: to) : nil)
+                dateTo: useDates ? iso.string(from: to) : nil,
+                tripType: tripType)
             phase = 1
         } catch {
             if let e = error as? APIClient.APIError {
@@ -312,7 +335,10 @@ struct NewTripWizard: View {
     func createIt() async {
         guard let p = plan else { return }
         busy = true; defer { busy = false }; error = nil
-        do { createdName = try await api.createTrip(p).name }
+        do {
+            let r = try await api.createTrip(p)
+            createdName = r.name; createdAlbumId = r.album_id
+        }
         catch { self.error = "Album konnte nicht erstellt werden." }
     }
 }

@@ -89,6 +89,16 @@ async def test_rclone(remote: str):
     return await rclone_sync(remote, dry_run=True)
 
 
+@router.post("/mirror-originals")
+async def mirror_originals_now():
+    """Trigger a one-off offsite mirror of the ORIGINAL photo/video files (reads
+    backup.mirror_remote + enabled sources from settings). Queued to the worker —
+    a full mirror can take hours, so it runs in the background, not inline."""
+    from app.worker.tasks import mirror_originals_task
+    task = mirror_originals_task.delay(force=True)
+    return {"status": "queued", "task_id": task.id}
+
+
 # ── Hardware info ──────────────────────────────────────────────────────────────
 
 @router.get("/hw", tags=["system"])

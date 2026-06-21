@@ -296,6 +296,9 @@ final class APIClient: ObservableObject {
         try await action("api/shares/\(id)", method: "PATCH", json: body)
     }
 
+    // MARK: Dashboard
+    func dashboard() async throws -> DashboardV1 { try await get("api/v1/dashboard", as: DashboardV1.self) }
+
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {

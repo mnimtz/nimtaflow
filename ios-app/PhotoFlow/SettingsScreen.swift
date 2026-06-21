@@ -28,7 +28,7 @@ struct SettingsScreen: View {
                     Text("Login ist nur nötig, wenn am Server ‚Login erzwingen‘ aktiv ist.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section { Text("PhotoFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
+                Section { Text("LumaFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
             }
             .navigationTitle("Einstellungen")
             .onAppear { serverDraft = api.serverURL }

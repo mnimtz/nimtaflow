@@ -259,6 +259,56 @@ struct ShareOut: Codable, Identifiable, Hashable {
     let view_count: Int
 }
 
+// MARK: - Dashboard (GET /api/v1/dashboard)
+
+struct DashboardStats: Codable {
+    let total: Int
+    let images: Int
+    let videos: Int
+    let with_faces: Int
+    let described: Int
+    let with_gps: Int
+}
+
+struct DashboardOnThisDay: Codable, Identifiable {
+    let years_ago: Int
+    let date: String
+    let items: [PhotoV1]
+    var id: Int { years_ago }
+}
+
+struct DashboardPerson: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let face_count: Int
+    let avatar_url: String?
+}
+
+struct DashboardPersonOfWeek: Codable {
+    let id: Int
+    let name: String
+    let face_count: Int
+    let avatar_url: String?
+    let items: [PhotoV1]
+}
+
+struct DashboardAlbum: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let photo_count: Int
+    let cover_url: String?
+}
+
+struct DashboardV1: Codable {
+    let stats: DashboardStats
+    let on_this_day: [DashboardOnThisDay]
+    let person_of_week: DashboardPersonOfWeek?
+    let featured_people: [DashboardPerson]
+    let featured_albums: [DashboardAlbum]
+    let recent: [PhotoV1]
+    let highlights: [PhotoV1]
+}
+
 // MARK: - Chat
 
 struct ChatStatus: Codable {

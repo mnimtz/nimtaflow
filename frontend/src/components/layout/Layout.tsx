@@ -57,7 +57,7 @@ function VersionBadge() {
     <div className="px-3 pt-2 mt-1 border-t border-white/5" title="Laufende Docker-Version">
       <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-        <span className="hidden md:inline">PhotoFlow&nbsp;</span>v{data?.version ?? '…'}
+        <span className="hidden md:inline">LumaFlow&nbsp;</span>v{data?.version ?? '…'}
       </span>
     </div>
   )
@@ -106,7 +106,7 @@ export default function Layout() {
       <aside className="hidden md:flex w-[220px] flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 border-r border-white/5 shrink-0 select-none">
         {/* Logo */}
         <div className="h-20 flex items-center justify-center px-2 border-b border-white/5">
-          <img src="/photoflow-logo.png" alt="PhotoFlow" className="w-full max-h-16 object-contain" />
+          <img src="/photoflow-logo.png" alt="LumaFlow" className="w-full max-h-16 object-contain" />
         </div>
 
         {/* Nav */}

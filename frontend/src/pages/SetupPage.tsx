@@ -35,7 +35,7 @@ export default function SetupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/photoflow-logo.png" alt="PhotoFlow" className="h-16 w-auto object-contain mx-auto mb-3" />
+          <img src="/photoflow-logo.png" alt="LumaFlow" className="h-16 w-auto object-contain mx-auto mb-3" />
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Willkommen 👋</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Lege dein Administrator-Konto an.</p>
         </div>

@@ -17,9 +17,9 @@ struct RootView: View {
             LoginView()
         } else {
         TabView {
+            DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
             GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
             AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
-            SearchView().tabItem { Label("Suche", systemImage: "magnifyingglass") }
             ChatView().tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
             MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
         }
@@ -34,7 +34,7 @@ struct RootView: View {
 /// directly (no nested-stack double bars).
 struct MoreView: View {
     private enum Dest: String, Identifiable {
-        case library, people, memories, trips, map, relationships, shares, settings
+        case search, library, people, memories, trips, map, relationships, shares, settings
         var id: String { rawValue }
     }
     @State private var dest: Dest?
@@ -42,6 +42,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                row("Suche", "magnifyingglass", .search)
                 row("Bibliothek", "chart.bar.fill", .library)
                 row("Personen", "person.2.fill", .people)
                 row("Erinnerungen", "sparkles", .memories)
@@ -58,6 +59,7 @@ struct MoreView: View {
         .sheet(item: $dest) { d in
             Group {
                 switch d {
+                case .search: SearchView()
                 case .library: LibraryStatsView()
                 case .people: PeopleView()
                 case .memories: MemoriesView()

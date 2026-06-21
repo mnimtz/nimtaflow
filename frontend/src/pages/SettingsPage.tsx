@@ -267,7 +267,7 @@ function SourcesSection() {
 
   return (
     <div>
-      <SectionHeader title="Foto-Quellen" desc="Ordner die PhotoFlow überwachen soll. Scan + Verarbeitung starten automatisch." />
+      <SectionHeader title="Foto-Quellen" desc="Ordner die LumaFlow überwachen soll. Scan + Verarbeitung starten automatisch." />
 
       <div className="space-y-2 mb-5">
         {sources.length === 0 && (
@@ -305,7 +305,7 @@ function SourcesSection() {
                   <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
                 </button>
                 <button
-                  onClick={() => { if (confirm(`Ordner „${s.path}" entfernen?\n\nAlle daraus indizierten Fotos, Thumbnails, Vorschauen und Gesichter werden aus PhotoFlow gelöscht. Die Originaldateien auf der Festplatte bleiben unberührt.`)) del.mutate(s.id) }}
+                  onClick={() => { if (confirm(`Ordner „${s.path}" entfernen?\n\nAlle daraus indizierten Fotos, Thumbnails, Vorschauen und Gesichter werden aus LumaFlow gelöscht. Die Originaldateien auf der Festplatte bleiben unberührt.`)) del.mutate(s.id) }}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                   <Trash2 size={14} />
@@ -806,7 +806,7 @@ function AISection() {
             onChange={e => set('xmp.write_mode', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="off">Nur in die PhotoFlow-DB</option>
+            <option value="off">Nur in die LumaFlow-DB</option>
             <option value="file">DB + ins Bild (EXIF/IPTC/XMP eingebettet)</option>
             <option value="file_sidecar">DB + ins Bild + .xmp-Sidecar</option>
             <option value="sidecar">DB + .xmp-Sidecar (Original unberührt)</option>
@@ -1006,7 +1006,7 @@ function VideoAISection() {
         {/* Where video metadata goes */}
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 space-y-1.5">
           <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Wohin werden Video-Metadaten geschrieben?</p>
-          <p>• <b className="text-zinc-600 dark:text-zinc-300">Datenbank:</b> immer (Beschreibung + Tags → durchsuchbar in PhotoFlow).</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">Datenbank:</b> immer (Beschreibung + Tags → durchsuchbar in LumaFlow).</p>
           <p>• <b className="text-zinc-600 dark:text-zinc-300">Sidecar-Datei</b> <code>&lt;video&gt;.xmp</code> neben der Datei: wenn unter <b>Bilder-AI → „AI-Beschreibung &amp; Tags zurückschreiben"</b> ein Modus mit Sidecar aktiv ist (<code>Datei + Sidecar</code> oder <code>nur Sidecar</code>).</p>
           <p>• <b className="text-zinc-600 dark:text-zinc-300">Ins Video selbst:</b> nein — gängige Video-Container können kein eingebettetes XMP, daher immer der Sidecar (verlustfreier Round-Trip, übersteht einen Lösungswechsel).</p>
         </div>
@@ -1676,10 +1676,32 @@ function BackupSection() {
   const { data: appSettings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   const [sched, setSched] = useState('off')
   const [savedSched, setSavedSched] = useState(false)
-  useEffect(() => { if (appSettings?.['backup.schedule']) setSched(appSettings['backup.schedule']); if (appSettings?.['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days'])); if (appSettings?.['backup.include_thumbnails'] !== undefined) setInclThumbs(String(appSettings['backup.include_thumbnails']) !== 'false') }, [appSettings])
+  const [mirrorRemote, setMirrorRemote] = useState('')
+  const [mirrorSched, setMirrorSched] = useState('off')
+  const [encrypt, setEncrypt] = useState(false)
+  const [passphrase, setPassphrase] = useState('')
+  useEffect(() => {
+    if (!appSettings) return
+    if (appSettings['backup.schedule']) setSched(appSettings['backup.schedule'])
+    if (appSettings['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days']))
+    if (appSettings['backup.include_thumbnails'] !== undefined) setInclThumbs(String(appSettings['backup.include_thumbnails']) !== 'false')
+    if (appSettings['backup.mirror_remote']) setMirrorRemote(appSettings['backup.mirror_remote'])
+    if (appSettings['backup.mirror_schedule']) setMirrorSched(appSettings['backup.mirror_schedule'])
+    if (appSettings['backup.encrypt'] !== undefined) setEncrypt(String(appSettings['backup.encrypt']) === 'true')
+  }, [appSettings])
   const saveSchedule = useMutation({
-    mutationFn: () => api.put('/settings', { 'backup.schedule': sched, 'backup.keep_days': String(keepDays), 'backup.rclone_remote': rcloneRemote, 'backup.include_thumbnails': String(inclThumbs) }),
+    mutationFn: () => api.put('/settings', {
+      'backup.schedule': sched, 'backup.keep_days': String(keepDays),
+      'backup.rclone_remote': rcloneRemote, 'backup.include_thumbnails': String(inclThumbs),
+      'backup.mirror_remote': mirrorRemote, 'backup.mirror_schedule': mirrorSched,
+      'backup.encrypt': String(encrypt), ...(passphrase ? { 'backup.passphrase': passphrase } : {}),
+    }),
     onSuccess: () => { setSavedSched(true); setTimeout(() => setSavedSched(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const mirrorNow = useMutation({
+    mutationFn: () => api.post('/backup/mirror-originals'),
+    onSuccess: () => alert('Originale-Spiegel gestartet (läuft im Hintergrund — kann je nach Größe lange dauern).'),
+    onError: () => alert('Konnte den Spiegel-Job nicht starten.'),
   })
   const restore = useMutation({
     mutationFn: (b: BackupFile) => b.type === 'db'
@@ -1782,6 +1804,41 @@ function BackupSection() {
           {savedSched ? '✓ Gespeichert' : 'Zeitplan speichern'}
         </button>
         <p className="text-[11px] text-zinc-400 mt-2">Sichert die <b>Datenbank</b> (inkl. aller Beschreibungen, Gesichter & Such-Vektoren) + Config{inclThumbs ? ' + Thumbnails' : ''}. <b>Originaldateien sind NICHT enthalten</b> (nur deren Pfade) — daher ist das Backup viel kleiner als die Mediathek. Alte Backups werden nach der Aufbewahrungsdauer entfernt.</p>
+
+        <label className="flex items-center gap-2 mt-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
+          <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="accent-indigo-600" />
+          Backups verschlüsseln (AES-256)
+        </label>
+        {encrypt && (
+          <div className="mt-1">
+            <Label>Passwort (leer lassen, wenn schon gesetzt / per ENV)</Label>
+            <Input type="password" value={passphrase} onChange={setPassphrase} placeholder="••••••••" />
+            <p className="text-[11px] text-amber-500 mt-1">⚠️ Ohne dieses Passwort ist kein Restore möglich — sicher aufbewahren! (Besser: per ENV <code>PHOTOFLOW_BACKUP_PASSPHRASE</code>.)</p>
+          </div>
+        )}
+      </div>
+
+      {/* Originals offsite mirror */}
+      <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Originale offsite spiegeln</p>
+        <p className="text-[11px] text-zinc-400">Spiegelt die <b>Originaldateien</b> per rclone offsite. Löschungen werden mitgespiegelt — gelöschte/geänderte Dateien landen aber zuerst in einem datierten <b>Trash-Ordner</b> auf der Gegenseite (wiederherstellbar). Läuft nachts nach dem DB-Backup.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <Label>Rclone-Ziel</Label>
+            <Input value={mirrorRemote} onChange={setMirrorRemote} placeholder="b2:bucket/lumaflow-originals" />
+          </div>
+          <div>
+            <Label>Zeitplan</Label>
+            <select value={mirrorSched} onChange={e => setMirrorSched(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm">
+              <option value="off">Aus</option><option value="daily">Täglich</option><option value="weekly">Wöchentlich</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={() => mirrorNow.mutate()} disabled={mirrorNow.isPending || !mirrorRemote}
+          className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">
+          Jetzt spiegeln
+        </button>
       </div>
 
       {/* Run backup */}
@@ -1897,7 +1954,7 @@ function SharingSection() {
           <Input value={settings['share.public_base_url'] ?? ''} onChange={v => set('share.public_base_url', v.trim())}
                  placeholder="https://fotos.example.com" />
           <p className="text-xs text-zinc-400 mt-1">
-            Die von außen erreichbare Adresse deiner PhotoFlow-Instanz. Geteilte Links werden damit gebaut
+            Die von außen erreichbare Adresse deiner LumaFlow-Instanz. Geteilte Links werden damit gebaut
             (z. B. <code>https://fotos.example.com/s/&lt;token&gt;</code>). Leer lassen = aktuelle Adresse des Browsers.
           </p>
           <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
@@ -2068,7 +2125,7 @@ function UsersSection() {
 
   return (
     <div>
-      <SectionHeader title="Benutzer & Login" desc="Konten verwalten und festlegen, ob für PhotoFlow ein Login nötig ist." />
+      <SectionHeader title="Benutzer & Login" desc="Konten verwalten und festlegen, ob für LumaFlow ein Login nötig ist." />
 
       {notAuthed ? (
         <div className="max-w-xl p-4 rounded-xl border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">

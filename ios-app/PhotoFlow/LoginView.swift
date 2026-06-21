@@ -15,7 +15,7 @@ struct LoginView: View {
             VStack(spacing: 18) {
                 Spacer()
                 Image(systemName: "camera.aperture").font(.system(size: 54)).foregroundStyle(.white)
-                Text("PhotoFlow").font(.largeTitle.bold()).foregroundStyle(.white)
+                Text("LumaFlow").font(.largeTitle.bold()).foregroundStyle(.white)
                 Text("Deine private Fotoverwaltung").font(.subheadline).foregroundStyle(.white.opacity(0.7))
 
                 VStack(spacing: 12) {
