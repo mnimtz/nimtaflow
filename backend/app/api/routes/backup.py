@@ -16,16 +16,18 @@ _CACHE = os.getenv("CACHE_PATH", "/cache")
 
 
 @router.post("/run")
-async def trigger_backup(rclone_remote: str = "", background_tasks: BackgroundTasks = None):
-    """Start a full backup (DB + config). Async — returns immediately."""
+async def trigger_backup(rclone_remote: str = "", include_thumbnails: bool = True,
+                         background_tasks: BackgroundTasks = None):
+    """Start a full backup (DB + config + optionally thumbnails). Async."""
     async def _do():
-        await run_full_backup(_DB_URL, _CONFIG, rclone_remote or None)
+        await run_full_backup(_DB_URL, _CONFIG, rclone_remote or None,
+                              include_thumbnails=include_thumbnails)
 
     if background_tasks:
         background_tasks.add_task(_do)
         return {"status": "started"}
-    # Sync for small installations
-    result = await run_full_backup(_DB_URL, _CONFIG, rclone_remote or None)
+    result = await run_full_backup(_DB_URL, _CONFIG, rclone_remote or None,
+                                   include_thumbnails=include_thumbnails)
     return result
 
 

@@ -183,6 +183,14 @@ function SourcesSection() {
     queryFn: () => api.get('/sources').then(r => r.data),
     refetchInterval: 5000, // live-update scan status
   })
+  // Per-folder indexed counts (images / videos / missing) so the user can sanity-check
+  // each source — does the recognised count match what's in the folder?
+  const { data: srcCounts = [] } = useQuery<{ id: number; images: number; videos: number; missing: number }[]>({
+    queryKey: ['source-counts'],
+    queryFn: () => api.get('/sources/counts').then(r => r.data),
+    refetchInterval: 15000,
+  })
+  const countFor = (id: number) => srcCounts.find(c => c.id === id)
 
   const add = useMutation({
     mutationFn: (path: string) => api.post('/sources', { path }),
@@ -281,6 +289,12 @@ function SourcesSection() {
                         ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')} · ${s.last_scan_count ?? 0} neue Fotos`
                         : 'Noch nicht gescannt'}
                   </p>
+                  {(() => { const c = countFor(s.id); return c ? (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      📷 {c.images.toLocaleString('de')} Bilder · 🎬 {c.videos.toLocaleString('de')} Videos
+                      {c.missing > 0 && <span className="text-amber-500"> · ⚠️ {c.missing} fehlend</span>}
+                    </p>
+                  ) : null })()}
                 </div>
                 <button
                   onClick={() => scan.mutate(s.id)}
@@ -1634,6 +1648,7 @@ type HWInfo = { name: string; available: boolean; info: string; encode_h264_code
 function BackupSection() {
   const [rcloneRemote, setRcloneRemote] = useState('')
   const [keepDays, setKeepDays] = useState(30)
+  const [inclThumbs, setInclThumbs] = useState(true)
   const qc = useQueryClient()
 
   const { data: backups = [], refetch } = useQuery<BackupFile[]>({
@@ -1648,7 +1663,7 @@ function BackupSection() {
   })
 
   const runBackup = useMutation({
-    mutationFn: () => api.post('/backup/run', null, { params: { rclone_remote: rcloneRemote } }),
+    mutationFn: () => api.post('/backup/run', null, { params: { rclone_remote: rcloneRemote, include_thumbnails: inclThumbs } }),
     onSuccess: () => { refetch() },
   })
 
@@ -1661,9 +1676,9 @@ function BackupSection() {
   const { data: appSettings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   const [sched, setSched] = useState('off')
   const [savedSched, setSavedSched] = useState(false)
-  useEffect(() => { if (appSettings?.['backup.schedule']) setSched(appSettings['backup.schedule']); if (appSettings?.['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days'])) }, [appSettings])
+  useEffect(() => { if (appSettings?.['backup.schedule']) setSched(appSettings['backup.schedule']); if (appSettings?.['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days'])); if (appSettings?.['backup.include_thumbnails'] !== undefined) setInclThumbs(String(appSettings['backup.include_thumbnails']) !== 'false') }, [appSettings])
   const saveSchedule = useMutation({
-    mutationFn: () => api.put('/settings', { 'backup.schedule': sched, 'backup.keep_days': String(keepDays), 'backup.rclone_remote': rcloneRemote }),
+    mutationFn: () => api.put('/settings', { 'backup.schedule': sched, 'backup.keep_days': String(keepDays), 'backup.rclone_remote': rcloneRemote, 'backup.include_thumbnails': String(inclThumbs) }),
     onSuccess: () => { setSavedSched(true); setTimeout(() => setSavedSched(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
   })
   const restore = useMutation({
@@ -1757,11 +1772,16 @@ function BackupSection() {
             <Input value={String(keepDays)} onChange={v => setKeepDays(Number(v) || 30)} placeholder="30" />
           </div>
         </div>
+        <label className="flex items-center gap-2 mt-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
+          <input type="checkbox" checked={inclThumbs} onChange={e => setInclThumbs(e.target.checked)} className="accent-indigo-600" />
+          Thumbnails mitsichern
+          <span className="text-[11px] text-zinc-400">(regenerierbar — abwählen macht das Backup deutlich kleiner)</span>
+        </label>
         <button onClick={() => saveSchedule.mutate()} disabled={saveSchedule.isPending}
           className="mt-3 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           {savedSched ? '✓ Gespeichert' : 'Zeitplan speichern'}
         </button>
-        <p className="text-[11px] text-zinc-400 mt-2">Sichert automatisch DB + Thumbnails + Config (inkl. optionalem Rclone-Ziel unten). Alte Backups werden nach der Aufbewahrungsdauer entfernt.</p>
+        <p className="text-[11px] text-zinc-400 mt-2">Sichert die <b>Datenbank</b> (inkl. aller Beschreibungen, Gesichter & Such-Vektoren) + Config{inclThumbs ? ' + Thumbnails' : ''}. <b>Originaldateien sind NICHT enthalten</b> (nur deren Pfade) — daher ist das Backup viel kleiner als die Mediathek. Alte Backups werden nach der Aufbewahrungsdauer entfernt.</p>
       </div>
 
       {/* Run backup */}

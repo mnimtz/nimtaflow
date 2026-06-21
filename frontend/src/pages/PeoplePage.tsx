@@ -168,6 +168,7 @@ export default function PeoplePage() {
     <PersonCard
       key={p.id}
       person={p}
+      knownPeople={known}
       selected={selection.has(p.id)}
       selectMode={selectMode}
       onOpen={() => { if (selectMode) toggleSelect(p.id); else setSelectedId(p.id) }}
@@ -253,6 +254,16 @@ export default function PeoplePage() {
           Wähle Personen aus (antippen). Mit <strong>2 oder mehr</strong> kannst du sie unten <strong>zusammenführen</strong> oder verbergen.
         </div>
       )}
+
+      <details className="mb-4 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2.5">
+        <summary className="cursor-pointer text-zinc-600 dark:text-zinc-300 select-none">Was machen die Aktionen oben? <span className="text-zinc-400">(läuft alles auch automatisch)</span></summary>
+        <ul className="mt-2 space-y-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+          <li>• <b>Gesichter erkennen</b> & <b>Clustern</b>: laufen <b>automatisch</b> im Hintergrund (Erkennung laufend, Gruppierung nachts). Die Buttons stoßen es nur sofort an — musst du normal nicht drücken.</li>
+          <li>• <b>Schnell benennen</b>: unbekannte Gruppen zügig durchbenennen. Tippst du einen <b>bereits bekannten Namen</b>, wird die Gruppe mit dieser Person <b>zusammengeführt</b> statt doppelt angelegt.</li>
+          <li>• <b>Crops vorbereiten</b>: erzeugt die Gesichts-Vorschaubilder vorab (Seite lädt dann schneller). Optional.</li>
+          <li>• <b>Gesichter schreiben</b>: speichert Namen dauerhaft in die Bilddateien (für Re-Import). Optional.</li>
+        </ul>
+      </details>
 
       {isLoading ? (
         <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
@@ -462,8 +473,9 @@ function FaceTile({ face, selected, onToggle, onAssign }: {
   )
 }
 
-function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onToggleHidden, onDelete, onRenamed }: {
+function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggleSelect, onToggleHidden, onDelete, onRenamed }: {
   person: Person
+  knownPeople: Person[]
   selected: boolean
   selectMode: boolean
   onOpen: () => void
@@ -478,8 +490,18 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
   const toast = useToast()
 
   const rename = useMutation({
-    mutationFn: (n: string) => api.patch(`/people/${person.id}`, { name: n }),
-    onSuccess: () => { setEditing(false); onRenamed(); toast('Name gespeichert', 'success') },
+    mutationFn: (n: string) => {
+      // If the typed name matches an EXISTING different person, merge into them
+      // instead of creating a second "Lea Marie" etc. (the duplicate-person trap).
+      const match = (knownPeople || []).find(
+        k => k.id !== person.id && (k.name || '').trim().toLowerCase() === n.trim().toLowerCase())
+      if (match) {
+        return api.post('/people/merge-multi', { target_id: match.id, source_ids: [person.id] })
+          .then(() => ({ merged: match.name }))
+      }
+      return api.patch(`/people/${person.id}`, { name: n }).then(() => ({ merged: null }))
+    },
+    onSuccess: (r: any) => { setEditing(false); onRenamed(); toast(r?.merged ? `Mit „${r.merged}" zusammengeführt` : 'Name gespeichert', 'success') },
     onError: () => toast('Speichern fehlgeschlagen', 'error'),
   })
 
@@ -530,14 +552,19 @@ function PersonCard({ person, selected, selectMode, onOpen, onToggleSelect, onTo
       </button>
 
       {editing ? (
+        <>
         <input
-          autoFocus value={name}
+          autoFocus value={name} list={`names-${person.id}`}
           onChange={e => setName(e.target.value)}
           onBlur={() => { if (name.trim() && name !== person.name) rename.mutate(name.trim()); else setEditing(false) }}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setName(person.name); setEditing(false) } }}
           className="w-full px-2 py-1 text-center text-sm rounded-md bg-zinc-50 dark:bg-zinc-800 border border-indigo-500 text-zinc-900 dark:text-white focus:outline-none"
-          placeholder="Name…"
+          placeholder="Name… (bekannte = zusammenführen)"
         />
+        <datalist id={`names-${person.id}`}>
+          {(knownPeople || []).filter(k => k.id !== person.id && k.name).map(k => <option key={k.id} value={k.name} />)}
+        </datalist>
+        </>
       ) : person.name ? (
         <button onClick={() => setEditing(true)} className="text-sm font-medium text-zinc-900 dark:text-white text-center truncate w-full hover:text-indigo-500 dark:hover:text-indigo-300" title="Umbenennen">
           {person.name}

@@ -16,6 +16,28 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+@router.get("/counts")
+async def source_counts(db: AsyncSession = Depends(get_db)):
+    """Per-source indexed counts (images / videos / missing) so the user can see at
+    a glance how much each folder contributed and spot mounting problems."""
+    from app.models.photo import Photo
+    from sqlalchemy import func, or_
+    result = await db.execute(select(PhotoSource).order_by(PhotoSource.id))
+    out = []
+    for s in result.scalars().all():
+        prefix = (s.path or "").rstrip("/")
+        cond = or_(Photo.path == prefix, Photo.path.like(prefix + "/%"))
+        row = (await db.execute(select(
+            func.count().filter(Photo.is_video == False),   # noqa: E712
+            func.count().filter(Photo.is_video == True),     # noqa: E712
+            func.count().filter(Photo.is_missing == True),   # noqa: E712
+        ).where(cond))).one()
+        out.append({"id": s.id, "path": s.path,
+                    "images": int(row[0] or 0), "videos": int(row[1] or 0),
+                    "missing": int(row[2] or 0)})
+    return out
+
+
 @router.get("/scan-progress")
 async def scan_progress(db: AsyncSession = Depends(get_db)):
     """Live scan progress per source (published to Redis by scan_source during a
