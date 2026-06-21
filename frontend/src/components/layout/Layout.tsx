@@ -1,4 +1,5 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import ErrorBoundary from '../ErrorBoundary'
 import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
@@ -77,6 +78,7 @@ const nav = [
 type Me = { role: string; access_config?: Record<string, any> | null }
 
 export default function Layout() {
+  const loc = useLocation()
   const { dark, toggle } = useTheme()
   const hasToken = !!localStorage.getItem('access_token')
   const { data: me } = useQuery<Me>({
@@ -151,7 +153,9 @@ export default function Layout() {
 
       {/* ── Main ─────────────────────────────────── */}
       <main className="flex-1 overflow-auto bg-white dark:bg-zinc-950 min-w-0">
-        <Outlet />
+        <ErrorBoundary resetKey={loc.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       {/* ── Mobile bottom nav ─────────────────────── */}

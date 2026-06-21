@@ -209,7 +209,11 @@ function LiveLog() {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://${window.location.host}/api/jobs/ws`)
+    // Derive ws/wss from the page scheme — a hardcoded ws:// throws a mixed-content
+    // SecurityError on an HTTPS deployment, which (without an ErrorBoundary) blanked
+    // the whole Pipeline page.
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${proto}//${window.location.host}/api/jobs/ws`)
     wsRef.current = ws
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
