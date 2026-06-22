@@ -32,6 +32,11 @@
 8. **iOS-App**: ALLE Punkte spiegeln (`ios-app/`).
 9. **Push-Nachrichten-Konzept** + **iOS-Release-Readiness-Audit**.
 
+### Älterer Backlog (kleinere offene Punkte)
+- **Vision-Chat:** beim Foto-Chat die Top-Treffer-Thumbnails an Gemini mitschicken (nicht nur Text), damit das Modell die Bilder „sieht".
+- **Video-Gesichts-Sweep (server-seitig):** Gesichter aus dem 1080p-Web-MP4 auf der SSD ziehen (insightface) statt 4K-Original — nightly/on-demand. (Teilweise vorhanden: `sweep_video_faces`/`detect_video_faces` auf der video-Queue.)
+- **Karten-Eigenposition** („immer Grönland") — siehe Punkt 2 oben; vmtl. iOS-MapKit.
+
 ### Bekannte Daten-Realität
 - ~13k „unbekannte Gesichter": die meisten haben **objektiv niedrige ArcFace-Ähnlichkeit** (Profil/Bewegung/Kinder) → auto-Clustering kann sie nicht sicher zuordnen ohne Falsch-Merges. Darum die Vorschläge-UI (Mensch bestätigt).
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
