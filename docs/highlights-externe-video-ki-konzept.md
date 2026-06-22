@@ -177,6 +177,46 @@ Schalter für Auto-Wochenhighlight, Hinweis auf Kosten.
 
 ---
 
+## Nachtrag (Juni 2026): Günstigere, Gratis- & lokale Optionen
+
+Auslöser: Frage nach billigeren Alternativen, Gratis-Kontingenten und „Google Omni".
+
+### Gratis-API-Kontingent für Video? → praktisch **nein**
+- **Veo (Gemini API)** hat **keinen** Free-Tier — Video ist paid-only.
+- **„Gemini Omni"** = Googles **Consumer**-Videogenerierung (Flow/Whisk/Gemini-App), 50 Gratis-Credits/Tag (~2 Fast-Clips/Tag). **Nur UI, keine API** → **nicht in PhotoFlow integrierbar.**
+- Einmalige **Test-Credits** gibt es bei Aggregatoren: **fal.ai ~$20 gratis** (Business-Mail), **Hailuo/MiniMax** ~200 Welcome-Credits + Daily (~4–6 kurze Clips, Wasserzeichen).
+
+### Billigste Cloud (pro-Clip, via Aggregator fal.ai)
+| Modell (über fal.ai) | Preis (≈) | Einordnung |
+|---|---|---|
+| **Vidu** | ~$0.0375/s | günstigster Sekundenpreis |
+| **MiniMax Hailuo 02** | ~$0.28/Clip (~$0.046/s) | bestes Preis/Leistung „billig" |
+| **Stable Video Diffusion** | ~$0.20 / 4 s | günstig, einfache Bewegung |
+| **Veo 3 / Sora 2 (über fal)** | ~$0.50 / 5 s (= $0.10/s) | **billiger als Veo direkt** ($0.15/s)! |
+- **fal.ai ist attraktiv:** ein Key → viele Modelle (Hailuo billig … Veo/Sora Premium), $20 gratis zum **echten Testen** (löst genau das Problem, dass Veo direkt nicht gratis testbar ist).
+
+### Lokal & gratis (self-hosted) — passt zu eurem Setup
+- **Prod-Box hat KEINE CUDA-GPU** (nur Intel-iGPU/QSV) → dort läuft keine Video-Diffusion.
+- **M3-Mac** (macht schon Qwen-Video via MLX) ist der einzige lokale Weg:
+  - **LTX-2.3 via MLX**: läuft auf M3, **~5 Min/Clip**, **0 € pro Clip**, **Fotos bleiben lokal** (Privacy!). Es gibt sogar eine native macOS-App (`ltx-video-mac`). **Empfehlung für lokal.**
+  - **Wan 2.2** auf Apple Silicon: praktisch zu langsam (~82 Min für 2 s auf M1 Max) → nicht praktikabel.
+
+### Aktualisierte Empfehlung
+1. **Zum Testen JETZT: fal.ai** ($20 gratis) — Provider `fal` in `video_gen/` einbauen, damit überhaupt **kostenlos** evaluierbar (Veo direkt war ja nicht gratis testbar). Modellwahl pro Setting (Hailuo billig / Veo premium).
+2. **Für Dauerbetrieb gratis + privat: LTX-2.3 lokal auf dem M3** — neuer M3-Worker analog `com.photoflow.m3video`, Provider `local`. Kein laufender Cent, Familienfotos verlassen den Server nicht; Tradeoff: ~5 Min/Clip, Qualität < Veo.
+3. **Veo direkt** bleibt die Premium-Option (beste Qualität+Ton), aber teurer und nicht gratis testbar.
+- Architektur trägt das schon: `video_gen/`-Adapterschicht → Provider `veo` (gebaut), `fal`, `local` ergänzbar; Setting `highlights.ai_provider`.
+
+### Quellen Nachtrag (Stand Juni 2026)
+- Gemini API Free-Tier / Veo paid-only: https://ai.google.dev/gemini-api/docs/pricing
+- Gemini Omni (Consumer-Video): https://gemini.google/overview/video-generation/
+- fal.ai Preise & Free Credits: https://fal.ai/pricing · https://www.getaiperks.com/en/ai/fal-ai-free-credits-2026
+- Hailuo/MiniMax Free + Preise: https://costbench.com/software/ai-video-generators/hailuo-ai/
+- Open-Source lokal (LTX/Wan/CogVideoX): https://ltx.io/blog/best-open-source-video-generation-models · https://www.hyperstack.cloud/blog/case-study/best-open-source-video-generation-models
+- LTX auf Apple Silicon (~5 Min/Clip, MLX): https://lilting.ch/en/articles/ltx2-wan22-mac-local-video-gen · https://github.com/james-see/ltx-video-mac
+
+---
+
 ### Quellen (Preise, Stand Juni 2026)
 - Veo 3 / 3.1 Pricing: https://www.veo3ai.io/blog/veo-3-api-pricing-2026 · https://costgoat.com/pricing/google-veo
 - Runway API Pricing: https://docs.dev.runwayml.com/guides/pricing/ · https://academy.runwayml.com/models-pricing
