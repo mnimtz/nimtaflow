@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3, FolderPlus } from 'lucide-react'
+import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3, FolderPlus, Play } from 'lucide-react'
 import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
 import Gallery, { type LayoutMode } from '../components/gallery/Gallery'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
@@ -51,29 +51,38 @@ function MemoriesView({ onPhotoClick }: { onPhotoClick: (photos: Photo[], i: num
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <Sparkles size={48} className="text-gray-300 dark:text-gray-600 mb-4" />
-        <p className="text-gray-500 dark:text-gray-400 text-sm">Keine Erinnerungen gefunden.</p>
-        <p className="text-gray-400 dark:text-gray-600 text-xs mt-1">
-          Fotos mit Datum von früheren Jahren erscheinen hier.
+        <p className="text-gray-500 dark:text-gray-400 text-sm">Keine Erinnerungen für heute.</p>
+        <p className="text-gray-400 dark:text-gray-600 text-xs mt-1 max-w-xs">
+          Hier erscheinen Fotos, die du an einem früheren Jahr am heutigen Tag aufgenommen hast.
+          Optional auf Personen einschränkbar unter Einstellungen → Erinnerungen.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12 pb-12">
       {data.map(group => (
-        <div key={group.years_ago}>
-          <div className="flex items-center gap-3 mb-3">
-            <Sparkles size={16} className="text-yellow-400" />
-            <h2 className="font-semibold text-gray-900 dark:text-white">
-              Vor {group.years_ago} {group.years_ago === 1 ? 'Jahr' : 'Jahren'}
-            </h2>
-            <span className="text-sm text-gray-400">
-              {new Date(group.date).toLocaleDateString('de', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </span>
+        <section key={group.years_ago}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shrink-0 shadow-sm">
+              <div className="text-center leading-none">
+                <div className="text-xl font-bold">{group.years_ago}</div>
+                <div className="text-[9px] uppercase tracking-wide opacity-90">{group.years_ago === 1 ? 'Jahr' : 'Jahre'}</div>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">
+                {group.years_ago === 1 ? 'Heute vor 1 Jahr' : `Heute vor ${group.years_ago} Jahren`}
+              </h2>
+              <p className="text-sm text-gray-500">
+                {new Date(group.date).toLocaleDateString('de', { day: 'numeric', month: 'long', year: 'numeric' })}
+                {' · '}{group.photos.length} {group.photos.length === 1 ? 'Foto' : 'Fotos'}
+              </p>
+            </div>
           </div>
           <div
-            className="grid gap-1"
+            className="grid gap-1.5"
             style={{
               gridTemplateColumns: `repeat(auto-fill, minmax(${Math.floor(ROW_HEIGHT * 1.33)}px, 1fr))`,
               gridAutoRows: `${ROW_HEIGHT}px`,
@@ -82,7 +91,7 @@ function MemoriesView({ onPhotoClick }: { onPhotoClick: (photos: Photo[], i: num
             {group.photos.map((photo, i) => (
               <div
                 key={photo.id}
-                className="relative overflow-hidden rounded bg-gray-100 dark:bg-gray-800 cursor-pointer group"
+                className="relative overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800 cursor-pointer group"
                 onClick={() => onPhotoClick(group.photos, i)}
               >
                 <img
@@ -91,10 +100,17 @@ function MemoriesView({ onPhotoClick }: { onPhotoClick: (photos: Photo[], i: num
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
+                {photo.is_video && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/45 rounded-full p-2 group-hover:bg-black/60 transition">
+                      <Play size={16} className="text-white" fill="white" />
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        </div>
+        </section>
       ))}
     </div>
   )

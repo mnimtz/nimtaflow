@@ -30,7 +30,7 @@
 ### ⏳ Offen
 1. **Karte** (Web erledigt v1.270–271): **Seerouten-Layer ✅** (v1.270) — Reise-Routen (Alben mit `smart_criteria.trip`+`route`) als ein-/ausblendbare Polylinien + Stations-Marker (`MapPage.tsx`, Umschalter „Routen", Farb-Palette pro Reise, Tooltip). **Orts-Panel ✅** (v1.271) — Orts-Suche zu durchblätterbarem Seitenpanel ausgebaut (alle Orte mit Foto-Zahl, Suche, Klick → Hinfliegen). Beides rein Frontend. **Offen nur noch iOS:** **Eigenposition-Bug** („immer Grönland") ist **iOS-only** — im Web KEIN Geolocation-Code (nur Clipboard-`navigator`), gehört zur iOS-Parität (#7).
 2. **Mobile-Ansicht** grundlegend überarbeiten + Menüstruktur.
-3. **Galerie**: „Erinnerungen"-Umschalter befüllen (Erinnerungen von Startseite hübsch zeigen).
+3. **Galerie „Erinnerungen" ✅** (v1.273): `MemoriesView` aufgewertet — Jahres-Badge (Gradient), „Heute vor X Jahren"-Wording (konsistent zur Startseite), Foto-Anzahl pro Gruppe, Video-Play-Indikator, bessere Empty-State-Hilfe (verweist auf Einstellungen → Erinnerungen-Personenfilter). Datenquelle `/photos/memories` (on-this-day ±1 Tag, optional personen-gefiltert) war ok; Punkt war Präsentation.
 4. **Reisen**: Bilder add/remove; Reiseroute als Karte (auf Schiffsroute optimiert).
 5. **Highlights**: fertigstellen + testen, Personenwahl in Vorschlägen; **externe-Video-KI-Konzept** (Doku zuerst); Einstellungen erweitern.
 6. **Externe-KI-Integration** (Alben/Smart-Alben → Videos/Clips/„Highlight der Woche").
@@ -47,4 +47,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.272.0 (Vorschläge: „Alle ablehnen"-Button). Versionen siehe git log._
+_Letzter Stand-Commit: v1.273.0 (Galerie-Erinnerungen aufgewertet). Versionen siehe git log._
