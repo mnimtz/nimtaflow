@@ -3,11 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2, Pencil } from 'lucide-react'
+import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2, Pencil, Plus, Check } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import ShareDialog from '../components/ShareDialog'
-import { useToast, useConfirm } from '../components/ui/dialogs'
+import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
 
 type Waypoint = { place: string; country?: string; date?: string; lat: number; lng: number; note?: string }
 type Album = { id: number; name: string; cover_photo_id?: number | null; photo_count: number; smart_criteria?: any }
@@ -28,18 +28,91 @@ function FitAll({ pts }: { pts: [number, number][] }) {
   return null
 }
 
-// ── Trip detail: map route (photo GPS line + named waypoints) + removable photos ──
+// ── Add-photos picker: search + date filter (prefilled to the trip span) ──────────
+function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, onAdded }: {
+  albumId: number; existing: Set<number>; defaultFrom?: string; defaultTo?: string
+  onClose: () => void; onAdded: () => void
+}) {
+  const toast = useToast()
+  const [q, setQ] = useState('')
+  const [from, setFrom] = useState(defaultFrom || '')
+  const [to, setTo] = useState(defaultTo || '')
+  const [sel, setSel] = useState<Set<number>>(new Set())
+
+  const { data, isFetching } = useQuery<{ items: Photo[]; total: number }>({
+    queryKey: ['trip-add-photos', albumId, q, from, to],
+    queryFn: () => api.get('/photos', { params: {
+      search: q.trim() || undefined, date_from: from || undefined, date_to: to || undefined,
+      limit: 120, sort: 'oldest',
+    } }).then(r => r.data),
+  })
+  const items = data?.items || []
+
+  const add = useMutation({
+    mutationFn: () => api.post(`/albums/${albumId}/photos`, { photo_ids: [...sel] }).then(r => r.data),
+    onSuccess: (d: { added: number }) => { toast(`${d.added} Foto(s) zur Reise hinzugefügt`, 'success'); onAdded() },
+  })
+  const toggle = (id: number) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const inp = 'px-2.5 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
+  return (
+    <Modal open onClose={onClose} title="Fotos zur Reise hinzufügen" maxWidth="max-w-4xl">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Suche (Beschreibung, Ort …)" className={`${inp} flex-1 min-w-[10rem]`} />
+        <label className="text-xs text-zinc-500">von <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} /></label>
+        <label className="text-xs text-zinc-500">bis <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} /></label>
+      </div>
+      <div className="h-[55vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 p-1.5">
+        {isFetching && items.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-zinc-400 text-sm"><Loader2 className="animate-spin mr-2" size={16} /> Lädt…</div>
+        ) : items.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-zinc-400 text-sm">Keine Fotos für diese Filter.</div>
+        ) : (
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
+            {items.map(p => {
+              const already = existing.has(p.id)
+              const picked = sel.has(p.id)
+              return (
+                <button key={p.id} disabled={already} onClick={() => toggle(p.id)}
+                  className={`relative aspect-square rounded-lg overflow-hidden bg-zinc-800 ${already ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} ${picked ? 'ring-2 ring-indigo-500' : ''}`}>
+                  <img src={thumbUrl(p as any, 'small')} className="w-full h-full object-cover" loading="lazy" />
+                  {already && <span className="absolute inset-x-0 bottom-0 text-[10px] bg-black/60 text-white text-center py-0.5">in Reise</span>}
+                  {picked && <span className="absolute top-1 right-1 bg-indigo-500 rounded-full p-0.5"><Check size={11} className="text-white" /></span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-2 mt-3">
+        <button onClick={onClose} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={() => add.mutate()} disabled={sel.size === 0 || add.isPending}
+          className="px-3.5 py-1.5 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {add.isPending ? 'Füge hinzu…' : `${sel.size} hinzufügen`}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Trip detail: map route (photo GPS line + named waypoints) + add/removable photos ──
 function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
   const qc = useQueryClient()
   const confirm = useConfirm()
   const toast = useToast()
   const [lbIdx, setLbIdx] = useState<number | null>(null)
   const [showShare, setShowShare] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const { data } = useQuery<{ items: Photo[]; total: number }>({
     queryKey: ['album-photos', album.id],
     queryFn: () => api.get(`/albums/${album.id}/photos`, { params: { limit: 1000 } }).then(r => r.data),
   })
   const photos = data?.items || []
+  // Trip date span (from existing photos) → prefill the add-photos date filter.
+  const dates = useMemo(() => photos.map(p => p.taken_at).filter(Boolean).sort() as string[], [photos])
+  const tripFrom = dates[0]?.slice(0, 10)
+  const tripTo = dates[dates.length - 1]?.slice(0, 10)
+  const existingIds = useMemo(() => new Set(photos.map(p => p.id)), [photos])
   const route: Waypoint[] = album.smart_criteria?.route || []
   // actual travelled path = photos with GPS, in chronological order
   const gpsLine = useMemo(() => photos
@@ -67,6 +140,8 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
         <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Plus size={15} /> Fotos hinzufügen</button>
           <button onClick={() => { const n = window.prompt('Reise umbenennen:', album.name); if (n && n.trim() && n !== album.name) renameTrip.mutate(n.trim()) }}
             className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><Pencil size={15} /> Umbenennen</button>
           <button onClick={() => setShowShare(true)}
@@ -76,6 +151,11 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
         </div>
       </div>
       {showShare && <ShareDialog target={{ kind: 'album', albumId: album.id, title: album.name }} onClose={() => setShowShare(false)} />}
+      {showAdd && (
+        <AddPhotosModal albumId={album.id} existing={existingIds} defaultFrom={tripFrom} defaultTo={tripTo}
+          onClose={() => setShowAdd(false)}
+          onAdded={() => { qc.invalidateQueries({ queryKey: ['album-photos', album.id] }); qc.invalidateQueries({ queryKey: ['albums'] }); setShowAdd(false) }} />
+      )}
       <p className="text-sm text-zinc-500 mb-4">{photos.length} Fotos{route.length ? ` · ${route.length} Stationen` : ''}</p>
 
       {allPts.length > 0 && (
