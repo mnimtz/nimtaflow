@@ -103,12 +103,14 @@ export default function PeoplePage() {
     onSuccess: () => { refresh(); toast('Person gelöscht', 'success') },
   })
   const clusterMutation = useMutation({
+    // Endpoint dispatcht jetzt einen Celery-Task (cpu-Queue) und kehrt sofort mit
+    // {status:"queued"} zurück — kein synchrones Ergebnis mehr (heavy DBSCAN raus
+    // aus dem API-Prozess). Ergebnis erscheint nach dem Lauf in der Personenliste.
     mutationFn: () => api.post('/people/cluster').then(r => r.data),
-    onSuccess: (d: { new_persons: number; clustered: number; assigned_to_existing: number; merged_clusters?: number }) => {
-      refresh()
-      toast(`Clustering: ${d.new_persons} neue Gruppe(n), ${d.assigned_to_existing} zugeordnet, ${d.merged_clusters ?? 0} zusammengeführt`, 'success')
+    onSuccess: () => {
+      toast('Clustering gestartet… (läuft im Hintergrund, Ergebnis erscheint gleich)', 'success')
     },
-    onError: () => toast('Clustering fehlgeschlagen', 'error'),
+    onError: () => toast('Clustering konnte nicht gestartet werden', 'error'),
   })
 
   // Button-driven: persist every detected face as an MWG region (box + name
@@ -155,6 +157,10 @@ export default function PeoplePage() {
   const confirmGroup = useMutation({
     mutationFn: (pid: number) => api.post(`/people/suggestions/confirm/${pid}`).then(r => r.data),
     onSuccess: (d: { confirmed: number }) => { toast(`${d.confirmed} Gesicht(er) bestätigt`, 'success'); refreshSug() },
+  })
+  const rejectGroup = useMutation({
+    mutationFn: (pid: number) => api.post(`/people/suggestions/reject/${pid}`).then(r => r.data),
+    onSuccess: (d: { rejected: number }) => { toast(`${d.rejected} Vorschlag/Vorschläge abgelehnt`, 'success'); refreshSug() },
   })
   const confirmFace = useMutation({
     mutationFn: (id: number) => api.post(`/people/faces/${id}/confirm-suggestion`).then(r => r.data),
@@ -346,10 +352,17 @@ export default function PeoplePage() {
                         <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{g.name}</span>
                         <span className="text-xs text-zinc-500 shrink-0">{g.count}×</span>
                       </div>
-                      <button onClick={() => confirmGroup.mutate(g.person_id)}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shrink-0">
-                        Alle bestätigen
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => confirmGroup.mutate(g.person_id)} disabled={confirmGroup.isPending || rejectGroup.isPending}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
+                          Alle bestätigen
+                        </button>
+                        <button onClick={async () => { if (await confirm({ title: `Alle ${g.count} Vorschläge für „${g.name}" ablehnen?`, message: 'Die Gesichter werden nicht zugeordnet (nur der Vorschlag entfernt).', confirmLabel: 'Alle ablehnen', danger: true })) rejectGroup.mutate(g.person_id) }}
+                          disabled={confirmGroup.isPending || rejectGroup.isPending}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">
+                          Alle ablehnen
+                        </button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-2">
                       {g.faces.map(f => (

@@ -565,6 +565,18 @@ async def confirm_all_suggestions(person_id: int, db: AsyncSession = Depends(get
     return {"confirmed": res.rowcount}
 
 
+@router.post("/suggestions/reject/{person_id}")
+async def reject_all_suggestions(person_id: int, db: AsyncSession = Depends(get_db)):
+    """Reject ALL borderline suggestions for one person at once — clears the suggestion
+    (does NOT assign or ignore the faces), mirroring the single reject-suggestion."""
+    res = await db.execute(update(Face).where(
+        Face.suggested_person_id == person_id, Face.person_id == None,  # noqa: E711
+        Face.is_ignored == False,  # noqa: E712
+    ).values(suggested_person_id=None, suggested_score=None))
+    await db.commit()
+    return {"rejected": res.rowcount}
+
+
 @router.post("/suggest")
 async def trigger_suggest(db: AsyncSession = Depends(get_db)):
     """(Re)compute borderline face→person suggestions in the background (scan queue)."""
@@ -633,16 +645,19 @@ async def face_to_new_person(face_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/cluster")
-async def cluster_faces(db: AsyncSession = Depends(get_db)):
+async def cluster_faces():
     """Group still-unassigned face embeddings into people via DBSCAN (cosine).
     Each new cluster becomes an unnamed Person (rename/merge in the UI). Faces
     that don't cluster (noise) stay unassigned (= 'Gesichter'/unbekannt).
-    Already-assigned faces are left untouched (preserves manual work)."""
-    try:
-        from app.services.face_cluster import cluster_unassigned
-        return await cluster_unassigned(db)
-    except ImportError:
-        raise HTTPException(500, "scikit-learn nicht verfügbar")
+    Already-assigned faces are left untouched (preserves manual work).
+
+    Dispatched to the CPU worker (cluster_faces_full_task) instead of running
+    INLINE in the API process: the heavy DBSCAN distance matrix (~12k×12k, ~1 GB)
+    would spike memory/latency of the backend while it serves every other request.
+    Returns immediately — the same async pattern as /suggest."""
+    from app.worker.tasks import cluster_faces_full_task
+    cluster_faces_full_task.delay()
+    return {"status": "queued"}
 
 
 @router.post("/{person_id}/set-as-me")
