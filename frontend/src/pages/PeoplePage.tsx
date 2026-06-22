@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
   Check, Search, Star, Sparkles, Image as ImageIcon, Save, Mail, Phone, MapPin,
+  Share2,
 } from 'lucide-react'
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
@@ -195,6 +196,7 @@ export default function PeoplePage() {
         personId={selectedId}
         onBack={() => setSelectedId(null)}
         onDeleted={() => { setSelectedId(null); refresh() }}
+        onOpenPerson={(id) => setSelectedId(id)}
       />
     )
   }
@@ -709,14 +711,20 @@ function EmptyPeople() {
 }
 
 /* ─────────────── Person detail ─────────────── */
-function PersonDetailView({ personId, onBack, onDeleted }: {
-  personId: number; onBack: () => void; onDeleted: () => void
+function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
+  personId: number; onBack: () => void; onDeleted: () => void; onOpenPerson: (id: number) => void
 }) {
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [tab, setTab] = useState<'photos' | 'faces' | 'relations'>('photos')
+
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
+  })
+  const relsOn = (settings?.['features.relationships'] ?? 'false') === 'true'
 
   const { data: person } = useQuery<Person>({
     queryKey: ['person', personId],
@@ -768,15 +776,22 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
   const photos: Photo[] = photosData?.items || []
   const total = photosData?.total ?? person.face_count
 
+  const TABS = [
+    { id: 'photos' as const, label: 'Fotos', count: total, icon: <ImageIcon size={15} /> },
+    { id: 'faces' as const, label: 'Gesichter', count: facesTotal, icon: <Users size={15} /> },
+    ...(relsOn ? [{ id: 'relations' as const, label: 'Beziehungen', count: -1, icon: <Share2 size={15} /> }] : []),
+  ]
+
   return (
     <div className="p-4 max-w-5xl mx-auto">
       <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm mb-6">
         <ArrowLeft size={16} /> Zurück
       </button>
 
-      <div className="flex gap-6 mb-8">
-        <div className="relative w-28 h-28 rounded-full overflow-hidden bg-zinc-800 ring-2 ring-zinc-700 flex-shrink-0 flex items-center justify-center">
-          <span className="text-4xl font-bold text-zinc-600 absolute">{(person.name || '?').charAt(0).toUpperCase()}</span>
+      {/* Profilkarte */}
+      <div className="flex flex-col sm:flex-row gap-6 mb-8 p-5 rounded-2xl bg-white/60 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800">
+        <div className="relative w-36 h-36 sm:w-40 sm:h-40 rounded-2xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-300 dark:ring-zinc-700 flex-shrink-0 flex items-center justify-center mx-auto sm:mx-0">
+          <span className="text-5xl font-bold text-zinc-600 absolute">{(person.name || '?').charAt(0).toUpperCase()}</span>
           <img src={`/api/people/${personId}/avatar?v=${person.profile_face_id ?? 0}`} className="w-full h-full object-cover absolute inset-0"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         </div>
@@ -787,24 +802,25 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <h1 className={`text-2xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
-                <button onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200" title="Bearbeiten"><Pencil size={16} /></button>
+                <h1 className={`text-3xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
+                <button onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 shrink-0" title="Bearbeiten"><Pencil size={17} /></button>
               </div>
               {!person.name && <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">+ Namen vergeben</button>}
               {person.alias && <p className="text-zinc-400 text-sm mt-0.5">„{person.alias}“</p>}
-              <div className="flex items-center gap-3 text-zinc-500 text-sm mt-1">
+              <div className="flex items-center gap-3 text-zinc-500 text-sm mt-1.5">
                 <span>{total} Fotos</span>
                 {person.birthdate && <span>· geb. {new Date(person.birthdate).toLocaleDateString('de')} ({differenceInYears(new Date(), new Date(person.birthdate))} J.)</span>}
               </div>
               {person.notes && <p className="text-zinc-400 text-sm mt-2 italic">{person.notes}</p>}
+              {/* Kontakt prominent: klickbare Chips */}
               {(person.email || person.phone || person.address) && (
-                <div className="mt-2 space-y-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                  {person.email && <div className="flex items-center gap-1.5"><Mail size={13} className="text-zinc-400 shrink-0" /><a href={`mailto:${person.email}`} className="hover:text-indigo-500 truncate">{person.email}</a></div>}
-                  {person.phone && <div className="flex items-center gap-1.5"><Phone size={13} className="text-zinc-400 shrink-0" /><a href={`tel:${person.phone}`} className="hover:text-indigo-500">{person.phone}</a></div>}
-                  {person.address && <div className="flex items-center gap-1.5"><MapPin size={13} className="text-zinc-400 shrink-0" /><span>{person.address}</span></div>}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {person.email && <a href={`mailto:${person.email}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300 transition max-w-full"><Mail size={14} className="shrink-0" /><span className="truncate">{person.email}</span></a>}
+                  {person.phone && <a href={`tel:${person.phone}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300 transition"><Phone size={14} className="shrink-0" />{person.phone}</a>}
+                  {person.address && <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-sm text-zinc-700 dark:text-zinc-300 max-w-full"><MapPin size={14} className="shrink-0" /><span className="truncate">{person.address}</span></span>}
                 </div>
               )}
-              <div className="mt-3 flex items-center gap-4">
+              <div className="mt-4 flex items-center gap-4">
                 <button onClick={() => hide.mutate(!person.is_hidden)} disabled={hide.isPending}
                   className="flex items-center gap-1 text-xs text-zinc-400 hover:text-indigo-300 disabled:opacity-50">
                   {person.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />} {person.is_hidden ? 'Wieder anzeigen' : 'Verbergen'}
@@ -819,59 +835,84 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
         </div>
       </div>
 
-      <RelationshipsPanel personId={personId} personName={person.name || 'Unbekannt'} />
+      {/* Unter-Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-zinc-200 dark:border-zinc-800">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${tab === t.id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300' : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>
+            {t.icon}{t.label}{t.count >= 0 && <span className="text-xs opacity-60">({t.count})</span>}
+          </button>
+        ))}
+      </div>
 
-      {facesTotal > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Gesichter ({facesTotal})</h2>
-          <p className="text-xs text-zinc-500 mb-3">Tippe ein Gesicht ★ um es als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
-          <div className="flex gap-2 flex-wrap">
-            {faces.map(f => (
-              <div key={f.id} className={`group relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-800 ring-2 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-700'}`}>
-                <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
-                  onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
-                {person.profile_face_id === f.id && (
-                  <div className="absolute top-0.5 left-0.5 bg-indigo-500 rounded-full p-0.5"><Star size={9} className="text-white" fill="white" /></div>
+      {/* Tab: Fotos */}
+      {tab === 'photos' && (
+        <>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="ml-auto flex rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs">
+              {([['newest', 'Neueste'], ['oldest', 'Älteste']] as const).map(([v, l]) => (
+                <button key={v} onClick={() => { setPhotoSort(v); setPhotoPage(1) }}
+                  className={`px-2.5 py-1 ${photoSort === v ? 'bg-indigo-600 text-white' : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
+            {photos.map((photo, i) => (
+              <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer" onClick={() => setLightboxIndex(i)}>
+                <img src={thumbUrl(photo as any, 'small')} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                {(photo as any).is_video && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/50 rounded-full p-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg></div>
+                  </div>
                 )}
-                {/* always-visible action bar (works on touch too) */}
-                <div className="absolute inset-x-0 bottom-0 h-7 bg-black/55 flex items-center justify-center gap-2">
-                  <button onClick={() => setCover.mutate(f.id)} title="Als Profilbild"
-                    className="text-white/90 hover:text-yellow-300"><Star size={13} fill={person.profile_face_id === f.id ? 'currentColor' : 'none'} /></button>
-                  <button onClick={async () => { if (await confirm({ title: 'Gehört nicht zu dieser Person?', message: 'Das Gesicht wird wieder freigegeben.' })) removeFace.mutate(f.id) }}
-                    title="Ist nicht diese Person" className="text-white/90 hover:text-red-400"><X size={13} /></button>
-                </div>
               </div>
             ))}
           </div>
-          <Pager page={facePage} pageSize={facePageSize} total={facesTotal}
-            onPage={setFacePage} onSize={(n) => { setFacePageSize(n); setFacePage(1) }} />
+          <Pager page={photoPage} pageSize={photoPageSize} total={total}
+            onPage={setPhotoPage} onSize={(n) => { setPhotoPageSize(n); setPhotoPage(1) }} />
+          {photos.length === 0 && <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>}
+        </>
+      )}
+
+      {/* Tab: Gesichter (größer) */}
+      {tab === 'faces' && (
+        <div>
+          {facesTotal === 0 ? (
+            <p className="text-sm text-zinc-500">Noch keine Gesichter zugeordnet.</p>
+          ) : (
+            <>
+              <p className="text-xs text-zinc-500 mb-3">Tippe ★ um ein Gesicht als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
+              <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-3">
+                {faces.map(f => (
+                  <div key={f.id} className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-200 dark:ring-zinc-700'}`}>
+                    <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
+                      onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
+                    {person.profile_face_id === f.id && (
+                      <div className="absolute top-1 left-1 bg-indigo-500 rounded-full p-1"><Star size={11} className="text-white" fill="white" /></div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 h-9 bg-black/55 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
+                      <button onClick={() => setCover.mutate(f.id)} title="Als Profilbild"
+                        className="text-white/90 hover:text-yellow-300"><Star size={17} fill={person.profile_face_id === f.id ? 'currentColor' : 'none'} /></button>
+                      <button onClick={async () => { if (await confirm({ title: 'Gehört nicht zu dieser Person?', message: 'Das Gesicht wird wieder freigegeben.' })) removeFace.mutate(f.id) }}
+                        title="Ist nicht diese Person" className="text-white/90 hover:text-red-400"><X size={17} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Pager page={facePage} pageSize={facePageSize} total={facesTotal}
+                onPage={setFacePage} onSize={(n) => { setFacePageSize(n); setFacePage(1) }} />
+            </>
+          )}
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Fotos ({total})</h2>
-        <div className="ml-auto flex rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs">
-          {([['newest', 'Neueste'], ['oldest', 'Älteste']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => { setPhotoSort(v); setPhotoPage(1) }}
-              className={`px-2.5 py-1 ${photoSort === v ? 'bg-indigo-600 text-white' : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{l}</button>
-          ))}
+      {/* Tab: Beziehungen (Map + Pflege-Liste) */}
+      {tab === 'relations' && relsOn && (
+        <div>
+          <RelationshipsMap personId={personId} profileFaceId={person.profile_face_id ?? 0} onOpenPerson={onOpenPerson} />
+          <RelationshipsPanel personId={personId} personName={person.name || 'Unbekannt'} />
         </div>
-      </div>
-      <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-8 gap-1.5">
-        {photos.map((photo, i) => (
-          <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800 cursor-pointer" onClick={() => setLightboxIndex(i)}>
-            <img src={thumbUrl(photo as any, 'small')} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
-            {(photo as any).is_video && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/50 rounded-full p-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg></div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <Pager page={photoPage} pageSize={photoPageSize} total={total}
-        onPage={setPhotoPage} onSize={(n) => { setPhotoPageSize(n); setPhotoPage(1) }} />
-      {photos.length === 0 && <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>}
+      )}
 
       {lightboxIndex !== null && <PhotoLightbox photos={photos as any} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />}
     </div>
@@ -884,6 +925,65 @@ const REL_TYPES: [string, string][] = [
   ['friend', 'Freund/in'], ['colleague', 'Kollege/in'], ['other', 'Verbindung'],
 ]
 const REL_DOT: Record<string, string> = { family: 'bg-emerald-500', social: 'bg-sky-500', other: 'bg-zinc-400' }
+const REL_STROKE: Record<string, string> = { family: '#10b981', social: '#0ea5e9', other: '#a1a1aa' }
+
+// Radialer Beziehungs-Graph (SVG, kein externes Paket). Person mittig, Verbundene im Kreis.
+function RelationshipsMap({ personId, profileFaceId, onOpenPerson }: {
+  personId: number; profileFaceId: number; onOpenPerson: (id: number) => void
+}) {
+  const { data: rels = [] } = useQuery<any[]>({
+    queryKey: ['rels', personId], queryFn: () => api.get(`/relationships/person/${personId}`).then(r => r.data),
+  })
+  if (rels.length === 0) return null
+
+  const shown = rels.slice(0, 14)
+  const size = 380, cx = size / 2, cy = size / 2, R = 132, rCenter = 40, rNode = 28
+  const nodes = shown.map((r, i) => {
+    const ang = (i / shown.length) * 2 * Math.PI - Math.PI / 2
+    return { ...r, x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) }
+  })
+  const avatar = (id: number, v?: number) => `/api/people/${id}/avatar${v != null ? `?v=${v}` : ''}`
+  const short = (s: string) => (s && s.length > 14 ? s.slice(0, 13) + '…' : s || '?')
+
+  return (
+    <div className="mb-6">
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">Beziehungs-Map</h2>
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-md mx-auto select-none">
+        <defs>
+          <clipPath id={`relclip-center`}><circle cx={cx} cy={cy} r={rCenter} /></clipPath>
+          {nodes.map(n => <clipPath key={n.id} id={`relclip-${n.id}`}><circle cx={n.x} cy={n.y} r={rNode} /></clipPath>)}
+        </defs>
+
+        {/* Verbindungslinien */}
+        {nodes.map(n => (
+          <line key={`l-${n.id}`} x1={cx} y1={cy} x2={n.x} y2={n.y}
+            stroke={REL_STROKE[n.category] ?? REL_STROKE.other} strokeWidth={2} strokeOpacity={0.5} />
+        ))}
+
+        {/* Außenknoten (klickbar) */}
+        {nodes.map(n => (
+          <g key={`n-${n.id}`} className="cursor-pointer" onClick={() => onOpenPerson(n.other_id)}>
+            <circle cx={n.x} cy={n.y} r={rNode + 2} className="fill-zinc-200 dark:fill-zinc-800" />
+            <image href={avatar(n.other_id)} x={n.x - rNode} y={n.y - rNode} width={rNode * 2} height={rNode * 2}
+              clipPath={`url(#relclip-${n.id})`} preserveAspectRatio="xMidYMid slice" />
+            <circle cx={n.x} cy={n.y} r={rNode} fill="none" stroke={REL_STROKE[n.category] ?? REL_STROKE.other} strokeWidth={2.5} />
+            <text x={n.x} y={n.y + rNode + 14} textAnchor="middle" fontSize={11} className="fill-zinc-700 dark:fill-zinc-200">{short(n.other_name)}</text>
+            <text x={n.x} y={n.y + rNode + 26} textAnchor="middle" fontSize={9} className="fill-zinc-400">{n.label}</text>
+          </g>
+        ))}
+
+        {/* Mittelknoten (aktuelle Person) */}
+        <circle cx={cx} cy={cy} r={rCenter + 2} className="fill-zinc-200 dark:fill-zinc-800" />
+        <image href={avatar(personId, profileFaceId)} x={cx - rCenter} y={cy - rCenter} width={rCenter * 2} height={rCenter * 2}
+          clipPath="url(#relclip-center)" preserveAspectRatio="xMidYMid slice" />
+        <circle cx={cx} cy={cy} r={rCenter} fill="none" className="stroke-indigo-500" strokeWidth={3} />
+      </svg>
+      {rels.length > shown.length && (
+        <p className="text-center text-xs text-zinc-400 mt-1">+{rels.length - shown.length} weitere — in der Liste unten</p>
+      )}
+    </div>
+  )
+}
 
 function RelationshipsPanel({ personId, personName }: { personId: number; personName: string }) {
   const qc = useQueryClient()
