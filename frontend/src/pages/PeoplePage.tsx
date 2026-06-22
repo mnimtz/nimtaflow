@@ -80,6 +80,7 @@ export default function PeoplePage() {
   // Click a suggestion/face → see the FULL photo big (verify even when the face crop
   // is a low-quality video frame). Holds {face_id, photo_id, name, score}.
   const [bigFace, setBigFace] = useState<{ id: number; photo_id: number; name?: string; score?: number } | null>(null)
+  const [pview, setPview] = useState<'personen' | 'vorschlaege' | 'gesichter' | 'verborgen'>('personen')
   const toggleFace = (id: number) =>
     setFaceSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const ignoreFaces = useMutation({
@@ -305,7 +306,23 @@ export default function PeoplePage() {
         <EmptyPeople />
       ) : (
         <div className="space-y-10">
-          {sugGroups.length > 0 && (
+          <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 -mt-2 overflow-x-auto">
+            {([
+              ['personen', `Personen (${known.length + unknown.length})`],
+              ['vorschlaege', `Vorschläge${sugGroups.reduce((a, g) => a + g.count, 0) ? ` (${sugGroups.reduce((a, g) => a + g.count, 0)})` : ''}`],
+              ['gesichter', `Unbekannte Gesichter${looseTotal ? ` (${looseTotal})` : ''}`],
+              ['verborgen', 'Verborgen'],
+            ] as const).map(([k, lbl]) => (
+              <button key={k} onClick={() => { setPview(k); if (k === 'verborgen') setShowIgnored(true) }}
+                className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${pview === k ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+          {pview === 'vorschlaege' && sugGroups.length === 0 && (
+            <p className="text-sm text-zinc-400 py-8 text-center">Keine offenen Vorschläge. Neue entstehen automatisch (oder „Neu berechnen" in der Pipeline).</p>
+          )}
+          {pview === 'vorschlaege' && sugGroups.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
@@ -352,20 +369,20 @@ export default function PeoplePage() {
               </div>
             </section>
           )}
-          {known.length > 0 && (
+          {pview === 'personen' && known.length > 0 && (
             <section>
               <SectionHeader title="Benannte Personen" count={known.length} />
               <div className={GRID}>{known.map(renderCard)}</div>
             </section>
           )}
-          {unknown.length > 0 && (
+          {pview === 'personen' && unknown.length > 0 && (
             <section>
               <SectionHeader title="Unbekannte Personen" count={unknown.length}
                 hint="Klicke eine Person an, um sie zu benennen — oder wähle mehrere aus und führe sie zusammen." />
               <div className={GRID}>{unknown.map(renderCard)}</div>
             </section>
           )}
-          {looseTotal > 0 && (
+          {pview === 'gesichter' && looseTotal > 0 && (
             <section>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
@@ -396,7 +413,7 @@ export default function PeoplePage() {
             </section>
           )}
 
-          {showIgnored && (
+          {pview === 'verborgen' && (
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Ausgeblendete Gesichter <span className="text-zinc-500 font-normal">({ignoredFaces.length})</span></h2>
