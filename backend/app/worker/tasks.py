@@ -2169,3 +2169,38 @@ def animate_photo_task(self, highlight_id: int):
                 return {"error": str(e)[:200]}
 
     return _run(_run_animate())
+
+
+@celery_app.task(bind=True, name="generate_weekly_highlight")
+def generate_weekly_highlight_task(self):
+    """Beat task: auto-create a 'Highlight der Woche' (week_review slideshow). Opt-in via
+    highlights.weekly_enabled (default off). Skips if one was already created in the last
+    6 days, so a manual run + the schedule don't produce duplicates."""
+    async def _run_weekly():
+        from datetime import datetime, timezone, timedelta
+        from app.core.database import init_db, get_db
+        from app.models.highlight import Highlight, HighlightStatus
+        from app.services.settings_loader import load_settings
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, func
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            if str(s.get("highlights.weekly_enabled", "false")).lower() != "true":
+                return {"skipped": "disabled"}
+            since = datetime.now(timezone.utc) - timedelta(days=6)
+            recent = (await db.execute(select(func.count()).where(
+                Highlight.motto == "week_review", Highlight.created_at >= since))).scalar() or 0
+            if recent:
+                return {"skipped": "already created this week"}
+            kw = datetime.now(timezone.utc).isocalendar().week
+            h = Highlight(title=f"Highlight der Woche (KW {kw})", motto="week_review",
+                          duration_sec=60.0, params={"duration_sec": 60.0},
+                          status=HighlightStatus.pending)
+            db.add(h)
+            await db.commit()
+            await db.refresh(h)
+            render_highlight_task.delay(h.id)
+            flog("highlights", "INFO", f"Auto-Wochenhighlight angelegt (KW {kw}, Highlight {h.id})")
+            return {"created": h.id}
+    return _run(_run_weekly())

@@ -75,6 +75,7 @@ celery_app.conf.update(
         # On the video queue/worker so a long render never blocks the fast cpu work.
         "render_highlight":   {"queue": "video"},
         "animate_photo":      {"queue": "video"},  # external video-AI (Veo) image→clip
+        "generate_weekly_highlight": {"queue": "cpu"},  # light: creates a Highlight + dispatches render
     },
 )
 
@@ -90,6 +91,12 @@ celery_app.conf.beat_schedule = {
     "auto-cluster-faces": {
         "task": "auto_cluster_faces",
         "schedule": 600.0,
+    },
+    # "Highlight der Woche" — auto-create every Monday 07:00. No-op unless the user
+    # opted in (highlights.weekly_enabled); the task itself checks the flag.
+    "weekly-highlight": {
+        "task": "generate_weekly_highlight",
+        "schedule": crontab(day_of_week=1, hour=7, minute=0),
     },
     # Retry queue: re-attempt AI that failed (e.g. a Gemini outage) every 15 min.
     "retry-failed-ai": {

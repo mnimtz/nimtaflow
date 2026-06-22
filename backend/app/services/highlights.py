@@ -74,6 +74,12 @@ MOTTOS: List[dict] = [
     {"motto": "random_memories",   "label": "Zufällige Erinnerungen",
      "params": [],
      "description": "Eine bunte, zufällige Auswahl aus der ganzen Mediathek."},
+    {"motto": "album_highlight",   "label": "Album / Smart-Album als Highlight",
+     "params": ["album"],
+     "description": "Die besten Fotos eines beliebigen Albums oder Smart-Albums — Favoriten & gut bewertete zuerst."},
+    {"motto": "week_review",       "label": "Highlight der Woche",
+     "params": [],
+     "description": "Die schönsten Aufnahmen der letzten 7 Tage (sonst der letzten 30)."},
 ]
 
 # season name → list of (month, day) anchor windows (±~3 weeks) across all years
@@ -379,6 +385,46 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
             select(Photo).where(*base).order_by(func.random()).limit(cap)
         )).scalars().all()
         return list(photos)
+
+    # ── best of ANY album / smart-album (favorites & rated first) ─────────────
+    if motto == "album_highlight":
+        album_id = _opt(opts, "album_id")
+        if not album_id:
+            return []
+        photos = (await db.execute(
+            select(Photo)
+            .join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
+            .where(*base, AlbumPhoto.album_id == int(album_id))
+            .order_by(
+                Photo.is_favorite.desc(),
+                Photo.user_rating.desc().nullslast(),
+                Photo.taken_at, AlbumPhoto.sort_order,
+            )
+        )).scalars().all()
+        best = list(photos)[:cap]
+        best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+        return best
+
+    # ── highlight of the week: best of the last 7 (else 30) days ──────────────
+    if motto == "week_review":
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        for days in (7, 30):
+            since = now - timedelta(days=days)
+            photos = (await db.execute(
+                select(Photo).where(*base, Photo.taken_at >= since)
+                .order_by(
+                    Photo.is_favorite.desc(),
+                    Photo.user_rating.desc().nullslast(),
+                    Photo.taken_at,
+                )
+            )).scalars().all()
+            photos = list(photos)
+            if photos:
+                best = photos[:cap]
+                best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+                return best
+        return []
 
     return []
 

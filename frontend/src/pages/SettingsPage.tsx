@@ -1302,11 +1302,13 @@ function HighlightsAISettings() {
   const qc = useQueryClient()
   const [saved, setSaved] = useState(false)
   const { data: settings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  const [weekly, setWeekly] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [seconds, setSeconds] = useState('4')
   const [budget, setBudget] = useState('300')
   useEffect(() => {
     if (!settings) return
+    setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
     setEnabled((settings['highlights.ai_enabled'] ?? 'false') === 'true')
     setSeconds(String(settings['highlights.ai_clip_seconds'] ?? '4'))
     setBudget(String(settings['highlights.ai_budget_seconds_month'] ?? '300'))
@@ -1314,6 +1316,7 @@ function HighlightsAISettings() {
   const hasKey = !!(settings?.['ai.gemini.api_key'] || '').trim()
   const save = useMutation({
     mutationFn: () => api.put('/settings', {
+      'highlights.weekly_enabled': weekly ? 'true' : 'false',
       'highlights.ai_enabled': enabled ? 'true' : 'false',
       'highlights.ai_provider': 'veo',
       'highlights.ai_clip_seconds': seconds,
@@ -1324,8 +1327,17 @@ function HighlightsAISettings() {
 
   return (
     <div>
-      <SectionHeader title="KI-Video (Highlights)" desc="Einzelne Fotos per externer KI (Google Veo 3.1 Fast) zu kurzen Clips animieren — Button „Foto animieren“ in der Foto-Großansicht. Kostenpflichtig (≈ $0,15/Sek.), nutzt den Gemini-API-Key. Opt-in." />
+      <SectionHeader title="Highlights" desc="Automatisches „Highlight der Woche“ (gratis Slideshow) und optional KI-Video (Fotos animieren via Google Veo, kostenpflichtig)." />
       <div className="space-y-4 max-w-2xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Highlight der Woche (automatisch)</div>
+            <div className="text-xs text-zinc-500">Erstellt jeden Montag automatisch ein Slideshow-Highlight der besten Fotos der letzten Woche. Gratis (lokal, ffmpeg).</div>
+          </div>
+          <Toggle value={weekly} onChange={setWeekly} />
+        </div>
+
+        <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800" />
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">KI-Video aktivieren</div>
