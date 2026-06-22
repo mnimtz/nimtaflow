@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, DateTime, Boolean, Enum, Integer, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class UserRole(str, enum.Enum):
@@ -39,5 +40,5 @@ class User(Base):
     access_config: Mapped[Optional[dict]] = mapped_column(JSON)
 
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

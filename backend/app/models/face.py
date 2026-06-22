@@ -4,6 +4,7 @@ from sqlalchemy import String, DateTime, Integer, Float, Boolean, ForeignKey, JS
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class Face(Base):
@@ -36,7 +37,7 @@ class Face(Base):
     suggested_person_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
     suggested_score: Mapped[Optional[float]] = mapped_column(Float)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     photo: Mapped["Photo"] = relationship("Photo", back_populates="faces")
     person: Mapped[Optional["Person"]] = relationship("Person", back_populates="faces")

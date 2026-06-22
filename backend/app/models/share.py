@@ -16,6 +16,7 @@ from sqlalchemy import String, Integer, DateTime, Boolean, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class ShareType(str, enum.Enum):
@@ -44,7 +45,7 @@ class Share(Base):
     allow_download: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     view_count: Mapped[int] = mapped_column(Integer, default=0)
 
     @property

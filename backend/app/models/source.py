@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy import String, DateTime, Boolean, Integer, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class PhotoSource(Base):
@@ -27,4 +28,4 @@ class PhotoSource(Base):
 
     last_scan_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_scan_count: Mapped[Optional[int]] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

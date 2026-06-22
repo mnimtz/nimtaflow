@@ -4,6 +4,7 @@ from typing import Optional, Any
 from sqlalchemy import String, DateTime, Integer, Float, Text, Enum, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class HighlightStatus(str, enum.Enum):
@@ -36,7 +37,7 @@ class Highlight(Base):
     created_by: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

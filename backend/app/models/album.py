@@ -4,6 +4,7 @@ from typing import Optional, List, Any
 from sqlalchemy import String, DateTime, Integer, ForeignKey, Text, Enum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class AlbumType(str, enum.Enum):
@@ -21,8 +22,8 @@ class Album(Base):
     album_type: Mapped[AlbumType] = mapped_column(Enum(AlbumType), default=AlbumType.manual)
     cover_photo_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("photos.id", ondelete="SET NULL"))
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Smart album rules (JSON dict with keys: date_from, date_to, cameras[], person_ids[], tags[], has_gps, media_type)
     smart_criteria: Mapped[Optional[Any]] = mapped_column(JSON)
@@ -44,7 +45,7 @@ class AlbumPhoto(Base):
     album_id: Mapped[int] = mapped_column(Integer, ForeignKey("albums.id", ondelete="CASCADE"), nullable=False, index=True)
     photo_id: Mapped[int] = mapped_column(Integer, ForeignKey("photos.id", ondelete="CASCADE"), nullable=False, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # For AI albums: confidence score (0-1)
     ai_score: Mapped[Optional[float]] = mapped_column()
 

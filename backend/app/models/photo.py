@@ -5,6 +5,7 @@ from sqlalchemy import String, DateTime, Integer, BigInteger, Float, Boolean, Te
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class PhotoStatus(str, enum.Enum):
@@ -133,7 +134,7 @@ class Photo(Base):
     # faces-only pass forever when it genuinely has no faces.
     faces_scanned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     faces: Mapped[List["Face"]] = relationship("Face", back_populates="photo", cascade="all, delete-orphan")

@@ -3,6 +3,7 @@ from typing import Optional, List
 from sqlalchemy import String, DateTime, Date, Text, Integer, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class Person(Base):
@@ -21,7 +22,7 @@ class Person(Base):
     profile_face_id: Mapped[Optional[int]] = mapped_column(Integer)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     faces: Mapped[List["Face"]] = relationship("Face", back_populates="person")

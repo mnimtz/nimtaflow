@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, DateTime, Integer, Float, Text, Enum, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 
 class JobStatus(str, enum.Enum):
@@ -35,7 +36,7 @@ class Job(Base):
 
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
 
 
@@ -54,4 +55,4 @@ class JobLog(Base):
     ai_provider: Mapped[Optional[str]] = mapped_column(String(64))
     api_cost_usd: Mapped[Optional[float]] = mapped_column(Float)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
