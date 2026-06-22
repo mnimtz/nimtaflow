@@ -12,6 +12,31 @@
 - iOS/Release → **erst Features bauen + iOS-Parität mitziehen**, Release-Readiness-Audit + Push-Konzept am Ende.
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
+### ✅ Erledigt (deployed) — Nacht-Session (Rebrand + Fixes)
+- **Rebrand → NimtaFlow** (v1.295): Name aus dem Nachnamen „Nimtz" abgeleitet, nach großer Verfügbarkeits-Recherche (LumaFlow war 🔴: Marke „Luma AI" Klasse 9 + bestehende LumaFlow-SaaS). NimtaFlow ist komplett frei (App Store, .com/.app/.io, npm/PyPI/GitHub, keine Marke). Umgesetzt: Web (Sidebar/Version-Badge/manifest/privacy/index), iOS (CFBundleDisplayName + Texte), App-Store-Listing. **GitHub-Public-Repo umbenannt:** `lumaflow` → **`mnimtz/nimtaflow`**. Interne `photoflow`-IDs (Container/Bundle-ID/Xcode-Scheme/DB) bewusst UNVERÄNDERT. Frontend-Rebuild verifiziert (NimtaFlow im nginx-Bundle).
+- **i18n-Basis DE/EN** (v1.295): `frontend/src/i18n/` — I18nProvider, `useT`, Browser-Sprach-Erkennung + localStorage, **DE/EN-Umschalter** (Sidebar + „Mehr"-Drawer). Wörterbuch-Fragmente pro Bereich (`strings/*.ts`), zentral via Object.assign gemerged. **Migriert: Nav + common.** Offen: ~23 Restseiten (Settings/People = Brocken) — Infra steht, Sandbox-tsc-Loop (Zweitbox node-Container) etabliert.
+- **Erinnerungen-Fix** (v1.294): Web `/api/photos/memories` 500 (ORM-Serialisierung via `response_model`) **und** Zugriffs-Leak (`get_memories` filtert nun per `photo_conditions(user)`; v1 übergibt `user`). Verifiziert: admin 200, demo `[]` (vorher byte-identisch = Leak).
+- **iOS Highlights-Layout-Fix**: stabile 16:9-Box (`Color.clear` aspectRatio + overlay/clip) statt unbegrenztem Thumb. **Erinnerungen-iOS**: war v1-Endpoint ok → vermutlich alter Build; frischer Build hochgeladen.
+- **Logo/Icon transparent** (v1.293): Verlaufs-BG per Flood-Fill entfernt (Alpha). ⚠️ Du lieferst früh ein neues Logo/Icon → dann erneut committen.
+- **Security: destruktive Foto-IDOR geschlossen** (v1.296): eingeschränkter User (Demo) konnte per Foto-ID fremde Fotos ändern/**endgültig löschen** → `can_see_photo`-Guard auf favorite/archive/rating/trash/delete/meta/reprocess + batch (IDs gefiltert) + v1 favorite/rating. No-op für Admin/offenen Modus.
+- **TestFlight**: 2 Builds hochgeladen (Memories/Highlights-Fix; danach NimtaFlow-Rebrand).
+
+### ⚠️ Security-Backlog (Audit-Funde, NICHT blind über Nacht gefixt — teils Produktentscheidung)
+Ein eingeloggter **eingeschränkter User (Demo)** kann aktuell noch (alles `app/api/routes/` bzw. `api/v1/router.py`):
+- **H2** Personen-Management ausführen (rename/merge/**delete**/hide/face-assign) → datenzerstörend; sollte admin-only sein (`people.py`).
+- **C1** Personen-Liste/Detail + **Face-Crops/Avatare** fremder Fotos lesen (`people.py`, kein `user`/`can_see_photo`).
+- **C3** Relationships-Graph + `together/{a}/{b}`-**Fotos** ungefiltert (`relationships.py`, auch `/v1/relationships`).
+- **C4/C5** Album-Namen/Cover-Existenz + **`/stats`** (Gesamtzahl/Datumsspanne/Kameras der ganzen Bibliothek) ungefiltert (`albums.py`, `photos.py get_stats`, v1 stats/dashboard).
+- **H3** **Shares**: Demo kann öffentlichen Link auf FREMDE Alben/Fotos erstellen (Whitelist-Umgehung!) + alle Share-Tokens listen/löschen (`shares.py`).
+- **H4** Feature-Flags `allow_map`/`allow_share`/`allow_pipeline` werden serverseitig NICHT durchgesetzt (nur `allow_download`).
+- **M*** preview/sprite/transcode/upload/chat teils ohne ACL.
+- Muster: `user=Depends(current_user_optional)` fehlt; delegierte Funktionen (`get_stats`, `relationships.graph`, `list_people`) ohne `user` → auch v1-Wrapper ungefiltert. Fix-Reihenfolge im Abschlussbericht.
+
+### ⚠️ Weitere Code-Check-Funde (nicht Security)
+- **Backend CRITICAL**: `photos.py` `transcode_video`-Endpoint (~Z.887) läuft `subprocess.run` (bis 2×600s) mit **offener DB-Session** → asyncpg-Starvation/idle-in-transaction-Timeout. Auf Worker-Task delegieren (Worker macht's korrekt).
+- **iOS**: `GalleryView` Masonry/Justified nutzen `GeometryReader` in `LazyVStack` mit Höhe aus `UIScreen.width` (≠ geo.width) → Clipping/Pagination-Bug (gleiche Klasse wie der gefixte Highlights-Bug); `showAnimate`-`.sheet` am `Menu` (mehrere Sheets); `PhotoPager` `photos[index]` ohne `[safe:]` → OOB-Crash-Risiko bei Mutation; `APIError.decode` verschluckt `DecodingError` (Debug-Print empfohlen).
+- **Backend medium**: `albums.py` `datetime.utcnow()` (naiv) in timestamptz.
+
 ### ✅ Erledigt (deployed)
 - **App-Store-Listing-Texte (Doku)**: `docs/appstore-listing.md` — Name/Subtitle/Beschreibung (DE+EN, inkl. **Open-Source-/GitHub-Verweis**), Keywords, „Was ist neu", URLs, **Review-Notizen** (Self-Hosted-Client, eigene/nicht-statische Server-URL, Demo-Server+Login), App-Privacy-Angaben. ⚠️ Vor GitHub-public: **CLAUDE.md ist in der History** (interne Infra/SSH/IPs) → nicht so veröffentlichen; sauberen Weg siehe Chat. Demo-PW steht in der Doku (bei public sichtbar).
 - **App-Store-Prep: Demo-User + Privacy Policy** (v1.292): Demo-User `demo@foto.marcusnimtz.de` (Rolle user, `folder_whitelist=[/photos/Demo]`, Karte/Pipeline/Teilen/Download + Settings gesperrt) + Ordner `/photos/Demo` angelegt → Apple-Reviewer sehen nur Demo-Inhalte. **Privacy Policy** als statische, login-freie Seite `frontend/public/privacy.html` → `https://foto.marcusnimtz.de/privacy.html` (DE+EN: self-hosted, optionale KI nur Opt-in, kein Tracking/Verkauf). Offen für Store: Domain→Server (HTTPS), ~20 Demo-Bilder reinlegen, Screenshots/Metadaten.
