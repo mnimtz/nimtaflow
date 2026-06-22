@@ -66,7 +66,7 @@ export default function PublicSharePage() {
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="px-5 py-4 border-b border-zinc-800 sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
         <h1 className="text-lg font-semibold">{meta.title || 'Geteilte Galerie'}</h1>
-        <p className="text-xs text-zinc-500">{meta.items.length} Medien · geteilt über LumaFlow</p>
+        <p className="text-xs text-zinc-500">{meta.items.length} Medien · geteilt über NimtaFlow</p>
       </header>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1 p-1">
         {meta.items.map(it => (

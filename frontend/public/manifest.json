@@ -1,6 +1,6 @@
 {
-  "name": "LumaFlow",
-  "short_name": "LumaFlow",
+  "name": "NimtaFlow",
+  "short_name": "NimtaFlow",
   "description": "Self-hosted photo & video management",
   "start_url": "/",
   "display": "standalone",

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>de</string>
 	<key>CFBundleDisplayName</key>
-	<string>LumaFlow</string>
+	<string>NimtaFlow</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -32,9 +32,9 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>LumaFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
+	<string>NimtaFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>LumaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
+	<string>NimtaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

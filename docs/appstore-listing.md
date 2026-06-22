@@ -1,4 +1,4 @@
-# App Store Connect — Listing-Texte (LumaFlow)
+# App Store Connect — Listing-Texte (NimtaFlow)
 
 > Zum Reinkopieren in App Store Connect. Zeichenlimits beachtet (App-Name ≤30, Subtitle ≤30,
 > Promo ≤170, Keywords ≤100, Beschreibung ≤4000). Kern-Botschaft: **self-hosted**, eigene
@@ -7,7 +7,7 @@
 ---
 
 ## App-Name (≤30)
-`LumaFlow`
+`NimtaFlow`
 
 ## Untertitel / Subtitle (≤30)
 DE: `Deine eigene Foto-Cloud`
@@ -17,21 +17,21 @@ EN: `Your self-hosted photo cloud`
 Primär: **Fotografie & Video** · Sekundär: Dienstprogramme
 
 ## Promotional Text (≤170, jederzeit änderbar)
-DE: `Verbinde die App mit deinem eigenen LumaFlow-Server und genieße deine Fotos & Videos — mit KI-Suche, Personen, Karte und Erinnerungen. Deine Daten bleiben bei dir.`
+DE: `Verbinde die App mit deinem eigenen NimtaFlow-Server und genieße deine Fotos & Videos — mit KI-Suche, Personen, Karte und Erinnerungen. Deine Daten bleiben bei dir.`
 
 ---
 
 ## Beschreibung (DE) (≤4000)
 ```
-LumaFlow ist die App zu deiner SELBST-GEHOSTETEN Foto- und Videoverwaltung.
+NimtaFlow ist die App zu deiner SELBST-GEHOSTETEN Foto- und Videoverwaltung.
 
-Du betreibst den LumaFlow-Server auf deiner eigenen Hardware (Heimserver, NAS, Mini-PC)
+Du betreibst den NimtaFlow-Server auf deiner eigenen Hardware (Heimserver, NAS, Mini-PC)
 und verbindest diese App mit DEINER eigenen Server-Adresse. Es gibt keinen zentralen
 Dienst, kein Abo und kein Konto bei uns — deine Fotos, Videos und Daten bleiben auf
 deinem Server, unter deiner Kontrolle.
 
-WICHTIG: LumaFlow ist eine Client-App. Sie funktioniert nur zusammen mit einem laufenden
-LumaFlow-Server. Beim ersten Start gibst du die Adresse deines Servers ein (z. B.
+WICHTIG: NimtaFlow ist eine Client-App. Sie funktioniert nur zusammen mit einem laufenden
+NimtaFlow-Server. Beim ersten Start gibst du die Adresse deines Servers ein (z. B.
 https://fotos.meinedomain.de) und meldest dich an. Die App ist also bewusst nicht an eine
 feste, vorgegebene Server-URL gebunden.
 
@@ -51,21 +51,21 @@ dir ausgewähltes Bild an einen von dir konfigurierten KI-Anbieter — und nur, 
 aktivierst. Kein Tracking, keine Werbung, kein Verkauf deiner Daten.
 
 OPEN SOURCE
-LumaFlow ist quelloffen. Server & App findest du auf GitHub:
-https://github.com/mnimtz/lumaflow
+NimtaFlow ist quelloffen. Server & App findest du auf GitHub:
+https://github.com/mnimtz/nimtaflow
 
-Du brauchst zuerst den LumaFlow-Server. Diese App ist die mobile Begleitung dazu.
+Du brauchst zuerst den NimtaFlow-Server. Diese App ist die mobile Begleitung dazu.
 ```
 
 ## Beschreibung (EN) (≤4000)
 ```
-LumaFlow is the companion app for your SELF-HOSTED photo & video library.
+NimtaFlow is the companion app for your SELF-HOSTED photo & video library.
 
-You run the LumaFlow server on your own hardware (home server, NAS, mini-PC) and connect
+You run the NimtaFlow server on your own hardware (home server, NAS, mini-PC) and connect
 this app to YOUR own server address. There is no central service, no subscription and no
 account with us — your photos, videos and data stay on your server, under your control.
 
-IMPORTANT: LumaFlow is a client app. It only works together with a running LumaFlow
+IMPORTANT: NimtaFlow is a client app. It only works together with a running NimtaFlow
 server. On first launch you enter your server's address (e.g. https://photos.mydomain.com)
 and sign in. The app is intentionally not tied to a fixed, predefined server URL.
 
@@ -85,10 +85,10 @@ an AI provider you configure — and only if you enable them. No tracking, no ad
 of your data.
 
 OPEN SOURCE
-LumaFlow is open source. Server & app on GitHub:
-https://github.com/mnimtz/lumaflow
+NimtaFlow is open source. Server & app on GitHub:
+https://github.com/mnimtz/nimtaflow
 
-You need the LumaFlow server first. This app is the mobile companion to it.
+You need the NimtaFlow server first. This app is the mobile companion to it.
 ```
 
 ## Keywords (≤100, kommagetrennt, keine Leerzeichen verschwenden)
@@ -107,7 +107,7 @@ EN: `New app icon & design, "Animate photo" (AI clips), faster gallery, many ref
 
 ## Review-Notizen (ENTSCHEIDEND — hier dem Prüfer das Self-Hosted-Prinzip erklären)
 ```
-This app is a CLIENT for a self-hosted server (the user runs their own "LumaFlow" server;
+This app is a CLIENT for a self-hosted server (the user runs their own "NimtaFlow" server;
 the app connects to a user-supplied URL). It is not a standalone app and not tied to a fixed
 server.
 

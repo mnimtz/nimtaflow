@@ -29,7 +29,7 @@ struct SettingsScreen: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if api.loggedIn { HighlightsAISection() }
-                Section { Text("LumaFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
+                Section { Text("NimtaFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
             }
             .navigationTitle("Einstellungen")
             .onAppear { serverDraft = api.serverURL }

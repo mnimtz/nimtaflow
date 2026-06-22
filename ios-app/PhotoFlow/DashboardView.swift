@@ -44,7 +44,7 @@ struct DashboardView: View {
                 }
                 if loading && data == nil { ProgressView().padding(.top, 80) }
             }
-            .navigationTitle("LumaFlow")
+            .navigationTitle("NimtaFlow")
             .navigationDestination(for: PersonV1.self) { PersonDetailView(person: $0) }
             .navigationDestination(for: AlbumV1.self) { AlbumDetailView(album: $0) }
             .refreshable { await load() }
