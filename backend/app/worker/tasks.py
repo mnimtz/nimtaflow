@@ -2225,3 +2225,39 @@ def generate_weekly_highlight_task(self):
             flog("highlights", "INFO", f"Auto-Wochenhighlight angelegt (KW {kw}, Highlight {h.id})")
             return {"created": h.id}
     return _run(_run_weekly())
+
+
+@celery_app.task(bind=True, name="reap_stuck_highlights")
+def reap_stuck_highlights_task(self):
+    """Self-heal highlights stuck in 'rendering' (worker killed mid-task, e.g. by a deploy).
+    Slideshow highlights are re-queued (free); paid photo_animate jobs are marked error
+    so the user can retry deliberately (no surprise re-charge). Runs periodically."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.highlight import Highlight, HighlightStatus
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, text
+        init_db()
+        requeue_ids, failed = [], 0
+        async for db in get_db():
+            rows = (await db.execute(select(Highlight).where(
+                Highlight.status == HighlightStatus.rendering,
+                Highlight.updated_at < text("now() - interval '15 minutes'"),
+            ))).scalars().all()
+            for h in rows:
+                if h.motto == "photo_animate":
+                    h.status = HighlightStatus.error
+                    h.error_message = "Generierung unterbrochen — bitte erneut starten."
+                    failed += 1
+                else:
+                    h.status = HighlightStatus.pending
+                    requeue_ids.append(h.id)
+            if rows:
+                await db.commit()
+            break
+        for hid in requeue_ids:
+            render_highlight_task.delay(hid)
+        if requeue_ids or failed:
+            flog("highlights", "INFO", f"Reaper: {len(requeue_ids)} neu eingereiht, {failed} als Fehler markiert")
+        return {"requeued": len(requeue_ids), "failed": failed}
+    return _run(_main())

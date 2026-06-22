@@ -76,6 +76,7 @@ celery_app.conf.update(
         "render_highlight":   {"queue": "video"},
         "animate_photo":      {"queue": "video"},  # external video-AI (Veo) image→clip
         "generate_weekly_highlight": {"queue": "cpu"},  # light: creates a Highlight + dispatches render
+        "reap_stuck_highlights": {"queue": "cpu"},  # self-heal jobs killed mid-render
     },
 )
 
@@ -97,6 +98,11 @@ celery_app.conf.beat_schedule = {
     "weekly-highlight": {
         "task": "generate_weekly_highlight",
         "schedule": crontab(day_of_week=1, hour=7, minute=0),
+    },
+    # Self-heal highlights stuck in "rendering" (worker killed mid-task, e.g. deploy).
+    "reap-stuck-highlights": {
+        "task": "reap_stuck_highlights",
+        "schedule": 900.0,
     },
     # Retry queue: re-attempt AI that failed (e.g. a Gemini outage) every 15 min.
     "retry-failed-ai": {
