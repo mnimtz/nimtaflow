@@ -448,6 +448,7 @@ struct PhotoPager: View {
     @State private var showDeleteConfirm = false
     @State private var profileFaces: [PhotoFace] = []
     @State private var showProfileDialog = false
+    @State private var showAnimate = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -476,6 +477,9 @@ struct PhotoPager: View {
                 Menu {
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button { showAlbumPicker = true } label: { Label("Zu Album hinzufügen", systemImage: "rectangle.stack.badge.plus") }
+                    if !photos[index].is_video {
+                        Button { showAnimate = true } label: { Label("Animieren / KI-Szene", systemImage: "sparkles") }
+                    }
                     Button { Task { await loadProfileFaces() } } label: { Label("Als Personen-Titelbild", systemImage: "person.crop.circle.badge.checkmark") }
                     Button { Task { try? await api.archivePhoto(photos[index].id); actionNote = "Archiviert" } } label: {
                         Label("Archivieren", systemImage: "archivebox")
@@ -534,6 +538,10 @@ struct PhotoPager: View {
             AlbumPickerSheet { albumId in
                 Task { try? await api.addPhotosToAlbum(albumId, photoIds: [photos[index].id]); actionNote = "Zu Album hinzugefügt" }
             }.presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAnimate) {
+            AnimateSceneSheet(photoId: photos[index].id) { actionNote = "Animation gestartet — erscheint unter Highlights." }
+                .presentationDetents([.medium, .large])
         }
         .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
             ForEach(profileFaces) { f in
@@ -723,6 +731,65 @@ struct AlbumPickerSheet: View {
                 Button("Abbrechen", role: .cancel) {}
             }
             .task { albums = (try? await api.albums()) ?? [] }
+        }
+    }
+}
+
+/// KI-Szene: animate one photo (optional creative scene prompt) via the chosen provider.
+struct AnimateSceneSheet: View {
+    @EnvironmentObject var api: APIClient
+    @Environment(\.dismiss) var dismiss
+    let photoId: Int
+    var onStarted: () -> Void
+    @State private var prompt = ""
+    @State private var submitting = false
+    @State private var error: String?
+
+    private let presets: [(String, String)] = [
+        ("🎬 Dezente Bewegung", ""),
+        ("🌊 Unterwasserwelt", "Diese Person schwimmt langsam durch eine leuchtende Unterwasserwelt mit bunten Fischen und Korallen, sanfte Lichtstrahlen."),
+        ("🚀 Weltraum", "Diese Person schwebt durch den Weltraum zwischen Sternen, Planeten und farbigen Nebeln, cinematische langsame Bewegung."),
+        ("❄️ Winterwunderland", "Diese Person geht durch einen verschneiten Märchenwald mit funkelndem Schnee und Polarlichtern."),
+        ("🧚 Märchenwald", "Diese Person läuft durch einen magischen, leuchtenden Märchenwald voller Glühwürmchen."),
+        ("☁️ Über den Wolken", "Diese Person fliegt sanft über goldene Wolken bei Sonnenuntergang."),
+        ("🌆 Cyberpunk-Stadt", "Diese Person geht durch eine neonbeleuchtete Cyberpunk-Stadt bei Nacht, Regen, Spiegelungen."),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Szene wählen") {
+                    ForEach(presets, id: \.0) { p in
+                        Button(p.0) { prompt = p.1 }
+                    }
+                }
+                Section("Beschreibung (optional)") {
+                    TextField("z. B. Diese Person läuft durch eine Unterwasserwelt …", text: $prompt, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section {
+                    Text("Bei wilden Szenen kann die Ähnlichkeit der Person leiden. Kostet je nach Anbieter (Einstellungen → Highlights) und muss dort aktiviert sein.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let error { Section { Text(error).foregroundStyle(.red).font(.subheadline) } }
+                Section {
+                    Button {
+                        Task {
+                            submitting = true; error = nil
+                            do {
+                                try await api.animatePhoto(photoId, prompt: prompt.isEmpty ? nil : prompt)
+                                onStarted(); dismiss()
+                            } catch { self.error = "Start fehlgeschlagen — ist KI-Video aktiviert?" }
+                            submitting = false
+                        }
+                    } label: {
+                        HStack { if submitting { ProgressView().controlSize(.small) }; Text("Animieren") }
+                    }.disabled(submitting)
+                }
+            }
+            .navigationTitle("Foto animieren")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Abbrechen") { dismiss() } } }
         }
     }
 }

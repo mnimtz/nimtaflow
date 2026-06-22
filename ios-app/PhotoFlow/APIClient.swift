@@ -317,18 +317,35 @@ final class APIClient: ObservableObject {
     func mottos() async throws -> [MottoV1] { try await get("api/highlights/mottos", as: MottosWrap.self).mottos }
     func highlights() async throws -> [HighlightV1] { try await get("api/highlights", as: [HighlightV1].self) }
     func createHighlight(motto: String, title: String?, durationSec: Double,
-                         personId: Int? = nil, personId2: Int? = nil, year: Int? = nil,
-                         albumId: Int? = nil, season: String? = nil) async throws -> HighlightV1 {
+                         personId: Int? = nil, personId2: Int? = nil, personIds: [Int]? = nil,
+                         year: Int? = nil, albumId: Int? = nil, season: String? = nil) async throws -> HighlightV1 {
         var body: [String: Any] = ["motto": motto, "duration_sec": durationSec]
         if let title, !title.isEmpty { body["title"] = title }
         if let personId { body["person_id"] = personId }
         if let personId2 { body["person_id2"] = personId2 }
+        if let personIds, !personIds.isEmpty { body["person_ids"] = personIds }
         if let year { body["year"] = year }
         if let albumId { body["album_id"] = albumId }
         if let season { body["season"] = season }
         return try await send(makeRequest("api/highlights", method: "POST", json: body), as: HighlightV1.self)
     }
     func deleteHighlight(_ id: Int) async throws { try await action("api/highlights/\(id)", method: "DELETE") }
+    /// External video-AI: animate one photo (optionally with a creative scene prompt).
+    @discardableResult
+    func animatePhoto(_ photoId: Int, prompt: String? = nil) async throws -> Bool {
+        var body: [String: Any] = ["photo_id": photoId]
+        if let prompt, !prompt.isEmpty { body["prompt"] = prompt }
+        return try await action("api/highlights/animate-photo", method: "POST", json: body)
+    }
+
+    // MARK: Face suggestions
+    func faceSuggestions() async throws -> SuggestionGroups {
+        try await get("api/people/faces/suggestions", as: SuggestionGroups.self)
+    }
+    func confirmAllSuggestions(personId: Int) async throws { try await action("api/people/suggestions/confirm/\(personId)", method: "POST") }
+    func rejectAllSuggestions(personId: Int) async throws { try await action("api/people/suggestions/reject/\(personId)", method: "POST") }
+    func confirmSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/confirm-suggestion", method: "POST") }
+    func rejectSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/reject-suggestion", method: "POST") }
 
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }

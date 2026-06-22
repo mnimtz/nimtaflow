@@ -357,10 +357,12 @@ struct MottoV1: Codable, Identifiable, Hashable {
     let params: [String]
     var id: String { key }
 
-    enum CodingKeys: String, CodingKey { case key, label, params }
+    // Backend sends the id in field "motto" (NOT "key") — decoding "key" threw and
+    // left the motto list empty, same bug the web had. Map "motto" → our `key`.
+    enum CodingKeys: String, CodingKey { case motto, label, params }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        key = try c.decode(String.self, forKey: .key)
+        key = try c.decode(String.self, forKey: .motto)
         label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? key
         params = (try? c.decodeIfPresent([String].self, forKey: .params)) ?? []
     }
@@ -393,4 +395,20 @@ struct HighlightV1: Codable, Identifiable, Hashable {
         error_message = try? c.decodeIfPresent(String.self, forKey: .error_message)
         created_at = try? c.decodeIfPresent(String.self, forKey: .created_at)
     }
+}
+
+/// GET /api/people/faces/suggestions — borderline face→person matches to confirm/reject.
+struct SuggestionGroups: Codable { let groups: [SuggestionGroup] }
+struct SuggestionGroup: Codable, Identifiable {
+    let person_id: Int
+    let name: String
+    let count: Int
+    let avg_score: Double
+    let faces: [SuggestionFace]
+    var id: Int { person_id }
+}
+struct SuggestionFace: Codable, Identifiable {
+    let id: Int
+    let photo_id: Int
+    let score: Double
 }

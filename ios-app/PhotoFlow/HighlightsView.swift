@@ -200,6 +200,7 @@ private struct CreateHighlightSheet: View {
     @State private var duration: Double = 45
     @State private var personId: Int?
     @State private var personId2: Int?
+    @State private var personIds: [Int] = []
     @State private var year = ""
     @State private var albumId: Int?
     @State private var season = "christmas"
@@ -235,6 +236,26 @@ private struct CreateHighlightSheet: View {
                             }
                             if needs("person2") {
                                 personPicker("Zweite Person", selection: $personId2)
+                            }
+                            if needs("people") {
+                                ForEach(people.filter { personIds.contains($0.id) }) { p in
+                                    HStack {
+                                        Text(p.name)
+                                        Spacer()
+                                        Button { personIds.removeAll { $0 == p.id } } label: {
+                                            Image(systemName: "minus.circle.fill").foregroundStyle(.red)
+                                        }
+                                    }
+                                }
+                                Menu {
+                                    ForEach(people.filter { !personIds.contains($0.id) }) { p in
+                                        Button(p.name) { personIds.append(p.id) }
+                                    }
+                                } label: { Label("Person hinzufügen", systemImage: "plus") }
+                                if personIds.count < 2 {
+                                    Text("Mindestens 2 Personen wählen (gemeinsame Fotos).")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                             if needs("year") {
                                 TextField("Jahr (z. B. 2024)", text: $year)
@@ -281,7 +302,7 @@ private struct CreateHighlightSheet: View {
                                 Text("Erstellen")
                             }
                         }
-                        .disabled(selectedMotto == nil || submitting)
+                        .disabled(selectedMotto == nil || submitting || (needs("people") && personIds.count < 2))
                     }
                 }
             }
@@ -327,6 +348,7 @@ private struct CreateHighlightSheet: View {
                 durationSec: duration,
                 personId: needs("person") ? personId : nil,
                 personId2: needs("person2") ? personId2 : nil,
+                personIds: needs("people") ? personIds : nil,
                 year: needs("year") ? Int(year) : nil,
                 albumId: needs("album") ? albumId : nil,
                 season: needs("season") ? season : nil
