@@ -347,6 +347,10 @@ final class APIClient: ObservableObject {
     func confirmSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/confirm-suggestion", method: "POST") }
     func rejectSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/reject-suggestion", method: "POST") }
 
+    // MARK: App settings (key/value)
+    func appSettings() async throws -> [String: String] { try await get("api/settings", as: [String: String].self) }
+    func saveSettings(_ kv: [String: String]) async throws { try await action("api/settings", method: "PUT", json: kv) }
+
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {
