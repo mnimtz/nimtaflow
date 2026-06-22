@@ -60,6 +60,10 @@ celery_app.conf.update(
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
         "backfill_geo":       {"queue": "cpu"},   # offline reverse-geocode GPS → city
+        # Fast EXIF date+GPS(+geocode) backfill straight from file headers. On the
+        # SCAN queue (near-empty) so it does NOT wait behind the huge process_photo
+        # cpu backlog — the map/timeline populate in minutes, not after the queue drains.
+        "backfill_metadata":  {"queue": "scan"},
         # Dedicated queue + worker so slow video transcodes (esp. software h264)
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.
@@ -135,6 +139,13 @@ celery_app.conf.beat_schedule = {
     "backfill-xmp-nightly": {
         "task": "backfill_xmp",
         "schedule": crontab(hour=2, minute=30),
+    },
+    # Nightly fast EXIF date+GPS backfill (scan queue) so newly-imported photos get
+    # their date/coordinates within the night even when the process_photo cpu backlog
+    # is deep. Runs BEFORE geo so the geocoder then has fresh coordinates. 04:30.
+    "backfill-metadata-nightly": {
+        "task": "backfill_metadata",
+        "schedule": crontab(hour=4, minute=30),
     },
     # Nightly offline reverse-geocoding: fill city/region for GPS photos that don't
     # have a place name yet (so the map's place search stays current as new geo

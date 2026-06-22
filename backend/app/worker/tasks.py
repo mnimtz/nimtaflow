@@ -1132,6 +1132,92 @@ def backfill_geo_task(self, limit: int = 60000):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="backfill_metadata")
+def backfill_metadata_task(self, limit: int = 200000):
+    """Fast date+GPS(+city) backfill straight from EXIF via batched exiftool — for
+    photos the slow process_photo queue hasn't reached yet. Idempotent: only fills
+    NULL taken_at / latitude. Runs on the 'scan' queue so it doesn't wait behind the
+    process_photo cpu backlog → the map + timeline populate without a multi-hour wait."""
+    async def _main():
+        import json, subprocess, datetime as _dt
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update as _upd, or_
+        init_db()
+
+        def _parse_dt(s):
+            if not s or not isinstance(s, str):
+                return None
+            s = s.strip().split(".")[0].split("+")[0].strip()
+            for f in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try: return _dt.datetime.strptime(s, f)
+                except Exception: pass
+            return None
+
+        async for db in get_db():
+            rows = (await db.execute(select(Photo.id, Photo.path).where(
+                or_(Photo.taken_at.is_(None), Photo.latitude.is_(None)),
+                Photo.is_trashed == False, Photo.is_missing == False  # noqa: E712
+            ).limit(limit))).all()
+            break
+        by_path = {p: i for (i, p) in rows}
+        paths = list(by_path.keys())
+        if not paths:
+            return {"checked": 0, "dates": 0, "gps": 0}
+        flog("scanner", "INFO", f"Metadaten-Backfill: {len(paths)} Foto(s) (Datum/GPS aus EXIF)")
+        dt_set = gps_set = 0
+        geo = []  # (id, lat, lon)
+        CH = 400
+        for k in range(0, len(paths), CH):
+            chunk = paths[k:k + CH]
+            try:
+                out = subprocess.run(["exiftool", "-j", "-n", "-api", "largefilesupport=1",
+                    "-DateTimeOriginal", "-CreateDate", "-GPSLatitude", "-GPSLongitude",
+                    *chunk], capture_output=True, timeout=900)
+                data = json.loads(out.stdout.decode("utf-8", "replace") or "[]")
+            except Exception:
+                continue
+            ups = []
+            for d in data:
+                pid = by_path.get(d.get("SourceFile"))
+                if pid is None:
+                    continue
+                vals = {}
+                taken = _parse_dt(d.get("DateTimeOriginal") or d.get("CreateDate"))
+                if taken: vals["taken_at"] = taken
+                lat, lon = d.get("GPSLatitude"), d.get("GPSLongitude")
+                if isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and (lat or lon):
+                    vals["latitude"] = float(lat); vals["longitude"] = float(lon)
+                    geo.append((pid, float(lat), float(lon)))
+                if vals: ups.append((pid, vals))
+            if ups:
+                async for db in get_db():
+                    for pid, vals in ups:
+                        await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
+                        if "taken_at" in vals: dt_set += 1
+                        if "latitude" in vals: gps_set += 1
+                    await db.commit(); break
+        # reverse-geocode the freshly set coordinates (offline)
+        try:
+            import reverse_geocoder as rg
+            if geo:
+                res = rg.search([(la, lo) for (_, la, lo) in geo], mode=1)
+                for (pid, _, _), r in zip(geo, res):
+                    v = {}
+                    if (r.get("name") or "").strip(): v["city"] = r["name"].strip()
+                    if (r.get("admin1") or "").strip(): v["location_name"] = r["admin1"].strip()
+                    if v:
+                        async for db in get_db():
+                            await db.execute(_upd(Photo).where(Photo.id == pid).values(**v))
+                            await db.commit(); break
+        except Exception:
+            pass
+        flog("scanner", "INFO", f"Metadaten-Backfill fertig: {dt_set} Datum, {gps_set} GPS gesetzt")
+        return {"checked": len(paths), "dates": dt_set, "gps": gps_set}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="transcode_video")
 def transcode_video_task(self, photo_id: int, resolution: int = 1080):
     """On-demand: produce a web-optimised H.264 MP4 (HW/QSV, +faststart) so the
@@ -1361,6 +1447,14 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                         photo.shutter_speed = ex.shutter_speed
                     if photo.iso is None and ex.iso is not None:
                         photo.iso = ex.iso
+                except Exception:
+                    pass
+
+                # Persist the CHEAP metadata (date/GPS/camera) right now — before the
+                # slow thumbnail step — so the map/timeline populate immediately even
+                # while a long thumbnail backlog drains (and survive a worker restart).
+                try:
+                    await db.commit()
                 except Exception:
                     pass
 

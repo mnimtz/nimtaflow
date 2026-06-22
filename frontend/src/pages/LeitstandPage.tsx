@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../lib/api'
-import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock } from 'lucide-react'
+import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw } from 'lucide-react'
 import PipelinePage from './PipelinePage'
 
 type Role = {
@@ -40,6 +40,19 @@ export default function LeitstandPage() {
     queryKey: ['leitstand'],
     queryFn: () => api.get('/remote/status').then(r => r.data),
     refetchInterval: 3000,
+  })
+  const { data: stats, refetch: refetchStats } = useQuery<any>({
+    queryKey: ['photo-stats-leitstand'],
+    queryFn: () => api.get('/photos/stats').then(r => r.data),
+    refetchInterval: 5000,
+  })
+  const scanMeta = useMutation({
+    mutationFn: () => api.post('/photos/scan-metadata').then(r => r.data),
+    onSuccess: (d: any) => {
+      refetchStats()
+      alert(`${de(d?.candidates ?? 0)} Foto(s) werden auf Datum/GPS gescannt — Ergebnisse erscheinen in den nächsten Minuten.`)
+    },
+    onError: () => alert('Metadaten-Scan konnte nicht gestartet werden.'),
   })
   const roles = [...(data?.roles ?? [])].sort(
     (a, b) => CHAIN.indexOf(a.role) - CHAIN.indexOf(b.role))
@@ -89,6 +102,42 @@ export default function LeitstandPage() {
           </div>
         </div>
       </div>
+
+      {/* Panel 0: Metadaten & GPS — Indikator + manueller Scan-Button */}
+      {stats && (
+        <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <MapPin className="w-5 h-5 text-emerald-500 shrink-0" />
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Metadaten &amp; GPS</h2>
+                {(stats.metadata_pending ?? 0) > 0 ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {de(stats.metadata_pending)} Foto(s) werden noch verarbeitet (Datum/GPS/Orte) — der Ordner-Scan ist fertig, die Verarbeitung läuft noch.
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    Alle Metadaten verarbeitet · {de(stats.with_gps)} Foto(s) mit GPS
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => scanMeta.mutate()}
+              disabled={scanMeta.isPending}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+              <RefreshCw size={16} className={scanMeta.isPending ? 'animate-spin' : ''} />
+              {scanMeta.isPending ? 'Wird gestartet…' : 'GPS/Metadaten jetzt scannen'}
+            </button>
+          </div>
+          {(stats.metadata_pending ?? 0) > 0 && (stats.total_indexed ?? 0) > 0 && (
+            <div className="mt-3 h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all"
+                style={{ width: `${Math.max(2, Math.round(100 * (1 - stats.metadata_pending / stats.total_indexed)))}%` }} />
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Panel 1: Pipeline-Kette */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">

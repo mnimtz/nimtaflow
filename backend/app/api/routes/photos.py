@@ -211,12 +211,19 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     # all indexed (any status) — the right denominator for pipeline coverage %
     total_indexed = await db.scalar(select(func.count()).where(Photo.is_trashed == False))  # noqa: E712
 
+    # "Metadata still pending": indexed photos whose date hasn't been extracted yet —
+    # a reliable signal that per-photo processing (date/GPS/thumbnail) isn't finished,
+    # even when the folder scan reports done. Drives the Leitstand indicator + button.
+    metadata_pending = await db.scalar(select(func.count()).where(
+        *live, Photo.taken_at.is_(None)))
+
     return {
         "total": total or 0,
         "total_indexed": total_indexed or 0,
         "videos": videos or 0,
         "favorites": favorites or 0,
         "with_gps": with_gps or 0,
+        "metadata_pending": metadata_pending or 0,
         "cameras": [{"model": r[0], "count": r[1]} for r in cameras],
         "date_min": min_date.isoformat() if min_date else None,
         "date_max": max_date.isoformat() if max_date else None,
@@ -602,6 +609,19 @@ async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     for pid in ids:
         process_photo_task.delay(pid, None, False, True)
     return {"reprocessing": len(ids)}
+
+
+@router.post("/scan-metadata")
+async def scan_metadata(db: AsyncSession = Depends(get_db)):
+    """Manually trigger the fast EXIF date+GPS(+city) backfill (Leitstand button).
+    Runs on the 'scan' queue so it bypasses the slow process_photo backlog — date,
+    GPS and place names for already-scanned files populate within minutes."""
+    pending = await db.scalar(select(func.count()).where(
+        Photo.is_trashed == False,  # noqa: E712
+        or_(Photo.taken_at.is_(None), Photo.latitude.is_(None))))
+    from app.worker.tasks import backfill_metadata_task
+    backfill_metadata_task.delay()
+    return {"queued": True, "candidates": pending or 0}
 
 
 @router.post("/{photo_id}/reprocess")
