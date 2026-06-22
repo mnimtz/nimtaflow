@@ -77,6 +77,9 @@ export default function PeoplePage() {
   }
 
   const [faceSel, setFaceSel] = useState<Set<number>>(new Set())
+  // Click a suggestion/face → see the FULL photo big (verify even when the face crop
+  // is a low-quality video frame). Holds {face_id, photo_id, name, score}.
+  const [bigFace, setBigFace] = useState<{ id: number; photo_id: number; name?: string; score?: number } | null>(null)
   const toggleFace = (id: number) =>
     setFaceSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const ignoreFaces = useMutation({
@@ -332,7 +335,8 @@ export default function PeoplePage() {
                     <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-2">
                       {g.faces.map(f => (
                         <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden ring-1 ring-zinc-300 dark:ring-zinc-700 group">
-                          <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
+                          <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover cursor-zoom-in" loading="lazy"
+                            onClick={() => setBigFace({ id: f.id, photo_id: f.photo_id, name: g.name, score: f.score })}
                             onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
                           <div className="absolute inset-x-0 bottom-0 flex opacity-90 group-hover:opacity-100">
                             <button onClick={() => confirmFace.mutate(f.id)} title="Übernehmen"
@@ -456,6 +460,23 @@ export default function PeoplePage() {
 
       {showAdd && <AddPersonModal onClose={() => setShowAdd(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['people'] }); toast('Person erstellt', 'success') }} />}
       {quickName && <QuickNameOverlay onClose={() => setQuickName(false)} />}
+      {bigFace && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4" onClick={() => setBigFace(null)}>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={(e) => { e.stopPropagation(); confirmFace.mutate(bigFace.id); setBigFace(null) }}
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500">✓ {bigFace.name || 'Übernehmen'}</button>
+            <button onClick={(e) => { e.stopPropagation(); rejectFace.mutate(bigFace.id); setBigFace(null) }}
+              className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm hover:bg-rose-500">✗ Verwerfen</button>
+            <button onClick={() => setBigFace(null)} className="px-3 py-2 rounded-lg bg-zinc-700 text-white text-sm"><X size={16} /></button>
+          </div>
+          <img src={thumbUrl({ id: bigFace.photo_id } as any, 'large')} onClick={e => e.stopPropagation()}
+            className="max-h-[80vh] max-w-[92vw] object-contain rounded-lg shadow-2xl"
+            onError={e => { (e.target as HTMLImageElement).src = `/api/people/faces/${bigFace.id}/crop` }} />
+          {bigFace.score != null && (
+            <p className="mt-3 text-zinc-300 text-sm">Vorschlag: <b>{bigFace.name}</b> · Ähnlichkeit {Math.round((bigFace.score || 0) * 100)}%</p>
+          )}
+        </div>
+      )}
       {mergeOpen && (
         <MergeModal
           people={selectedPeople}

@@ -1219,10 +1219,14 @@ def backfill_metadata_task(self, limit: int = 200000):
 
 
 @celery_app.task(bind=True, name="suggest_faces")
-def suggest_faces_task(self, low: float = 0.32):
+def suggest_faces_task(self, low: Optional[float] = None, margin: float = 0.04):
     """For each unassigned face with an embedding, find its most-similar NAMED person
-    and, if cosine similarity is in the borderline band [low, auto-assign), store it as
-    a suggestion the user confirms with one tap. Chunked (no U×M OOM). Scan queue."""
+    and store a suggestion ONLY if it's genuinely indicative:
+      • cosine sim >= `low` (default face.suggest_min_score, 0.40) and below auto-assign, AND
+      • DISTINCTIVE — the best sim to any OTHER named person is ≥ `margin` lower.
+    The distinctiveness gate kills the popularity bias (a noisy video-frame face used to
+    land on whoever has the most exemplars, e.g. Lea). Chunked (no U×M OOM). Scan queue.
+    First clears stale suggestions so a re-run with a stricter bar prunes the old junk."""
     async def _main():
         import numpy as np
         from app.core.database import init_db, get_db
@@ -1236,8 +1240,12 @@ def suggest_faces_task(self, low: float = 0.32):
             s = await load_settings(db)
             engine = str(s.get("face.engine", "insightface")).lower()
             thr = float(s.get("face.clustering_threshold", "0.5") or 0.5)
-            hi = (1.0 - max(0.05, 1.0 - thr)) + 0.0  # = thr; grow already takes >= thr+slack
+            floor = low if low is not None else float(s.get("face.suggest_min_score", "0.40") or 0.40)
             cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
+            # Reset previous suggestions (re-run prunes old, too-loose matches).
+            await db.execute(_upd(Face).where(Face.suggested_person_id.isnot(None))
+                             .values(suggested_person_id=None, suggested_score=None))
+            await db.commit()
             named_ids = [pid for (pid,) in (await db.execute(
                 select(Person.id).where(Person.name != ""))).all()]
             if not named_ids:
@@ -1259,7 +1267,6 @@ def suggest_faces_task(self, low: float = 0.32):
         Ep = np.array([p for p, _ in ex])
         ids = [r[0] for r in un]
         X = _norm(np.array([r[1] for r in un], dtype="float32"))
-        # Suggest band: [low, thr). >= thr is auto-assigned by grow; < low is noise.
         sug = 0
         CH = 1000
         for c0 in range(0, len(ids), CH):
@@ -1270,8 +1277,13 @@ def suggest_faces_task(self, low: float = 0.32):
             updates = []
             for k in range(len(Xc)):
                 sc = float(sb[k])
-                if low <= sc < thr:
-                    updates.append((ids[c0 + k], int(Ep[jb[k]]), sc))
+                if not (floor <= sc < thr):
+                    continue
+                pid = int(Ep[jb[k]])
+                other = sims[k][Ep != pid]               # best match to a DIFFERENT person
+                if other.size and float(other.max()) > sc - margin:
+                    continue                              # ambiguous → not a real suggestion
+                updates.append((ids[c0 + k], pid, sc))
             if updates:
                 async for db in get_db():
                     for fid, pid, sc in updates:
@@ -1279,7 +1291,7 @@ def suggest_faces_task(self, low: float = 0.32):
                             suggested_person_id=pid, suggested_score=sc))
                     await db.commit(); break
                 sug += len(updates)
-        flog("scanner", "INFO", f"Gesichts-Vorschläge: {sug} Borderline-Treffer markiert")
+        flog("scanner", "INFO", f"Gesichts-Vorschläge: {sug} distinkte Treffer (>= {floor})")
         return {"suggested": sug}
     return _run(_main())
 
