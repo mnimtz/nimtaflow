@@ -11,7 +11,7 @@ import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import FileResponse
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -719,3 +719,77 @@ async def status(db: AsyncSession = Depends(get_db)):
             "thumbnails": thumb_done or 0,
         },
     }
+
+
+# ── Local video-AI jobs (the M3 LTX worker pulls these) ───────────────────────
+# Producer/consumer for image-to-video done LOCALLY on the M3: highlights created
+# with params.provider == "local" stay pending until the M3 worker claims them here,
+# renders with LTX (offline), and uploads the MP4. Decoupled from the Mac being online
+# (your "M3 produces when available + keep a buffer" idea). Source image is fetched
+# via the existing /remote/image/{photo_id} (thumb_large).
+@router.get("/video-jobs/next")
+async def video_job_next(db: AsyncSession = Depends(get_db),
+                         x_remote_token: Optional[str] = Header(None)):
+    await _require_token(db, x_remote_token)
+    from app.models.highlight import Highlight, HighlightStatus
+    rows = (await db.execute(
+        select(Highlight).where(
+            Highlight.status == HighlightStatus.pending,
+            Highlight.motto == "photo_animate",
+        ).order_by(Highlight.created_at).limit(10)
+    )).scalars().all()
+    job = next((h for h in rows if (h.params or {}).get("provider") == "local"), None)
+    if not job:
+        return {"job": None}
+    job.status = HighlightStatus.rendering
+    await db.commit()
+    p = job.params or {}
+    return {"job": {"id": job.id, "photo_id": job.cover_photo_id,
+                    "prompt": p.get("prompt") or "", "seconds": int(job.duration_sec or 4)}}
+
+
+@router.post("/video-jobs/{job_id}/complete")
+async def video_job_complete(job_id: int, file: UploadFile = File(...),
+                             db: AsyncSession = Depends(get_db),
+                             x_remote_token: Optional[str] = Header(None)):
+    """M3 uploads the finished MP4 → cached + Highlight done."""
+    await _require_token(db, x_remote_token)
+    from app.models.highlight import Highlight, HighlightStatus
+    from app.core.config import get_settings
+    job = await db.get(Highlight, job_id)
+    if not job:
+        raise HTTPException(404)
+    out_dir = os.path.join(get_settings().cache_path, "highlights", "clips")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{job_id}.mp4")
+    tmp = out_path + ".part"
+    with open(tmp, "wb") as f:
+        f.write(await file.read())
+    os.replace(tmp, out_path)
+    try:
+        from app.services.processing.thumbnails import video_duration
+        dur = video_duration(out_path)
+    except Exception:
+        dur = None
+    job.file_path = out_path
+    job.duration_sec = round(dur, 1) if dur else job.duration_sec
+    job.photo_count = 1
+    job.status = HighlightStatus.done
+    job.error_message = None
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/video-jobs/{job_id}/fail")
+async def video_job_fail(job_id: int, error: Optional[str] = None,
+                         db: AsyncSession = Depends(get_db),
+                         x_remote_token: Optional[str] = Header(None)):
+    await _require_token(db, x_remote_token)
+    from app.models.highlight import Highlight, HighlightStatus
+    job = await db.get(Highlight, job_id)
+    if not job:
+        raise HTTPException(404)
+    job.status = HighlightStatus.error
+    job.error_message = (error or "Lokale Generierung (M3) fehlgeschlagen.")[:500]
+    await db.commit()
+    return {"ok": True}

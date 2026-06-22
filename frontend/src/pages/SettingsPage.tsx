@@ -1357,6 +1357,7 @@ function HighlightsAISettings() {
             className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="fal">fal.ai (günstig, ~$20 Gratis-Credits zum Testen)</option>
             <option value="veo">Google Veo 3.1 Fast (Premium, teurer)</option>
+            <option value="local">Lokal auf M3 (LTX, gratis &amp; privat)</option>
           </select>
         </label>
 
@@ -1394,7 +1395,13 @@ function HighlightsAISettings() {
           </label>
         </div>
         <div className="text-xs text-zinc-500 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-3 space-y-1">
-          {provider === 'veo' ? (
+          {provider === 'local' ? (
+            <>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">Lokal auf dem M3 (LTX) — gratis &amp; privat</div>
+              <div><strong>0 € pro Clip</strong>, Fotos verlassen den Server nicht. Erfordert den laufenden M3-LTX-Worker; Jobs werden in eine Warteschlange gelegt und erzeugt, sobald der M3 online ist (~5 Min/Clip).</div>
+              <div className="text-zinc-400">Solange der M3-Worker noch nicht eingerichtet ist, bleiben „Lokal"-Jobs in der Warteschlange (Status „wird erstellt").</div>
+            </>
+          ) : provider === 'veo' ? (
             <>
               <div className="font-medium text-zinc-700 dark:text-zinc-300">Kosten — Google Veo 3.1 Fast</div>
               <div>Pro <strong>Sekunde</strong> erzeugtem Video ca. <strong>$0,15</strong> (inkl. Ton). 4 Sek. ≈ $0,60 · 8 Sek. ≈ $1,20.</div>

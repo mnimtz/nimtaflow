@@ -165,8 +165,11 @@ async def animate_photo(
     await db.commit()
     await db.refresh(h)
 
-    from app.worker.tasks import animate_photo_task
-    animate_photo_task.delay(h.id)
+    # Cloud providers (veo/fal) render in the Celery worker. The local M3 provider
+    # leaves the job pending — the M3 LTX worker pulls it via /api/remote/video-jobs.
+    if str(s.get("highlights.ai_provider", "veo")).lower() != "local":
+        from app.worker.tasks import animate_photo_task
+        animate_photo_task.delay(h.id)
     return _out(h)
 
 
