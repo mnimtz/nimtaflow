@@ -128,6 +128,7 @@ async def create_highlight(
 
 class AnimatePhotoRequest(BaseModel):
     photo_id: int
+    prompt: Optional[str] = None      # creative scene description ("… durch eine Unterwasserwelt …")
 
 
 @router.post("/animate-photo", response_model=HighlightOut, status_code=201)
@@ -136,8 +137,9 @@ async def animate_photo(
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
-    """MVP external video-AI: turn ONE still photo into a short animated clip (Veo 3.1 Fast).
-    Opt-in (highlights.ai_enabled) + budget-capped in the worker. Returns a pending Highlight."""
+    """External video-AI: turn ONE still photo into a short animated clip — optionally with a
+    creative scene prompt (place the person in a new world). Opt-in (highlights.ai_enabled)
+    + budget-capped in the worker. Returns a pending Highlight."""
     from app.models.photo import Photo
     from app.services.settings_loader import load_settings
     s = await load_settings(db)
@@ -148,11 +150,13 @@ async def animate_photo(
         raise HTTPException(404, "Foto nicht gefunden.")
 
     seconds = float(int(float(s.get("highlights.ai_clip_seconds", "4") or 4)))
+    prompt = (body.prompt or "").strip() or None
     h = Highlight(
-        title="Animiertes Foto",
+        title=("KI-Szene" if prompt else "Animiertes Foto"),
         motto="photo_animate",
         duration_sec=seconds,
-        params={"photo_id": body.photo_id, "provider": s.get("highlights.ai_provider", "veo")},
+        params={"photo_id": body.photo_id, "provider": s.get("highlights.ai_provider", "veo"),
+                **({"prompt": prompt} if prompt else {})},
         status=HighlightStatus.pending,
         cover_photo_id=body.photo_id,
         created_by=getattr(user, "id", None),

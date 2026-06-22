@@ -2096,9 +2096,16 @@ def animate_photo_task(self, highlight_id: int):
                     raise RuntimeError(f"Provider '{provider}' nicht unterstützt (veo, fal).")
                 seconds = int(float(s.get("highlights.ai_clip_seconds", "4") or 4))
                 budget = int(float(s.get("highlights.ai_budget_seconds_month", "300") or 300))
-                prompt = (s.get("highlights.ai_prompt")
-                          or "Gentle, natural camera motion. Keep faces and identities stable. "
-                             "Subtle, realistic movement only — no morphing, no new objects.")
+                custom = (h.params or {}).get("prompt")
+                if custom:
+                    # Creative scene (e.g. "walk through an underwater world") — still ask the
+                    # model to keep the person recognizable.
+                    prompt = (f"{custom}. Keep the person's face and identity recognizable "
+                              f"and consistent throughout.")
+                else:
+                    prompt = (s.get("highlights.ai_prompt")
+                              or "Gentle, natural camera motion. Keep faces and identities stable. "
+                                 "Subtle, realistic movement only — no morphing, no new objects.")
 
                 # Hard monthly budget: sum seconds already spent this calendar month.
                 now = datetime.now(timezone.utc)

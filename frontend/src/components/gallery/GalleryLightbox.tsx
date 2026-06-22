@@ -24,6 +24,17 @@ function fmtBytes(b?: number) { if (!b) return null; const u = ['B', 'KB', 'MB',
 function fmtDur(s?: number) { if (!s) return null; const m = Math.floor(s / 60), sec = Math.round(s % 60); return `${m}:${String(sec).padStart(2, '0')} min` }
 function fmtDate(v?: string) { return v ? new Date(v).toLocaleString('de', { dateStyle: 'medium', timeStyle: 'short' }) : null }
 
+// Creative scene presets for "animate this photo / put the person into a world".
+const ANIM_PRESETS: { label: string; prompt: string }[] = [
+  { label: '🎬 Dezente Bewegung', prompt: '' },
+  { label: '🌊 Unterwasserwelt', prompt: 'Diese Person schwimmt langsam durch eine leuchtende Unterwasserwelt mit bunten Fischen und Korallen, sanfte Lichtstrahlen, ruhige Kamerafahrt.' },
+  { label: '🚀 Weltraum', prompt: 'Diese Person schwebt durch den Weltraum zwischen Sternen, Planeten und farbigen Nebeln, cinematische langsame Bewegung.' },
+  { label: '❄️ Winterwunderland', prompt: 'Diese Person geht durch einen verschneiten Märchenwald mit funkelndem Schnee und Polarlichtern am Himmel.' },
+  { label: '🧚 Märchenwald', prompt: 'Diese Person läuft durch einen magischen, leuchtenden Märchenwald voller Glühwürmchen und weichem Licht.' },
+  { label: '☁️ Über den Wolken', prompt: 'Diese Person fliegt sanft über goldene Wolken bei Sonnenuntergang, ruhige epische Kamerafahrt.' },
+  { label: '🌆 Cyberpunk-Stadt', prompt: 'Diese Person geht durch eine neonbeleuchtete Cyberpunk-Stadt bei Nacht, Regen, Spiegelungen, filmische Kamera.' },
+]
+
 function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void }) {
   // staleTime:0 + refetchOnMount so a photo opened before AI finished shows its
   // description/tags/faces once reopened (was caching the empty first response).
@@ -231,14 +242,17 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
     queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
   })
   const aiOn = (settings?.['highlights.ai_enabled'] ?? 'false') === 'true'
+  const [animOpen, setAnimOpen] = useState(false)
+  const [animPrompt, setAnimPrompt] = useState('')
   const animate = useMutation({
-    mutationFn: (photoId: number) => api.post('/highlights/animate-photo', { photo_id: photoId }).then(r => r.data),
-    onSuccess: () => toast('Animation gestartet — erscheint unter „Highlights", sobald fertig.', 'success'),
+    mutationFn: ({ id, prompt }: { id: number; prompt: string }) =>
+      api.post('/highlights/animate-photo', { photo_id: id, prompt: prompt.trim() || undefined }).then(r => r.data),
+    onSuccess: () => { setAnimOpen(false); setAnimPrompt(''); toast('Animation gestartet — erscheint unter „Highlights", sobald fertig.', 'success') },
     onError: (e: any) => toast(e?.response?.data?.detail || 'Animation fehlgeschlagen.', 'error'),
   })
   const animBtn = (aiOn && photos[cur] && !photos[cur].is_video) ? (
-    <button key="animate" type="button" className="yarl__button" disabled={animate.isPending}
-      onClick={() => photos[cur] && animate.mutate(photos[cur].id)} title="Foto animieren (KI-Video)">
+    <button key="animate" type="button" className="yarl__button"
+      onClick={() => setAnimOpen(true)} title="Foto animieren / in eine KI-Szene setzen">
       <Sparkles className="yarl__icon" />
     </button>
   ) : null
@@ -275,6 +289,36 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         animation={{ fade: 250, swipe: 300 }}
       />
       {info && photos[cur] && <InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />}
+      {animOpen && photos[cur] && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <Sparkles size={18} className="text-indigo-500" />
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Foto animieren / in eine Szene setzen</h2>
+            </div>
+            <p className="text-xs text-zinc-500">Beschreibe, was passieren soll — oder wähle eine Welt. Leer lassen = nur dezente, realistische Bewegung.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {ANIM_PRESETS.map(p => (
+                <button key={p.label} onClick={() => setAnimPrompt(p.prompt)}
+                  className="px-2.5 py-1 rounded-full text-xs border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:border-indigo-400">
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <textarea value={animPrompt} onChange={e => setAnimPrompt(e.target.value)} rows={3}
+              placeholder="z. B. Diese Person läuft durch eine leuchtende Unterwasserwelt mit bunten Fischen …"
+              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p className="text-[11px] text-zinc-400">Hinweis: Bei wilden Szenen kann die Ähnlichkeit der Person leiden — stärkere Modelle (Veo/Kling) halten Gesichter besser. Kostet je nach Anbieter (siehe Einstellungen → Highlights).</p>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setAnimOpen(false)} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+              <button onClick={() => photos[cur] && animate.mutate({ id: photos[cur].id, prompt: animPrompt })} disabled={animate.isPending}
+                className="px-4 py-1.5 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50">
+                {animate.isPending ? 'Startet…' : 'Animieren'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
