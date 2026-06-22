@@ -1,7 +1,7 @@
 {
-  "name": "PhotoFlow",
-  "short_name": "PhotoFlow",
-  "description": "Self-hosted photo management",
+  "name": "LumaFlow",
+  "short_name": "LumaFlow",
+  "description": "Self-hosted photo & video management",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#111827",
