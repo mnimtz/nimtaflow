@@ -912,7 +912,7 @@ async def memories_v1(request: Request, db: AsyncSession = Depends(get_db),
                       user: Optional[User] = Depends(current_user_optional)):
     """'Vor X Jahren heute' — same logic the web uses, as PhotoV1 groups."""
     from app.api.routes.photos import get_memories
-    groups = await get_memories(db=db)
+    groups = await get_memories(db=db, user=user)
     return [MemoryGroupV1(years_ago=g["years_ago"], date=g["date"],
                           items=[_to_v1(p, request) for p in g["photos"]])
             for g in groups]
@@ -946,7 +946,7 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     # a restricted user must never see memories from folders they can't access.
     try:
         from app.api.routes.photos import get_memories
-        groups = await get_memories(db=db)
+        groups = await get_memories(db=db, user=user)
         od = []
         for g in groups:
             vis = [p for p in g["photos"] if can_see_photo(p, user)][:12]

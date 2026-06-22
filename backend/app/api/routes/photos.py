@@ -1,6 +1,7 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, distinct, extract, text
 from datetime import date, datetime, timezone
@@ -11,7 +12,7 @@ from app.core.auth_guard import current_user_optional
 from app.core.access import photo_conditions, can_see_photo, feature_allowed
 from app.models.photo import Photo, PhotoStatus
 from app.models.user import User
-from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup
+from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup, PhotoBase
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 
@@ -235,10 +236,20 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.get("/memories")
-async def get_memories(db: AsyncSession = Depends(get_db)):
+class MemoryGroupWeb(BaseModel):
+    years_ago: int
+    date: str
+    photos: List[PhotoBase]
+
+
+@router.get("/memories", response_model=List[MemoryGroupWeb])
+async def get_memories(db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     """Photos from exactly 1, 2, 3... years ago today. Optionally limited to
-    photos containing selected people (Settings → Erinnerungen)."""
+    photos containing selected people (Settings → Erinnerungen).
+
+    Respects per-user access (folder/date/person restrictions) so a restricted
+    user never sees memories from photos they cannot access."""
     from datetime import datetime, timezone, timedelta
     from app.services.settings_loader import load_settings
     settings = await load_settings(db)
@@ -272,7 +283,7 @@ async def get_memories(db: AsyncSession = Depends(get_db)):
         photos = (await db.execute(
             select(Photo)
             .where(Photo.taken_at.between(start, end), Photo.is_trashed == False,  # noqa: E712
-                   Photo.status == PhotoStatus.done, *person_cond)
+                   Photo.status == PhotoStatus.done, *person_cond, *photo_conditions(user))
             .order_by(Photo.taken_at)
             .limit(30)
         )).scalars().all()
