@@ -13,6 +13,8 @@
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
 ### ✅ Erledigt (deployed)
+- **Highlights per-User gescopt** (v1.290, Release-Vorbereitung): `GET /highlights` (+ get/video/delete) zeigte allen Usern ALLE Highlights → ein Demo-/eingeschränkter User hätte die Familien-Highlights gesehen (App-Review-Leak). Fix: eingeschränkte User (mit `access_config`) sehen nur eigene (`created_by`), Admins alle. (`highlights.py` + `_can_access`.)
+- **iOS-Build auf TestFlight** (v1.289-Icon): signierter IPA hochgeladen (UPLOAD SUCCEEDED, Delivery 7aee54a8) — mit neuem LumaFlow-Icon. Issuer-ID aus Shell-History gefunden.
 - **Mobile-Navigation überarbeitet** (v1.288, #2 Teil 1): Mobile-Bottom-Bar quetschte ~12 Punkte in eine Zeile + Content lag hinter der fixen Leiste. Neu: 4 Primär-Tabs (Start/Galerie/Suche/Personen) + „Mehr"-Drawer (Bottom-Sheet: Chat/Alben/Highlights/Karte/Reisen/Leitstand/Beziehungen/Profil/Einstellungen + Theme), `main pb-16` auf Mobile + Safe-Area (`Layout.tsx`). Volle Per-Seiten-Responsiveness = Folgearbeit.
 - **Push-Konzept + Release-Audit (Doku)** (#8): `docs/push-und-release-audit-konzept.md` — Web-Push(VAPID)+APNs-Architektur, `push_subscriptions`-Tabelle, Empfehlung „Web Push zuerst"; Release-Checkliste (Security/Zuverlässigkeit/Perf/Backup/iOS) inkl. offener ⚠️.
 - **Transcode-Bug (.3gp) gefixt** (v1.287): die Transcode-Flut (`{'error':'ffmpeg'}`) waren **`.3gp`-Dateien** (alte Handy-Videos) — Fehler `Error initializing the muxer for …mp4: Invalid argument`, weil `.3gp` Daten-/Timecode-Streams enthält, die der MP4-Muxer ablehnt. Fix: in allen Transcode-Befehlen (QSV + Software-Fallback in `hw_accel.build_transcode_cmd` + `transcode_video_task`) nur erstes Video + optional Audio mappen, Daten/Untertitel droppen: `-map 0:v:0? -map 0:a:0? -dn -sn`. Verifiziert: betroffene `.3gp` transkodiert jetzt rc=0 → gültige MP4. (Die meisten anderen Videos waren nie betroffen; flutartige Fehlschläge kamen vom .3gp-Anteil.)
@@ -61,4 +63,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.288.0 (Mobile-Nav + Push/Release-Audit-Doku). Versionen siehe git log._
+_Letzter Stand-Commit: v1.290.0 (Highlights per-User gescopt; TestFlight-Upload). Versionen siehe git log._

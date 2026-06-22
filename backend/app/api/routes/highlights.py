@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
+from app.core.access import _is_unrestricted
 from app.models.user import User
 from app.models.highlight import Highlight, HighlightStatus
 from app.services.highlights import MOTTOS
@@ -76,11 +77,19 @@ async def list_mottos():
 
 
 @router.get("", response_model=List[HighlightOut])
-async def list_highlights(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(
-        select(Highlight).order_by(Highlight.created_at.desc())
-    )).scalars().all()
+async def list_highlights(db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    q = select(Highlight).order_by(Highlight.created_at.desc())
+    # Restricted (e.g. demo) users see only highlights they created — never the
+    # family's. Admins / unrestricted see all.
+    if not _is_unrestricted(user):
+        q = q.where(Highlight.created_by == user.id)
+    rows = (await db.execute(q)).scalars().all()
     return [_out(h) for h in rows]
+
+
+def _can_access(h: Highlight, user: Optional[User]) -> bool:
+    return _is_unrestricted(user) or (h.created_by is not None and h.created_by == user.id)
 
 
 @router.post("", response_model=HighlightOut, status_code=201)
@@ -174,17 +183,19 @@ async def animate_photo(
 
 
 @router.get("/{highlight_id}", response_model=HighlightOut)
-async def get_highlight(highlight_id: int, db: AsyncSession = Depends(get_db)):
+async def get_highlight(highlight_id: int, db: AsyncSession = Depends(get_db),
+                        user: Optional[User] = Depends(current_user_optional)):
     h = await db.get(Highlight, highlight_id)
-    if not h:
+    if not h or not _can_access(h, user):
         raise HTTPException(404, "Highlight nicht gefunden")
     return _out(h)
 
 
 @router.get("/{highlight_id}/video")
-async def get_highlight_video(highlight_id: int, db: AsyncSession = Depends(get_db)):
+async def get_highlight_video(highlight_id: int, db: AsyncSession = Depends(get_db),
+                              user: Optional[User] = Depends(current_user_optional)):
     h = await db.get(Highlight, highlight_id)
-    if not h:
+    if not h or not _can_access(h, user):
         raise HTTPException(404, "Highlight nicht gefunden")
     if h.status != HighlightStatus.done or not h.file_path or not os.path.exists(h.file_path):
         raise HTTPException(404, "Video noch nicht fertig")
@@ -193,9 +204,10 @@ async def get_highlight_video(highlight_id: int, db: AsyncSession = Depends(get_
 
 
 @router.delete("/{highlight_id}", status_code=204)
-async def delete_highlight(highlight_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_highlight(highlight_id: int, db: AsyncSession = Depends(get_db),
+                           user: Optional[User] = Depends(current_user_optional)):
     h = await db.get(Highlight, highlight_id)
-    if not h:
+    if not h or not _can_access(h, user):
         raise HTTPException(404, "Highlight nicht gefunden")
     if h.file_path and os.path.exists(h.file_path):
         try:
