@@ -13,6 +13,7 @@
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
 ### ✅ Erledigt (deployed)
+- **Highlights-UX** (v1.278): eigene **Settings-Sektion „Highlights"** (vorher versteckt unter Erinnerungen) mit Wochen-Auto + KI-Video + **klarer Veo-Kosten-Box** (live berechnet aus Budget/Clip-Länge). Personen-Picker im Erstellen-Dialog: **Suche-beim-Tippen** (Combobox) statt starrem Dropdown + neues Motto **„Gemeinsame Fotos (mehrere Personen)"** (`people_together`, Schnittmenge mehrerer Personen, Multi-Picker mit Chips). Backend: `person_ids`-Param.
 - **Clustering-OOM-Fix** (v1.259): Grow-Phase `X@E.T` gechunkt (war ~4 GB → OOM-Kill „Clustern bewirkt nichts").
 - **„Vorschläge bestätigen"** (v1.260–263): `faces.suggested_person_id/score` (plain Int, **kein FK!**) + `suggest_faces`-Task (scan-Queue, gechunkt) mit Schwelle `face.suggest_min_score`=0.40 **+ Distinktheits-Marge 0.04** (killt Popularitäts-Bias). API: `/people/faces/suggestions`, `confirm-suggestion`, `reject-suggestion`, `suggestions/confirm/{pid}`, `suggest`. PeoplePage-Sektion + **Lightbox** (Klick → ganzes Foto, lädt auch bei leerem Video-Crop) + ✓/✗.
 - **Personen-Register/Tabs** (v1.264): Personen / Vorschläge / Unbekannte Gesichter / Verborgen (gaten die bestehenden Sektionen).
@@ -47,4 +48,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.277.0 (Highlights: Album-Highlight + Highlight der Woche + Wochen-Auto). Versionen siehe git log._
+_Letzter Stand-Commit: v1.278.0 (Highlights-UX: eigene Settings-Sektion, Veo-Kosten, Personen-Suche + Multi). Versionen siehe git log._

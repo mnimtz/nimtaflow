@@ -89,6 +89,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const [duration, setDuration] = useState(60)
   const [personId, setPersonId] = useState<number | ''>('')
   const [personId2, setPersonId2] = useState<number | ''>('')
+  const [personIds, setPersonIds] = useState<number[]>([])
   const [year, setYear] = useState('')
   const [albumId, setAlbumId] = useState<number | ''>('')
   const [season, setSeason] = useState('weihnachten')
@@ -106,6 +107,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       motto, title: title || m?.label, duration_sec: duration,
       ...(needs('person') && personId ? { person_id: personId } : {}),
       ...(needs('person2') && personId2 ? { person_id2: personId2 } : {}),
+      ...(needs('people') && personIds.length ? { person_ids: personIds } : {}),
       ...(needs('year') && year ? { year: Number(year) } : {}),
       ...(needs('album') && albumId ? { album_id: albumId } : {}),
       ...(needs('season') ? { season } : {}),
@@ -117,6 +119,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const ready = !!motto
     && (!needs('person') || !!personId)
     && (!needs('person2') || !!personId2)
+    && (!needs('people') || personIds.length >= 2)
     && (!needs('year') || !!year.trim())
     && (!needs('album') || !!albumId)
 
@@ -141,15 +144,15 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
 
         {needs('person') && (
           <div><label className="block text-xs text-zinc-500 mb-1">Person</label>
-            <select value={personId} onChange={e => setPersonId(e.target.value ? Number(e.target.value) : '')} className={sel}>
-              <option value="">— wählen —</option>{named.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
+            <PersonCombobox people={named} value={personId} onChange={setPersonId} /></div>
         )}
         {needs('person2') && (
           <div><label className="block text-xs text-zinc-500 mb-1">Zweite Person (z. B. das Kind)</label>
-            <select value={personId2} onChange={e => setPersonId2(e.target.value ? Number(e.target.value) : '')} className={sel}>
-              <option value="">— wählen —</option>{named.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
+            <PersonCombobox people={named} value={personId2} onChange={setPersonId2} exclude={personId ? [personId] : []} /></div>
+        )}
+        {needs('people') && (
+          <div><label className="block text-xs text-zinc-500 mb-1">Personen (mind. 2 — gemeinsame Fotos)</label>
+            <PersonMultiPicker people={named} value={personIds} onChange={setPersonIds} /></div>
         )}
         {needs('year') && (
           <div><label className="block text-xs text-zinc-500 mb-1">Jahr</label>
@@ -184,6 +187,76 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
           {create.isPending ? 'Wird erstellt…' : !motto ? 'Motto wählen' : !ready ? 'Bitte Auswahl vervollständigen' : 'Video erstellen'}
         </button>
         <p className="text-[11px] text-zinc-400">Das Rendern läuft im Hintergrund (ffmpeg) und erscheint dann in der Liste.</p>
+      </div>
+    </div>
+  )
+}
+
+type PMin = { id: number; name: string }
+const PICKER_INPUT = 'w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+
+// Single person picker with search-while-typing.
+function PersonCombobox({ people, value, onChange, exclude = [] }: {
+  people: PMin[]; value: number | ''; onChange: (id: number | '') => void; exclude?: number[]
+}) {
+  const [q, setQ] = useState('')
+  const picked = value ? people.find(p => p.id === value) : undefined
+  const matches = q.trim()
+    ? people.filter(p => !exclude.includes(p.id) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 30)
+    : []
+  return (
+    <div className="relative">
+      <input value={picked ? picked.name : q}
+        onChange={e => { setQ(e.target.value); if (value) onChange('') }}
+        placeholder={`Person suchen … (${people.length})`} className={PICKER_INPUT} />
+      {picked && (
+        <button onClick={() => { onChange(''); setQ('') }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-red-500"><X size={14} /></button>
+      )}
+      {!picked && q.trim() && matches.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
+          {matches.map(p => (
+            <button key={p.id} onClick={() => { onChange(p.id); setQ('') }}
+              className="block w-full text-left px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">{p.name}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Multi person picker (chips) with search-while-typing.
+function PersonMultiPicker({ people, value, onChange }: {
+  people: PMin[]; value: number[]; onChange: (ids: number[]) => void
+}) {
+  const [q, setQ] = useState('')
+  const selected = people.filter(p => value.includes(p.id))
+  const matches = q.trim()
+    ? people.filter(p => !value.includes(p.id) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 30)
+    : []
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {selected.map(p => (
+            <span key={p.id} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600 text-white text-xs">
+              {p.name}
+              <button onClick={() => onChange(value.filter(x => x !== p.id))} className="hover:text-red-200"><X size={11} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative">
+        <input value={q} onChange={e => setQ(e.target.value)}
+          placeholder={`Person hinzufügen … (${people.length})`} className={PICKER_INPUT} />
+        {q.trim() && matches.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
+            {matches.map(p => (
+              <button key={p.id} onClick={() => { onChange([...value, p.id]); setQ('') }}
+                className="block w-full text-left px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">{p.name}</button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

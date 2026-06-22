@@ -28,6 +28,7 @@ class HighlightCreate(BaseModel):
     duration_sec: float = 60.0
     person_id: Optional[int] = None
     person_id2: Optional[int] = None
+    person_ids: Optional[List[int]] = None
     year: Optional[int] = None
     album_id: Optional[int] = None
     season: Optional[str] = None
@@ -96,6 +97,7 @@ async def create_highlight(
         "duration_sec": duration,
         "person_id": body.person_id,
         "person_id2": body.person_id2,
+        "person_ids": body.person_ids,
         "year": body.year,
         "album_id": body.album_id,
         "season": body.season,

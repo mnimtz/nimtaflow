@@ -80,6 +80,9 @@ MOTTOS: List[dict] = [
     {"motto": "week_review",       "label": "Highlight der Woche",
      "params": [],
      "description": "Die schönsten Aufnahmen der letzten 7 Tage (sonst der letzten 30)."},
+    {"motto": "people_together",   "label": "Gemeinsame Fotos (mehrere Personen)",
+     "params": ["people"],
+     "description": "Fotos, auf denen alle ausgewählten Personen gemeinsam zu sehen sind — chronologisch."},
 ]
 
 # season name → list of (month, day) anchor windows (±~3 weeks) across all years
@@ -404,6 +407,24 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
         best = list(photos)[:cap]
         best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
         return best
+
+    # ── several people together (intersection) over the years ─────────────────
+    if motto == "people_together":
+        raw = _opt(opts, "person_ids") or []
+        try:
+            pids = [int(x) for x in raw if x]
+        except (TypeError, ValueError):
+            pids = []
+        if not pids:
+            return []
+        sets = [set(await _person_photo_ids(db, p)) for p in pids]
+        common = set.intersection(*sets) if sets else set()
+        if not common:
+            return []
+        photos = (await db.execute(
+            select(Photo).where(*base, Photo.id.in_(list(common))).order_by(Photo.taken_at)
+        )).scalars().all()
+        return _spread_across_years(list(photos), cap)
 
     # ── highlight of the week: best of the last 7 (else 30) days ──────────────
     if motto == "week_review":

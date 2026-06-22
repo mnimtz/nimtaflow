@@ -5,7 +5,7 @@ import {
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
-  MessageCircle, Image as ImageIcon, Plane, Share2, Copy,
+  MessageCircle, Image as ImageIcon, Plane, Share2, Copy, Sparkles,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -37,6 +37,7 @@ const SECTIONS = [
   { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
   { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
   { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
+  { id: 'highlights', icon: Sparkles, label: 'Highlights' },
   { id: 'trips',     icon: Plane,     label: 'Reisen' },
   { id: 'sharing',   icon: Share2,    label: 'Teilen' },
   { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
@@ -1290,10 +1291,6 @@ function MemoriesSettingsSection() {
           {saved ? '✓ Gespeichert' : 'Speichern'}
         </button>
       </div>
-
-      <div className="mt-10 pt-8 border-t border-zinc-200 dark:border-zinc-800">
-        <HighlightsAISettings />
-      </div>
     </div>
   )
 }
@@ -1364,7 +1361,14 @@ function HighlightsAISettings() {
               className="ml-2 w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </label>
         </div>
-        <p className="text-xs text-zinc-500">Harte Bremse: ist das Monatsbudget erreicht, werden keine weiteren Clips erzeugt. 300 Sek. ≈ 45 $/Monat bei Veo Fast.</p>
+        <div className="text-xs text-zinc-500 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-3 space-y-1">
+          <div className="font-medium text-zinc-700 dark:text-zinc-300">Was kostet das? (Google Veo 3.1 Fast)</div>
+          <div>Abrechnung pro <strong>Sekunde erzeugtem Video</strong>: ca. <strong>$0,15/Sek.</strong> (inkl. Ton).</div>
+          <div>• 4-Sek.-Clip ≈ <strong>$0,60</strong> · 6 Sek. ≈ $0,90 · 8 Sek. ≈ $1,20</div>
+          <div>• Monatsbudget {budget || '0'} Sek. ≈ <strong>${((Number(budget) || 0) * 0.15).toFixed(0)}</strong>/Monat
+            {' '}(≈ {Math.floor((Number(budget) || 0) / (Number(seconds) || 4))} Clips à {seconds} Sek.)</div>
+          <div className="text-zinc-400">Harte Bremse: ist das Budget erreicht, werden bis zum Monatswechsel keine weiteren Clips erzeugt. Abgerechnet wird über deinen Google-/Gemini-Account, nicht über PhotoFlow.</div>
+        </div>
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
@@ -2507,6 +2511,7 @@ export default function SettingsPage() {
         {section === 'video-ai' && <VideoAISection />}
         {section === 'faces'    && <FacesSection />}
         {section === 'memories' && <MemoriesSettingsSection />}
+        {section === 'highlights' && <HighlightsAISettings />}
         {section === 'trips'    && <TripsSection />}
         {section === 'sharing'  && <SharingSection />}
         {section === 'pipeline' && <PipelineSection />}
