@@ -1219,16 +1219,23 @@ def backfill_metadata_task(self, limit: int = 200000):
 
 
 @celery_app.task(bind=True, name="suggest_faces")
-def suggest_faces_task(self, low: Optional[float] = None, margin: float = 0.04):
-    """For each unassigned face with an embedding, find its most-similar NAMED person
-    and store a suggestion ONLY if it's genuinely indicative:
-      • cosine sim >= `low` (default face.suggest_min_score, 0.40) and below auto-assign, AND
-      • DISTINCTIVE — the best sim to any OTHER named person is ≥ `margin` lower.
-    The distinctiveness gate kills the popularity bias (a noisy video-frame face used to
-    land on whoever has the most exemplars, e.g. Lea). Chunked (no U×M OOM). Scan queue.
-    First clears stale suggestions so a re-run with a stricter bar prunes the old junk."""
+def suggest_faces_task(self, low: Optional[float] = None, margin: Optional[float] = None,
+                       topk: Optional[int] = None, min_exemplars: Optional[int] = None):
+    """For each unassigned face, suggest the most-likely NAMED person using a ROBUST
+    per-person score: the MEAN of that person's top-K most-similar exemplars — NOT a
+    single nearest exemplar (1-NN). Why: 1-NN let whoever has the most exemplars win by
+    sheer count (a noisy frame landed on Lea because one of her ~hundreds of exemplars was
+    incidentally closest), and one stray/mislabeled exemplar could drag in random faces.
+    Top-K mean is robust to both. A suggestion is stored ONLY if:
+      • the person has >= `min_exemplars` exemplars (face.suggest_min_exemplars, 3), AND
+      • its top-K-mean score >= `low` (face.suggest_min_score, 0.42) and below auto-assign, AND
+      • it beats the 2nd-best PERSON's score by >= `margin` (face.suggest_margin, 0.06) —
+        distinctiveness is now between PERSONS, not between individual exemplar faces.
+    All bars are settings-driven so they can be tuned without a redeploy. Chunked (no OOM).
+    Scan queue. Clears stale suggestions first so a re-run prunes the old junk."""
     async def _main():
         import numpy as np
+        from collections import Counter
         from app.core.database import init_db, get_db
         from app.models.face import Face
         from app.models.person import Person
@@ -1240,7 +1247,11 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: float = 0.04):
             s = await load_settings(db)
             engine = str(s.get("face.engine", "insightface")).lower()
             thr = float(s.get("face.clustering_threshold", "0.5") or 0.5)
-            floor = low if low is not None else float(s.get("face.suggest_min_score", "0.40") or 0.40)
+            floor = low if low is not None else float(s.get("face.suggest_min_score", "0.42") or 0.42)
+            mrg = margin if margin is not None else float(s.get("face.suggest_margin", "0.06") or 0.06)
+            K = int(topk if topk is not None else int(s.get("face.suggest_topk", "3") or 3))
+            min_ex = int(min_exemplars if min_exemplars is not None
+                         else int(s.get("face.suggest_min_exemplars", "3") or 3))
             cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
             # Reset previous suggestions (re-run prunes old, too-loose matches).
             await db.execute(_upd(Face).where(Face.suggested_person_id.isnot(None))
@@ -1265,25 +1276,44 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: float = 0.04):
             n = np.linalg.norm(a, axis=-1, keepdims=True); return a / np.clip(n, 1e-9, None)
         E = _norm(np.array([e for _, e in ex], dtype="float32"))
         Ep = np.array([p for p, _ in ex])
+        # Only persons with enough exemplars can receive suggestions; precompute their columns.
+        plist = [int(p) for p in np.unique(Ep) if int((Ep == p).sum()) >= min_ex]
+        if not plist:
+            flog("scanner", "INFO", f"Gesichts-Vorschläge: 0 (keine Person mit ≥ {min_ex} Exemplaren)")
+            return {"suggested": 0}
+        cols = {p: np.where(Ep == p)[0] for p in plist}
+
         ids = [r[0] for r in un]
         X = _norm(np.array([r[1] for r in un], dtype="float32"))
         sug = 0
-        CH = 1000
+        per_person: Counter = Counter()
+        P = len(plist)
+        CH = 500                                              # 500×61k×4B ≈ 122 MB/chunk (OOM-safe)
         for c0 in range(0, len(ids), CH):
             Xc = X[c0:c0 + CH]
-            sims = Xc @ E.T
-            jb = sims.argmax(axis=1)
-            sb = sims[np.arange(len(Xc)), jb]
+            sims = Xc @ E.T                                   # (n, M) cosine to every exemplar
+            n = Xc.shape[0]
+            pscore = np.full((n, P), -1.0, dtype="float32")
+            for j, p in enumerate(plist):                     # robust per-person score = top-K mean
+                cs = sims[:, cols[p]]
+                kk = min(K, cs.shape[1])
+                part = np.partition(cs, cs.shape[1] - kk, axis=1)[:, -kk:]
+                pscore[:, j] = part.mean(axis=1)
+            order = np.argsort(-pscore, axis=1)
+            best = order[:, 0]
+            sb = pscore[np.arange(n), best]
+            second = (pscore[np.arange(n), order[:, 1]] if P > 1
+                      else np.full(n, -1.0, dtype="float32"))
             updates = []
-            for k in range(len(Xc)):
+            for k in range(n):
                 sc = float(sb[k])
-                if not (floor <= sc < thr):
+                if sc < floor or sc >= thr:
                     continue
-                pid = int(Ep[jb[k]])
-                other = sims[k][Ep != pid]               # best match to a DIFFERENT person
-                if other.size and float(other.max()) > sc - margin:
-                    continue                              # ambiguous → not a real suggestion
+                if float(second[k]) > sc - mrg:              # ambiguous between persons → skip
+                    continue
+                pid = plist[int(best[k])]
                 updates.append((ids[c0 + k], pid, sc))
+                per_person[pid] += 1
             if updates:
                 async for db in get_db():
                     for fid, pid, sc in updates:
@@ -1291,7 +1321,9 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: float = 0.04):
                             suggested_person_id=pid, suggested_score=sc))
                     await db.commit(); break
                 sug += len(updates)
-        flog("scanner", "INFO", f"Gesichts-Vorschläge: {sug} distinkte Treffer (>= {floor})")
+        top = ", ".join(f"{pid}×{c}" for pid, c in per_person.most_common(5))
+        flog("scanner", "INFO",
+             f"Gesichts-Vorschläge: {sug} (Top-{K}-Mittel ≥ {floor}, Marge {mrg}); häufigste {top}")
         return {"suggested": sug}
     return _run(_main())
 

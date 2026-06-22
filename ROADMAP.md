@@ -20,17 +20,18 @@
 - **Leitstand GPS-Indikator + „GPS/Metadaten scannen"-Button** (v1.258) + `backfill_metadata`-Task (scan-Queue) + Struktur-Fix (process_photo committet Datum/GPS VOR Thumbnail).
 - **Video-Pipeline** (v1.256–257): atomare/validierte Transcodes, `revalidate_transcodes`, `/video-broken`, `!!!!`-Degenerationsfilter, nframes-Edge-Case, Thumbnail-Sub-Sekunden-Seek-Fix.
 - **m3-describe gehärtet**: leere Ollama-Antwort = transient (kein `ai_error`).
+- **Vorschlags-Qualität neu** (v1.266): `suggest_faces_task` von 1-NN (ein nächstes Exemplar gewinnt) auf **robusten Per-Personen-Score** umgestellt = Mittel der **Top-K** ähnlichsten Exemplare *pro Person*. Killt den Popularitäts-Bias (Lea hatte 219/623 Vorschläge, weil sie die meisten Exemplare hat) und 1-NN-Ausreißer. Distinktheit jetzt **zwischen Personen** (2.-bester Personen-Score) statt zwischen Einzelgesichtern. Mind. `suggest_min_exemplars` Exemplare nötig. Alle Schwellen settings-steuerbar (`face.suggest_min_score`=0.42, `face.suggest_margin`=0.06, `face.suggest_topk`=3, `face.suggest_min_exemplars`=3) → Tuning ohne Redeploy. Diagnose: alle alten Vorschläge lagen bei 0.40–0.45 = ArcFace-Rauschen (echte Treffer 0.5+ sind längst geclustert). Chunk auf 500 (OOM). **Nach Deploy: Task neu laufen lassen + Verteilung/Konzentration prüfen.**
+- **Person-Detailseite Redesign** (v1.265): Profilkarte (größerer Avatar, Kontakt als klickbare Chips), **Unter-Tabs** Fotos/Gesichter/Beziehungen, **größere Gesichts-Crops**, **Beziehungen als SVG-Radial-Map** (Person mittig, Verbundene im Kreis, Linien nach Kategorie eingefärbt, Klick → Detailseite via `onOpenPerson`). Rein Frontend (`PersonDetailView` + neue `RelationshipsMap` in `frontend/src/pages/PeoplePage.tsx`), keine API-Änderung. Map nutzt `/relationships/person/:id`; Tab nur sichtbar wenn `features.relationships` an.
 
 ### ⏳ Offen
-1. **Person-Detailseite Redesign**: größere Gesichter, Unter-Tabs (Gesichter/Fotos/**Beziehungen als Map**), modernes Layout, Kontaktdaten prominent. (`PersonDetailView` in `frontend/src/pages/PeoplePage.tsx` ~Z. 690+.)
-2. **Karte**: Orts-Liste mit Suche ausbauen (Teil da, `MapPage.tsx` ~134), **Seerouten-Layer** (Kreuzfahrten aus „Reisen"), **Eigenposition-Bug** („immer Grönland" — im Web KEIN Geolocation-Code gefunden → vmtl. iOS MapKit; beim User klären ob Web oder App).
-3. **Mobile-Ansicht** grundlegend überarbeiten + Menüstruktur.
-4. **Galerie**: „Erinnerungen"-Umschalter befüllen (Erinnerungen von Startseite hübsch zeigen).
-5. **Reisen**: Bilder add/remove; Reiseroute als Karte (auf Schiffsroute optimiert).
-6. **Highlights**: fertigstellen + testen, Personenwahl in Vorschlägen; **externe-Video-KI-Konzept** (Doku zuerst); Einstellungen erweitern.
-7. **Externe-KI-Integration** (Alben/Smart-Alben → Videos/Clips/„Highlight der Woche").
-8. **iOS-App**: ALLE Punkte spiegeln (`ios-app/`).
-9. **Push-Nachrichten-Konzept** + **iOS-Release-Readiness-Audit**.
+1. **Karte**: Orts-Liste mit Suche ausbauen (Teil da, `MapPage.tsx` ~134), **Seerouten-Layer** (Kreuzfahrten aus „Reisen"), **Eigenposition-Bug** („immer Grönland" — im Web KEIN Geolocation-Code gefunden → vmtl. iOS MapKit; beim User klären ob Web oder App).
+2. **Mobile-Ansicht** grundlegend überarbeiten + Menüstruktur.
+3. **Galerie**: „Erinnerungen"-Umschalter befüllen (Erinnerungen von Startseite hübsch zeigen).
+4. **Reisen**: Bilder add/remove; Reiseroute als Karte (auf Schiffsroute optimiert).
+5. **Highlights**: fertigstellen + testen, Personenwahl in Vorschlägen; **externe-Video-KI-Konzept** (Doku zuerst); Einstellungen erweitern.
+6. **Externe-KI-Integration** (Alben/Smart-Alben → Videos/Clips/„Highlight der Woche").
+7. **iOS-App**: ALLE Punkte spiegeln (`ios-app/`) — jetzt inkl. Person-Detailseite-Redesign.
+8. **Push-Nachrichten-Konzept** + **iOS-Release-Readiness-Audit**.
 
 ### Älterer Backlog (kleinere offene Punkte)
 - **Vision-Chat:** beim Foto-Chat die Top-Treffer-Thumbnails an Gemini mitschicken (nicht nur Text), damit das Modell die Bilder „sieht".
@@ -42,4 +43,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.264.0 (+ m3-describe-Härtung). Versionen siehe git log._
+_Letzter Stand-Commit: v1.266.0 (Vorschlags-Qualität). Versionen siehe git log._
