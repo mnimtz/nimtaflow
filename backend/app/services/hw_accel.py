@@ -251,6 +251,7 @@ def build_transcode_cmd(
                 "-i", input_path,
                 "-vf", f"vpp_qsv=w={tw}:h={th}",
                 "-c:v", "h264_qsv", *hw.encode_extra,
+                "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
                 "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path,
             ]
         # Probe failed → robust software-decode → QSV-encode path.
@@ -260,7 +261,8 @@ def build_transcode_cmd(
             "-i", input_path,
             "-vf", f"{scale},format=nv12,hwupload=extra_hw_frames=64",
             "-c:v", "h264_qsv", *hw.encode_extra,
-            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path,
+            "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path,
         ]
 
     cmd = [_FFMPEG, "-y"]
@@ -279,7 +281,8 @@ def build_transcode_cmd(
             cmd += ["-vf", f"scale_{'npp' if 'nvenc' in vcodec else vcodec.split('_')[1]}={'-2'}:{resolution}"]
         else:
             cmd += ["-vf", scale]
-        cmd += ["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path]
+        cmd += ["-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path]
 
     else:  # vp9 / webm
         vcodec = hw.encode_video_codec if "vp9" in hw.encode_video_codec or hw.name == "software" else "libvpx-vp9"

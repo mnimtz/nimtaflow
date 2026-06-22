@@ -1405,7 +1405,8 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
                             ":force_original_aspect_ratio=decrease:force_divisible_by=2")
                 sw = ["ffmpeg", "-y", "-i", src_path, "-c:v", "libx264",
-                      "-vf", sw_scale, "-c:a", "aac", "-b:a", "128k",
+                      "-vf", sw_scale, "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+                      "-c:a", "aac", "-b:a", "128k",
                       "-movflags", "+faststart", str(tmp_path)]
                 proc = subprocess.run(sw, capture_output=True, timeout=1800)
                 ok = proc.returncode == 0 and tmp_path.exists() and _probe_ok(tmp_path)
