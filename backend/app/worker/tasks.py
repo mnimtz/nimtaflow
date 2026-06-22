@@ -2077,7 +2077,7 @@ def animate_photo_task(self, highlight_id: int):
         from app.models.highlight import Highlight, HighlightStatus
         from app.models.photo import Photo
         from app.services.settings_loader import load_settings
-        from app.services.ai.video_gen import veo
+        from app.services.ai.video_gen import veo, fal
         from app.services.feature_log import log as flog
         from sqlalchemy import select, func
 
@@ -2092,9 +2092,8 @@ def animate_photo_task(self, highlight_id: int):
                 if str(s.get("highlights.ai_enabled", "false")).lower() != "true":
                     raise RuntimeError("KI-Video ist deaktiviert (Einstellungen → Highlights).")
                 provider = str(s.get("highlights.ai_provider", "veo")).lower()
-                if provider != "veo":
-                    raise RuntimeError(f"Provider '{provider}' im MVP nicht unterstützt (nur veo).")
-                api_key = s.get("ai.gemini.api_key") or ""
+                if provider not in ("veo", "fal"):
+                    raise RuntimeError(f"Provider '{provider}' nicht unterstützt (veo, fal).")
                 seconds = int(float(s.get("highlights.ai_clip_seconds", "4") or 4))
                 budget = int(float(s.get("highlights.ai_budget_seconds_month", "300") or 300))
                 prompt = (s.get("highlights.ai_prompt")
@@ -2135,7 +2134,13 @@ def animate_photo_task(self, highlight_id: int):
                 except Exception:
                     pass
 
-                clip = await veo.animate_image(api_key, img, prompt, seconds=seconds, aspect=aspect)
+                if provider == "fal":
+                    fal_key = s.get("highlights.fal_api_key") or ""
+                    fal_model = s.get("highlights.fal_model") or fal.DEFAULT_MODEL
+                    clip = await fal.animate_image(fal_key, img, prompt, model=fal_model)
+                else:  # veo (default) — reuses the Gemini key
+                    clip = await veo.animate_image(s.get("ai.gemini.api_key") or "", img,
+                                                   prompt, seconds=seconds, aspect=aspect)
 
                 out_dir = os.path.join(cache_path, "highlights", "clips")
                 os.makedirs(out_dir, exist_ok=True)

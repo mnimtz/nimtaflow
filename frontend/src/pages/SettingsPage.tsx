@@ -1301,30 +1301,38 @@ function HighlightsAISettings() {
   const { data: settings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
   const [weekly, setWeekly] = useState(false)
   const [enabled, setEnabled] = useState(false)
+  const [provider, setProvider] = useState('veo')
   const [seconds, setSeconds] = useState('4')
   const [budget, setBudget] = useState('300')
+  const [falKey, setFalKey] = useState('')
+  const [falModel, setFalModel] = useState('fal-ai/minimax/hailuo-02/standard/image-to-video')
   useEffect(() => {
     if (!settings) return
     setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
     setEnabled((settings['highlights.ai_enabled'] ?? 'false') === 'true')
+    setProvider(String(settings['highlights.ai_provider'] ?? 'veo'))
     setSeconds(String(settings['highlights.ai_clip_seconds'] ?? '4'))
     setBudget(String(settings['highlights.ai_budget_seconds_month'] ?? '300'))
+    setFalKey(String(settings['highlights.fal_api_key'] ?? ''))
+    setFalModel(String(settings['highlights.fal_model'] ?? 'fal-ai/minimax/hailuo-02/standard/image-to-video'))
   }, [settings])
-  const hasKey = !!(settings?.['ai.gemini.api_key'] || '').trim()
+  const hasGemini = !!(settings?.['ai.gemini.api_key'] || '').trim()
   const save = useMutation({
     mutationFn: () => api.put('/settings', {
       'highlights.weekly_enabled': weekly ? 'true' : 'false',
       'highlights.ai_enabled': enabled ? 'true' : 'false',
-      'highlights.ai_provider': 'veo',
+      'highlights.ai_provider': provider,
       'highlights.ai_clip_seconds': seconds,
       'highlights.ai_budget_seconds_month': budget,
+      'highlights.fal_api_key': falKey,
+      'highlights.fal_model': falModel,
     }),
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
   })
 
   return (
     <div>
-      <SectionHeader title="Highlights" desc="Automatisches „Highlight der Woche“ (gratis Slideshow) und optional KI-Video (Fotos animieren via Google Veo, kostenpflichtig)." />
+      <SectionHeader title="Highlights" desc="Automatisches „Highlight der Woche“ (gratis Slideshow) und optional KI-Video (Fotos animieren — fal.ai günstig/gratis-testbar oder Google Veo Premium)." />
       <div className="space-y-4 max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
@@ -1338,13 +1346,36 @@ function HighlightsAISettings() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">KI-Video aktivieren</div>
-            <div className="text-xs text-zinc-500">Schickt das ausgewählte Foto an Google Veo. Echte Fotos verlassen dabei deinen Server.</div>
+            <div className="text-xs text-zinc-500">Animiert einzelne Fotos zu kurzen Clips (Button ✨ in der Foto-Großansicht). Echte Fotos werden an den gewählten Anbieter gesendet.</div>
           </div>
           <Toggle value={enabled} onChange={setEnabled} />
         </div>
 
-        {enabled && !hasKey && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein Gemini-API-Key gesetzt (Bilder-AI → Gemini). Veo nutzt diesen Key.</p>
+        <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+          Anbieter
+          <select value={provider} onChange={e => setProvider(e.target.value)}
+            className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="fal">fal.ai (günstig, ~$20 Gratis-Credits zum Testen)</option>
+            <option value="veo">Google Veo 3.1 Fast (Premium, teurer)</option>
+          </select>
+        </label>
+
+        {provider === 'veo' && enabled && !hasGemini && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein Gemini-API-Key gesetzt (Bilder-AI → Gemini). Veo nutzt diesen Key (mit Veo-Zugang).</p>
+        )}
+        {provider === 'fal' && (
+          <div className="space-y-2">
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">fal.ai API-Key
+              <input type="password" value={falKey} onChange={e => setFalKey(e.target.value)} placeholder="fal_…"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">Modell (fal model-id)
+              <input value={falModel} onChange={e => setFalModel(e.target.value)}
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <p className="text-xs text-zinc-400">Günstig: <code>fal-ai/minimax/hailuo-02/standard/image-to-video</code> · <code>fal-ai/stable-video</code>. Premium: <code>fal-ai/veo3/image-to-video</code>.</p>
+            {enabled && !falKey.trim() && <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein fal.ai-Key gesetzt. Key gibt's auf fal.ai (Signup → ~$20 Gratis-Credits).</p>}
+          </div>
         )}
 
         <div className="flex flex-wrap gap-6">
@@ -1354,6 +1385,7 @@ function HighlightsAISettings() {
               className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="4">4 Sek.</option><option value="6">6 Sek.</option><option value="8">8 Sek.</option>
             </select>
+            {provider === 'fal' && <span className="ml-1 text-xs text-zinc-400">(bei fal modellabhängig)</span>}
           </label>
           <label className="text-sm text-zinc-700 dark:text-zinc-300">
             Monatsbudget (Sek.)
@@ -1362,12 +1394,20 @@ function HighlightsAISettings() {
           </label>
         </div>
         <div className="text-xs text-zinc-500 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-3 space-y-1">
-          <div className="font-medium text-zinc-700 dark:text-zinc-300">Was kostet das? (Google Veo 3.1 Fast)</div>
-          <div>Abrechnung pro <strong>Sekunde erzeugtem Video</strong>: ca. <strong>$0,15/Sek.</strong> (inkl. Ton).</div>
-          <div>• 4-Sek.-Clip ≈ <strong>$0,60</strong> · 6 Sek. ≈ $0,90 · 8 Sek. ≈ $1,20</div>
-          <div>• Monatsbudget {budget || '0'} Sek. ≈ <strong>${((Number(budget) || 0) * 0.15).toFixed(0)}</strong>/Monat
-            {' '}(≈ {Math.floor((Number(budget) || 0) / (Number(seconds) || 4))} Clips à {seconds} Sek.)</div>
-          <div className="text-zinc-400">Harte Bremse: ist das Budget erreicht, werden bis zum Monatswechsel keine weiteren Clips erzeugt. Abgerechnet wird über deinen Google-/Gemini-Account, nicht über PhotoFlow.</div>
+          {provider === 'veo' ? (
+            <>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">Kosten — Google Veo 3.1 Fast</div>
+              <div>Pro <strong>Sekunde</strong> erzeugtem Video ca. <strong>$0,15</strong> (inkl. Ton). 4 Sek. ≈ $0,60 · 8 Sek. ≈ $1,20.</div>
+              <div>Monatsbudget {budget || '0'} Sek. ≈ <strong>${((Number(budget) || 0) * 0.15).toFixed(0)}</strong>/Monat. Kein Gratis-Tier — Abrechnung über deinen Google-Account.</div>
+            </>
+          ) : (
+            <>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">Kosten — fal.ai (modellabhängig)</div>
+              <div>Günstige Modelle ≈ <strong>$0,04–0,05/Sek.</strong> (z. B. Hailuo ~$0,28/Clip). ~<strong>$20 Gratis-Credits</strong> zum Testen bei Signup.</div>
+              <div>Monatsbudget {budget || '0'} Sek. ≈ grob <strong>${((Number(budget) || 0) * 0.046).toFixed(0)}</strong>/Monat (Hailuo).</div>
+            </>
+          )}
+          <div className="text-zinc-400">Harte Bremse: ist das Sekunden-Budget erreicht, werden bis zum Monatswechsel keine weiteren Clips erzeugt. Generierte Clips werden lokal gecacht (kein Doppelkauf).</div>
         </div>
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
