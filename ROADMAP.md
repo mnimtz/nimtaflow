@@ -13,6 +13,7 @@
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
 ### ✅ Erledigt (deployed)
+- **Fix KI-Szenen-Dialog Web** (v1.282): der Animieren-Dialog in `GalleryLightbox` war nicht klickbar — yet-another-react-lightbox rendert in einem Portal auf `document.body` und lag durch CSS-Stacking-Contexts beim Hit-Testing über dem Dialog. Fix: Dialog ebenfalls per `createPortal` nach `document.body` + z-[11000]. (iOS-Pendant separat gefixt: 4 `.sheet` an einem View → ans Menü verschoben.)
 - **Lokaler M3-Video-Provider — Pull-Queue** (v1.281): PhotoFlow-Seite für „M3 erzeugt Clips lokal, wenn online" (deine Architektur). Provider `local`: `animate-photo` legt Job nur als `pending` an (kein Cloud-Task). Neue Remote-Endpoints `GET /api/remote/video-jobs/next` (claim→rendering), `POST …/{id}/complete` (MP4-Upload→done), `…/fail`; Quellbild via vorhandenem `/remote/image/{id}`. M3-Worker-Skript `scripts/m3_ltx_worker.py` (pollt/rendert/lädt hoch) — **mit ffmpeg-Ken-Burns-Fallback sofort testbar**, LTX-2.3(MLX)-Aufruf als markierter TODO. Settings: Provider-Option „Lokal auf M3". **Modell-Install auf dem Mac noch offen** (M3 Max/64 GB ist dafür bestätigt tauglich). Offen: Job-Queue/Vorrat-Scheduler, LTX-Setup.
 - **KI-Szenen (kreativer Prompt)** (v1.280): ✨-Button öffnet jetzt einen Dialog mit **Szenen-Presets** (Unterwasserwelt, Weltraum, Winterwunderland, Märchenwald, über den Wolken, Cyberpunk) + **Freitext** → Person in eine neue Welt setzen (image-to-video mit kreativem Prompt). `animate-photo`-Endpoint nimmt `prompt`, Task bevorzugt ihn + hängt Identitäts-Hinweis an. Nutzt die vorhandenen Provider (Veo/fal). Realismus-Hinweis (Gesichts-Konsistenz) im Dialog.
 - **Video-KI: fal.ai-Provider** (v1.279): zweiter Provider `fal` in `video_gen/fal.py` (Queue-REST, Bild als base64-Data-URI, Poll→Download). `animate_photo_task` provider-aware (`veo`|`fal`). Settings: Anbieter-Auswahl (fal.ai günstig + ~$20 Gratis-Credits zum **echten Testen** / Veo Premium), `highlights.fal_api_key` + `highlights.fal_model` (default Hailuo), kostenangepasste Box. **Damit ist image-to-video erstmals kostenlos testbar.** Offen: lokaler LTX-Provider auf M3 (gratis/privat, danach).
@@ -51,4 +52,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.281.0 (Lokaler M3-Video-Provider: Pull-Queue + Worker-Skript). Versionen siehe git log._
+_Letzter Stand-Commit: v1.282.0 (Fix: KI-Szenen-Dialog Web klickbar via Portal). Versionen siehe git log._

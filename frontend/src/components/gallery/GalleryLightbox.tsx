@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
@@ -289,8 +290,8 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         animation={{ fade: 250, swipe: 300 }}
       />
       {info && photos[cur] && <InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />}
-      {animOpen && photos[cur] && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
+      {animOpen && photos[cur] && createPortal(
+        <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <Sparkles size={18} className="text-indigo-500" />
@@ -317,7 +318,8 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
