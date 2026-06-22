@@ -495,6 +495,10 @@ struct PhotoPager: View {
                         Label("Endgültig löschen", systemImage: "trash.slash")
                     }
                 } label: { Image(systemName: "ellipsis.circle.fill").foregroundStyle(.white) }
+                .sheet(isPresented: $showAnimate) {
+                    AnimateSceneSheet(isPresented: $showAnimate, photoId: photos[index].id) { actionNote = "Animation gestartet — erscheint unter Highlights." }
+                        .presentationDetents([.medium, .large])
+                }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
             }
             .font(.title2).padding()
@@ -538,10 +542,6 @@ struct PhotoPager: View {
             AlbumPickerSheet { albumId in
                 Task { try? await api.addPhotosToAlbum(albumId, photoIds: [photos[index].id]); actionNote = "Zu Album hinzugefügt" }
             }.presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showAnimate) {
-            AnimateSceneSheet(photoId: photos[index].id) { actionNote = "Animation gestartet — erscheint unter Highlights." }
-                .presentationDetents([.medium, .large])
         }
         .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
             ForEach(profileFaces) { f in
@@ -738,7 +738,7 @@ struct AlbumPickerSheet: View {
 /// KI-Szene: animate one photo (optional creative scene prompt) via the chosen provider.
 struct AnimateSceneSheet: View {
     @EnvironmentObject var api: APIClient
-    @Environment(\.dismiss) var dismiss
+    @Binding var isPresented: Bool          // control the sheet directly (reliable close)
     let photoId: Int
     var onStarted: () -> Void
     @State private var prompt = ""
@@ -778,7 +778,7 @@ struct AnimateSceneSheet: View {
                             submitting = true; error = nil
                             do {
                                 try await api.animatePhoto(photoId, prompt: prompt.isEmpty ? nil : prompt)
-                                onStarted(); dismiss()
+                                onStarted(); isPresented = false
                             } catch { self.error = "Start fehlgeschlagen — ist KI-Video aktiviert?" }
                             submitting = false
                         }
@@ -789,7 +789,7 @@ struct AnimateSceneSheet: View {
             }
             .navigationTitle("Foto animieren")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Abbrechen") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Abbrechen") { isPresented = false } } }
         }
     }
 }
