@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useState } from 'react'
 import ErrorBoundary from '../ErrorBoundary'
-import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane, Home , Clapperboard } from 'lucide-react'
+import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane, Home , Clapperboard, Menu, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
 import { api } from '../../lib/api'
@@ -78,9 +79,13 @@ const nav = [
 
 type Me = { role: string; access_config?: Record<string, any> | null }
 
+// Primary tabs shown directly in the mobile bottom bar; the rest go behind "Mehr".
+const MOBILE_PRIMARY = new Set(['/start', '/gallery', '/search', '/people'])
+
 export default function Layout() {
   const loc = useLocation()
   const { dark, toggle } = useTheme()
+  const [moreOpen, setMoreOpen] = useState(false)
   const hasToken = !!localStorage.getItem('access_token')
   const { data: me } = useQuery<Me>({
     queryKey: ['me'], queryFn: () => api.get('/auth/me').then(r => r.data),
@@ -152,29 +157,60 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* ── Main ─────────────────────────────────── */}
-      <main className="flex-1 overflow-auto bg-white dark:bg-zinc-950 min-w-0">
+      {/* ── Main (pb on mobile so content clears the fixed bottom bar) ─────── */}
+      <main className="flex-1 overflow-auto bg-white dark:bg-zinc-950 min-w-0 pb-16 md:pb-0">
         <ErrorBoundary resetKey={loc.pathname}>
           <Outlet />
         </ErrorBoundary>
       </main>
 
-      {/* ── Mobile bottom nav ─────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-900 border-t border-white/5 flex">
-        {[...visibleNav, { to: '/profile', icon: UserCircle, label: 'Profil' }, { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
+      {/* ── Mobile bottom nav: 4 primary tabs + "Mehr" ───────────────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-900 border-t border-white/5 flex pb-[env(safe-area-inset-bottom)]">
+        {visibleNav.filter(n => MOBILE_PRIMARY.has(n.to)).map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} className="flex-1">
             {({ isActive }) => (
-              <div className={clsx(
-                'flex flex-col items-center gap-1 py-2 text-[10px] font-medium transition-colors',
-                isActive ? 'text-indigo-400' : 'text-zinc-500',
-              )}>
-                <Icon size={20} />
-                {label}
+              <div className={clsx('flex flex-col items-center gap-1 py-2 text-[10px] font-medium transition-colors',
+                isActive ? 'text-indigo-400' : 'text-zinc-500')}>
+                <Icon size={20} />{label}
               </div>
             )}
           </NavLink>
         ))}
+        <button onClick={() => setMoreOpen(true)} className="flex-1">
+          <div className="flex flex-col items-center gap-1 py-2 text-[10px] font-medium text-zinc-500">
+            <Menu size={20} />Mehr
+          </div>
+        </button>
       </nav>
+
+      {/* ── "Mehr" drawer: remaining sections + actions ──────────────────── */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-black/60" onClick={() => setMoreOpen(false)}>
+          <div className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-4 pb-8" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-zinc-200">Mehr</span>
+              <button onClick={() => setMoreOpen(false)} className="text-zinc-400 hover:text-white"><X size={20} /></button>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {[...visibleNav.filter(n => !MOBILE_PRIMARY.has(n.to)),
+                { to: '/profile', icon: UserCircle, label: 'Profil' },
+                { to: '/settings', icon: Settings, label: 'Einstellungen' }].map(({ to, icon: Icon, label }) => (
+                <NavLink key={to} to={to} onClick={() => setMoreOpen(false)}>
+                  {({ isActive }) => (
+                    <div className={clsx('flex flex-col items-center gap-1.5 py-3 rounded-xl text-[11px] font-medium',
+                      isActive ? 'bg-indigo-600/20 text-indigo-300' : 'text-zinc-300 hover:bg-white/5')}>
+                      <Icon size={22} /><span className="text-center leading-tight">{label}</span>
+                    </div>
+                  )}
+                </NavLink>
+              ))}
+              <button onClick={() => { toggle(); }} className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-[11px] font-medium text-zinc-300 hover:bg-white/5">
+                {dark ? <Sun size={22} /> : <Moon size={22} />}<span className="text-center leading-tight">{dark ? 'Hell' : 'Dunkel'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
