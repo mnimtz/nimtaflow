@@ -1228,7 +1228,10 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: Optional[float
     incidentally closest), and one stray/mislabeled exemplar could drag in random faces.
     Top-K mean is robust to both. A suggestion is stored ONLY if:
       • the person has >= `min_exemplars` exemplars (face.suggest_min_exemplars, 3), AND
-      • its top-K-mean score >= `low` (face.suggest_min_score, 0.42) and below auto-assign, AND
+      • its top-K-mean score >= `low` (face.suggest_min_score, 0.42) — NO upper cap, so the
+        genuinely strong matches (sim ≥0.5, even near-duplicates at ~1.0) surface as the BEST
+        suggestions; the old `sc < thr` cap wrongly dropped exactly those, leaving obvious
+        faces of known people permanently unassigned, AND
       • it beats the 2nd-best PERSON's score by >= `margin` (face.suggest_margin, 0.06) —
         distinctiveness is now between PERSONS, not between individual exemplar faces.
     All bars are settings-driven so they can be tuned without a redeploy. Chunked (no OOM).
@@ -1246,7 +1249,6 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: Optional[float
         async for db in get_db():
             s = await load_settings(db)
             engine = str(s.get("face.engine", "insightface")).lower()
-            thr = float(s.get("face.clustering_threshold", "0.5") or 0.5)
             floor = low if low is not None else float(s.get("face.suggest_min_score", "0.42") or 0.42)
             mrg = margin if margin is not None else float(s.get("face.suggest_margin", "0.06") or 0.06)
             K = int(topk if topk is not None else int(s.get("face.suggest_topk", "3") or 3))
@@ -1307,9 +1309,10 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: Optional[float
             updates = []
             for k in range(n):
                 sc = float(sb[k])
-                if sc < floor or sc >= thr:
-                    continue
-                if float(second[k]) > sc - mrg:              # ambiguous between persons → skip
+                if sc < floor:                               # NO upper cap: strong matches (≥0.5,
+                    continue                                 # incl. near-duplicates) are the BEST
+                if float(second[k]) > sc - mrg:              # suggestions — old code wrongly dropped
+                    continue                                 # them via sc<thr → they stayed unassigned
                     continue
                 pid = plist[int(best[k])]
                 updates.append((ids[c0 + k], pid, sc))
