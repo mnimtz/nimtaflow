@@ -22,6 +22,7 @@ testable TODAY without any model. Swap `render_clip` for the LTX-2.3 (MLX) call 
 the model is installed — that's the only line that changes (see TODO below).
 """
 import os
+import re
 import sys
 import time
 import tempfile
@@ -35,7 +36,35 @@ except ImportError:
 BASE = os.environ.get("PHOTOFLOW_BASE", "http://your-server:8090").rstrip("/")
 TOKEN = os.environ.get("PHOTOFLOW_REMOTE_TOKEN", "")
 POLL_SECONDS = int(os.environ.get("PHOTOFLOW_POLL", "30"))
+# SAFETY: only render when at least this much memory is reclaimable. Highlights are
+# not time-critical, so when the M3 is busy with describe/video we simply WAIT — never
+# render under pressure, never crash the box or the other workers. "Slow is fine."
+MIN_FREE_GB = float(os.environ.get("PHOTOFLOW_MIN_FREE_GB", "24"))
 H = {"X-Remote-Token": TOKEN}
+
+
+def _available_gb() -> float:
+    """Reclaimable memory on macOS ≈ free + inactive + speculative + purgeable pages.
+    (macOS keeps 'free' low by design — those other buckets are reclaimable.)"""
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True, check=True).stdout
+        page = int(re.search(r"page size of (\d+) bytes", out).group(1))
+        def pages(name):
+            m = re.search(rf"{name}:\s+(\d+)", out)
+            return int(m.group(1)) if m else 0
+        reclaimable = (pages("Pages free") + pages("Pages inactive")
+                       + pages("Pages speculative") + pages("Pages purgeable"))
+        return reclaimable * page / 1024 / 1024 / 1024
+    except Exception:
+        return 0.0  # unknown → treat as "no headroom" (safe: we wait)
+
+
+def _has_headroom() -> bool:
+    avail = _available_gb()
+    ok = avail >= MIN_FREE_GB
+    if not ok:
+        print(f"warte: nur {avail:.0f} GB frei (brauche ≥ {MIN_FREE_GB:.0f}) — andere Worker aktiv", flush=True)
+    return ok
 
 
 def render_clip(image_path: str, prompt: str, seconds: int, out_path: str) -> None:
@@ -95,15 +124,18 @@ def process(job: dict) -> None:
 def main() -> None:
     if not TOKEN:
         sys.exit("PHOTOFLOW_REMOTE_TOKEN fehlt.")
-    print(f"M3 LTX worker → {BASE} (poll {POLL_SECONDS}s)", flush=True)
+    print(f"M3 LTX worker → {BASE} (poll {POLL_SECONDS}s, min frei {MIN_FREE_GB:.0f} GB)", flush=True)
     while True:
         try:
-            r = requests.get(f"{BASE}/api/remote/video-jobs/next", headers=H, timeout=30)
-            r.raise_for_status()
-            job = (r.json() or {}).get("job")
-            if job:
-                process(job)
-                continue  # drain queue without waiting
+            # Don't even CLAIM a job unless we can render it safely right now — otherwise
+            # a claimed job would sit stuck in "rendering" while we wait for memory.
+            if _has_headroom():
+                r = requests.get(f"{BASE}/api/remote/video-jobs/next", headers=H, timeout=30)
+                r.raise_for_status()
+                job = (r.json() or {}).get("job")
+                if job:
+                    process(job)
+                    continue  # drain queue without waiting
         except Exception as e:
             print(f"poll error: {e}", flush=True)
         time.sleep(POLL_SECONDS)
