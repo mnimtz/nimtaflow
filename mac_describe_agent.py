@@ -99,12 +99,19 @@ def main():
             raw = _ollama(f"{dprompt}\n\nGib anschließend in einer NEUEN Zeile, beginnend mit "
                           f"'TAGS:', {tprompt}.", b64)
             desc, tags = _split_desc_tags(raw)
+            # An EMPTY answer is almost always a transient backend issue (Ollama wedged
+            # after a reboot, model still loading, OOM) — NOT a bad image. Do NOT post an
+            # error result (that sets ai_error and excludes the photo forever); just skip
+            # so the claim lease expires and a healthy worker re-describes it later.
+            if not desc:
+                print(f"[mac] #{pid} leere Antwort ({round(time.time()-t,1)}s) — überspringe (kein Fehler)")
+                time.sleep(POLL); continue
             _post(f"{SERVER}/api/remote/result/{pid}", {
-                "description": desc or None, "tags": tags, "embedding": None,
+                "description": desc, "tags": tags, "embedding": None,
                 "faces": [], "faces_done": False,
                 "provider": f"remote:ollama:{MODEL}", "worker": NAME,
                 "duration": round(time.time() - t, 1),
-                "error": None if desc else "no description",
+                "error": None,
             }, timeout=120)
             print(f"[mac] #{pid} {round(time.time()-t,1)}s: {desc[:70]}")
         except urllib.error.HTTPError as e:
