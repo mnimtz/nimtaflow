@@ -50,6 +50,10 @@ Standardmäßig verlässt nichts deinen Server. Optionale KI-Funktionen senden n
 dir ausgewähltes Bild an einen von dir konfigurierten KI-Anbieter — und nur, wenn du sie
 aktivierst. Kein Tracking, keine Werbung, kein Verkauf deiner Daten.
 
+OPEN SOURCE
+LumaFlow ist quelloffen. Server & App findest du auf GitHub:
+https://github.com/mnimtz/photoflow
+
 Du brauchst zuerst den LumaFlow-Server. Diese App ist die mobile Begleitung dazu.
 ```
 
@@ -79,6 +83,10 @@ YOUR DATA, YOUR RULES
 By default nothing leaves your server. Optional AI features send only an image you pick to
 an AI provider you configure — and only if you enable them. No tracking, no ads, no selling
 of your data.
+
+OPEN SOURCE
+LumaFlow is open source. Server & app on GitHub:
+https://github.com/mnimtz/photoflow
 
 You need the LumaFlow server first. This app is the mobile companion to it.
 ```
