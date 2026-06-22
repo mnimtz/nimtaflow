@@ -101,6 +101,7 @@ export default function MapPage() {
   const [view3d, setView3d] = useState(false)
   const [lbIndex, setLbIndex] = useState<number | null>(null)
   const [showRoutes, setShowRoutes] = useState(false)
+  const [showPlaces, setShowPlaces] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
@@ -175,26 +176,15 @@ export default function MapPage() {
         <h1 className="text-lg font-bold text-gray-900 dark:text-white">Karte</h1>
         <div className="flex items-center gap-3">
           {!view3d && places.length > 0 && (
-            <div className="relative">
-              <input
-                value={placeQuery}
-                onChange={e => setPlaceQuery(e.target.value)}
-                placeholder={`Ort suchen … (${places.length})`}
-                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-44"
-              />
-              {placeMatches.length > 0 && (
-                <div className="absolute z-[1000] mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
-                  {placeMatches.map(pl => (
-                    <button key={pl.name}
-                      onClick={() => { setFlyTarget({ lat: pl.lat, lng: pl.lng, seq: Date.now() }); setPlaceQuery('') }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-left text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">
-                      <span className="truncate">{pl.name}</span>
-                      <span className="text-gray-400 shrink-0">{pl.n}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => setShowPlaces(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border ${showPlaces
+                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30'
+                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              title="Orte durchsuchen und anspringen"
+            >
+              <Navigation size={14} /> Orte ({places.length})
+            </button>
           )}
           <span className="text-sm text-gray-500 dark:text-gray-400">{withGps.length} Fotos mit GPS</span>
           <button
@@ -297,6 +287,34 @@ export default function MapPage() {
             ))}
             </MarkerClusterGroup>
           </MapContainer>
+        )}
+
+        {/* Orts-Panel: durchblätterbare Liste aller Orte (Suche + Foto-Zahl, anklickbar) */}
+        {!view3d && showPlaces && places.length > 0 && (
+          <div className="absolute top-3 left-3 z-[1000] w-64 max-h-[calc(100%-1.5rem)] flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-xl">
+            <div className="p-2 border-b border-gray-200 dark:border-gray-800">
+              <input
+                autoFocus
+                value={placeQuery}
+                onChange={e => setPlaceQuery(e.target.value)}
+                placeholder={`Ort suchen … (${places.length})`}
+                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="overflow-auto">
+              {(placeQuery.trim() ? placeMatches : places).map(pl => (
+                <button key={pl.name}
+                  onClick={() => setFlyTarget({ lat: pl.lat, lng: pl.lng, seq: Date.now() })}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs text-left text-gray-800 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border-b border-gray-100 dark:border-gray-800/60">
+                  <span className="truncate">{pl.name}</span>
+                  <span className="text-gray-400 shrink-0">{pl.n}</span>
+                </button>
+              ))}
+              {placeQuery.trim() && placeMatches.length === 0 && (
+                <div className="px-3 py-3 text-xs text-gray-400">Keine Treffer</div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

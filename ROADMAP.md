@@ -27,7 +27,7 @@
 - **Person-Detailseite Redesign** (v1.265): Profilkarte (größerer Avatar, Kontakt als klickbare Chips), **Unter-Tabs** Fotos/Gesichter/Beziehungen, **größere Gesichts-Crops**, **Beziehungen als SVG-Radial-Map** (Person mittig, Verbundene im Kreis, Linien nach Kategorie eingefärbt, Klick → Detailseite via `onOpenPerson`). Rein Frontend (`PersonDetailView` + neue `RelationshipsMap` in `frontend/src/pages/PeoplePage.tsx`), keine API-Änderung. Map nutzt `/relationships/person/:id`; Tab nur sichtbar wenn `features.relationships` an.
 
 ### ⏳ Offen
-1. **Karte** (teilw. erledigt v1.270): **Seerouten-Layer ✅** — Reise-Routen (Alben mit `smart_criteria.trip`+`route`) als ein-/ausblendbare Polylinien + Stations-Marker auf der Hauptkarte (`MapPage.tsx`, Umschalter „Routen", Farb-Palette pro Reise, Tooltip mit Reise-/Stationsname). Rein Frontend. **Offen:** (a) Orts-Liste mit Suche zu einem browsebaren Panel ausbauen (Suche existiert, `MapPage.tsx` ~134); (b) **Eigenposition-Bug** („immer Grönland") ist **iOS-only** — im Web existiert KEIN Geolocation-Code (nur Clipboard-`navigator`), gehört also zur iOS-Parität (#7), nicht ins Web.
+1. **Karte** (Web erledigt v1.270–271): **Seerouten-Layer ✅** (v1.270) — Reise-Routen (Alben mit `smart_criteria.trip`+`route`) als ein-/ausblendbare Polylinien + Stations-Marker (`MapPage.tsx`, Umschalter „Routen", Farb-Palette pro Reise, Tooltip). **Orts-Panel ✅** (v1.271) — Orts-Suche zu durchblätterbarem Seitenpanel ausgebaut (alle Orte mit Foto-Zahl, Suche, Klick → Hinfliegen). Beides rein Frontend. **Offen nur noch iOS:** **Eigenposition-Bug** („immer Grönland") ist **iOS-only** — im Web KEIN Geolocation-Code (nur Clipboard-`navigator`), gehört zur iOS-Parität (#7).
 2. **Mobile-Ansicht** grundlegend überarbeiten + Menüstruktur.
 3. **Galerie**: „Erinnerungen"-Umschalter befüllen (Erinnerungen von Startseite hübsch zeigen).
 4. **Reisen**: Bilder add/remove; Reiseroute als Karte (auf Schiffsroute optimiert).
@@ -46,4 +46,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.270.0 (Karte: Seerouten-/Reise-Routen-Layer). Versionen siehe git log._
+_Letzter Stand-Commit: v1.271.0 (Karte: Orts-Panel; Web-Teil von #1 fertig). Versionen siehe git log._
