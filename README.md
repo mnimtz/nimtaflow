@@ -44,7 +44,11 @@ and enriches your library with local or cloud AI.
 - **Dedicated `video` log** — start, length, resolution, preview yes/no, processing time, errors, and the AI description per video.
 
 ### People & Faces
-- Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people. New faces grow existing people by **nearest-exemplar** match (not a blurred mean), so a person who varies a lot (e.g. a baby across ages) still gets matched.
+- Face detection (InsightFace SCRFD + ArcFace, 512-dim embeddings) with auto-clustering into people. New faces grow existing people by **nearest-exemplar** match (not a blurred mean), so a person who varies a lot (e.g. a baby across ages) still gets matched. Clustering is **chunked** (no multi-GB similarity matrix) so it scales to 100k+ faces without OOM.
+- **Confirm suggestions ("Ist das …?")** — borderline ArcFace matches that are too uncertain to auto-assign (but distinctive enough vs. other people) are surfaced as one-tap suggestions grouped per person, with ✓/✗ and "Alle bestätigen". Lets you place clear faces that auto-clustering can't (profile/motion/varying children) without risking false merges.
+- **Register/Tabs**: Personen · Vorschläge · Unbekannte Gesichter · Verborgen.
+- **Click a face → full photo** in a lightbox (verify even when a low-quality video-frame crop is unclear) with confirm/reject inline.
+- **Contact details per person** — name, alias, birthday, e-mail, phone, address (mailto:/tel: links).
 - **Merge / rename / hide / delete** people, **bulk** face assignment, **ignore** stray faces.
 - Choose a **display avatar** per person (★ on any of their faces — also straight from a photo's detail view).
 - **Schnell-Benenn-Modus** — full-screen, keyboard-driven naming of unnamed clusters (biggest first; Enter = name, Tab = skip, dissolve non-faces) to clear hundreds of clusters in minutes.
@@ -185,6 +189,11 @@ Schema migrations are applied automatically on backend startup
 
 ## 🗺️ Roadmap
 
+> Aktiver Arbeitsstand + offene Punkte der laufenden Feature-Kampagne: **[`ROADMAP.md`](ROADMAP.md)**.
+
+- [x] **Face-suggestion confirm UI** ("Ist das …?") + People register/tabs + per-person contact details
+- [x] **Robust face clustering** (chunked, no OOM) + leak-free transcode revalidation
+- [x] **Metadata/GPS backfill** (decoupled scan-queue) + Leitstand processing indicator
 - [x] Modern Immich/Google-Photos-style UI + mobile optimization
 - [x] GPU acceleration (CUDA) for local AI
 - [x] Relationships / family tree (toggleable) + searchable person picker
