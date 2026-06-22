@@ -2019,11 +2019,23 @@ def render_highlight_task(self, highlight_id: int):
                     return {"error": "no photos"}
 
                 image_paths = [p.thumb_large for p in photos if p.thumb_large]
+                cover_id = photos[0].id
                 duration = float(h.duration_sec or 60.0)
                 seconds_per = max(0.8, duration / max(1, len(image_paths)))
-
                 out_path = hl.highlight_output_path(cache_path, highlight_id)
-                ok = hl.render_slideshow(image_paths, out_path, seconds_per)
+
+                # End the read txn and run the BLOCKING ffmpeg/ffprobe OFF the event loop.
+                # Holding the asyncpg connection across the synchronous subprocess starved
+                # it → ConnectionDoesNotExistError (same root cause as the clustering bug).
+                import asyncio
+                from app.services.processing.thumbnails import video_duration
+                await db.commit()
+
+                def _render():
+                    if not hl.render_slideshow(image_paths, out_path, seconds_per):
+                        return (False, None)
+                    return (True, video_duration(out_path))
+                ok, actual = await asyncio.to_thread(_render)
                 if not ok:
                     h.status = HighlightStatus.error
                     h.error_message = "Video-Erstellung (ffmpeg) fehlgeschlagen."
@@ -2032,12 +2044,9 @@ def render_highlight_task(self, highlight_id: int):
                          f"Highlight {highlight_id} ({h.motto}): ffmpeg fehlgeschlagen")
                     return {"error": "render failed"}
 
-                from app.services.processing.thumbnails import video_duration
-                actual = video_duration(out_path)
-
                 h.file_path = out_path
                 h.photo_count = len(image_paths)
-                h.cover_photo_id = photos[0].id
+                h.cover_photo_id = cover_id
                 if actual:
                     h.duration_sec = round(actual, 1)
                 h.status = HighlightStatus.done

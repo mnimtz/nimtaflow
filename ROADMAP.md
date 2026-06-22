@@ -13,6 +13,7 @@
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
 ### ✅ Erledigt (deployed)
+- **Fix Highlight-Render Verbindungs-Starvation** (v1.283): Slideshow-Highlights (z. B. „Jahresrückblick") schlugen mit `ConnectionDoesNotExistError` fehl — `render_highlight_task` rief **ffmpeg synchron** (`subprocess.run` in `render_slideshow`) auf und blockierte den Event-Loop, während die asyncpg-Verbindung gehalten wurde → Verbindung stirbt → finaler Commit knallt (gleiche Wurzel wie der Clustering-Bug v1.268). Fix: Lese-Txn vor dem Rendern committen + `render_slideshow`/`video_duration` via `asyncio.to_thread`.
 - **Fix KI-Szenen-Dialog Web** (v1.282): der Animieren-Dialog in `GalleryLightbox` war nicht klickbar — yet-another-react-lightbox rendert in einem Portal auf `document.body` und lag durch CSS-Stacking-Contexts beim Hit-Testing über dem Dialog. Fix: Dialog ebenfalls per `createPortal` nach `document.body` + z-[11000]. (iOS-Pendant separat gefixt: 4 `.sheet` an einem View → ans Menü verschoben.)
 - **Lokaler M3-Video-Provider — Pull-Queue** (v1.281): PhotoFlow-Seite für „M3 erzeugt Clips lokal, wenn online" (deine Architektur). Provider `local`: `animate-photo` legt Job nur als `pending` an (kein Cloud-Task). Neue Remote-Endpoints `GET /api/remote/video-jobs/next` (claim→rendering), `POST …/{id}/complete` (MP4-Upload→done), `…/fail`; Quellbild via vorhandenem `/remote/image/{id}`. M3-Worker-Skript `scripts/m3_ltx_worker.py` (pollt/rendert/lädt hoch) — **mit ffmpeg-Ken-Burns-Fallback sofort testbar**, LTX-2.3(MLX)-Aufruf als markierter TODO. Settings: Provider-Option „Lokal auf M3". **Modell-Install auf dem Mac noch offen** (M3 Max/64 GB ist dafür bestätigt tauglich). Offen: Job-Queue/Vorrat-Scheduler, LTX-Setup.
 - **KI-Szenen (kreativer Prompt)** (v1.280): ✨-Button öffnet jetzt einen Dialog mit **Szenen-Presets** (Unterwasserwelt, Weltraum, Winterwunderland, Märchenwald, über den Wolken, Cyberpunk) + **Freitext** → Person in eine neue Welt setzen (image-to-video mit kreativem Prompt). `animate-photo`-Endpoint nimmt `prompt`, Task bevorzugt ihn + hängt Identitäts-Hinweis an. Nutzt die vorhandenen Provider (Veo/fal). Realismus-Hinweis (Gesichts-Konsistenz) im Dialog.
@@ -52,4 +53,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.282.0 (Fix: KI-Szenen-Dialog Web klickbar via Portal). Versionen siehe git log._
+_Letzter Stand-Commit: v1.283.0 (Fix: Highlight-Render Verbindungs-Starvation). fal/Hailuo image-to-video verifiziert (Unterwasser-Clip erzeugt). Versionen siehe git log._
