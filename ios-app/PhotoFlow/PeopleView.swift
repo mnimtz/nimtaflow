@@ -6,6 +6,7 @@ struct PeopleView: View {
     @State private var mergeMode = false
     @State private var selection: Set<Int> = []
     @State private var showMergeSheet = false
+    @State private var showSuggestions = false
     @State private var error: String?
     @AppStorage("people_filter") private var filter = "named"
 
@@ -67,7 +68,13 @@ struct PeopleView: View {
                         mergeMode.toggle(); if !mergeMode { selection.removeAll() }
                     }
                 }
+                if !mergeMode {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showSuggestions = true } label: { Image(systemName: "sparkles") }
+                    }
+                }
             }
+            .sheet(isPresented: $showSuggestions) { SuggestionsView() }
             .overlay(alignment: .bottom) {
                 if mergeMode {
                     HStack(spacing: 12) {
@@ -298,3 +305,90 @@ struct PersonDetailView: View {
 }
 
 func catColor(_ c: String) -> Color { c == "family" ? .green : (c == "social" ? .blue : .gray) }
+
+/// Borderline face→person suggestions: confirm/reject per face or per whole person.
+struct SuggestionsView: View {
+    @EnvironmentObject var api: APIClient
+    @Environment(\.dismiss) var dismiss
+    @State private var groups: [SuggestionGroup] = []
+    @State private var loading = true
+    @State private var busy = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if groups.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.secondary)
+                        Text("Keine offenen Vorschläge").foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(groups) { g in
+                            Section {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        ForEach(g.faces) { f in
+                                            FaceCropThumb(
+                                                url: api.url("api/people/faces/\(f.id)/crop"),
+                                                onConfirm: { Task { await act { try await api.confirmSuggestion(faceId: f.id) } } },
+                                                onReject:  { Task { await act { try await api.rejectSuggestion(faceId: f.id) } } })
+                                        }
+                                    }.padding(.vertical, 4)
+                                }
+                                HStack {
+                                    Button { Task { await act { try await api.confirmAllSuggestions(personId: g.person_id) } } } label: {
+                                        Label("Alle bestätigen", systemImage: "checkmark.circle.fill")
+                                    }.tint(.green)
+                                    Spacer()
+                                    Button(role: .destructive) { Task { await act { try await api.rejectAllSuggestions(personId: g.person_id) } } } label: {
+                                        Label("Alle ablehnen", systemImage: "xmark.circle.fill")
+                                    }
+                                }.buttonStyle(.bordered).disabled(busy)
+                            } header: {
+                                Text("\(g.name) · \(g.count)×")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Vorschläge")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Fertig") { dismiss() } } }
+            .task { await load() }
+            .refreshable { await load() }
+        }
+    }
+
+    private func load() async {
+        loading = true
+        groups = (try? await api.faceSuggestions().groups) ?? []
+        loading = false
+    }
+    private func act(_ op: () async throws -> Void) async {
+        busy = true
+        try? await op()
+        await load()
+        busy = false
+    }
+}
+
+struct FaceCropThumb: View {
+    let url: URL?
+    var onConfirm: () -> Void
+    var onReject: () -> Void
+    var body: some View {
+        VStack(spacing: 4) {
+            AsyncImage(url: url) { img in
+                img.resizable().scaledToFill()
+            } placeholder: { Color.gray.opacity(0.2) }
+            .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
+            HStack(spacing: 14) {
+                Button(action: onConfirm) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                Button(action: onReject) { Image(systemName: "xmark.circle.fill").foregroundStyle(.red) }
+            }.font(.title3).buttonStyle(.plain)
+        }
+    }
+}
