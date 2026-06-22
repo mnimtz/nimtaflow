@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useToast } from '../components/ui/dialogs'
 import { Sparkles, Film, Trash2, Plus, X, Clock } from 'lucide-react'
 
-type Motto = { key: string; label: string; params: string[] }
+type Motto = { motto: string; label: string; params: string[]; description?: string }
 type Highlight = {
   id: number; title: string; motto: string; status: string
   duration_sec: number; photo_count: number; cover_photo_id: number | null
@@ -96,9 +97,10 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const { data: people = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data) })
   const { data: albums = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['albums'], queryFn: () => api.get('/albums').then(r => r.data) })
   const named = people.filter(p => (p.name || '').trim())
-  const m = mottos.find(x => x.key === motto)
+  const m = mottos.find(x => x.motto === motto)
   const needs = (p: string) => m?.params?.includes(p)
 
+  const toast = useToast()
   const create = useMutation({
     mutationFn: () => api.post('/highlights', {
       motto, title: title || m?.label, duration_sec: duration,
@@ -108,8 +110,15 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       ...(needs('album') && albumId ? { album_id: albumId } : {}),
       ...(needs('season') ? { season } : {}),
     }),
-    onSuccess: onCreated,
+    onSuccess: () => { toast('Highlight wird erstellt — erscheint in Kürze in der Liste.', 'success'); onCreated() },
+    onError: (e: any) => toast(e?.response?.data?.detail || 'Erstellen fehlgeschlagen.', 'error'),
   })
+
+  const ready = !!motto
+    && (!needs('person') || !!personId)
+    && (!needs('person2') || !!personId2)
+    && (!needs('year') || !!year.trim())
+    && (!needs('album') || !!albumId)
 
   const sel = 'w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm'
 
@@ -125,8 +134,9 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
           <label className="block text-xs text-zinc-500 mb-1">Motto</label>
           <select value={motto} onChange={e => setMotto(e.target.value)} className={sel}>
             <option value="">— wählen —</option>
-            {mottos.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+            {mottos.map(x => <option key={x.motto} value={x.motto}>{x.label}</option>)}
           </select>
+          {m?.description && <p className="text-[11px] text-zinc-500 mt-1">{m.description}</p>}
         </div>
 
         {needs('person') && (
@@ -169,9 +179,9 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
           <input type="range" min={15} max={180} step={15} value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-full" />
         </div>
 
-        <button onClick={() => create.mutate()} disabled={!motto || create.isPending}
+        <button onClick={() => create.mutate()} disabled={!ready || create.isPending}
           className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40">
-          {create.isPending ? 'Wird erstellt…' : 'Video erstellen'}
+          {create.isPending ? 'Wird erstellt…' : !motto ? 'Motto wählen' : !ready ? 'Bitte Auswahl vervollständigen' : 'Video erstellen'}
         </button>
         <p className="text-[11px] text-zinc-400">Das Rendern läuft im Hintergrund (ffmpeg) und erscheint dann in der Liste.</p>
       </div>
