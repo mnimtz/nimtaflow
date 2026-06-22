@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect, Suspense, lazy } from 'react'
+import { useState, useMemo, useEffect, Suspense, lazy, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
-import { Layers, Navigation, Globe2, Map as MapIcon } from 'lucide-react'
+import { Layers, Navigation, Globe2, Map as MapIcon, Route } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
 
 const GlobeView = lazy(() => import('./GlobeView'))
@@ -69,6 +69,11 @@ const LAYERS = {
 } as const
 type LayerKey = string
 
+type Waypoint = { place?: string; country?: string; date?: string; lat: number; lng: number }
+type Trip = { id: number; name: string; route: Waypoint[] }
+// Distinct, high-contrast colours cycled per trip route (cruise lines over sea etc.)
+const ROUTE_COLORS = ['#f59e0b', '#ef4444', '#10b981', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4']
+
 /** Fit the map to all photo markers once they load. */
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap()
@@ -95,11 +100,26 @@ export default function MapPage() {
   const [layer, setLayer] = useState<LayerKey>('osm')
   const [view3d, setView3d] = useState(false)
   const [lbIndex, setLbIndex] = useState<number | null>(null)
+  const [showRoutes, setShowRoutes] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
     queryFn: () => api.get('/photos/map').then((r) => r.data as Photo[]),
   })
+
+  // Trip routes (cruise/ship lines etc.) — albums flagged as trips with >=2 waypoints.
+  const { data: albums } = useQuery({
+    queryKey: ['albums'],
+    queryFn: () => api.get('/albums').then((r) => r.data as any[]),
+    staleTime: 60_000,
+  })
+  const trips = useMemo<Trip[]>(() => (albums ?? [])
+    .filter((a) => a.smart_criteria?.trip && Array.isArray(a.smart_criteria?.route))
+    .map((a) => ({
+      id: a.id, name: a.name,
+      route: (a.smart_criteria.route as Waypoint[]).filter((w) => w.lat != null && w.lng != null),
+    }))
+    .filter((t) => t.route.length >= 2), [albums])
 
   const { data: settings } = useQuery<Record<string, string>>({
     queryKey: ['settings'],
@@ -184,6 +204,17 @@ export default function MapPage() {
           >
             {view3d ? <><MapIcon size={14} /> Karte</> : <><Globe2 size={14} /> Globus</>}
           </button>
+          {!view3d && trips.length > 0 && (
+            <button
+              onClick={() => setShowRoutes(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border ${showRoutes
+                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30'
+                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              title="Reise-/Seerouten ein-/ausblenden"
+            >
+              <Route size={14} /> Routen{showRoutes ? ` (${trips.length})` : ''}
+            </button>
+          )}
           {!view3d && (
             <div className="flex items-center gap-1.5">
               <Layers size={14} className="text-gray-400" />
@@ -222,6 +253,23 @@ export default function MapPage() {
             <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
             <FitBounds points={points} />
             <FlyTo target={flyTarget} />
+            {showRoutes && trips.map((trip, ti) => {
+              const color = ROUTE_COLORS[ti % ROUTE_COLORS.length]
+              const line = trip.route.map(w => [w.lat, w.lng] as [number, number])
+              return (
+                <Fragment key={trip.id}>
+                  <Polyline positions={line} pathOptions={{ color, weight: 3, opacity: 0.85, dashArray: '6 6' }}>
+                    <Tooltip sticky>{trip.name}</Tooltip>
+                  </Polyline>
+                  {trip.route.map((w, wi) => (
+                    <CircleMarker key={wi} center={[w.lat, w.lng]} radius={5}
+                      pathOptions={{ color, fillColor: color, fillOpacity: 1, weight: 2 }}>
+                      <Tooltip>{[w.place, w.country].filter(Boolean).join(', ') || trip.name}</Tooltip>
+                    </CircleMarker>
+                  ))}
+                </Fragment>
+              )
+            })}
             <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
             {withGps.map((photo) => (
               <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]}>
