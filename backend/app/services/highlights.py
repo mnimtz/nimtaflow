@@ -130,6 +130,57 @@ def _opt(opts: Any, key: str, default=None):
     return getattr(opts, key, default)
 
 
+def _quality_key(p: Photo):
+    """Best-first within a group: favorites, then higher rating, then chronological."""
+    return (0 if p.is_favorite else 1, -(p.user_rating or 0), p.taken_at or _MIN_DT())
+
+
+def _dedupe_bursts(photos: List[Photo], gap_sec: int = 150) -> List[Photo]:
+    """Collapse bursts: among photos taken within `gap_sec` of each other, keep only the
+    BEST one (favorite/rated). Stops a highlight from showing 8 near-identical shots of the
+    same moment ('zeitlich total nah aneinander'). Photos without a date pass through."""
+    ts = sorted((p for p in photos if p.taken_at), key=lambda p: p.taken_at)
+    no_ts = [p for p in photos if not p.taken_at]
+    kept: List[Photo] = []
+    group: List[Photo] = []
+    def flush():
+        if group:
+            kept.append(min(group, key=_quality_key))
+    for p in ts:
+        if group and (p.taken_at - group[-1].taken_at).total_seconds() > gap_sec:
+            flush(); group = []
+        group.append(p)
+    flush()
+    return kept + no_ts
+
+
+def _spread_even(photos: List[Photo], cap: int, bucket_fn) -> List[Photo]:
+    """Burst-dedupe, bucket by `bucket_fn` (e.g. month/day), then round-robin best-first
+    across buckets → an even spread over the period instead of a clump from one event."""
+    from collections import defaultdict
+    photos = _dedupe_bursts(photos)
+    buckets: dict = defaultdict(list)
+    for p in photos:
+        buckets[bucket_fn(p)].append(p)
+    for k in buckets:
+        buckets[k].sort(key=_quality_key)
+    keys = sorted(buckets.keys())
+    chosen: List[Photo] = []
+    idx = 0
+    while len(chosen) < cap:
+        added = False
+        for k in keys:
+            if idx < len(buckets[k]):
+                chosen.append(buckets[k][idx]); added = True
+                if len(chosen) >= cap:
+                    break
+        if not added:
+            break
+        idx += 1
+    chosen.sort(key=lambda p: (p.taken_at or _MIN_DT()))
+    return chosen
+
+
 def _spread_across_years(photos: List[Photo], cap: int) -> List[Photo]:
     """One+ representative photo per year, chronological, capped to `cap`.
 
@@ -138,6 +189,7 @@ def _spread_across_years(photos: List[Photo], cap: int) -> List[Photo]:
     chronological order so the video reads as a timeline.
     """
     from collections import defaultdict
+    photos = _dedupe_bursts(photos)
     by_year: dict = defaultdict(list)
     for p in photos:
         y = p.taken_at.year if p.taken_at else 0
@@ -283,19 +335,12 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
         year = _opt(opts, "year")
         if not year:
             return []
-        photos = (await db.execute(
+        photos = list((await db.execute(
             select(Photo).where(*base, extract("year", Photo.taken_at) == int(year))
-            .order_by(
-                Photo.is_favorite.desc(),
-                Photo.user_rating.desc().nullslast(),
-                Photo.taken_at,
-            )
-        )).scalars().all()
-        photos = list(photos)
-        # keep the best `cap`, then re-sort chronologically for a timeline feel
-        best = photos[:cap]
-        best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
-        return best
+        )).scalars().all())
+        # Spread across the MONTHS of the year (best-first per month, bursts collapsed)
+        # → real year-in-review, not a clump of near-identical shots from one day.
+        return _spread_even(photos, cap, lambda p: p.taken_at.month if p.taken_at else 0)
 
     # ── one representative per year, whole library ───────────────────────────
     if motto == "through_the_years":
@@ -404,7 +449,9 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
                 Photo.taken_at, AlbumPhoto.sort_order,
             )
         )).scalars().all()
-        best = list(photos)[:cap]
+        best = _dedupe_bursts(list(photos))
+        best.sort(key=_quality_key)
+        best = best[:cap]
         best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
         return best
 
@@ -442,9 +489,8 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
             )).scalars().all()
             photos = list(photos)
             if photos:
-                best = photos[:cap]
-                best.sort(key=lambda p: (p.taken_at or _MIN_DT()))
-                return best
+                # spread across the days of the window, bursts collapsed
+                return _spread_even(photos, cap, lambda p: p.taken_at.toordinal() if p.taken_at else 0)
         return []
 
     return []
