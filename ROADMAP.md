@@ -13,6 +13,7 @@
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
 ### ✅ Erledigt (deployed)
+- **Sicherheits-Fix: FS-Browser & Sources admin-only** (v1.291): **kritisch** — `/api/fs/browse` listete jedes Verzeichnis (ganzes Container-Dateisystem!) und `/api/sources/*` (anlegen/löschen/scannen, zeigt private Ordnerpfade) hatten **keinen Auth-Guard**. Ein Demo-/eingeschränkter User hätte die komplette Ordnerstruktur gesehen + Quellen ändern können. Fix: beide Router mit router-weitem `Depends(require_admin)` (no-op im offenen Single-Admin-Modus, blockt Nicht-Admins sobald Login erzwungen). Frontend: Settings-Seite für Nicht-Admins gesperrt (Hinweis statt Sektionen). Damit ist der Demo-User wirklich auf seinen Whitelist-Ordner beschränkt.
 - **Highlights per-User gescopt** (v1.290, Release-Vorbereitung): `GET /highlights` (+ get/video/delete) zeigte allen Usern ALLE Highlights → ein Demo-/eingeschränkter User hätte die Familien-Highlights gesehen (App-Review-Leak). Fix: eingeschränkte User (mit `access_config`) sehen nur eigene (`created_by`), Admins alle. (`highlights.py` + `_can_access`.)
 - **iOS-Build auf TestFlight** (v1.289-Icon): signierter IPA hochgeladen (UPLOAD SUCCEEDED, Delivery 7aee54a8) — mit neuem LumaFlow-Icon. Issuer-ID aus Shell-History gefunden.
 - **Mobile-Navigation überarbeitet** (v1.288, #2 Teil 1): Mobile-Bottom-Bar quetschte ~12 Punkte in eine Zeile + Content lag hinter der fixen Leiste. Neu: 4 Primär-Tabs (Start/Galerie/Suche/Personen) + „Mehr"-Drawer (Bottom-Sheet: Chat/Alben/Highlights/Karte/Reisen/Leitstand/Beziehungen/Profil/Einstellungen + Theme), `main pb-16` auf Mobile + Safe-Area (`Layout.tsx`). Volle Per-Seiten-Responsiveness = Folgearbeit.
@@ -63,4 +64,4 @@
 - Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
 - CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
 
-_Letzter Stand-Commit: v1.290.0 (Highlights per-User gescopt; TestFlight-Upload). Versionen siehe git log._
+_Letzter Stand-Commit: v1.291.0 (Security: FS-Browser & Sources admin-only). Versionen siehe git log._

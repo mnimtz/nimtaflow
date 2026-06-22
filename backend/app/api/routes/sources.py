@@ -4,10 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.auth_guard import require_admin
 from app.models.source import PhotoSource
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut, ScanResult
 
-router = APIRouter(prefix="/sources", tags=["sources"])
+# Admin-only: photo sources reveal private folder paths and allow add/delete/scan —
+# never for a restricted/demo user. require_admin no-ops in open mode (auth.enforce off).
+router = APIRouter(prefix="/sources", tags=["sources"], dependencies=[Depends(require_admin)])
 
 
 @router.get("", response_model=List[SourceOut])

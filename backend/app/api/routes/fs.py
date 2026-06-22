@@ -2,10 +2,15 @@
 import os
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/fs", tags=["filesystem"])
+from app.core.auth_guard import require_admin
+
+# Admin-only: the FS browser lists ANY directory → must never be reachable by a
+# restricted/demo user (would leak the whole folder tree / filesystem). require_admin
+# no-ops in open mode (auth.enforce off), so single-admin use is unaffected.
+router = APIRouter(prefix="/fs", tags=["filesystem"], dependencies=[Depends(require_admin)])
 
 # Only allow browsing inside these roots (safety)
 ALLOWED_ROOTS = ["/", "/photos", "/mnt", "/media", "/data", "/nas", "/srv", "/home"]

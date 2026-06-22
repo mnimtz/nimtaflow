@@ -2530,6 +2530,26 @@ function LogsSection() {
 export default function SettingsPage() {
   const [section, setSection] = useState<SectionId>('sources')
 
+  // Settings are global/admin (sources, API keys, providers, instance flags). A
+  // restricted/demo user must not see or change them. In open mode (no login) me is
+  // null → treated as admin, so single-admin use is unaffected.
+  const { data: me } = useQuery<{ role: string }>({
+    queryKey: ['me'], queryFn: () => api.get('/auth/me').then(r => r.data),
+    retry: false, staleTime: 300_000, enabled: !!localStorage.getItem('access_token'),
+  })
+  const isAdmin = !me || me.role === 'admin'
+  if (!isAdmin) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-center">
+        <div className="max-w-sm">
+          <Lock size={32} className="mx-auto text-zinc-400 mb-3" />
+          <h2 className="text-base font-semibold text-zinc-800 dark:text-zinc-200">Einstellungen sind Administratoren vorbehalten</h2>
+          <p className="text-sm text-zinc-500 mt-1">Wende dich an den Administrator dieser Instanz, um Einstellungen zu ändern.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full">
       {/* Sidebar */}
