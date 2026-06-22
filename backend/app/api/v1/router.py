@@ -493,9 +493,10 @@ async def video_sprite_vtt_v1(photo_id: int, db: AsyncSession = Depends(get_db))
 # ── Favorites / Rating (mobile actions) ───────────────────────────────────────
 
 @router.patch("/photos/{photo_id}/favorite")
-async def favorite_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def favorite_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                      user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.is_favorite = not photo.is_favorite
     await db.commit()
@@ -503,9 +504,10 @@ async def favorite_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/photos/{photo_id}/rating")
-async def rating_v1(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db)):
+async def rating_v1(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.user_rating = max(0, min(5, rating))
     await db.commit()

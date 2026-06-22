@@ -9,7 +9,7 @@ import os, subprocess, pathlib, mimetypes
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
-from app.core.access import photo_conditions, can_see_photo, feature_allowed
+from app.core.access import photo_conditions, can_see_photo, feature_allowed, _is_unrestricted
 from app.models.photo import Photo, PhotoStatus
 from app.models.user import User
 from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup, PhotoBase
@@ -428,9 +428,10 @@ async def _persist_rating(photo) -> None:
 
 
 @router.patch("/{photo_id}/favorite")
-async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.is_favorite = not photo.is_favorite
     await db.commit()
@@ -439,9 +440,10 @@ async def toggle_favorite(photo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{photo_id}/archive")
-async def toggle_archive(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def toggle_archive(photo_id: int, db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.is_archived = not photo.is_archived
     await db.commit()
@@ -449,9 +451,10 @@ async def toggle_archive(photo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{photo_id}/rating")
-async def set_rating(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db)):
+async def set_rating(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db),
+                     user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.user_rating = max(0, min(5, rating))
     await db.commit()
@@ -460,9 +463,10 @@ async def set_rating(photo_id: int, rating: int = 0, db: AsyncSession = Depends(
 
 
 @router.patch("/{photo_id}/trash")
-async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def toggle_trash(photo_id: int, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.is_trashed = not photo.is_trashed
     photo.trashed_at = datetime.now(timezone.utc) if photo.is_trashed else None
@@ -514,11 +518,12 @@ async def _hard_delete(db: AsyncSession, photo: Photo, delete_file: bool, roots:
 
 @router.delete("/{photo_id}")
 async def delete_photo(photo_id: int, delete_file: bool = True,
-                       db: AsyncSession = Depends(get_db)):
+                       db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     """Hard-delete a single photo (DB row + cached thumbnails, and the original
     file unless delete_file=false). This is the 'endgültig löschen' action."""
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     roots = await _source_roots(db)
     await _hard_delete(db, photo, delete_file, roots)
@@ -636,13 +641,14 @@ async def scan_metadata(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{photo_id}/reprocess")
-async def reprocess_photo(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def reprocess_photo(photo_id: int, db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
     """On-demand: re-run processing for ONE photo (re-detect faces, re-make
     thumbnails, and let the AI step re-attempt by clearing ai_error). The detail
     view polls afterwards so the fresh result appears live. Keeps the existing
     description until a new one lands (non-destructive)."""
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     photo.ai_error = False
     photo.faces_scanned = False   # force a fresh face pass
@@ -683,12 +689,21 @@ async def backfill_xmp(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/batch")
-async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
+async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     """Apply an action to many photos at once (selection bar in the gallery)."""
+    # Restrict the affected set to photos this user may actually see, so a
+    # restricted user can never mutate/delete photos outside their whitelist.
+    ids = body.ids
+    if not _is_unrestricted(user):
+        allowed = (await db.execute(
+            select(Photo.id).where(Photo.id.in_(body.ids), *photo_conditions(user))
+        )).scalars().all()
+        ids = list(allowed)
     # Bulk hard-delete (endgültig löschen) — selection bar "Löschen".
     if body.action == "delete":
         roots = await _source_roots(db)
-        photos = (await db.execute(select(Photo).where(Photo.id.in_(body.ids)))).scalars().all()
+        photos = (await db.execute(select(Photo).where(Photo.id.in_(ids)))).scalars().all()
         for p in photos:
             await _hard_delete(db, p, delete_file=True, roots=roots)
         await db.commit()
@@ -705,7 +720,7 @@ async def batch_action(body: BatchAction, db: AsyncSession = Depends(get_db)):
     if not field_value:
         raise HTTPException(400, f"Unknown action: {body.action}")
     field, value = field_value
-    result = await db.execute(select(Photo).where(Photo.id.in_(body.ids)))
+    result = await db.execute(select(Photo).where(Photo.id.in_(ids)))
     photos = result.scalars().all()
     for p in photos:
         setattr(p, field, value)
@@ -734,10 +749,11 @@ class MetaUpdate(_BM):
 
 
 @router.patch("/{photo_id}/meta")
-async def update_meta(photo_id: int, body: MetaUpdate, db: AsyncSession = Depends(get_db)):
+async def update_meta(photo_id: int, body: MetaUpdate, db: AsyncSession = Depends(get_db),
+                      user: Optional[User] = Depends(current_user_optional)):
     """Edit metadata in DB and optionally write to file / XMP sidecar."""
     photo = await db.get(Photo, photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
 
     # Update DB fields
