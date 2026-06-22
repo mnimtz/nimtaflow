@@ -166,18 +166,29 @@ async def cluster_unassigned(db: AsyncSession, grow_only: bool = False) -> dict:
     remaining_ids, remaining_idx = [], []
     if existing:
         E = _norm(np.array([e for _, e in existing], dtype="float32"))   # (M, D)
-        Epids = [pid for pid, _ in existing]
-        sims = X @ E.T                                                    # (U, M) cosine sim
+        Epids = np.array([pid for pid, _ in existing])
         eps_existing = eps + 0.05  # exemplar match → a little more slack than cluster
-        #   eps, but still TRACKS the configured threshold (tighten/loosen both work)
-        #   — default threshold 0.6 → eps 0.4 → 0.45, same as before.
-        for i, fid in enumerate(ids):
-            j = int(np.argmax(sims[i]))
-            if 1.0 - float(sims[i, j]) < eps_existing:
-                await db.execute(update(Face).where(Face.id == fid).values(person_id=Epids[j]))
-                assigned += 1
-            else:
-                remaining_ids.append(fid); remaining_idx.append(i)
+        #   eps, but still TRACKS the configured threshold (tighten/loosen both work).
+        # CHUNK the unassigned faces: the full X @ E.T is (U × M) — for ~12k loose
+        # faces × ~80k assigned that is a single ~4 GB float32 matrix that OOM-killed
+        # the worker ("Clustern bewirkt nichts"). Per-chunk it stays ~CH × M.
+        from collections import defaultdict as _dd
+        by_pid = _dd(list)  # person_id -> [face_id]   (bulk-update per person)
+        CH = 1000
+        for c0 in range(0, len(ids), CH):
+            Xc = X[c0:c0 + CH]                                            # (c, D)
+            sims = Xc @ E.T                                               # (c, M)
+            jbest = sims.argmax(axis=1)
+            sbest = sims[np.arange(len(Xc)), jbest]
+            for k in range(len(Xc)):
+                fid = ids[c0 + k]
+                if 1.0 - float(sbest[k]) < eps_existing:
+                    by_pid[int(Epids[jbest[k]])].append(fid)
+                else:
+                    remaining_ids.append(fid); remaining_idx.append(c0 + k)
+        for pid, fids in by_pid.items():
+            await db.execute(update(Face).where(Face.id.in_(fids)).values(person_id=pid))
+            assigned += len(fids)
     else:
         remaining_ids, remaining_idx = list(ids), list(range(len(ids)))
 
