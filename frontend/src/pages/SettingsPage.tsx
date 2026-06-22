@@ -1290,6 +1290,75 @@ function MemoriesSettingsSection() {
           {saved ? '✓ Gespeichert' : 'Speichern'}
         </button>
       </div>
+
+      <div className="mt-10 pt-8 border-t border-zinc-200 dark:border-zinc-800">
+        <HighlightsAISettings />
+      </div>
+    </div>
+  )
+}
+
+function HighlightsAISettings() {
+  const qc = useQueryClient()
+  const [saved, setSaved] = useState(false)
+  const { data: settings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  const [enabled, setEnabled] = useState(false)
+  const [seconds, setSeconds] = useState('4')
+  const [budget, setBudget] = useState('300')
+  useEffect(() => {
+    if (!settings) return
+    setEnabled((settings['highlights.ai_enabled'] ?? 'false') === 'true')
+    setSeconds(String(settings['highlights.ai_clip_seconds'] ?? '4'))
+    setBudget(String(settings['highlights.ai_budget_seconds_month'] ?? '300'))
+  }, [settings])
+  const hasKey = !!(settings?.['ai.gemini.api_key'] || '').trim()
+  const save = useMutation({
+    mutationFn: () => api.put('/settings', {
+      'highlights.ai_enabled': enabled ? 'true' : 'false',
+      'highlights.ai_provider': 'veo',
+      'highlights.ai_clip_seconds': seconds,
+      'highlights.ai_budget_seconds_month': budget,
+    }),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+
+  return (
+    <div>
+      <SectionHeader title="KI-Video (Highlights)" desc="Einzelne Fotos per externer KI (Google Veo 3.1 Fast) zu kurzen Clips animieren — Button „Foto animieren“ in der Foto-Großansicht. Kostenpflichtig (≈ $0,15/Sek.), nutzt den Gemini-API-Key. Opt-in." />
+      <div className="space-y-4 max-w-2xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">KI-Video aktivieren</div>
+            <div className="text-xs text-zinc-500">Schickt das ausgewählte Foto an Google Veo. Echte Fotos verlassen dabei deinen Server.</div>
+          </div>
+          <Toggle value={enabled} onChange={setEnabled} />
+        </div>
+
+        {enabled && !hasKey && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein Gemini-API-Key gesetzt (Bilder-AI → Gemini). Veo nutzt diesen Key.</p>
+        )}
+
+        <div className="flex flex-wrap gap-6">
+          <label className="text-sm text-zinc-700 dark:text-zinc-300">
+            Clip-Länge
+            <select value={seconds} onChange={e => setSeconds(e.target.value)}
+              className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="4">4 Sek.</option><option value="6">6 Sek.</option><option value="8">8 Sek.</option>
+            </select>
+          </label>
+          <label className="text-sm text-zinc-700 dark:text-zinc-300">
+            Monatsbudget (Sek.)
+            <input type="number" min={0} value={budget} onChange={e => setBudget(e.target.value)}
+              className="ml-2 w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </label>
+        </div>
+        <p className="text-xs text-zinc-500">Harte Bremse: ist das Monatsbudget erreicht, werden keine weiteren Clips erzeugt. 300 Sek. ≈ 45 $/Monat bei Veo Fast.</p>
+
+        <button onClick={() => save.mutate()} disabled={save.isPending}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
+          {saved ? '✓ Gespeichert' : 'Speichern'}
+        </button>
+      </div>
     </div>
   )
 }

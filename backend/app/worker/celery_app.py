@@ -45,6 +45,7 @@ celery_app.conf.update(
         "scan_source":        {"queue": "scan"},
         "watch_sources":      {"queue": "cpu"},
         "auto_cluster_faces": {"queue": "cpu"},
+        "cluster_faces_full": {"queue": "cpu"},   # heavy manual 'Clustern' button → off the API process
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
         # Video face detection is SLOW (ffmpeg frame sampling) — keep it on the
@@ -73,6 +74,7 @@ celery_app.conf.update(
         # Highlight slideshow rendering (ffmpeg xfade/concat from cached thumbs).
         # On the video queue/worker so a long render never blocks the fast cpu work.
         "render_highlight":   {"queue": "video"},
+        "animate_photo":      {"queue": "video"},  # external video-AI (Veo) image→clip
     },
 )
 

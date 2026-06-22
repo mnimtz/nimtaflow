@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
@@ -15,7 +15,7 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
 
@@ -225,6 +225,24 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
     ? { type: 'video' as const, poster: thumbUrl(p, 'large'), width: p.width || 1280, height: p.height || 720, sources: [{ src: `/api/photos/${p.id}/video/stream`, type: 'video/mp4' }], description: p.filename }
     : { src: thumbUrl(p, 'large'), width: p.width || 1600, height: p.height || 1200, description: p.filename, download: { url: `/api/photos/${p.id}/original`, filename: p.filename } })
 
+  // External video-AI ("animate this photo") — only when opted in (Settings → Highlights).
+  const toast = useToast()
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
+  })
+  const aiOn = (settings?.['highlights.ai_enabled'] ?? 'false') === 'true'
+  const animate = useMutation({
+    mutationFn: (photoId: number) => api.post('/highlights/animate-photo', { photo_id: photoId }).then(r => r.data),
+    onSuccess: () => toast('Animation gestartet — erscheint unter „Highlights", sobald fertig.', 'success'),
+    onError: (e: any) => toast(e?.response?.data?.detail || 'Animation fehlgeschlagen.', 'error'),
+  })
+  const animBtn = (aiOn && photos[cur] && !photos[cur].is_video) ? (
+    <button key="animate" type="button" className="yarl__button" disabled={animate.isPending}
+      onClick={() => photos[cur] && animate.mutate(photos[cur].id)} title="Foto animieren (KI-Video)">
+      <Sparkles className="yarl__icon" />
+    </button>
+  ) : null
+
   const infoBtn = (
     <button key="info" type="button" className="yarl__button" onClick={() => setInfo(v => !v)} title="Informationen (i)">
       <Info className="yarl__icon" />
@@ -247,7 +265,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
         } }}
         plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
-        toolbar={{ buttons: [favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
+        toolbar={{ buttons: [animBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}

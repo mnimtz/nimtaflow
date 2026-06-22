@@ -2062,3 +2062,110 @@ def render_highlight_task(self, highlight_id: int):
                 return {"error": str(e)[:200]}
 
     return _run(_run_render())
+
+
+@celery_app.task(bind=True, name="animate_photo")
+def animate_photo_task(self, highlight_id: int):
+    """MVP external video-AI: animate ONE still photo into a short clip via Veo 3.1 Fast.
+    Strictly opt-in (highlights.ai_enabled) and budget-capped. Reuses the Highlight record
+    (motto='photo_animate', cover_photo_id=source photo). Result MP4 plays like any highlight."""
+    async def _run_animate():
+        import os
+        from datetime import datetime, timezone
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.models.highlight import Highlight, HighlightStatus
+        from app.models.photo import Photo
+        from app.services.settings_loader import load_settings
+        from app.services.ai.video_gen import veo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, func
+
+        init_db()
+        cache_path = get_settings().cache_path
+        async for db in get_db():
+            h = await db.get(Highlight, highlight_id)
+            if not h:
+                return {"error": "Highlight not found"}
+            s = await load_settings(db)
+            try:
+                if str(s.get("highlights.ai_enabled", "false")).lower() != "true":
+                    raise RuntimeError("KI-Video ist deaktiviert (Einstellungen → Highlights).")
+                provider = str(s.get("highlights.ai_provider", "veo")).lower()
+                if provider != "veo":
+                    raise RuntimeError(f"Provider '{provider}' im MVP nicht unterstützt (nur veo).")
+                api_key = s.get("ai.gemini.api_key") or ""
+                seconds = int(float(s.get("highlights.ai_clip_seconds", "4") or 4))
+                budget = int(float(s.get("highlights.ai_budget_seconds_month", "300") or 300))
+                prompt = (s.get("highlights.ai_prompt")
+                          or "Gentle, natural camera motion. Keep faces and identities stable. "
+                             "Subtle, realistic movement only — no morphing, no new objects.")
+
+                # Hard monthly budget: sum seconds already spent this calendar month.
+                now = datetime.now(timezone.utc)
+                spent = (await db.execute(
+                    select(func.coalesce(func.sum(Highlight.duration_sec), 0.0)).where(
+                        Highlight.motto == "photo_animate",
+                        Highlight.status == HighlightStatus.done,
+                        func.extract("year", Highlight.created_at) == now.year,
+                        func.extract("month", Highlight.created_at) == now.month,
+                    ))).scalar() or 0.0
+                if spent + seconds > budget:
+                    raise RuntimeError(
+                        f"Monatsbudget erreicht ({int(spent)}/{budget}s). "
+                        f"Erhöhe highlights.ai_budget_seconds_month oder warte bis nächsten Monat.")
+
+                photo = await db.get(Photo, h.cover_photo_id) if h.cover_photo_id else None
+                if not photo or not photo.thumb_large or not os.path.exists(photo.thumb_large):
+                    raise RuntimeError("Quellfoto/Thumbnail nicht gefunden.")
+
+                h.status = HighlightStatus.rendering
+                await db.commit()
+
+                with open(photo.thumb_large, "rb") as f:
+                    img = f.read()
+                # Portrait vs landscape → matching Veo aspect ratio.
+                aspect = "16:9"
+                try:
+                    from PIL import Image
+                    import io
+                    with Image.open(io.BytesIO(img)) as im:
+                        if im.height > im.width:
+                            aspect = "9:16"
+                except Exception:
+                    pass
+
+                clip = await veo.animate_image(api_key, img, prompt, seconds=seconds, aspect=aspect)
+
+                out_dir = os.path.join(cache_path, "highlights", "clips")
+                os.makedirs(out_dir, exist_ok=True)
+                out_path = os.path.join(out_dir, f"{highlight_id}.mp4")
+                tmp = out_path + ".part"
+                with open(tmp, "wb") as f:
+                    f.write(clip)
+                os.replace(tmp, out_path)
+
+                from app.services.processing.thumbnails import video_duration
+                actual = video_duration(out_path)
+                h.file_path = out_path
+                h.photo_count = 1
+                h.duration_sec = round(actual, 1) if actual else float(seconds)
+                h.status = HighlightStatus.done
+                h.error_message = None
+                await db.commit()
+                flog("highlights", "INFO", f"Foto animiert (Highlight {highlight_id}, {h.duration_sec}s, Veo)")
+                return {"ok": True, "seconds": h.duration_sec}
+            except Exception as e:
+                try:
+                    await db.rollback()
+                    h2 = await db.get(Highlight, highlight_id)
+                    if h2:
+                        h2.status = HighlightStatus.error
+                        h2.error_message = str(e)[:500]
+                        await db.commit()
+                except Exception:
+                    pass
+                flog("highlights", "ERROR", f"Foto-Animation {highlight_id} fehlgeschlagen: {str(e)[:200]}")
+                return {"error": str(e)[:200]}
+
+    return _run(_run_animate())

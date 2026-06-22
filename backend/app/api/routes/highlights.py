@@ -124,6 +124,46 @@ async def create_highlight(
     return _out(h)
 
 
+class AnimatePhotoRequest(BaseModel):
+    photo_id: int
+
+
+@router.post("/animate-photo", response_model=HighlightOut, status_code=201)
+async def animate_photo(
+    body: AnimatePhotoRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
+):
+    """MVP external video-AI: turn ONE still photo into a short animated clip (Veo 3.1 Fast).
+    Opt-in (highlights.ai_enabled) + budget-capped in the worker. Returns a pending Highlight."""
+    from app.models.photo import Photo
+    from app.services.settings_loader import load_settings
+    s = await load_settings(db)
+    if str(s.get("highlights.ai_enabled", "false")).lower() != "true":
+        raise HTTPException(400, "KI-Video ist deaktiviert. Aktiviere es unter Einstellungen → Highlights.")
+    photo = await db.get(Photo, body.photo_id)
+    if not photo:
+        raise HTTPException(404, "Foto nicht gefunden.")
+
+    seconds = float(int(float(s.get("highlights.ai_clip_seconds", "4") or 4)))
+    h = Highlight(
+        title="Animiertes Foto",
+        motto="photo_animate",
+        duration_sec=seconds,
+        params={"photo_id": body.photo_id, "provider": s.get("highlights.ai_provider", "veo")},
+        status=HighlightStatus.pending,
+        cover_photo_id=body.photo_id,
+        created_by=getattr(user, "id", None),
+    )
+    db.add(h)
+    await db.commit()
+    await db.refresh(h)
+
+    from app.worker.tasks import animate_photo_task
+    animate_photo_task.delay(h.id)
+    return _out(h)
+
+
 @router.get("/{highlight_id}", response_model=HighlightOut)
 async def get_highlight(highlight_id: int, db: AsyncSession = Depends(get_db)):
     h = await db.get(Highlight, highlight_id)
