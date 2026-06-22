@@ -104,6 +104,10 @@ _COLUMN_MIGRATIONS = [
     # ── faces: ArcFace "suggested match" (borderline sim a human confirms) ─────
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS suggested_person_id INTEGER",
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS suggested_score DOUBLE PRECISION",
+    # ── persons: optional contact details ─────────────────────────────────────
+    "ALTER TABLE persons ADD COLUMN IF NOT EXISTS email   VARCHAR(256)",
+    "ALTER TABLE persons ADD COLUMN IF NOT EXISTS phone   VARCHAR(64)",
+    "ALTER TABLE persons ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
     # ── users: defensive (in case the table predates these columns) ───────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",

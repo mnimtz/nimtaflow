@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
-  Check, Search, Star, Sparkles, Image as ImageIcon, Save,
+  Check, Search, Star, Sparkles, Image as ImageIcon, Save, Mail, Phone, MapPin,
 } from 'lucide-react'
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
@@ -18,6 +18,9 @@ interface Person {
   relationship_type?: string
   profile_face_id?: number
   notes?: string
+  email?: string
+  phone?: string
+  address?: string
   face_count: number
   photo_count?: number
   is_hidden?: boolean
@@ -756,6 +759,13 @@ function PersonDetailView({ personId, onBack, onDeleted }: {
                 {person.birthdate && <span>· geb. {new Date(person.birthdate).toLocaleDateString('de')} ({differenceInYears(new Date(), new Date(person.birthdate))} J.)</span>}
               </div>
               {person.notes && <p className="text-zinc-400 text-sm mt-2 italic">{person.notes}</p>}
+              {(person.email || person.phone || person.address) && (
+                <div className="mt-2 space-y-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                  {person.email && <div className="flex items-center gap-1.5"><Mail size={13} className="text-zinc-400 shrink-0" /><a href={`mailto:${person.email}`} className="hover:text-indigo-500 truncate">{person.email}</a></div>}
+                  {person.phone && <div className="flex items-center gap-1.5"><Phone size={13} className="text-zinc-400 shrink-0" /><a href={`tel:${person.phone}`} className="hover:text-indigo-500">{person.phone}</a></div>}
+                  {person.address && <div className="flex items-center gap-1.5"><MapPin size={13} className="text-zinc-400 shrink-0" /><span>{person.address}</span></div>}
+                </div>
+              )}
               <div className="mt-3 flex items-center gap-4">
                 <button onClick={() => hide.mutate(!person.is_hidden)} disabled={hide.isPending}
                   className="flex items-center gap-1 text-xs text-zinc-400 hover:text-indigo-300 disabled:opacity-50">
@@ -942,6 +952,9 @@ function EditPersonForm({ person, onCancel, onSave, saving }: {
   const [alias, setAlias] = useState(person.alias || '')
   const [notes, setNotes] = useState(person.notes || '')
   const [birthdate, setBirthdate] = useState(person.birthdate ? String(person.birthdate).slice(0, 10) : '')
+  const [email, setEmail] = useState(person.email || '')
+  const [phone, setPhone] = useState(person.phone || '')
+  const [address, setAddress] = useState(person.address || '')
   const input = INPUT
   return (
     <div className="space-y-2">
@@ -952,8 +965,13 @@ function EditPersonForm({ person, onCancel, onSave, saving }: {
       </div>
       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${input} resize-none`} placeholder="Notizen" />
       <div className="flex gap-2">
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={`${input} flex-1`} placeholder="E-Mail" />
+        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={`${input} flex-1`} placeholder="Telefon" />
+      </div>
+      <input value={address} onChange={e => setAddress(e.target.value)} className={input} placeholder="Adresse" />
+      <div className="flex gap-2">
         <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
-        <button onClick={() => onSave({ name, alias, notes, birthdate: birthdate || null })} disabled={saving || !name.trim()}
+        <button onClick={() => onSave({ name, alias, notes, birthdate: birthdate || null, email: email || null, phone: phone || null, address: address || null })} disabled={saving || !name.trim()}
           className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Speichern</button>
       </div>
     </div>

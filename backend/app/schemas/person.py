@@ -9,6 +9,9 @@ class PersonCreate(BaseModel):
     birthdate: Optional[date] = None
     notes: Optional[str] = None
     relationship_type: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
 
 
 class PersonUpdate(BaseModel):
@@ -19,6 +22,9 @@ class PersonUpdate(BaseModel):
     relationship_type: Optional[str] = None
     profile_face_id: Optional[int] = None
     is_hidden: Optional[bool] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
 
 
 class PersonOut(BaseModel):
@@ -36,5 +42,8 @@ class PersonOut(BaseModel):
 
 class PersonDetail(PersonOut):
     notes: Optional[str]
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
     face_count: int
     photo_count: int = 0

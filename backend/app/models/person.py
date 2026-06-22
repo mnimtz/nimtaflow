@@ -14,6 +14,10 @@ class Person(Base):
     birthdate: Mapped[Optional[date]] = mapped_column(Date)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     relationship_type: Mapped[Optional[str]] = mapped_column(String(64))
+    # Contact details (optional) — shown on the person page.
+    email: Mapped[Optional[str]] = mapped_column(String(256))
+    phone: Mapped[Optional[str]] = mapped_column(String(64))
+    address: Mapped[Optional[str]] = mapped_column(String(512))
     profile_face_id: Mapped[Optional[int]] = mapped_column(Integer)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
