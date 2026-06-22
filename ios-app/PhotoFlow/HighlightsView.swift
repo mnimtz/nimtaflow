@@ -108,22 +108,28 @@ private struct HighlightCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                if let cid = highlight.cover_photo_id {
-                    Thumb(url: api.url("api/photos/\(cid)/thumbnail?size=medium"))
-                } else {
-                    Color.gray.opacity(0.18)
-                        .overlay(Image(systemName: "film").foregroundStyle(.secondary))
+            // A clear spacer fixes the cell to a deterministic 16:9 box; the image
+            // fills it via overlay+clip. (A bare resizable Thumb has no intrinsic
+            // size and would otherwise blow the card up to the image's full size.)
+            Color.clear
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .overlay {
+                    if let cid = highlight.cover_photo_id {
+                        Thumb(url: api.url("api/photos/\(cid)/thumbnail?size=medium"))
+                    } else {
+                        Color.gray.opacity(0.18)
+                            .overlay(Image(systemName: "film").foregroundStyle(.secondary))
+                    }
                 }
-                if highlight.status == "done" {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 40)).foregroundStyle(.white.opacity(0.9))
-                        .shadow(radius: 4)
+                .overlay {
+                    if highlight.status == "done" {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 40)).foregroundStyle(.white.opacity(0.9))
+                            .shadow(radius: 4)
+                    }
                 }
-            }
-            .aspectRatio(16/9, contentMode: .fill)
-            .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
             Text(highlight.title.isEmpty ? highlight.motto : highlight.title)
                 .font(.subheadline).fontWeight(.semibold).lineLimit(1)
