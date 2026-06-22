@@ -64,6 +64,7 @@ celery_app.conf.update(
         # SCAN queue (near-empty) so it does NOT wait behind the huge process_photo
         # cpu backlog — the map/timeline populate in minutes, not after the queue drains.
         "backfill_metadata":  {"queue": "scan"},
+        "suggest_faces":      {"queue": "scan"},  # borderline face→person suggestions
         # Dedicated queue + worker so slow video transcodes (esp. software h264)
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.

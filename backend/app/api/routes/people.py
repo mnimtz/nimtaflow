@@ -500,6 +500,79 @@ async def unassigned_faces(page: int = 1, limit: int = Query(50, ge=1, le=500),
             "items": [{"id": r[0], "photo_id": r[1], "confidence": r[2]} for r in rows]}
 
 
+@router.get("/faces/suggestions")
+async def face_suggestions(db: AsyncSession = Depends(get_db)):
+    """Borderline ArcFace matches grouped by the suggested (named) person, so the user
+    confirms 'Is this Marcus?' with one tap. Populated by the suggest_faces task."""
+    where = (Face.suggested_person_id.isnot(None), Face.person_id == None,  # noqa: E711
+             Face.is_ignored == False)  # noqa: E712
+    rows = (await db.execute(
+        select(Face.suggested_person_id, func.count(), func.avg(Face.suggested_score))
+        .where(*where).group_by(Face.suggested_person_id)
+        .order_by(func.count().desc())
+    )).all()
+    groups = []
+    for pid, cnt, avg in rows:
+        person = await db.get(Person, pid)
+        if not person:
+            continue
+        faces = (await db.execute(
+            select(Face.id, Face.photo_id, Face.suggested_score)
+            .where(Face.suggested_person_id == pid, Face.person_id == None,  # noqa: E711
+                   Face.is_ignored == False)  # noqa: E712
+            .order_by(Face.suggested_score.desc()).limit(80)
+        )).all()
+        groups.append({
+            "person_id": pid, "name": person.name, "count": cnt,
+            "avg_score": round(float(avg or 0), 3),
+            "faces": [{"id": f[0], "photo_id": f[1], "score": round(float(f[2] or 0), 3)} for f in faces],
+        })
+    return {"groups": groups}
+
+
+@router.post("/faces/{face_id}/confirm-suggestion")
+async def confirm_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
+    face = await db.get(Face, face_id)
+    if not face or face.suggested_person_id is None:
+        raise HTTPException(404, "Keine Vorschlag für dieses Gesicht")
+    face.person_id = face.suggested_person_id
+    face.suggested_person_id = None
+    face.suggested_score = None
+    face.is_ignored = False
+    await db.commit()
+    return {"ok": True, "person_id": face.person_id}
+
+
+@router.post("/faces/{face_id}/reject-suggestion")
+async def reject_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
+    face = await db.get(Face, face_id)
+    if not face:
+        raise HTTPException(404)
+    face.suggested_person_id = None
+    face.suggested_score = None
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/suggestions/confirm/{person_id}")
+async def confirm_all_suggestions(person_id: int, db: AsyncSession = Depends(get_db)):
+    """Confirm ALL borderline suggestions for one person at once."""
+    res = await db.execute(update(Face).where(
+        Face.suggested_person_id == person_id, Face.person_id == None,  # noqa: E711
+        Face.is_ignored == False,  # noqa: E712
+    ).values(person_id=person_id, suggested_person_id=None, suggested_score=None, is_ignored=False))
+    await db.commit()
+    return {"confirmed": res.rowcount}
+
+
+@router.post("/suggest")
+async def trigger_suggest(db: AsyncSession = Depends(get_db)):
+    """(Re)compute borderline face→person suggestions in the background (scan queue)."""
+    from app.worker.tasks import suggest_faces_task
+    suggest_faces_task.delay()
+    return {"queued": True}
+
+
 class FaceIdsRequest(BaseModel):
     face_ids: List[int]
 

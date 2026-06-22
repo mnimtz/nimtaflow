@@ -132,6 +132,34 @@ export default function PeoplePage() {
     queryFn: () => api.get('/people/crops-status').then(r => r.data),
     refetchInterval: 6000,
   })
+  // Borderline ArcFace matches the user confirms with one tap ("Ist das Marcus?").
+  const { data: suggestData } = useQuery<{ groups: { person_id: number; name: string; count: number; avg_score: number; faces: { id: number; photo_id: number; score: number }[] }[] }>({
+    queryKey: ['face-suggestions'],
+    queryFn: () => api.get('/people/faces/suggestions').then(r => r.data),
+    refetchInterval: 20000,
+  })
+  const sugGroups = suggestData?.groups ?? []
+  const refreshSug = () => {
+    qc.invalidateQueries({ queryKey: ['face-suggestions'] })
+    qc.invalidateQueries({ queryKey: ['people'] })
+    qc.invalidateQueries({ queryKey: ['unassigned-faces'] })
+  }
+  const confirmGroup = useMutation({
+    mutationFn: (pid: number) => api.post(`/people/suggestions/confirm/${pid}`).then(r => r.data),
+    onSuccess: (d: { confirmed: number }) => { toast(`${d.confirmed} Gesicht(er) bestätigt`, 'success'); refreshSug() },
+  })
+  const confirmFace = useMutation({
+    mutationFn: (id: number) => api.post(`/people/faces/${id}/confirm-suggestion`).then(r => r.data),
+    onSuccess: refreshSug,
+  })
+  const rejectFace = useMutation({
+    mutationFn: (id: number) => api.post(`/people/faces/${id}/reject-suggestion`).then(r => r.data),
+    onSuccess: refreshSug,
+  })
+  const suggestMutation = useMutation({
+    mutationFn: () => api.post('/people/suggest').then(r => r.data),
+    onSuccess: () => toast('Vorschläge werden berechnet — erscheinen in Kürze.', 'success'),
+  })
   const warmCropsMutation = useMutation({
     mutationFn: () => api.post('/people/warm-crops').then(r => r.data),
     onSuccess: (d: { queued_faces: number }) =>
@@ -271,6 +299,52 @@ export default function PeoplePage() {
         <EmptyPeople />
       ) : (
         <div className="space-y-10">
+          {sugGroups.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Vorschläge — „Ist das …?"</h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">Unsichere Treffer, die ArcFace nicht automatisch zuordnet. ✓ übernehmen · ✗ verwerfen.</p>
+                </div>
+                <button onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">
+                  {suggestMutation.isPending ? 'Berechne…' : 'Neu berechnen'}
+                </button>
+              </div>
+              <div className="space-y-6">
+                {sugGroups.map(g => (
+                  <div key={g.person_id} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-3">
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <img src={`/api/people/${g.person_id}/avatar`} className="w-8 h-8 rounded-full object-cover ring-1 ring-zinc-300 dark:ring-zinc-700"
+                          onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden' }} />
+                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{g.name}</span>
+                        <span className="text-xs text-zinc-500 shrink-0">{g.count}×</span>
+                      </div>
+                      <button onClick={() => confirmGroup.mutate(g.person_id)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shrink-0">
+                        Alle bestätigen
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-2">
+                      {g.faces.map(f => (
+                        <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden ring-1 ring-zinc-300 dark:ring-zinc-700 group">
+                          <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
+                            onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
+                          <div className="absolute inset-x-0 bottom-0 flex opacity-90 group-hover:opacity-100">
+                            <button onClick={() => confirmFace.mutate(f.id)} title="Übernehmen"
+                              className="flex-1 bg-emerald-600/90 hover:bg-emerald-600 text-white text-xs py-0.5">✓</button>
+                            <button onClick={() => rejectFace.mutate(f.id)} title="Verwerfen"
+                              className="flex-1 bg-rose-600/90 hover:bg-rose-600 text-white text-xs py-0.5">✗</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           {known.length > 0 && (
             <section>
               <SectionHeader title="Benannte Personen" count={known.length} />

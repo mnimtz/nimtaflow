@@ -1218,6 +1218,72 @@ def backfill_metadata_task(self, limit: int = 200000):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="suggest_faces")
+def suggest_faces_task(self, low: float = 0.32):
+    """For each unassigned face with an embedding, find its most-similar NAMED person
+    and, if cosine similarity is in the borderline band [low, auto-assign), store it as
+    a suggestion the user confirms with one tap. Chunked (no U×M OOM). Scan queue."""
+    async def _main():
+        import numpy as np
+        from app.core.database import init_db, get_db
+        from app.models.face import Face
+        from app.models.person import Person
+        from app.services.settings_loader import load_settings
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update as _upd
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            engine = str(s.get("face.engine", "insightface")).lower()
+            thr = float(s.get("face.clustering_threshold", "0.5") or 0.5)
+            hi = (1.0 - max(0.05, 1.0 - thr)) + 0.0  # = thr; grow already takes >= thr+slack
+            cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
+            named_ids = [pid for (pid,) in (await db.execute(
+                select(Person.id).where(Person.name != ""))).all()]
+            if not named_ids:
+                return {"suggested": 0}
+            ex = (await db.execute(select(Face.person_id, Face.embedding).where(
+                Face.person_id.in_(named_ids), Face.embedding.isnot(None),
+                Face.detector == engine))).all()
+            un = (await db.execute(select(Face.id, Face.embedding).where(
+                Face.person_id == None, Face.is_ignored == False,  # noqa: E711,E712
+                Face.embedding.isnot(None), Face.detector == engine,
+                Face.confidence >= cmin))).all()
+            break
+        if not ex or not un:
+            return {"suggested": 0}
+
+        def _norm(a):
+            n = np.linalg.norm(a, axis=-1, keepdims=True); return a / np.clip(n, 1e-9, None)
+        E = _norm(np.array([e for _, e in ex], dtype="float32"))
+        Ep = np.array([p for p, _ in ex])
+        ids = [r[0] for r in un]
+        X = _norm(np.array([r[1] for r in un], dtype="float32"))
+        # Suggest band: [low, thr). >= thr is auto-assigned by grow; < low is noise.
+        sug = 0
+        CH = 1000
+        for c0 in range(0, len(ids), CH):
+            Xc = X[c0:c0 + CH]
+            sims = Xc @ E.T
+            jb = sims.argmax(axis=1)
+            sb = sims[np.arange(len(Xc)), jb]
+            updates = []
+            for k in range(len(Xc)):
+                sc = float(sb[k])
+                if low <= sc < thr:
+                    updates.append((ids[c0 + k], int(Ep[jb[k]]), sc))
+            if updates:
+                async for db in get_db():
+                    for fid, pid, sc in updates:
+                        await db.execute(_upd(Face).where(Face.id == fid).values(
+                            suggested_person_id=pid, suggested_score=sc))
+                    await db.commit(); break
+                sug += len(updates)
+        flog("scanner", "INFO", f"Gesichts-Vorschläge: {sug} Borderline-Treffer markiert")
+        return {"suggested": sug}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="transcode_video")
 def transcode_video_task(self, photo_id: int, resolution: int = 1080):
     """On-demand: produce a web-optimised H.264 MP4 (HW/QSV, +faststart) so the

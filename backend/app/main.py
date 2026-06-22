@@ -101,6 +101,9 @@ _COLUMN_MIGRATIONS = [
     # ── faces: ignore/hide ────────────────────────────────────────────────────
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS is_ignored BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE faces ADD COLUMN IF NOT EXISTS frame_time DOUBLE PRECISION",
+    # ── faces: ArcFace "suggested match" (borderline sim a human confirms) ─────
+    "ALTER TABLE faces ADD COLUMN IF NOT EXISTS suggested_person_id INTEGER",
+    "ALTER TABLE faces ADD COLUMN IF NOT EXISTS suggested_score DOUBLE PRECISION",
     # ── users: defensive (in case the table predates these columns) ───────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",

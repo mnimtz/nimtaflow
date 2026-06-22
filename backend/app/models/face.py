@@ -29,6 +29,11 @@ class Face(Base):
     # clustering (for the many faces of strangers you don't want to manage).
     is_ignored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
+    # "Suggested match": ArcFace similarity to a named person in the borderline band
+    # (below auto-assign, above noise). Stored so the user confirms with one tap.
+    suggested_person_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("persons.id"), index=True)
+    suggested_score: Mapped[Optional[float]] = mapped_column(Float)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     photo: Mapped["Photo"] = relationship("Photo", back_populates="faces")
