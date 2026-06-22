@@ -52,7 +52,7 @@ aktivierst. Kein Tracking, keine Werbung, kein Verkauf deiner Daten.
 
 OPEN SOURCE
 LumaFlow ist quelloffen. Server & App findest du auf GitHub:
-https://github.com/mnimtz/photoflow
+https://github.com/mnimtz/lumaflow
 
 Du brauchst zuerst den LumaFlow-Server. Diese App ist die mobile Begleitung dazu.
 ```
@@ -86,7 +86,7 @@ of your data.
 
 OPEN SOURCE
 LumaFlow is open source. Server & app on GitHub:
-https://github.com/mnimtz/photoflow
+https://github.com/mnimtz/lumaflow
 
 You need the LumaFlow server first. This app is the mobile companion to it.
 ```
