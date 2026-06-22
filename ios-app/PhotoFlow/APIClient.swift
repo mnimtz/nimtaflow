@@ -313,7 +313,7 @@ final class APIClient: ObservableObject {
     func dashboard() async throws -> DashboardV1 { try await get("api/v1/dashboard", as: DashboardV1.self) }
 
     // MARK: Highlights (video assistant)
-    private struct MottosWrap: Codable { let mottos: [MottoV1] }
+    private struct MottosWrap: Decodable { let mottos: [MottoV1] }
     func mottos() async throws -> [MottoV1] { try await get("api/highlights/mottos", as: MottosWrap.self).mottos }
     func highlights() async throws -> [HighlightV1] { try await get("api/highlights", as: [HighlightV1].self) }
     func createHighlight(motto: String, title: String?, durationSec: Double,

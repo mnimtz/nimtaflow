@@ -351,7 +351,7 @@ struct ChatReply: Codable {
 
 /// A motto offered by GET /api/highlights/mottos. `params` lists which inputs
 /// the motto needs — subset of {person, person2, year, album, season}.
-struct MottoV1: Codable, Identifiable, Hashable {
+struct MottoV1: Decodable, Identifiable, Hashable {  // read-only (decode); not encoded
     let key: String
     let label: String
     let params: [String]
