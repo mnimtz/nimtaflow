@@ -31,7 +31,9 @@ class Face(Base):
 
     # "Suggested match": ArcFace similarity to a named person in the borderline band
     # (below auto-assign, above noise). Stored so the user confirms with one tap.
-    suggested_person_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("persons.id"), index=True)
+    # Plain int (NOT a ForeignKey) on purpose: a 2nd FK to persons makes the
+    # Face.person relationship ambiguous (mapper init fails). Resolved in the endpoint.
+    suggested_person_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
     suggested_score: Mapped[Optional[float]] = mapped_column(Float)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
