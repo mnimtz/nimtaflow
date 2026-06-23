@@ -67,6 +67,27 @@ async def current_user_optional(
     return await _user_from_token(_extract_token(request, token), db)
 
 
+async def block_restricted_writes(
+    request: Request,
+    token: Optional[str] = Depends(_optional_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Router-wide guard for the management routers (people / albums / trips /
+    relationships / shares): a restricted user (one with a per-user access_config,
+    e.g. the public demo account) may READ but must never MUTATE shared data —
+    renaming/merging/deleting persons, creating public share links, etc.
+
+    No-op for safe methods, for admins, and for the open single-user mode
+    (enforce off → no user → unrestricted). Works alongside `enforce_auth`, which
+    already 401s unauthenticated requests under enforce mode."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    from app.core.access import _is_unrestricted
+    user = await _user_from_token(_extract_token(request, token), db)
+    if not _is_unrestricted(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur lesender Zugriff für dieses Konto")
+
+
 async def require_admin(
     request: Request,
     token: Optional[str] = Depends(_optional_scheme),

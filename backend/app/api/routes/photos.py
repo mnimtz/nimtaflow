@@ -177,40 +177,49 @@ async def get_timeline(
 
 
 @router.get("/stats")
-async def get_stats(db: AsyncSession = Depends(get_db)):
-    """Filter facets: cameras, date range, counts."""
+async def get_stats(db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
+    """Filter facets: cameras, date range, counts. Scoped to what `user` may see
+    (no-op for admins / open mode) so a restricted account can't read
+    whole-library totals, date span or camera list."""
+    acl = photo_conditions(user)  # [] for unrestricted
     cameras = (await db.execute(
         select(Photo.camera_model, func.count().label("n"))
-        .where(Photo.camera_model != None, Photo.is_trashed == False)
+        .where(Photo.camera_model != None, Photo.is_trashed == False, *acl)
         .group_by(Photo.camera_model).order_by(text("n desc")).limit(20)
     )).all()
 
-    total = await db.scalar(select(func.count()).where(Photo.is_trashed == False, Photo.status == PhotoStatus.done))
-    videos = await db.scalar(select(func.count()).where(Photo.is_video == True, Photo.is_trashed == False))
-    favorites = await db.scalar(select(func.count()).where(Photo.is_favorite == True, Photo.is_trashed == False))
-    with_gps = await db.scalar(select(func.count()).where(Photo.latitude != None, Photo.is_trashed == False))
+    total = await db.scalar(select(func.count()).where(Photo.is_trashed == False, Photo.status == PhotoStatus.done, *acl))
+    videos = await db.scalar(select(func.count()).where(Photo.is_video == True, Photo.is_trashed == False, *acl))
+    favorites = await db.scalar(select(func.count()).where(Photo.is_favorite == True, Photo.is_trashed == False, *acl))
+    with_gps = await db.scalar(select(func.count()).where(Photo.latitude != None, Photo.is_trashed == False, *acl))
 
-    min_date = await db.scalar(select(func.min(Photo.taken_at)).where(Photo.is_trashed == False))
-    max_date = await db.scalar(select(func.max(Photo.taken_at)).where(Photo.is_trashed == False))
+    min_date = await db.scalar(select(func.min(Photo.taken_at)).where(Photo.is_trashed == False, *acl))
+    max_date = await db.scalar(select(func.max(Photo.taken_at)).where(Photo.is_trashed == False, *acl))
 
     status_rows = (await db.execute(
-        select(Photo.status, func.count()).group_by(Photo.status)
+        select(Photo.status, func.count()).where(*acl).group_by(Photo.status)
     )).all()
     by_status = {str(getattr(r[0], "value", r[0])): r[1] for r in status_rows}
 
     # Pipeline stage coverage (how far each photo got through processing)
     from app.models.face import Face
-    live = [Photo.is_trashed == False]  # noqa: E712
+    live = [Photo.is_trashed == False, *acl]  # noqa: E712
     thumbed = await db.scalar(select(func.count()).where(*live, Photo.thumb_small.isnot(None)))
     described = await db.scalar(select(func.count()).where(*live, Photo.description.isnot(None), Photo.description != ""))
     embedded = await db.scalar(select(func.count()).where(*live, Photo.embedding.isnot(None)))
     # only count AI errors that actually left the photo without a usable index
     ai_failed = await db.scalar(select(func.count()).where(
         *live, Photo.ai_error == True, Photo.embedding.is_(None), Photo.is_video == False))  # noqa: E712
-    with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
+    if acl:
+        with_faces = await db.scalar(
+            select(func.count(func.distinct(Face.photo_id)))
+            .select_from(Face).join(Photo, Photo.id == Face.photo_id).where(*acl))
+    else:
+        with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
 
     # all indexed (any status) — the right denominator for pipeline coverage %
-    total_indexed = await db.scalar(select(func.count()).where(Photo.is_trashed == False))  # noqa: E712
+    total_indexed = await db.scalar(select(func.count()).where(Photo.is_trashed == False, *acl))  # noqa: E712
 
     # "Metadata still pending": indexed photos whose date hasn't been extracted yet —
     # a reliable signal that per-photo processing (date/GPS/thumbnail) isn't finished,

@@ -186,7 +186,7 @@ app.add_middleware(
 
 # ── Auth (always open) + user management (admin-only, self-guarded) ──────────
 from app.api.routes import users as users_routes
-from app.core.auth_guard import enforce_auth
+from app.core.auth_guard import enforce_auth, block_restricted_writes
 app.include_router(auth.router, prefix="/api")
 app.include_router(users_routes.router, prefix="/api")
 
@@ -196,8 +196,10 @@ app.include_router(remote_routes.router, prefix="/api")
 
 # ── Web data routes — gated by enforce_auth (no-op until auth.enforce=true) ──
 _guard = [Depends(enforce_auth)]
+# Management routers: same auth + a restricted (demo) account may read but not mutate.
+_guard_ro = [Depends(enforce_auth), Depends(block_restricted_writes)]
 app.include_router(photos.router, prefix="/api", dependencies=_guard)
-app.include_router(people.router, prefix="/api", dependencies=_guard)
+app.include_router(people.router, prefix="/api", dependencies=_guard_ro)
 app.include_router(sources.router, prefix="/api", dependencies=_guard)
 app.include_router(settings_api.router, prefix="/api", dependencies=_guard)
 app.include_router(jobs.router, prefix="/api", dependencies=_guard)
@@ -206,13 +208,13 @@ app.include_router(ai_api.router, prefix="/api", dependencies=_guard)
 app.include_router(logs.router, prefix="/api", dependencies=_guard)
 from app.core.auth_guard import require_admin as _require_admin
 app.include_router(backup.router, prefix="/api", dependencies=[Depends(_require_admin)])
-app.include_router(albums.router, prefix="/api", dependencies=_guard)
+app.include_router(albums.router, prefix="/api", dependencies=_guard_ro)
 from app.api.routes import relationships as relationships_routes
-app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard)
+app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard_ro)
 from app.api.routes import chat as chat_routes
 app.include_router(chat_routes.router, prefix="/api", dependencies=_guard)
 from app.api.routes import shares as shares_routes
-app.include_router(shares_routes.router, prefix="/api", dependencies=_guard)        # manage (authed)
+app.include_router(shares_routes.router, prefix="/api", dependencies=_guard_ro)        # manage (authed)
 app.include_router(shares_routes.public_router, prefix="/api")                       # public (no guard)
 from app.api.routes import highlights as highlights_routes
 app.include_router(highlights_routes.router, prefix="/api", dependencies=_guard)

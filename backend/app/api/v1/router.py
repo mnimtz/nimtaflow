@@ -888,7 +888,7 @@ async def stats_v1(db: AsyncSession = Depends(get_db),
     """Library totals for the app's overview: images vs videos, processing,
     AI/faces coverage, date span — the 'what did the scan find' summary."""
     from app.api.routes.photos import get_stats
-    s = await get_stats(db=db)
+    s = await get_stats(db=db, user=user)
     by = s.get("by_status", {})
     processing = int(by.get("processing", 0)) + int(by.get("pending", 0))
     total_idx = int(s["total_indexed"]); videos = int(s["videos"])

@@ -120,8 +120,14 @@ async def create_share(body: ShareCreate, request: Request,
 
 
 @router.get("", response_model=List[ShareOut])
-async def list_shares(request: Request, db: AsyncSession = Depends(get_db)):
-    shares = (await db.execute(select(Share).order_by(Share.created_at.desc()))).scalars().all()
+async def list_shares(request: Request, db: AsyncSession = Depends(get_db),
+                      user: Optional[User] = Depends(current_user_optional)):
+    from app.core.access import _is_unrestricted
+    q = select(Share).order_by(Share.created_at.desc())
+    # A restricted account only ever sees its own share links/tokens, never others'.
+    if not _is_unrestricted(user):
+        q = q.where(Share.created_by == (user.id if user else -1))
+    shares = (await db.execute(q)).scalars().all()
     base = await _base_url(request, db)
     return [_out(s, base) for s in shares]
 
