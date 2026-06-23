@@ -50,23 +50,10 @@ const LAYERS = {
   voyager: {
     label: 'Voyager',
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CARTO',
+    attribution: '&copy; CARTO &copy; OpenStreetMap contributors',
   },
-  google: {
-    label: 'Google',
-    url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-    attribution: '&copy; Google',
-  },
-  google_sat: {
-    label: 'Google Satellit',
-    url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-    attribution: '&copy; Google',
-  },
-  google_hybrid: {
-    label: 'Google Hybrid',
-    url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-    attribution: '&copy; Google',
-  },
+  // Google-Tiles (mt1.google.com) ENTFERNT: Direktabruf verstößt gegen die Google-
+  // Maps-ToS (Tiles nur via offizielle API+Key). Satellit kommt über Esri/MapTiler.
 } as const
 type LayerKey = string
 

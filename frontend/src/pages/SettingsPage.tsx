@@ -2161,9 +2161,6 @@ function MapSection() {
             <option value="light">{t('settings.mapLayerLight')}</option>
             <option value="voyager">Voyager (CARTO)</option>
             <option value="topo">Topo (OpenTopoMap)</option>
-            <option value="google">Google</option>
-            <option value="google_sat">{t('settings.mapLayerGoogleSat')}</option>
-            <option value="google_hybrid">Google Hybrid</option>
             <option value="maptiler">{t('settings.mapLayerMaptiler')}</option>
             <option value="maptiler_sat">{t('settings.mapLayerMaptilerSat')}</option>
           </select>
