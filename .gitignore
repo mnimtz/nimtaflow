@@ -27,3 +27,6 @@ Thumbs.db
 .vscode/
 *.swp
 start_m3_describe.sh
+
+# Lokales Arbeits-Briefing mit interner Infra — NICHT public
+CLAUDE.md

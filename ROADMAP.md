@@ -41,11 +41,9 @@ Nächster großer Block: **iOS-Parität → App Store**.
 ## 🌐 Domain & Hosting
 - **nimtaflow.com** (registriert 2026-06-23):
   - **login.nimtaflow.com** → App/Login (Server, CORS `*`). Privacy: `https://login.nimtaflow.com/privacy.html`.
-  - **www.nimtaflow.com** → Marketing-Seite in `docs/website/` (Gold/Dark; Register Start/Funktionen/Vorschau/Download/Unterstützen + Datenschutz; DE/EN; PayPal `paypal.me/MNimtz`).
-    - **Host:** LXC **600** @ `your-host` (Proxmox `root@your-proxmox-host`; in `pct list` als „ollama" gelabelt!). Webroot `/opt/nimtaflow-www`, Container `nimtaflow-www` (nginx:alpine, :8095), Cloudflare-Tunnel.
-    - **Deploy:** `tar czf /tmp/nf-www.tgz -C docs/website .` → `scp …:/tmp/` → `pct push 600 …` → `pct exec 600 -- tar xzf … -C /opt/nimtaflow-www && docker restart nimtaflow-www`.
-    - **Vorschau-Screenshots:** headless via Playwright-Container auf Zweitbox (`mcr.microsoft.com/playwright:v1.48.0-jammy`, `npm i playwright@1.48.0 --no-save`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`), Login als Demo, Screenshots von /gallery /map /start.
-- **Demo-Konto** `demo@foto.marcusnimtz.de` (Rolle user, `folder_whitelist=[/photos/Demo]`) = Apple-Testaccount; Ordner `/photos/Demo` mit lizenzfreien Unsplash-Natur-/Tierbildern befüllt.
+  - **www.nimtaflow.com** → Marketing-Seite in `docs/website/` (Gold/Dark; Register Start/Funktionen/Vorschau/Download/Unterstützen + Datenschutz; DE/EN; PayPal `paypal.me/MNimtz`). Statisch (nginx) hinter Cloudflare-Tunnel; Deploy-Details in der lokalen `CLAUDE.md` (nicht im Repo).
+    - **Vorschau-Register:** browser-gerahmte Screenshots (Galerie, Weltkugel, Startseite) aus dem Demo-Konto mit lizenzfreien Sample-Bildern, headless via Playwright erzeugt.
+- **Demo-Konto** = Apple-Testaccount (Rolle user, auf den Demo-Ordner beschränkt), gefüllt mit lizenzfreien Natur-/Tierbildern. Zugangsdaten gehören in App Store Connect, NICHT ins Repo.
 
 ---
 
@@ -91,6 +89,6 @@ Nächster großer Block: **iOS-Parität → App Store**.
 ## Bekannte Daten-Realität (kein Bug)
 - ~13k „unbekannte Gesichter": meist objektiv niedrige ArcFace-Ähnlichkeit (Profil/Bewegung/Kinder) → daher Vorschläge-UI.
 - Describe-Rückstau groß (normaler Backlog, 1–2 Worker, ~20–40 s/Bild).
-- Box (LXC 101) hat nur 6 Kerne → Verarbeitung ist grundsätzlich langsam; Reaper hält den Zähler aber ehrlich.
+- Der Prod-Server hat nur 6 Kerne → Verarbeitung ist grundsätzlich langsam; Reaper hält den Zähler aber ehrlich.
 
 _Versionen im Detail: `git log`._
