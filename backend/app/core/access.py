@@ -77,6 +77,20 @@ def visible_person_subquery(user: Optional[User]):
     )
 
 
+def upload_base_dir(user: Optional[User], default_dir: str) -> str:
+    """The user's personal upload root. A restricted account uploads into its own
+    tree (home_root, else the first folder_whitelist entry) so uploads never mix
+    between users and stay visible to (only) that user via the folder rules.
+    Unrestricted (admin/open) → the configured default dir."""
+    cfg = (user.access_config or {}) if user else {}
+    if cfg.get("home_root"):
+        base = cfg["home_root"]
+    else:
+        wl = [p for p in (cfg.get("folder_whitelist") or []) if p]
+        base = wl[0] if wl else default_dir
+    return (base or default_dir).rstrip("/")
+
+
 def feature_allowed(user: Optional[User], flag: str, default: bool = True) -> bool:
     if user is None or user.role == UserRole.admin:
         return True

@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
-from app.core.access import photo_conditions, can_see_photo, feature_allowed
+from app.core.access import photo_conditions, can_see_photo, feature_allowed, upload_base_dir
 from app.models.user import User, UserRole
 from app.models.photo import Photo, PhotoStatus
 from app.schemas.photo import PhotoBase
@@ -306,23 +306,45 @@ class UploadResult(BaseModel):
     duplicate_of: Optional[int] = None
 
 
+def _unique_path(directory: Path, filename: str) -> Path:
+    """A non-colliding destination path inside `directory` — appends ' (2)', ' (3)'…"""
+    stem = Path(filename).stem or "upload"
+    ext = Path(filename).suffix
+    cand = directory / f"{stem}{ext}"
+    i = 2
+    while cand.exists():
+        cand = directory / f"{stem} ({i}){ext}"
+        i += 1
+    return cand
+
+
 @router.post("/upload", response_model=List[UploadResult])
 async def upload_photos(
     files: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
-    """Accept photo/video uploads from iOS. Deduplicates by SHA-256 hash."""
-    results: List[UploadResult] = []
+    """Accept photo/video uploads. Each file lands in the UPLOADER'S OWN tree under
+    `<home>/Upload/YYYY/YYYY-MM/` (so uploads never mix between users and are visible
+    only to that user via the folder rules), enters the normal pipeline, and is
+    deduplicated by SHA-256."""
+    if not feature_allowed(user, "allow_upload"):
+        raise HTTPException(403, "Upload für dieses Konto nicht erlaubt")
 
+    from app.services.settings_loader import load_settings
+    settings = await load_settings(db)
+    default_dir = settings.get("upload.default_dir") or "/photos/Upload"
+    base = upload_base_dir(user, default_dir)
+    now = datetime.now(timezone.utc)
+    dest_dir = Path(base) / "Upload" / now.strftime("%Y") / now.strftime("%Y-%m")
+
+    results: List[UploadResult] = []
     for upload in files:
         try:
             content = await upload.read()
             file_hash = hashlib.sha256(content).hexdigest()
 
-            # Check duplicate
-            existing = await db.scalar(
-                select(Photo.id).where(Photo.file_hash == file_hash)
-            )
+            existing = await db.scalar(select(Photo.id).where(Photo.file_hash == file_hash))
             if existing:
                 results.append(UploadResult(
                     id=existing, filename=upload.filename or "unknown",
@@ -330,18 +352,19 @@ async def upload_photos(
                 ))
                 continue
 
-            # Save to upload staging area
-            ext = Path(upload.filename or "upload").suffix.lower()
-            dest = _UPLOAD_DIR / f"{file_hash}{ext}"
-            dest.write_bytes(content)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = _unique_path(dest_dir, upload.filename or f"{file_hash}")
+            # Atomic write: .part → os.replace, so an aborted upload leaves no torso.
+            tmp = dest.with_suffix(dest.suffix + ".part")
+            tmp.write_bytes(content)
+            os.replace(tmp, dest)
 
-            # Create Photo record in pending state
             mime = upload.content_type or mimetypes.guess_type(str(dest))[0] or "application/octet-stream"
             is_video = mime.startswith("video/")
 
             photo = Photo(
                 path=str(dest),
-                filename=upload.filename or dest.name,
+                filename=dest.name,
                 file_hash=file_hash,
                 file_size=len(content),
                 mime_type=mime,
