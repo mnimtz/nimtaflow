@@ -4,8 +4,9 @@
 > NICHT auf projekt-gebundene Auto-Memory verlassen — bei neuem Stand HIER aktualisieren + committen.
 > Server-Zugang/Infra-Fallen stehen in `CLAUDE.md`.
 
-**Stand: v1.315 (2026-06-23).** Security-Kapitel praktisch komplett (Rest: `/v1/chat`-ACL).
-Nächster großer Block: **iOS-Parität → App Store**.
+**Stand: v1.318 (2026-06-23).** Security komplett (inkl. `/v1/chat`-ACL). Kleinkram +
+Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Public sauber.
+**Einziger großer offener Block: iOS-Parität → App Store.**
 
 ---
 
@@ -24,17 +25,19 @@ Nächster großer Block: **iOS-Parität → App Store**.
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
 - **Privates photoflow** ebenfalls bereinigt (CLAUDE.md aus History getilgt, IPs/PW/Claude-Trailer raus) — falls es je public wird, dann **vorher** GitHub-Token + Demo-PW rotieren (waren nur privat, also nie öffentlich abgeflossen).
 
-### 🟡 3 · Feature-Politur
-- **Highlights / externe Video-KI:** „Foto animieren" (Veo-3.1-MVP, default AUS) gebaut, aber **noch nie gegen die echte Veo-API getestet** (braucht Key + Test-Spend). Offen: **KI-Clip-Verschmelzung** (Slideshow + Veo-animierte Schlüsselbilder per ffmpeg stitchen, paid). Konzept: `docs/highlights-externe-video-ki-konzept.md`.
-- **Lokaler M3-Video-Provider (LTX):** Worker-Skript `scripts/m3_ltx_worker.py` mit ffmpeg-Ken-Burns-Fallback steht; offen: **LTX-Modell-Install auf dem Mac + Job-Queue/Vorrat-Scheduler**.
-- **Upload-Phase 3:** selbstverwaltete Quellen pro Nutzer.
-- **Mobile-Web:** Bottom-Nav erneuert (4 Tabs + „Mehr"-Drawer); volle Per-Seiten-Responsiveness fehlt noch.
+### ✅ 3 · Feature-Politur (erledigt 2026-06-23, v1.316–1.318) — außer M3-LTX
+- **Video-KI „Foto animieren" ✅ getestet & live** (v1.318-Test): fal.ai (Hailuo-02 i2v) end-to-end verifiziert (Highlight #6 → `/cache/highlights/clips/6.mp4`). Aktiviert mit Schutz-Budget **60s/Monat** (anpassbar). Veo-Pfad existiert ebenso; KI-Clip-Verschmelzung (Slideshow+Clips stitchen) weiterhin offen.
+- **Upload-Phase 3 ✅** (v1.318): `owner_user_id` + Migration; `/api/my-sources` (Flag `allow_manage_sources`, realpath-Pfad-Validierung, Ownership); Profil-UI „Meine Quellen" (self-gating, DE/EN). Security verifiziert: außerhalb/Traversal/`/etc`→403, fremde Quelle→404, In-Scope→201.
+- **Mobile-Web ✅** war bereits durchgängig responsiv (9 Seiten per Handy-Screenshots + Admin-Seiten per Code-Review geprüft — Bottom-Nav, `grid-cols-1/2`-Basis mit `sm:`/`lg:`-Scale-ups).
+- **Offen nur:** **M3-LTX** (Modell-Install + Scheduler) + **KI-Clip-Verschmelzung** (paid, baut auf Veo/fal).
 
-### 🟢 4 · Kleinkram / niedrige Prio
-- **`/v1/chat` ACL** — Chat-Suche läuft noch über die ganze Bibliothek (letzter Security-Rest).
-- **`albums.py` `datetime.utcnow()`** (naiv) — Rest vom app-weiten Zeitstempel-Fix (v1.285).
-- **Vision-Chat:** Top-Treffer-Thumbnails an Gemini mitschicken (nicht nur Text).
-- **Video-Gesichts-Sweep server-seitig** aus dem 1080p-MP4 statt 4K-Original (teilw. vorhanden: `sweep_video_faces`/`detect_video_faces`).
+### ✅ 4 · Kleinkram (erledigt 2026-06-23, v1.316–1.317)
+- **`/v1/chat` ACL ✅** (v1.316): Chat-Suche/Count über `photo_conditions(user)`; eingeschränkte Konten chatten nur über eigene Fotos (Schreib-Aktionen gesperrt), Pauschal-403 entfällt.
+- **EXIF-NUL-Fix ✅** (v1.317): NUL/Steuerzeichen aus EXIF-Strings strippen — behob die „invalid byte sequence 0x00"-Fehlerflut (alte Canon-Kameras).
+- **albums.py / Vision-Chat / Video-Gesichts-Sweep**: beim Prüfen bereits erledigt vorgefunden (aware `datetime.now(timezone.utc)`; `_image_parts`+`chat.vision`; Sweep liest 1080p-SSD-MP4).
+
+### ✅ iOS-Rebrand-Check (2026-06-23)
+- „NimtaFlow" an allen sichtbaren Stellen (Display-Name, Foto-Berechtigungstexte, Login, Settings, Dashboard-Logo); **LumaFlow = 0**; verbliebene „PhotoFlow" sind nur interne Bezeichner (Target/Scheme/Ordner) — bewusst.
 
 ---
 
