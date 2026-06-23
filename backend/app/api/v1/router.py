@@ -342,9 +342,12 @@ async def upload_photos(
     from app.core.config import get_settings
     default_dir = settings.get("upload.default_dir")
     if not default_dir:
-        default_dir = await db.scalar(
+        # Prefer the SHORTEST enabled source root (the top-level mount, e.g. /photos)
+        # over a deep per-person folder — a cleaner, more predictable upload home.
+        roots = (await db.execute(
             select(PhotoSource.path).where(PhotoSource.enabled == True)  # noqa: E712
-            .order_by(PhotoSource.id).limit(1))
+        )).scalars().all()
+        default_dir = min(roots, key=len) if roots else None
     default_dir = default_dir or get_settings().photos_path
     base = upload_base_dir(user, default_dir)
     now = datetime.now(timezone.utc)
