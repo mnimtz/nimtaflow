@@ -92,6 +92,24 @@
   ul.checks li{padding:.28rem 0 .28rem 1.6rem;position:relative;color:var(--mut)}
   ul.checks li::before{content:"✓";position:absolute;left:0;color:var(--gold);font-weight:800}
 
+  /* Preview / screenshots */
+  .shots{display:flex;flex-direction:column;gap:2.2rem;margin-top:.4rem}
+  .shot{display:grid;grid-template-columns:1fr 1.55fr;gap:1.4rem;align-items:center}
+  .shot:nth-child(even){grid-template-columns:1.55fr 1fr}
+  .shot:nth-child(even) .shot-txt{order:2}
+  @media(max-width:780px){.shot,.shot:nth-child(even){grid-template-columns:1fr}.shot:nth-child(even) .shot-txt{order:0}}
+  .shot-txt h3{font-size:1.2rem;margin-bottom:.4rem}
+  .shot-txt p{color:var(--mut);font-size:.96rem}
+  .browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#15151d;
+    box-shadow:0 22px 60px rgba(0,0,0,.5);transition:.2s}
+  .browser:hover{transform:translateY(-4px);box-shadow:0 28px 70px rgba(0,0,0,.6);border-color:var(--gold)}
+  .browser .bar{display:flex;align-items:center;gap:.4rem;padding:.55rem .75rem;background:#0e0e14;border-bottom:1px solid var(--line2)}
+  .browser .dot{width:10px;height:10px;border-radius:50%;background:#3a3a45}
+  .browser .dot.r{background:#e0696b}.browser .dot.y{background:#e6b04a}.browser .dot.g{background:#5cbf76}
+  .browser .addr{margin-left:.6rem;flex:1;background:#15151d;border:1px solid var(--line2);border-radius:7px;
+    font-size:.74rem;color:var(--mut2);padding:.22rem .6rem;font-family:ui-monospace,Menlo,monospace}
+  .browser img{display:block;width:100%}
+
   /* Support / donation */
   .support{text-align:center;max-width:640px;margin:0 auto}
   .coffee{font-size:3rem}
@@ -118,6 +136,7 @@
   <div class="links">
     <button class="tab active" data-t="start" data-i18n="nav_start">Start</button>
     <button class="tab" data-t="features" data-i18n="nav_features">Funktionen</button>
+    <button class="tab" data-t="preview" data-i18n="nav_preview">Vorschau</button>
     <button class="tab" data-t="download" data-i18n="nav_download">Download</button>
     <button class="tab" data-t="support" data-i18n="nav_support">Unterstützen</button>
     <a class="gh" href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">GitHub ★</a>
@@ -177,6 +196,51 @@
         <div class="fc"><div class="ic">👥</div><h3 data-i18n="f7h">Mehrbenutzer &amp; Rechte</h3><p data-i18n="f7p">Mehrere Konten mit feiner Zugriffssteuerung: Ordner, Personen, Datumsbereiche, Funktions-Schalter.</p></div>
         <div class="fc"><div class="ic">🌐</div><h3 data-i18n="f8h">Zweisprachig</h3><p data-i18n="f8p">Komplette Oberfläche in Deutsch &amp; Englisch — automatische Erkennung plus manueller Umschalter.</p></div>
         <div class="fc"><div class="ic">⭐</div><h3 data-i18n="f9h">Open Source</h3><p data-i18n="f9p">Server &amp; App sind quelloffen. Transparent, anpassbar, selbst betreibbar — keine Blackbox.</p></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="panel" id="preview">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow" data-i18n="nav_preview">Vorschau</span>
+      <h2 data-i18n="prev_h2">Ein Blick in die App</h2>
+      <p class="lead" data-i18n="prev_lead">Echte Screenshots aus NimtaFlow — hier mit lizenzfreien Beispielbildern. Dunkles Design, das sich der Tageszeit anpasst, zweisprachig, Web &amp; iOS aus einer Quelle.</p>
+      <div class="shots">
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev1h">Galerie</h3>
+            <p data-i18n="prev1p">Schnelle, flüssige Galerie mit großen Vorschaubildern. Filtern, Favoriten, Auswahl — alles direkt auf deinem Server.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/gallery</span></div>
+            <img src="shots/gallery.jpg" alt="NimtaFlow Galerie" loading="lazy" />
+          </div>
+        </div>
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev2h">Karte &amp; Weltkugel</h3>
+            <p data-i18n="prev2p">Sieh auf der interaktiven Weltkugel, wo deine Aufnahmen entstanden sind — gruppiert nach Orten, mit Reisen &amp; Routen.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/map</span></div>
+            <img src="shots/globe.jpg" alt="NimtaFlow Weltkugel" loading="lazy" />
+          </div>
+        </div>
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev3h">Startseite &amp; Erinnerungen</h3>
+            <p data-i18n="prev3p">Eine persönliche Startseite mit Begrüßung, Statistiken, Highlights und „Heute vor X Jahren" — jedes Mal frisch zusammengestellt.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/start</span></div>
+            <img src="shots/dashboard.jpg" alt="NimtaFlow Startseite" loading="lazy" />
+          </div>
+        </div>
+      </div>
+      <div class="cta" style="margin-top:2.2rem">
+        <button class="btn btn-gold" data-t="download" data-i18n="cta_start">Loslegen</button>
+        <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener" data-i18n="cta_login">Zum Login</a>
       </div>
     </section>
   </div>
@@ -283,7 +347,19 @@ docker compose up -d</code></pre>
   // ── Bilingual (auto-detect DE/EN + manual toggle) ──
   const I={
     nav_start:["Start","Home"], nav_features:["Funktionen","Features"], nav_download:["Download","Download"],
-    nav_support:["Unterstützen","Support"],
+    nav_support:["Unterstützen","Support"], nav_preview:["Vorschau","Preview"],
+    prev_h2:["Ein Blick in die App","A look inside the app"],
+    prev_lead:["Echte Screenshots aus NimtaFlow — hier mit lizenzfreien Beispielbildern. Dunkles Design, das sich der Tageszeit anpasst, zweisprachig, Web & iOS aus einer Quelle.",
+      "Real screenshots from NimtaFlow — shown here with license-free sample images. A dark theme that adapts to the time of day, bilingual, web & iOS from one codebase."],
+    prev1h:["Galerie","Gallery"],
+    prev1p:["Schnelle, flüssige Galerie mit großen Vorschaubildern. Filtern, Favoriten, Auswahl — alles direkt auf deinem Server.",
+      "A fast, fluid gallery with large thumbnails. Filtering, favorites, selection — all straight from your server."],
+    prev2h:["Karte & Weltkugel","Map & globe"],
+    prev2p:["Sieh auf der interaktiven Weltkugel, wo deine Aufnahmen entstanden sind — gruppiert nach Orten, mit Reisen & Routen.",
+      "See on the interactive globe where your shots were taken — clustered by place, with trips & routes."],
+    prev3h:["Startseite & Erinnerungen","Home & memories"],
+    prev3p:["Eine persönliche Startseite mit Begrüßung, Statistiken, Highlights und „Heute vor X Jahren\" — jedes Mal frisch zusammengestellt.",
+      "A personal home screen with a greeting, stats, highlights and \"X years ago today\" — freshly composed every time."],
     hero_h1:["Deine eigene Foto-Cloud. ","Your own photo cloud. "], hero_h1b:["Selbst gehostet.","Self-hosted."],
     hero_sub:["Verwalte deine Fotos & Videos auf deiner eigenen Hardware — mit KI-Suche, Gesichtserkennung, Karte und Erinnerungen. Kein Abo, kein fremder Cloud-Anbieter, keine Auswertung deiner Daten. Web-Oberfläche und native iOS-App.",
       "Manage your photos & videos on your own hardware — with AI search, face recognition, map and memories. No subscription, no third-party cloud, no mining of your data. Web app and a native iOS app."],
