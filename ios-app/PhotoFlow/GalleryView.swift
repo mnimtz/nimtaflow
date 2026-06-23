@@ -529,8 +529,9 @@ struct PhotoPager: View {
             index = photos.firstIndex(of: start) ?? 0
             favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
             ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
+            prefetchNeighbors()
         }
-        .onChange(of: index) { _, _ in actionNote = nil }
+        .onChange(of: index) { _, _ in actionNote = nil; prefetchNeighbors() }
         .sheet(isPresented: $showShare) {
             if let c = cur {
                 ShareSheetView(target: .photo(id: c.id, title: c.filename))
@@ -575,6 +576,18 @@ struct PhotoPager: View {
     /// render time.
     var cur: PhotoV1? { photos[safe: index] }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
+
+    /// Warm the large image of the previous/next photo so swiping is instant.
+    private func prefetchNeighbors() {
+        for off in [-1, 1] {
+            let i = index + off
+            guard photos.indices.contains(i) else { continue }
+            let p = photos[i]
+            if !p.is_video {
+                prefetchImage(api.url("api/photos/\(p.id)/thumbnail?size=large"), token: api.token)
+            }
+        }
+    }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
     func toggleLocal() { let id = photos[index].id; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }
 }

@@ -29,6 +29,7 @@ struct SettingsScreen: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if api.loggedIn { AutoUploadSection() }
+                CacheSection()
                 if api.loggedIn { HighlightsAISection() }
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -85,6 +86,28 @@ private struct AutoUploadSection: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { if mgr.fromDateTS > 0 { fromDate = mgr.fromDate } }
+    }
+}
+
+/// Local image cache: shows on-disk size and a "clear" button.
+private struct CacheSection: View {
+    @State private var sizeMB = imageCacheSizeMB()
+    @State private var cleared = false
+    var body: some View {
+        Section("Speicher") {
+            Button {
+                clearImageCaches(); sizeMB = 0; cleared = true
+            } label: {
+                HStack {
+                    Text("Bild-Cache leeren")
+                    Spacer()
+                    Text(cleared ? "geleert" : "\(sizeMB) MB").foregroundStyle(.secondary)
+                }
+            }
+            Text("Lokal zwischengespeicherte Vorschau- und Großbilder. Werden bei Bedarf neu geladen.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onAppear { sizeMB = imageCacheSizeMB(); cleared = false }
     }
 }
 

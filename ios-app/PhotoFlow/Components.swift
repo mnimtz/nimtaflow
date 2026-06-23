@@ -65,6 +65,33 @@ final class AuthImageLoader: ObservableObject {
     }
 }
 
+/// Warm the shared cache for a URL ahead of time (neighbour photos in the pager),
+/// so swiping shows the next full-size image instantly instead of fetching on appear.
+func prefetchImage(_ url: URL?, token: String) {
+    guard let url, imageCache.object(forKey: url as NSURL) == nil else { return }
+    var req = URLRequest(url: url)
+    req.timeoutInterval = 20
+    if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    Task.detached(priority: .utility) {
+        if let (data, resp) = try? await imageSession.data(for: req),
+           (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
+           let img = UIImage(data: data) {
+            await MainActor.run { imageCache.setObject(img, forKey: url as NSURL) }
+        }
+    }
+}
+
+/// Current on-disk image-cache size in MB (Settings label).
+func imageCacheSizeMB() -> Int {
+    Int((imageSession.configuration.urlCache?.currentDiskUsage ?? 0) / (1024 * 1024))
+}
+
+/// Clear the in-memory + on-disk image caches (Settings → "Cache leeren").
+@MainActor func clearImageCaches() {
+    imageCache.removeAllObjects()
+    imageSession.configuration.urlCache?.removeAllCachedResponses()
+}
+
 /// Authenticated async image that fills its frame (gallery thumbnails etc.).
 struct Thumb: View {
     let url: URL?
