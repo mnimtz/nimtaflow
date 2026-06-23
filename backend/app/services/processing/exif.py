@@ -122,7 +122,24 @@ def extract_exif(path: str) -> ExifData:
     if result.latitude is None or result.taken_at is None:
         _exiftool_fallback(path, result)
 
+    _sanitize_strings(result)
     return result
+
+
+def _clean_str(s):
+    """Strip NUL + C0/C1 control chars from an EXIF string. Old cameras store
+    null-terminated C strings (e.g. 'Canon DIGITAL IXUS\\x00'); Postgres TEXT can't
+    hold a 0x00 byte → the whole process_photo transaction rolled back ("invalid byte
+    sequence for encoding UTF8: 0x00"). Returns None if nothing printable remains."""
+    if not isinstance(s, str):
+        return s
+    cleaned = "".join(ch for ch in s if ch == "\t" or (ord(ch) >= 0x20 and ord(ch) != 0x7f)).strip()
+    return cleaned or None
+
+
+def _sanitize_strings(result: "ExifData") -> None:
+    for f in ("camera_make", "camera_model", "lens_model", "shutter_speed"):
+        setattr(result, f, _clean_str(getattr(result, f, None)))
 
 
 def _exiftool_fallback(path: str, result: "ExifData") -> None:
