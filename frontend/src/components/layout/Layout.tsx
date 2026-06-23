@@ -63,6 +63,11 @@ function VersionBadge() {
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
         <span className="hidden md:inline">NimtaFlow&nbsp;</span>v{data?.version ?? '…'}
       </span>
+      {/* AGPL §13: a network-accessible instance must offer its source to users. */}
+      <a href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener"
+         className="hidden md:block text-[10px] text-zinc-500 hover:text-zinc-300 mt-0.5">
+        {t('nav.source')}
+      </a>
     </div>
   )
 }

@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Google-Fonts-Hotlink entfernt (DSGVO/Privacy: kein externer Call beim Seitenaufruf).
+   Inter wird genutzt, falls lokal installiert, sonst greift der System-Font-Stack. */
 
 @tailwind base;
 @tailwind components;

@@ -25,6 +25,7 @@ export const nav = {
     'nav.user': 'Benutzer',
     'nav.runningVersion': 'Laufende Docker-Version',
     'nav.language': 'Sprache',
+    'nav.source': 'Quellcode (AGPL)',
   } as Record<string, string>,
   en: {
     'nav.start': 'Home',
@@ -52,5 +53,6 @@ export const nav = {
     'nav.user': 'User',
     'nav.runningVersion': 'Running Docker version',
     'nav.language': 'Language',
+    'nav.source': 'Source code (AGPL)',
   } as Record<string, string>,
 }
