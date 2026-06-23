@@ -20,9 +20,9 @@ Nächster großer Block: **iOS-Parität → App Store**.
 - **Store-Einreichung:** Screenshots/Metadaten (teils durch Website-Vorschau-Screenshots abgedeckt), finale Einreichung.
 - **Push-Konzept + Release-Readiness-Audit** — Konzept-Doku da (`docs/push-und-release-audit-konzept.md`), Umsetzung offen.
 
-### 🟠 2 · Vor GitHub-Public (Achtung!)
-- **`CLAUDE.md` steckt in der git-History** mit interner Infra (SSH-Hosts/IPs/Token-Pfade) → so NICHT public stellen, History vorher säubern.
-- **Demo-Passwort** steht in `docs/appstore-listing.md` (bei public sichtbar).
+### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
+- **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
+- **Privates photoflow** ebenfalls bereinigt (CLAUDE.md aus History getilgt, IPs/PW/Claude-Trailer raus) — falls es je public wird, dann **vorher** GitHub-Token + Demo-PW rotieren (waren nur privat, also nie öffentlich abgeflossen).
 
 ### 🟡 3 · Feature-Politur
 - **Highlights / externe Video-KI:** „Foto animieren" (Veo-3.1-MVP, default AUS) gebaut, aber **noch nie gegen die echte Veo-API getestet** (braucht Key + Test-Spend). Offen: **KI-Clip-Verschmelzung** (Slideshow + Veo-animierte Schlüsselbilder per ffmpeg stitchen, paid). Konzept: `docs/highlights-externe-video-ki-konzept.md`.
