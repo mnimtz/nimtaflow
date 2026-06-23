@@ -33,9 +33,19 @@
 - **transcode-CRITICAL** an Worker delegiert (0,04s statt 600s-Blockade) (v1.298).
 - **fs/sources** (Ordner-Browser „Quelle hinzufügen") → Demo 403 verifiziert (war schon v1.291 require_admin; jetzt bestätigt: kein Leak fremder Ordnernamen).
 
-**⚠️ Security-Rest (klein):**
-- **H4** Feature-Flags `allow_map` (low — Daten ohnehin gescoped) + `allow_pipeline` auf den bibliotheksweiten Pipeline-POSTs (reprocess-failed/scan-metadata/…; DoS, nicht Leak). `allow_share` ist via Write-Guard de facto durchgesetzt.
-- **M*** `/photos/{id}/preview` + `/sprite.jpg|vtt` (Video-Vorschau-Bildinhalt) ohne `can_see_photo`; `/v1/upload`, `/v1/chat` ACL.
+**✅ H4 + M2 gefixt (v1.301):** `allow_pipeline`-Guard (`require_pipeline`) auf den
+bibliotheksweiten Pipeline-POSTs (reprocess-failed/scan-metadata/reprocess-missing-ai/
+backfill-xmp) → Demo kann keine Worker-Jobs über die ganze Bibliothek auslösen. v1
+preview/sprite.jpg/sprite.vtt mit `can_see_photo` (Video-Bildinhalt-Leck zu). `/v1/upload`
+nimmt jetzt `user` (war M4) + `allow_upload`. `allow_map` bewusst nicht erzwungen (Daten
+ohnehin `photo_conditions`-gescoped). **Security-Block damit komplett.**
+- Rest-`M`: `/v1/chat` ACL (Chat-Suche über ganze Bibliothek) — noch offen, niedrige Prio.
+
+**✅ Foto-/Video-Upload in den User-Baum (v1.299–1.302):** Upload landet dynamisch in
+`<home_root||folder_whitelist[0]||kürzeste Quelle||photos_path>/Upload/JJJJ/JJJJ-MM/` —
+deployment-agnostisch (kein hartkodiertes /photos), kein Vermischen, nur für den Uploader
+sichtbar. iOS: Auto-Upload (default AUS, „ab Datum"=heute beim Einschalten), manueller
+Upload, Foreground-Trigger. Verifiziert Demo↔Admin. Phase 3 (selbstverwaltete Quellen) offen.
 
 ### ⚠️ Weitere Code-Check-Funde (nicht Security)
 - ✅ **transcode-CRITICAL** gefixt (s.o.).
