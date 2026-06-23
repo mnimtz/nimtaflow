@@ -6,7 +6,10 @@
 
 
 ### 🌐 Domain
-- **nimtaflow.com** registriert (Stand 2026-06-23) — vorgemerkt für Landing/Marketing bzw. künftig Server-URL. Aktueller Demo-/App-Server bleibt vorerst `foto.marcusnimtz.de`.
+- **nimtaflow.com** registriert (2026-06-23). Aufteilung:
+  - **login.nimtaflow.com** → App/Login (Server; CORS `*`, funktioniert ohne Backend-Änderung). Listing-/Privacy-/Review-URLs darauf umgestellt; Privacy: `https://login.nimtaflow.com/privacy.html`.
+  - **www.nimtaflow.com** → Landing/Marketing — fertige statische Seite in `docs/website/` (Gold/Dark, Features, Open-Source, Links zu Login/GitHub). Drop-in deploybar.
+  - Demo-Login-E-Mail bleibt `demo@foto.marcusnimtz.de` (nur Account-Name).
 
 ## Große Feature-Kampagne (15 Punkte, blockweise, jeweils deployen)
 

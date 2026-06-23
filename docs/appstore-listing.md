@@ -99,9 +99,9 @@ DE: `Neues NimtaFlow-Design & App-Icon, Foto-/Video-Upload (manuell + automatisc
 EN: `New NimtaFlow design & app icon, photo/video upload (manual + auto from a chosen date) into your own folder, personal greeting, faster swiping (prefetch) + image cache with a "clear" option, "Animate photo" (AI clips), many refinements.`
 
 ## URLs
-- Support-URL: `https://foto.marcusnimtz.de` (oder eine Support-/Info-Seite)
-- Marketing-URL (optional): `https://foto.marcusnimtz.de`
-- Datenschutz-URL (Pflicht): `https://foto.marcusnimtz.de/privacy.html`
+- Support-URL: `https://www.nimtaflow.com`
+- Marketing-URL (optional): `https://www.nimtaflow.com`
+- Datenschutz-URL (Pflicht): `https://login.nimtaflow.com/privacy.html`
 
 ---
 
@@ -113,7 +113,7 @@ server.
 
 HOW TO REVIEW:
 1. Launch the app. On the first screen / under Settings, set the Server URL to:
-   https://foto.marcusnimtz.de
+   https://login.nimtaflow.com
 2. Sign in with the demo account:
    Email:    demo@foto.marcusnimtz.de
    Password: REDACTED-ROTATE-ME
@@ -122,7 +122,7 @@ HOW TO REVIEW:
 
 Optional AI features (photo description / "animate photo") send only a user-selected image
 to a configured AI provider; they are off by default. Privacy policy:
-https://foto.marcusnimtz.de/privacy.html
+https://login.nimtaflow.com/privacy.html
 
 Contact: marcus@nimtz.email
 ```
