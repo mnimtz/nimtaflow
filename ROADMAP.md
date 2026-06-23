@@ -8,8 +8,13 @@
 ### 🌐 Domain
 - **nimtaflow.com** registriert (2026-06-23). Aufteilung:
   - **login.nimtaflow.com** → App/Login (Server; CORS `*`, funktioniert ohne Backend-Änderung). Listing-/Privacy-/Review-URLs darauf umgestellt; Privacy: `https://login.nimtaflow.com/privacy.html`.
-  - **www.nimtaflow.com** → Landing/Marketing — fertige statische Seite in `docs/website/` (Gold/Dark, Features, Open-Source, Links zu Login/GitHub). Drop-in deploybar.
+  - **www.nimtaflow.com** → Landing/Marketing — statische Seite in `docs/website/` (Gold/Dark, Register Start/Funktionen/**Vorschau**/Download/Unterstützen + Datenschutz, DE/EN, PayPal-Spende). **Host:** LXC **600** (@ `your-host`, Host Proxmox `root@your-proxmox-host`, in `pct list` als „ollama" gelabelt!). Webroot `/opt/nimtaflow-www`, nginx-Container `nimtaflow-www` (nginx:alpine, :8095), Cloudflare-Tunnel. **Deploy:** `tar czf /tmp/nf-www.tgz -C docs/website .` → `scp …:/tmp/` → `pct push 600 …` → `pct exec 600 -- tar xzf … -C /opt/nimtaflow-www && docker restart nimtaflow-www`.
+  - **Vorschau-Register** (2026-06-23): 3 browser-gerahmte Screenshots (Galerie, Weltkugel/Globus, Startseite) aus dem Demo-Konto, lizenzfreie Unsplash-Natur-/Tierbilder. Screenshots headless via Playwright-Container auf Zweitbox (`mcr.microsoft.com/playwright:v1.48.0-jammy`, `npm i playwright@1.48.0`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`).
   - Demo-Login-E-Mail bleibt `demo@foto.marcusnimtz.de` (nur Account-Name).
+
+### ✅ Security + v1-API-Fixes (2026-06-23, v1.313–1.314)
+- **Dashboard/People-Leak für eingeschränkte Konten** (v1.313): Das Demo-Konto (öffentlicher Apple-Testaccount!) zeigte trotz korrekt beschränkter Galerie die GANZE Bibliothek: „Person der Woche"/Featured People + counts, Album-Namen, sowie People-Tab-Zähler (`/people/faces/unassigned` + `/faces/suggestions`). Ursache: nur `visible_person_ids`-Allowlist gefiltert (haben beschränkte Konten nicht). Fix: durchgehend `visible_person_subquery(user)` + `photo_conditions(user)`-skalierte counts; Alben ohne sichtbares Foto werden ausgelassen.
+- **v1-API-Leak + Bilder-Auth** (v1.314): `/v1/people` + `/v1/albums` waren ungescoped → iOS-Demo hätte alle Personen/Alben gesehen → gleiche Scoping-Fixes. **Bilder-Bug:** `_to_v1` & Co. bauten ABSOLUTE URLs aus `request.base_url`, das hinter dem Proxy den **Port verliert** (`http://your-server` statt `:8090`) → jedes `<img>` auf dem Web-Dashboard lief ins Leere. Jetzt **relative URLs** (same-origin, `pf_token`-Cookie greift; iOS strippt Host via `api.url(path)`). **Merke:** Thumbnail-Endpoint akzeptiert NUR `?access_token=`-Query bzw. `pf_token`-Cookie — kein Bearer-Header bei `<img>`.
 
 ## Große Feature-Kampagne (15 Punkte, blockweise, jeweils deployen)
 
