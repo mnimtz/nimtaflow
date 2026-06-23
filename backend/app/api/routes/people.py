@@ -59,13 +59,19 @@ def _video_face_source(photo, face):
 
 @router.get("", response_model=List[PersonDetail])
 async def list_people(include_hidden: bool = False, sort: str = "name",
-                      db: AsyncSession = Depends(get_db)):
+                      db: AsyncSession = Depends(get_db),
+                      user=Depends(current_user_optional)):
     """List persons with face- AND distinct-photo counts. `sort`:
     name | photos (most→least) | photos_asc | faces | recent.
-    Counts come from two grouped queries (not N+1) so this stays fast."""
+    Counts come from two grouped queries (not N+1) so this stays fast.
+    A restricted account only sees persons that appear in photos it may access."""
+    from app.core.access import visible_person_subquery
     q = select(Person)
     if not include_hidden:
         q = q.where(Person.is_hidden == False)  # noqa: E712
+    psq = visible_person_subquery(user)
+    if psq is not None:
+        q = q.where(Person.id.in_(psq))
     persons = (await db.execute(q)).scalars().all()
     ids = [p.id for p in persons]
     faces, photos = {}, {}
@@ -130,9 +136,14 @@ async def create_person(data: PersonCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{person_id}", response_model=PersonDetail)
-async def get_person(person_id: int, db: AsyncSession = Depends(get_db)):
+async def get_person(person_id: int, db: AsyncSession = Depends(get_db),
+                     user=Depends(current_user_optional)):
+    from app.core.access import visible_person_subquery
     person = await db.get(Person, person_id)
     if not person:
+        raise HTTPException(404)
+    psq = visible_person_subquery(user)
+    if psq is not None and not await db.scalar(select(Person.id).where(Person.id == person_id, Person.id.in_(psq))):
         raise HTTPException(404)
     face_count = await db.scalar(select(func.count()).where(Face.person_id == person_id))
     return PersonDetail(**person.__dict__, face_count=face_count or 0)
@@ -316,9 +327,11 @@ async def set_profile_face(person_id: int, face_id: int, db: AsyncSession = Depe
 
 
 @router.get("/{person_id}/avatar")
-async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
+async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db),
+                        user=Depends(current_user_optional)):
     """Return the face crop image for the person's profile."""
     import os
+    from app.core.access import can_see_photo
     person = await db.get(Person, person_id)
     if not person:
         raise HTTPException(404)
@@ -330,7 +343,7 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db)):
         if not face:
             return None
         photo = await db.get(Photo, face.photo_id)
-        if not photo:
+        if not photo or not can_see_photo(photo, user):
             return None
         # Offload the (sync, possibly ffmpeg/PIL) crop work to a thread so one slow
         # crop never blocks the event loop / the other ~40 parallel crop requests.
@@ -409,15 +422,22 @@ async def person_photos(
 
 @router.get("/{person_id}/faces")
 async def person_faces(person_id: int, page: int = 1, limit: int = 120,
-                       db: AsyncSession = Depends(get_db)):
+                       db: AsyncSession = Depends(get_db),
+                       user=Depends(current_user_optional)):
     """List the faces assigned to a person — PAGINATED. A person can have
     thousands of faces (e.g. a child photographed for years); returning + rendering
-    all of them as on-demand crops froze the page. Best faces first."""
+    all of them as on-demand crops froze the page. Best faces first.
+    Restricted accounts only see faces from photos they may access."""
+    from app.core.access import photo_conditions, _is_unrestricted
+    from app.models.photo import Photo
     limit = max(1, min(limit, 500))
-    total = await db.scalar(select(func.count()).select_from(Face).where(Face.person_id == person_id))
+    conds = [Face.person_id == person_id]
+    if not _is_unrestricted(user):
+        conds.append(Face.photo_id.in_(select(Photo.id).where(*photo_conditions(user))))
+    total = await db.scalar(select(func.count()).select_from(Face).where(*conds))
     rows = (await db.execute(
         select(Face.id, Face.photo_id, Face.confidence)
-        .where(Face.person_id == person_id).order_by(Face.confidence.desc().nullslast())
+        .where(*conds).order_by(Face.confidence.desc().nullslast())
         .offset((max(1, page) - 1) * limit).limit(limit)
     )).all()
     return {"total": total or 0, "page": page, "limit": limit,
@@ -615,15 +635,17 @@ async def ignored_faces(limit: int = Query(500, ge=1, le=2000), db: AsyncSession
 
 
 @router.get("/faces/{face_id}/crop")
-async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db)):
+async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db),
+                          user=Depends(current_user_optional)):
     import os
     from app.models.photo import Photo
     from app.services.face_crop import crop_face
+    from app.core.access import can_see_photo
     face = await db.get(Face, face_id)
     if not face:
         raise HTTPException(404)
     photo = await db.get(Photo, face.photo_id)
-    if not photo:
+    if not photo or not can_see_photo(photo, user):
         raise HTTPException(404)
     path = await asyncio.to_thread(_face_crop_path, face, photo, 0)
     if path and os.path.exists(path):

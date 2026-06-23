@@ -6,6 +6,8 @@ from sqlalchemy import select, func, or_, and_, delete as sql_delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional
+from app.core.access import _is_unrestricted, photo_conditions
 from app.models.person import Person
 from app.models.face import Face
 from app.models.relationship import (
@@ -33,11 +35,14 @@ def _edge(r: PersonRelationship) -> dict:
 
 
 @router.get("/graph")
-async def graph(category: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def graph(category: Optional[str] = None, db: AsyncSession = Depends(get_db),
+                user=Depends(current_user_optional)):
     """Only persons that are IN at least one relationship (+ the relationships) —
     NOT every person. Dumping all 70+ persons (incl. dozens of unnamed clusters)
     overwhelmed the view. Optional `category` (familie | sozial | …) shows just
     that relationship category — a separate graph per area, as requested."""
+    if not _is_unrestricted(user):
+        return {"nodes": [], "edges": []}   # restricted accounts don't see the family graph
     rels = (await db.execute(select(PersonRelationship))).scalars().all()
     if category:
         rels = [r for r in rels if CATEGORY.get(r.rel_type, "other") == category]
@@ -57,9 +62,12 @@ async def graph(category: Optional[str] = None, db: AsyncSession = Depends(get_d
 
 
 @router.get("/person/{person_id}")
-async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
+async def for_person(person_id: int, db: AsyncSession = Depends(get_db),
+                     user=Depends(current_user_optional)):
     """Relationships of one person, resolved with the other person's name and a
     label from THIS person's perspective (for the person detail page)."""
+    if not _is_unrestricted(user):
+        return []
     rels = (await db.execute(
         select(PersonRelationship).where(
             or_(PersonRelationship.from_person_id == person_id, PersonRelationship.to_person_id == person_id)
@@ -83,13 +91,15 @@ async def for_person(person_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/together/{a_id}/{b_id}")
-async def photos_together(a_id: int, b_id: int, limit: int = 200, db: AsyncSession = Depends(get_db)):
+async def photos_together(a_id: int, b_id: int, limit: int = 200, db: AsyncSession = Depends(get_db),
+                          user=Depends(current_user_optional)):
     """Photos in which BOTH persons appear (faces of each on the same photo)."""
     from app.models.photo import Photo
     from app.schemas.photo import PhotoBase
     fa = select(Face.photo_id).where(Face.person_id == a_id)
     fb = select(Face.photo_id).where(Face.person_id == b_id)
-    q = (select(Photo).where(Photo.id.in_(fa), Photo.id.in_(fb), Photo.is_trashed == False)  # noqa: E712
+    q = (select(Photo).where(Photo.id.in_(fa), Photo.id.in_(fb), Photo.is_trashed == False,  # noqa: E712
+                             *photo_conditions(user))
          .order_by(Photo.taken_at.desc()).limit(limit))
     photos = (await db.execute(q)).scalars().all()
     return {"count": len(photos), "items": [PhotoBase.model_validate(p, from_attributes=True) for p in photos]}

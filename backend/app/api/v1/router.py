@@ -624,9 +624,10 @@ async def person_photos_v1(person_id: int, request: Request,
 # ── Relationships (iOS app) ───────────────────────────────────────────────────
 
 @router.get("/relationships")
-async def relationships_v1(db: AsyncSession = Depends(get_db)):
+async def relationships_v1(db: AsyncSession = Depends(get_db),
+                           user: Optional[User] = Depends(current_user_optional)):
     from app.api.routes.relationships import graph as _graph
-    return await _graph(db=db)   # first positional arg is `category`, not db
+    return await _graph(db=db, user=user)   # restricted accounts get an empty graph
 
 
 # ── Albums (iOS app) ──────────────────────────────────────────────────────────

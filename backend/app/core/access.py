@@ -66,6 +66,17 @@ def can_see_photo(photo: Photo, user: Optional[User]) -> bool:
     return True
 
 
+def visible_person_subquery(user: Optional[User]):
+    """A SELECT of person_ids the user may see — persons that appear (have a face)
+    in at least one photo the user can access. Returns None when unrestricted
+    (no person filtering needed)."""
+    if _is_unrestricted(user):
+        return None
+    return select(Face.person_id).where(
+        Face.photo_id.in_(select(Photo.id).where(*photo_conditions(user)))
+    )
+
+
 def feature_allowed(user: Optional[User], flag: str, default: bool = True) -> bool:
     if user is None or user.role == UserRole.admin:
         return True

@@ -912,51 +912,29 @@ async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db),
 @router.post("/{photo_id}/video/transcode")
 async def transcode_video(
     photo_id: int,
-    codec: str = "h264",          # h264 (faster, wider support) | vp9 (webm)
-    resolution: int = 720,
+    resolution: int = 1080,
     db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
 ):
-    """Hardware-accelerated video transcode (CUDA/QSV/VAAPI → H.264 MP4 or VP9 WebM)."""
-    from app.core.config import get_settings
-    from app.services.hw_accel import detect_hw, build_transcode_cmd
-
+    """Queue a hardware-accelerated transcode on the worker. We must NOT run ffmpeg
+    inline here: a 600s `subprocess.run` would block the event loop AND hold the DB
+    connection idle-in-transaction (asyncpg starvation). The worker does it safely
+    with no session held — the player polls /stream until the file appears."""
     photo = await db.get(Photo, photo_id)
     if not photo or not photo.is_video:
         raise HTTPException(404)
+    if not can_see_photo(photo, user):
+        raise HTTPException(404)
+    if not feature_allowed(user, "allow_pipeline"):
+        raise HTTPException(403, "Nicht erlaubt")
 
-    settings = get_settings()
-    ext = "mp4" if codec == "h264" else "webm"
-    out_dir = pathlib.Path(settings.cache_path) / "videos"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{photo_id}_{resolution}.{ext}"
-
+    out_path = pathlib.Path("/cache/videos") / f"{photo_id}_{resolution}.mp4"
     if out_path.exists():
-        photo.video_webm_path = str(out_path)
-        await db.commit()
-        return {"status": "already_done", "path": str(out_path), "hw": "cached"}
+        if photo.video_webm_path != str(out_path):
+            photo.video_webm_path = str(out_path)
+            await db.commit()
+        return {"status": "already_done", "path": str(out_path)}
 
-    hw = detect_hw()
-    cmd = build_transcode_cmd(photo.path, str(out_path), resolution=resolution, codec=codec, hw=hw)
-
-    proc = subprocess.run(cmd, capture_output=True, timeout=600)
-    if proc.returncode == 0 and out_path.exists():
-        photo.video_webm_path = str(out_path)
-        await db.commit()
-        return {"status": "done", "path": str(out_path), "hw": hw.name, "info": hw.info}
-    else:
-        # Fallback to software if HW failed
-        if hw.name != "software":
-            sw_cmd = [
-                "ffmpeg", "-y", "-i", photo.path,
-                "-c:v", "libvpx-vp9" if codec == "vp9" else "libx264",
-                "-vf", f"scale=-2:{resolution}",
-                "-crf", "28", "-b:v", "0",
-                "-c:a", "aac" if codec == "h264" else "libopus", "-b:a", "128k",
-                str(out_path),
-            ]
-            proc2 = subprocess.run(sw_cmd, capture_output=True, timeout=600)
-            if proc2.returncode == 0 and out_path.exists():
-                photo.video_webm_path = str(out_path)
-                await db.commit()
-                return {"status": "done_sw_fallback", "path": str(out_path), "hw": "software"}
-        raise HTTPException(500, f"ffmpeg error ({hw.name}): {proc.stderr.decode()[-500:]}")
+    from app.worker.tasks import transcode_video_task
+    transcode_video_task.delay(photo_id, resolution)
+    return {"status": "queued", "photo_id": photo_id}

@@ -72,8 +72,16 @@ def _album_out(album: Album, count: int) -> AlbumOut:
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[AlbumOut])
-async def list_albums(db: AsyncSession = Depends(get_db)):
-    albums = (await db.execute(select(Album).order_by(Album.updated_at.desc()))).scalars().all()
+async def list_albums(db: AsyncSession = Depends(get_db),
+                      user=Depends(_current_user_optional)):
+    from app.core.access import _is_unrestricted
+    q = select(Album).order_by(Album.updated_at.desc())
+    # A restricted account only sees albums containing at least one photo it may access.
+    if not _is_unrestricted(user):
+        visible_albums = (select(AlbumPhoto.album_id)
+                          .where(AlbumPhoto.photo_id.in_(select(Photo.id).where(*_photo_conditions(user)))))
+        q = q.where(Album.id.in_(visible_albums))
+    albums = (await db.execute(q)).scalars().all()
     result = []
     for a in albums:
         count = await db.scalar(select(func.count()).where(AlbumPhoto.album_id == a.id))
@@ -104,10 +112,20 @@ async def create_album(body: AlbumCreate, bg: BackgroundTasks, db: AsyncSession 
 
 
 @router.get("/{album_id}", response_model=AlbumOut)
-async def get_album(album_id: int, db: AsyncSession = Depends(get_db)):
+async def get_album(album_id: int, db: AsyncSession = Depends(get_db),
+                    user=Depends(_current_user_optional)):
+    from app.core.access import _is_unrestricted
     album = await db.get(Album, album_id)
     if not album:
         raise HTTPException(404)
+    if not _is_unrestricted(user):
+        visible = await db.scalar(
+            select(AlbumPhoto.album_id).where(
+                AlbumPhoto.album_id == album_id,
+                AlbumPhoto.photo_id.in_(select(Photo.id).where(*_photo_conditions(user)))
+            ).limit(1))
+        if not visible:
+            raise HTTPException(404)
     count = await db.scalar(select(func.count()).where(AlbumPhoto.album_id == album_id))
     return _album_out(album, count or 0)
 
