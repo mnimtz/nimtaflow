@@ -28,6 +28,7 @@ struct SettingsScreen: View {
                     Text("Login ist nur nötig, wenn am Server ‚Login erzwingen‘ aktiv ist.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if api.loggedIn { AutoUploadSection() }
                 if api.loggedIn { HighlightsAISection() }
                 Section { Text("NimtaFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
             }
@@ -35,6 +36,41 @@ struct SettingsScreen: View {
             .onAppear { serverDraft = api.serverURL }
             .alert("Anmeldung fehlgeschlagen", isPresented: $loginError) { Button("OK") {} }
         }
+    }
+}
+
+/// Automatic camera-roll upload settings: on/off, a "from this date" lower bound,
+/// plus a manual "upload now" trigger and live progress.
+private struct AutoUploadSection: View {
+    @EnvironmentObject var api: APIClient
+    @ObservedObject private var mgr = AutoUploadManager.shared
+    @State private var fromDate = Date()
+
+    var body: some View {
+        Section("Automatischer Upload") {
+            Toggle("Automatisch hochladen", isOn: $mgr.enabled)
+            if mgr.enabled {
+                DatePicker("Nur ab Datum", selection: $fromDate, displayedComponents: .date)
+                    .onChange(of: fromDate) { _, d in mgr.fromDate = d }
+                Text("Es werden nur Aufnahmen ab diesem Datum automatisch hochgeladen. Bereits hochgeladene werden übersprungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Button {
+                Task { await mgr.run(api: api) }
+            } label: {
+                HStack {
+                    if mgr.running { ProgressView().controlSize(.small) }
+                    Text(mgr.running ? "Lädt… \(mgr.done)/\(mgr.total)" : "Jetzt hochladen")
+                }
+            }
+            .disabled(mgr.running || !api.loggedIn)
+            if let r = mgr.lastResult {
+                Text(r).font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Uploads landen auf dem Server in deinem eigenen Upload-Ordner.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onAppear { if mgr.fromDateTS > 0 { fromDate = mgr.fromDate } }
     }
 }
 

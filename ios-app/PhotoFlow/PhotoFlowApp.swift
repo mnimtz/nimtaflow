@@ -3,9 +3,15 @@ import SwiftUI
 @main
 struct PhotoFlowApp: App {
     @StateObject private var api = APIClient.shared
+    @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(api).preferredColorScheme(.dark)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await AutoUploadManager.shared.runIfEnabled(api: api) }
+            }
         }
     }
 }
