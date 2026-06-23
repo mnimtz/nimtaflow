@@ -114,11 +114,17 @@ Upload **in den Whitelist-Ordner** des Users, ist das Foto für ihn automatisch 
 - `home_root` für bestehende eingeschränkte User = vorhandener `folder_whitelist[0]`.
 
 ## Phasen (deploybar, klein)
-- **Phase 1 — Upload (jetzt):** Upload landet dynamisch in `<home_root||whitelist[0]>/Upload/…`,
-  `allow_upload`-Flag, atomic write, Dedup, Pipeline, Verifikation Demo↔Admin. *(keine Schema-Änderung nötig, nutzt access_config)*
-- **Phase 2 — Per-User-Root formalisiert:** `home_root`-Feld + Auto-Whitelist, Upload nutzt es.
-- **Phase 3 — Selbstverwaltete Quellen:** `PhotoSource.owner_user_id`, gescopter Ordner-Browser,
-  User-Source-CRUD mit Pfad-Constraint, UI in Settings (für Nicht-Admins freigeschaltet, gescoped).
+- ✅ **Phase 1 — Upload (v1.299, verifiziert):** `/v1/upload` schreibt dynamisch nach
+  `<home_root||whitelist[0]||upload.default_dir>/Upload/JJJJ/JJJJ-MM/`, `allow_upload`-Flag,
+  atomic write (.part→replace), SHA-256-Dedup, Pipeline. **Live getestet:** Demo-Upload →
+  `/photos/Demo/Upload/2026/2026-06/…`, `/cache/uploads` leer, nur für Demo sichtbar.
+- ✅ **Phase 2 — Per-User-Root (Helper):** `upload_base_dir(user)` liest `access_config.home_root`
+  (sonst `folder_whitelist[0]`). Voll-Formalisierung (home_root automatisch in Whitelist) optional offen.
+- ✅ **iOS:** `AutoUploadManager` (PhotoKit) — Auto-Upload ab Datum, manueller Upload, Foreground-Trigger;
+  Settings-Sektion (An/Aus, Datums-Filter, „Jetzt hochladen"). **Build grün, auf TestFlight.**
+  ⚠️ Auto-Upload/Background-Sync braucht **Geräte-Test** (PhotoKit-Berechtigung/iCloud-Originale).
+- ⬜ **Phase 3 — Selbstverwaltete Quellen:** `PhotoSource.owner_user_id`, gescopter Ordner-Browser,
+  User-Source-CRUD mit Pfad-Constraint, UI in Settings (für Nicht-Admins, gescoped). *(eigenes Paket)*
 
 ## Offene Entscheidung
 - **Darf der Demo-User hochladen** (in seinen Ordner)? Für die App-Store-Demo sinnvoll (zeigt das Feature).
