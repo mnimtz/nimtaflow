@@ -1,143 +1,96 @@
-# PhotoFlow — Roadmap & aktueller Stand
+# NimtaFlow — Roadmap & aktueller Stand
 
 > Quelle der Wahrheit für den Arbeitsstand (in git, reist mit dem Repo).
-> NICHT auf projekt-gebundene Auto-Memory verlassen — die ist pro Ordner unterschiedlich.
-> Bei neuem Stand: hier aktualisieren + committen.
+> NICHT auf projekt-gebundene Auto-Memory verlassen — bei neuem Stand HIER aktualisieren + committen.
+> Server-Zugang/Infra-Fallen stehen in `CLAUDE.md`.
 
+**Stand: v1.315 (2026-06-23).** Security-Kapitel praktisch komplett (Rest: `/v1/chat`-ACL).
+Nächster großer Block: **iOS-Parität → App Store**.
 
-### 🌐 Domain
-- **nimtaflow.com** registriert (2026-06-23). Aufteilung:
-  - **login.nimtaflow.com** → App/Login (Server; CORS `*`, funktioniert ohne Backend-Änderung). Listing-/Privacy-/Review-URLs darauf umgestellt; Privacy: `https://login.nimtaflow.com/privacy.html`.
-  - **www.nimtaflow.com** → Landing/Marketing — statische Seite in `docs/website/` (Gold/Dark, Register Start/Funktionen/**Vorschau**/Download/Unterstützen + Datenschutz, DE/EN, PayPal-Spende). **Host:** LXC **600** (@ `your-host`, Host Proxmox `root@your-proxmox-host`, in `pct list` als „ollama" gelabelt!). Webroot `/opt/nimtaflow-www`, nginx-Container `nimtaflow-www` (nginx:alpine, :8095), Cloudflare-Tunnel. **Deploy:** `tar czf /tmp/nf-www.tgz -C docs/website .` → `scp …:/tmp/` → `pct push 600 …` → `pct exec 600 -- tar xzf … -C /opt/nimtaflow-www && docker restart nimtaflow-www`.
-  - **Vorschau-Register** (2026-06-23): 3 browser-gerahmte Screenshots (Galerie, Weltkugel/Globus, Startseite) aus dem Demo-Konto, lizenzfreie Unsplash-Natur-/Tierbilder. Screenshots headless via Playwright-Container auf Zweitbox (`mcr.microsoft.com/playwright:v1.48.0-jammy`, `npm i playwright@1.48.0`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`).
-  - Demo-Login-E-Mail bleibt `demo@foto.marcusnimtz.de` (nur Account-Name).
+---
 
-### ✅ Verarbeitungs-Stau behoben (2026-06-23, v1.315)
-- **Symptom:** „23.353 Fotos werden noch verarbeitet", extrem langsam. **Ursachen:** (1) LXC 101 hat nur **6 Kerne**, lief bei **Load ~24** (4× überbucht). (2) ~17.800 Fotos hingen für immer in `status=processing` (Task starb bei Deploy/Container-Recreate NACH den Thumbnails) → blähten den Zähler auf. (3) Beat plante `watch_sources` alle 60s + Retry-Sweeps → stauten sich auf **46.773** cpu-Tasks, die genau die schon-fertigen Karteileichen wieder einreihten (Endlos-Churn).
-- **Fix:** Reaper `reap_stuck_photos` (alle 10 min: processing+Thumbnail+>30min → done), `watch_sources` 60s→300s. Einmalig bereinigt: 18.031 Karteileichen→done, Queue 46.773→0, 189 degenerierte Videos reaktiviert. **Ergebnis: Load 24→7,7, echter Rückstand ~6.700.**
-- **Video-Beschreibungen** laufen korrekt (Mac-Worker `m3-video`, Qwen3-VL). Fix im `~/photoflow_worker/mac_video_agent.py`: kosmetischer `TypeError`-Crash bei degenerierter Ausgabe entfernt + **Sampling-Retry** (`temperature=0.6, repetition_penalty=1.15`) gegen „!!!!"-Greedy-Loops, statt das Video sofort als `ai_error` zu verbrennen.
+## 🎯 Offene Punkte (priorisiert)
 
-### ✅ Security + v1-API-Fixes (2026-06-23, v1.313–1.314)
-- **Dashboard/People-Leak für eingeschränkte Konten** (v1.313): Das Demo-Konto (öffentlicher Apple-Testaccount!) zeigte trotz korrekt beschränkter Galerie die GANZE Bibliothek: „Person der Woche"/Featured People + counts, Album-Namen, sowie People-Tab-Zähler (`/people/faces/unassigned` + `/faces/suggestions`). Ursache: nur `visible_person_ids`-Allowlist gefiltert (haben beschränkte Konten nicht). Fix: durchgehend `visible_person_subquery(user)` + `photo_conditions(user)`-skalierte counts; Alben ohne sichtbares Foto werden ausgelassen.
-- **v1-API-Leak + Bilder-Auth** (v1.314): `/v1/people` + `/v1/albums` waren ungescoped → iOS-Demo hätte alle Personen/Alben gesehen → gleiche Scoping-Fixes. **Bilder-Bug:** `_to_v1` & Co. bauten ABSOLUTE URLs aus `request.base_url`, das hinter dem Proxy den **Port verliert** (`http://your-server` statt `:8090`) → jedes `<img>` auf dem Web-Dashboard lief ins Leere. Jetzt **relative URLs** (same-origin, `pf_token`-Cookie greift; iOS strippt Host via `api.url(path)`). **Merke:** Thumbnail-Endpoint akzeptiert NUR `?access_token=`-Query bzw. `pf_token`-Cookie — kein Bearer-Header bei `<img>`.
+### 🔴 1 · iOS-App in den App Store (größtes Ziel)
+- **iOS-Parität (`ios-app/`)** — alle Web-Features nachziehen (zuletzt offen: Person-Detail-Redesign, Karte-Routen/Orts-Panel, Reisen-Foto-add, Erinnerungen, Highlights-Fixes). Web-only per User-Entscheidung: Karte-Routen + Reisen-Foto-add (iOS-Datenmodell weicht ab).
+- **iOS-Bugs (Code-Check):**
+  - `GalleryView` Masonry/Justified-Layout (`GeometryReader` in `LazyVStack`, Höhe aus `UIScreen.width` ≠ geo) → Clipping/Pagination, braucht Geräte-Test
+  - `APIError.decode` verschluckt `DecodingError` (nur Debug-Print)
+  - **Karten-Eigenposition „immer Grönland"** (iOS-MapKit; Web hat keinen Geolocation-Code)
+- **Store-Einreichung:** Screenshots/Metadaten (teils durch Website-Vorschau-Screenshots abgedeckt), finale Einreichung.
+- **Push-Konzept + Release-Readiness-Audit** — Konzept-Doku da (`docs/push-und-release-audit-konzept.md`), Umsetzung offen.
 
-## Große Feature-Kampagne (15 Punkte, blockweise, jeweils deployen)
+### 🟠 2 · Vor GitHub-Public (Achtung!)
+- **`CLAUDE.md` steckt in der git-History** mit interner Infra (SSH-Hosts/IPs/Token-Pfade) → so NICHT public stellen, History vorher säubern.
+- **Demo-Passwort** steht in `docs/appstore-listing.md` (bei public sichtbar).
 
-### Entscheidungen des Users
-- Clustering-Recall → **„Vorschläge bestätigen"-UI** (kein Threshold-Senken).
-- Externe KI (Highlights/Video) → **erst Konzept-Dokument** (Provider-Vergleich Gemini/Veo/Runway, Kosten, Architektur, Einstellungen), dann bauen.
-- iOS/Release → **erst Features bauen + iOS-Parität mitziehen**, Release-Readiness-Audit + Push-Konzept am Ende.
-- Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
+### 🟡 3 · Feature-Politur
+- **Highlights / externe Video-KI:** „Foto animieren" (Veo-3.1-MVP, default AUS) gebaut, aber **noch nie gegen die echte Veo-API getestet** (braucht Key + Test-Spend). Offen: **KI-Clip-Verschmelzung** (Slideshow + Veo-animierte Schlüsselbilder per ffmpeg stitchen, paid). Konzept: `docs/highlights-externe-video-ki-konzept.md`.
+- **Lokaler M3-Video-Provider (LTX):** Worker-Skript `scripts/m3_ltx_worker.py` mit ffmpeg-Ken-Burns-Fallback steht; offen: **LTX-Modell-Install auf dem Mac + Job-Queue/Vorrat-Scheduler**.
+- **Upload-Phase 3:** selbstverwaltete Quellen pro Nutzer.
+- **Mobile-Web:** Bottom-Nav erneuert (4 Tabs + „Mehr"-Drawer); volle Per-Seiten-Responsiveness fehlt noch.
 
-### ✅ Backlog-Komplettabarbeitung (autonom)
-- **i18n komplett** (v1.305): ALLE Seiten + Galerie-Komponenten auf `useT`/`t()` migriert,
-  ~1000+ Keys DE/EN (Settings 330, People 215, Gallery 140, Highlights/Albums/Trips,
-  Search/Chat/Map/Dashboard, Profile/Relationships/Pipeline/Leitstand/Share/Setup/Login/
-  FolderBrowser). Gesamtes Frontend **sandbox-tsc grün (0 Fehler)** vor Deploy. Umschalter
-  DE/EN greift damit appweit.
-- **Gold-Branding NimtaFlow** (v1.303): Web-Logo (transparent freigestellt) + Favicon/manifest
-  + iOS-App-Icon (opak) — live verifiziert.
-- **Foto/Video-Upload** (v1.299–1.302): in den User-Baum, deployment-agnostisch, iOS Auto
-  (default AUS, „ab heute")/manuell — verifiziert.
-- **Security komplett** (v1.296–1.301, v1.304): H1–H4, C1–C5, M2, transcode-CRITICAL, chat-ACL,
-  fs/sources-Demo-Schutz — alle gegen Demo↔Admin verifiziert.
-- **iOS**: Highlights-Layout, PhotoPager-Crash-Guard, decode-Debug — auf TestFlight.
-- **albums** Timestamp (timestamptz-korrekt, v1.304).
-- **Noch offen (eigene Pakete):** Upload-Phase 3 (selbstverwaltete Quellen pro User);
-  iOS Masonry/Justified-Layout-Politur (kein Crash, braucht Geräte-Test).
+### 🟢 4 · Kleinkram / niedrige Prio
+- **`/v1/chat` ACL** — Chat-Suche läuft noch über die ganze Bibliothek (letzter Security-Rest).
+- **`albums.py` `datetime.utcnow()`** (naiv) — Rest vom app-weiten Zeitstempel-Fix (v1.285).
+- **Vision-Chat:** Top-Treffer-Thumbnails an Gemini mitschicken (nicht nur Text).
+- **Video-Gesichts-Sweep server-seitig** aus dem 1080p-MP4 statt 4K-Original (teilw. vorhanden: `sweep_video_faces`/`detect_video_faces`).
 
-### ✅ Erledigt (deployed) — Nacht-Session (Rebrand + Fixes)
-- **Rebrand → NimtaFlow** (v1.295): Name aus dem Nachnamen „Nimtz" abgeleitet, nach großer Verfügbarkeits-Recherche (LumaFlow war 🔴: Marke „Luma AI" Klasse 9 + bestehende LumaFlow-SaaS). NimtaFlow ist komplett frei (App Store, .com/.app/.io, npm/PyPI/GitHub, keine Marke). Umgesetzt: Web (Sidebar/Version-Badge/manifest/privacy/index), iOS (CFBundleDisplayName + Texte), App-Store-Listing. **GitHub-Public-Repo umbenannt:** `lumaflow` → **`mnimtz/nimtaflow`**. Interne `photoflow`-IDs (Container/Bundle-ID/Xcode-Scheme/DB) bewusst UNVERÄNDERT. Frontend-Rebuild verifiziert (NimtaFlow im nginx-Bundle).
-- **i18n-Basis DE/EN** (v1.295): `frontend/src/i18n/` — I18nProvider, `useT`, Browser-Sprach-Erkennung + localStorage, **DE/EN-Umschalter** (Sidebar + „Mehr"-Drawer). Wörterbuch-Fragmente pro Bereich (`strings/*.ts`), zentral via Object.assign gemerged. **Migriert: Nav + common.** Offen: ~23 Restseiten (Settings/People = Brocken) — Infra steht, Sandbox-tsc-Loop (Zweitbox node-Container) etabliert.
-- **Erinnerungen-Fix** (v1.294): Web `/api/photos/memories` 500 (ORM-Serialisierung via `response_model`) **und** Zugriffs-Leak (`get_memories` filtert nun per `photo_conditions(user)`; v1 übergibt `user`). Verifiziert: admin 200, demo `[]` (vorher byte-identisch = Leak).
-- **iOS Highlights-Layout-Fix**: stabile 16:9-Box (`Color.clear` aspectRatio + overlay/clip) statt unbegrenztem Thumb. **Erinnerungen-iOS**: war v1-Endpoint ok → vermutlich alter Build; frischer Build hochgeladen.
-- **Logo/Icon transparent** (v1.293): Verlaufs-BG per Flood-Fill entfernt (Alpha). ⚠️ Du lieferst früh ein neues Logo/Icon → dann erneut committen.
-- **Security: destruktive Foto-IDOR geschlossen** (v1.296): eingeschränkter User (Demo) konnte per Foto-ID fremde Fotos ändern/**endgültig löschen** → `can_see_photo`-Guard auf favorite/archive/rating/trash/delete/meta/reprocess + batch (IDs gefiltert) + v1 favorite/rating. No-op für Admin/offenen Modus.
-- **TestFlight**: 2 Builds hochgeladen (Memories/Highlights-Fix; danach NimtaFlow-Rebrand).
+---
 
-### ⚠️ Security-Backlog (Audit-Funde, NICHT blind über Nacht gefixt — teils Produktentscheidung)
-**✅ GEFIXT & verifiziert (v1.296–1.298)** — alle gegen Demo- vs. Admin-Token getestet:
-- **H1** destruktive Foto-IDOR (favorite/archive/rating/trash/delete/meta/reprocess/batch + v1) → `can_see_photo` (v1.296). Demo bekommt 404.
-- **H2** Personen-Management (rename/merge/delete/…) → Write-Guard, Demo 403 (v1.297).
-- **H3** Shares: Create geblockt (403), Liste nur eigene (v1.297).
-- **C5** `/stats` per `photo_conditions` gescoped → Demo total_indexed=0, Admin 139712 (v1.297).
-- **C1** People list/get/avatar/faces/crop → Demo 0/404, Admin voll (v1.298).
-- **C3** Relationships Graph/for_person leer für Demo; together-Fotos gefiltert (v1.298).
-- **C4** Albums list/get nur mit ≥1 sichtbarem Foto → Demo 0, Admin 2 (v1.298).
-- **transcode-CRITICAL** an Worker delegiert (0,04s statt 600s-Blockade) (v1.298).
-- **fs/sources** (Ordner-Browser „Quelle hinzufügen") → Demo 403 verifiziert (war schon v1.291 require_admin; jetzt bestätigt: kein Leak fremder Ordnernamen).
+## 🌐 Domain & Hosting
+- **nimtaflow.com** (registriert 2026-06-23):
+  - **login.nimtaflow.com** → App/Login (Server, CORS `*`). Privacy: `https://login.nimtaflow.com/privacy.html`.
+  - **www.nimtaflow.com** → Marketing-Seite in `docs/website/` (Gold/Dark; Register Start/Funktionen/Vorschau/Download/Unterstützen + Datenschutz; DE/EN; PayPal `paypal.me/MNimtz`).
+    - **Host:** LXC **600** @ `your-host` (Proxmox `root@your-proxmox-host`; in `pct list` als „ollama" gelabelt!). Webroot `/opt/nimtaflow-www`, Container `nimtaflow-www` (nginx:alpine, :8095), Cloudflare-Tunnel.
+    - **Deploy:** `tar czf /tmp/nf-www.tgz -C docs/website .` → `scp …:/tmp/` → `pct push 600 …` → `pct exec 600 -- tar xzf … -C /opt/nimtaflow-www && docker restart nimtaflow-www`.
+    - **Vorschau-Screenshots:** headless via Playwright-Container auf Zweitbox (`mcr.microsoft.com/playwright:v1.48.0-jammy`, `npm i playwright@1.48.0 --no-save`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`), Login als Demo, Screenshots von /gallery /map /start.
+- **Demo-Konto** `demo@foto.marcusnimtz.de` (Rolle user, `folder_whitelist=[/photos/Demo]`) = Apple-Testaccount; Ordner `/photos/Demo` mit lizenzfreien Unsplash-Natur-/Tierbildern befüllt.
 
-**✅ H4 + M2 gefixt (v1.301):** `allow_pipeline`-Guard (`require_pipeline`) auf den
-bibliotheksweiten Pipeline-POSTs (reprocess-failed/scan-metadata/reprocess-missing-ai/
-backfill-xmp) → Demo kann keine Worker-Jobs über die ganze Bibliothek auslösen. v1
-preview/sprite.jpg/sprite.vtt mit `can_see_photo` (Video-Bildinhalt-Leck zu). `/v1/upload`
-nimmt jetzt `user` (war M4) + `allow_upload`. `allow_map` bewusst nicht erzwungen (Daten
-ohnehin `photo_conditions`-gescoped). **Security-Block damit komplett.**
-- Rest-`M`: `/v1/chat` ACL (Chat-Suche über ganze Bibliothek) — noch offen, niedrige Prio.
+---
 
-**✅ Foto-/Video-Upload in den User-Baum (v1.299–1.302):** Upload landet dynamisch in
-`<home_root||folder_whitelist[0]||kürzeste Quelle||photos_path>/Upload/JJJJ/JJJJ-MM/` —
-deployment-agnostisch (kein hartkodiertes /photos), kein Vermischen, nur für den Uploader
-sichtbar. iOS: Auto-Upload (default AUS, „ab Datum"=heute beim Einschalten), manueller
-Upload, Foreground-Trigger. Verifiziert Demo↔Admin. Phase 3 (selbstverwaltete Quellen) offen.
+## ✅ Erledigt (verdichtet)
 
-### ⚠️ Weitere Code-Check-Funde (nicht Security)
-- ✅ **transcode-CRITICAL** gefixt (s.o.).
-- **iOS** (offen): `GalleryView` Masonry/Justified `GeometryReader` in `LazyVStack` (Höhe aus `UIScreen.width` ≠ geo) → Clipping/Pagination; `showAnimate`-`.sheet` am `Menu`; `PhotoPager` `photos[index]` ohne `[safe:]` → OOB-Crash-Risiko; `APIError.decode` verschluckt `DecodingError` (Debug-Print).
-- **Backend medium** (offen): `albums.py` `datetime.utcnow()` (naiv) in timestamptz.
+### Security (komplett, gegen Demo↔Admin verifiziert)
+- **IDOR/Write-Guards** (v1.296–298): destruktive Foto-Mutationen (favorite/archive/rating/trash/**delete**/meta/reprocess/batch + v1) → `can_see_photo`; Personen-Management/Shares → Write-Guard/403; `/stats`, People, Relationships, Albums per `photo_conditions`/`visible_person_subquery` gescoped.
+- **Pipeline-Guards** (v1.301): `require_pipeline` auf bibliotheksweiten POSTs; v1 preview/sprite mit `can_see_photo`; `/v1/upload` mit `user` + `allow_upload`.
+- **FS-Browser & Sources admin-only** (v1.291), **Highlights per-User** (v1.290), **Erinnerungen-Leak** (v1.294).
+- **Dashboard/People/Albums-Leak** (v1.313): eingeschränkte Konten sahen via Startseite/People/v1 die GANZE Bibliothek (Personen+Gesichter+counts, Album-Namen, Face-Tab-Zähler). Fix: durchgehend `visible_person_subquery(user)` + ACL-skalierte counts. **Personensicht ist damit korrekt ordner-abgeleitet** (gibst du Ordner X frei, sieht der Nutzer genau die Personen darunter).
+- **v1-API + Bilder-Auth** (v1.314): `/v1/people`+`/v1/albums` gescoped. **Bilder-Bug:** absolute URLs aus `request.base_url` verlieren hinterm Proxy den Port → alle `<img>` tot. Jetzt **relative URLs** (same-origin, `pf_token`-Cookie; iOS strippt Host via `api.url(path)`). **Merke:** Thumbnail-Endpoint will `?access_token=`-Query bzw. `pf_token`-Cookie — kein Bearer bei `<img>`.
+- **Offen:** `/v1/chat`-ACL (niedrige Prio).
 
-### ✅ Erledigt (deployed)
-- **App-Store-Listing-Texte (Doku)**: `docs/appstore-listing.md` — Name/Subtitle/Beschreibung (DE+EN, inkl. **Open-Source-/GitHub-Verweis**), Keywords, „Was ist neu", URLs, **Review-Notizen** (Self-Hosted-Client, eigene/nicht-statische Server-URL, Demo-Server+Login), App-Privacy-Angaben. ⚠️ Vor GitHub-public: **CLAUDE.md ist in der History** (interne Infra/SSH/IPs) → nicht so veröffentlichen; sauberen Weg siehe Chat. Demo-PW steht in der Doku (bei public sichtbar).
-- **App-Store-Prep: Demo-User + Privacy Policy** (v1.292): Demo-User `demo@foto.marcusnimtz.de` (Rolle user, `folder_whitelist=[/photos/Demo]`, Karte/Pipeline/Teilen/Download + Settings gesperrt) + Ordner `/photos/Demo` angelegt → Apple-Reviewer sehen nur Demo-Inhalte. **Privacy Policy** als statische, login-freie Seite `frontend/public/privacy.html` → `https://foto.marcusnimtz.de/privacy.html` (DE+EN: self-hosted, optionale KI nur Opt-in, kein Tracking/Verkauf). Offen für Store: Domain→Server (HTTPS), ~20 Demo-Bilder reinlegen, Screenshots/Metadaten.
-- **Sicherheits-Fix: FS-Browser & Sources admin-only** (v1.291): **kritisch** — `/api/fs/browse` listete jedes Verzeichnis (ganzes Container-Dateisystem!) und `/api/sources/*` (anlegen/löschen/scannen, zeigt private Ordnerpfade) hatten **keinen Auth-Guard**. Ein Demo-/eingeschränkter User hätte die komplette Ordnerstruktur gesehen + Quellen ändern können. Fix: beide Router mit router-weitem `Depends(require_admin)` (no-op im offenen Single-Admin-Modus, blockt Nicht-Admins sobald Login erzwungen). Frontend: Settings-Seite für Nicht-Admins gesperrt (Hinweis statt Sektionen). Damit ist der Demo-User wirklich auf seinen Whitelist-Ordner beschränkt.
-- **Highlights per-User gescopt** (v1.290, Release-Vorbereitung): `GET /highlights` (+ get/video/delete) zeigte allen Usern ALLE Highlights → ein Demo-/eingeschränkter User hätte die Familien-Highlights gesehen (App-Review-Leak). Fix: eingeschränkte User (mit `access_config`) sehen nur eigene (`created_by`), Admins alle. (`highlights.py` + `_can_access`.)
-- **iOS-Build auf TestFlight** (v1.289-Icon): signierter IPA hochgeladen (UPLOAD SUCCEEDED, Delivery 7aee54a8) — mit neuem NimtaFlow-Icon. Issuer-ID aus Shell-History gefunden.
-- **Mobile-Navigation überarbeitet** (v1.288, #2 Teil 1): Mobile-Bottom-Bar quetschte ~12 Punkte in eine Zeile + Content lag hinter der fixen Leiste. Neu: 4 Primär-Tabs (Start/Galerie/Suche/Personen) + „Mehr"-Drawer (Bottom-Sheet: Chat/Alben/Highlights/Karte/Reisen/Leitstand/Beziehungen/Profil/Einstellungen + Theme), `main pb-16` auf Mobile + Safe-Area (`Layout.tsx`). Volle Per-Seiten-Responsiveness = Folgearbeit.
-- **Push-Konzept + Release-Audit (Doku)** (#8): `docs/push-und-release-audit-konzept.md` — Web-Push(VAPID)+APNs-Architektur, `push_subscriptions`-Tabelle, Empfehlung „Web Push zuerst"; Release-Checkliste (Security/Zuverlässigkeit/Perf/Backup/iOS) inkl. offener ⚠️.
-- **Transcode-Bug (.3gp) gefixt** (v1.287): die Transcode-Flut (`{'error':'ffmpeg'}`) waren **`.3gp`-Dateien** (alte Handy-Videos) — Fehler `Error initializing the muxer for …mp4: Invalid argument`, weil `.3gp` Daten-/Timecode-Streams enthält, die der MP4-Muxer ablehnt. Fix: in allen Transcode-Befehlen (QSV + Software-Fallback in `hw_accel.build_transcode_cmd` + `transcode_video_task`) nur erstes Video + optional Audio mappen, Daten/Untertitel droppen: `-map 0:v:0? -map 0:a:0? -dn -sn`. Verifiziert: betroffene `.3gp` transkodiert jetzt rc=0 → gültige MP4. (Die meisten anderen Videos waren nie betroffen; flutartige Fehlschläge kamen vom .3gp-Anteil.)
-- **Highlights-Qualität: Burst-Dedupe + Zeit-Verteilung** (v1.286): Jahresrückblick zeigte einen Klumpen fast identischer Fotos vom selben Tag statt echter Jahres-Highlights. Neu: `_dedupe_bursts` (Fotos innerhalb 150 s → nur das beste behalten) + `_spread_even` (Round-Robin best-first über Monate/Tage). `year_review`→über Monate, `week_review`→über Tage, `album_highlight`/`*_across_years`→Burst-dedupe. Ergebnis: echte, über die Zeit verteilte Highlights statt Serienbild-Folge.
-- **Zeitstempel-Bug app-weit gefixt** (v1.285): **alle `created_at`/`updated_at` wurden 2 h zu früh gespeichert.** Ursache: Code nutzte `datetime.utcnow()` (naiv), Spalten sind `timestamptz`, Container-TZ = `Europe/Berlin (+2)` → asyncpg interpretiert die naive Zeit als lokal → −2 h. Fix: neuer Helfer `app/core/timeutil.utcnow()` (aware UTC), in **allen 11 Models** statt `datetime.utcnow` eingesetzt. Verifiziert: frische Zeile stempelt jetzt = `now()`. (Bestehende Alt-Zeilen bleiben verschoben — relative Reihenfolge stimmt, keine Migration nötig.) **Wichtig:** entschärft den Reaper (verglich `updated_at` gegen `now()` — hätte sonst laufende Jobs sofort als „alt" abgebrochen). User hatte den Bug früh gespürt.
-- **Highlight-Reaper (Selbstheilung)** (v1.284): Jobs, die in „rendering" hängen, weil der Worker mitten im Lauf gekillt wurde (z. B. von einem Deploy → `docker compose up` recreatet Container), blieben für immer hängen (nichts setzte den Status zurück). Neuer Beat-Task `reap_stuck_highlights` (alle 15 Min): Slideshows >15 Min in rendering → neu einreihen (gratis); bezahltes `photo_animate` → Status error „unterbrochen, bitte erneut" (keine versehentliche Neu-Abrechnung). **Befund nebenbei:** animate_photo läuft auf dem Worker sauber durch (~119 s, fal/Hailuo) — hing nicht, war nur ein deploy-gekillter Rest. Separat offen: Transcode-Pipeline kaputt (7,3k Videos „processing", jeder Transcode → `{'error':'ffmpeg'}`).
-- **Fix Highlight-Render Verbindungs-Starvation** (v1.283): Slideshow-Highlights (z. B. „Jahresrückblick") schlugen mit `ConnectionDoesNotExistError` fehl — `render_highlight_task` rief **ffmpeg synchron** (`subprocess.run` in `render_slideshow`) auf und blockierte den Event-Loop, während die asyncpg-Verbindung gehalten wurde → Verbindung stirbt → finaler Commit knallt (gleiche Wurzel wie der Clustering-Bug v1.268). Fix: Lese-Txn vor dem Rendern committen + `render_slideshow`/`video_duration` via `asyncio.to_thread`.
-- **Fix KI-Szenen-Dialog Web** (v1.282): der Animieren-Dialog in `GalleryLightbox` war nicht klickbar — yet-another-react-lightbox rendert in einem Portal auf `document.body` und lag durch CSS-Stacking-Contexts beim Hit-Testing über dem Dialog. Fix: Dialog ebenfalls per `createPortal` nach `document.body` + z-[11000]. (iOS-Pendant separat gefixt: 4 `.sheet` an einem View → ans Menü verschoben.)
-- **Lokaler M3-Video-Provider — Pull-Queue** (v1.281): PhotoFlow-Seite für „M3 erzeugt Clips lokal, wenn online" (deine Architektur). Provider `local`: `animate-photo` legt Job nur als `pending` an (kein Cloud-Task). Neue Remote-Endpoints `GET /api/remote/video-jobs/next` (claim→rendering), `POST …/{id}/complete` (MP4-Upload→done), `…/fail`; Quellbild via vorhandenem `/remote/image/{id}`. M3-Worker-Skript `scripts/m3_ltx_worker.py` (pollt/rendert/lädt hoch) — **mit ffmpeg-Ken-Burns-Fallback sofort testbar**, LTX-2.3(MLX)-Aufruf als markierter TODO. Settings: Provider-Option „Lokal auf M3". **Modell-Install auf dem Mac noch offen** (M3 Max/64 GB ist dafür bestätigt tauglich). Offen: Job-Queue/Vorrat-Scheduler, LTX-Setup.
-- **KI-Szenen (kreativer Prompt)** (v1.280): ✨-Button öffnet jetzt einen Dialog mit **Szenen-Presets** (Unterwasserwelt, Weltraum, Winterwunderland, Märchenwald, über den Wolken, Cyberpunk) + **Freitext** → Person in eine neue Welt setzen (image-to-video mit kreativem Prompt). `animate-photo`-Endpoint nimmt `prompt`, Task bevorzugt ihn + hängt Identitäts-Hinweis an. Nutzt die vorhandenen Provider (Veo/fal). Realismus-Hinweis (Gesichts-Konsistenz) im Dialog.
-- **Video-KI: fal.ai-Provider** (v1.279): zweiter Provider `fal` in `video_gen/fal.py` (Queue-REST, Bild als base64-Data-URI, Poll→Download). `animate_photo_task` provider-aware (`veo`|`fal`). Settings: Anbieter-Auswahl (fal.ai günstig + ~$20 Gratis-Credits zum **echten Testen** / Veo Premium), `highlights.fal_api_key` + `highlights.fal_model` (default Hailuo), kostenangepasste Box. **Damit ist image-to-video erstmals kostenlos testbar.** Offen: lokaler LTX-Provider auf M3 (gratis/privat, danach).
-- **Highlights-UX** (v1.278): eigene **Settings-Sektion „Highlights"** (vorher versteckt unter Erinnerungen) mit Wochen-Auto + KI-Video + **klarer Veo-Kosten-Box** (live berechnet aus Budget/Clip-Länge). Personen-Picker im Erstellen-Dialog: **Suche-beim-Tippen** (Combobox) statt starrem Dropdown + neues Motto **„Gemeinsame Fotos (mehrere Personen)"** (`people_together`, Schnittmenge mehrerer Personen, Multi-Picker mit Chips). Backend: `person_ids`-Param.
-- **Clustering-OOM-Fix** (v1.259): Grow-Phase `X@E.T` gechunkt (war ~4 GB → OOM-Kill „Clustern bewirkt nichts").
-- **„Vorschläge bestätigen"** (v1.260–263): `faces.suggested_person_id/score` (plain Int, **kein FK!**) + `suggest_faces`-Task (scan-Queue, gechunkt) mit Schwelle `face.suggest_min_score`=0.40 **+ Distinktheits-Marge 0.04** (killt Popularitäts-Bias). API: `/people/faces/suggestions`, `confirm-suggestion`, `reject-suggestion`, `suggestions/confirm/{pid}`, `suggest`. PeoplePage-Sektion + **Lightbox** (Klick → ganzes Foto, lädt auch bei leerem Video-Crop) + ✓/✗.
-- **Personen-Register/Tabs** (v1.264): Personen / Vorschläge / Unbekannte Gesichter / Verborgen (gaten die bestehenden Sektionen).
-- **Kontaktdaten** (v1.262): `persons.email/phone/address` + Edit-Form + Anzeige (mailto/tel).
-- **Leitstand GPS-Indikator + „GPS/Metadaten scannen"-Button** (v1.258) + `backfill_metadata`-Task (scan-Queue) + Struktur-Fix (process_photo committet Datum/GPS VOR Thumbnail).
-- **Video-Pipeline** (v1.256–257): atomare/validierte Transcodes, `revalidate_transcodes`, `/video-broken`, `!!!!`-Degenerationsfilter, nframes-Edge-Case, Thumbnail-Sub-Sekunden-Seek-Fix.
-- **m3-describe gehärtet**: leere Ollama-Antwort = transient (kein `ai_error`).
-- **„Clustern"-Button asynchron** (v1.269): Der Endpoint `POST /people/cluster` rief `cluster_unassigned(db)` **inline im API-Prozess** auf → die schwere Stage-2-DBSCAN (cosine über ~12k Gesichter = ~12k×12k-Distanzmatrix, ~1 GB) lief synchron im Backend-Container, während es alle anderen Requests bediente (Memory-/Latenz-Spike). Jetzt dispatcht der Endpoint den bereits existierenden Celery-Task `cluster_faces_full_task` auf die **cpu-Queue** (`.delay()`, neuer task_route-Eintrag `cluster_faces_full → cpu`) und kehrt sofort mit `{"status":"queued"}` zurück — analog zu `/suggest`. Frontend: `PeoplePage`-Toast „Clustering gestartet…" statt auf ein synchrones Ergebnis-Objekt zu warten (destrukturierte `new_persons`/`assigned_to_existing` gibt es nicht mehr). `PipelinePage`/`SettingsPage` nutzen generische `?? 'OK'`-Fallbacks → degradieren sauber auf die queued-Antwort.
-- **Clustering-Wurzelbug gefixt** (v1.268): „Clustern bewirkt nichts" lag NICHT an Schwellen — `cluster_unassigned` hielt **eine** asyncpg-Verbindung über die mehrsekündige **synchrone** numpy-Phase (13k×61k Matmul) offen → Event-Loop blockiert → Server kappt die Verbindung → `ConnectionDoesNotExistError` beim folgenden UPDATE → **ganze Transaktion rollt zurück → Grow speichert nichts**. Bei JEDEM Lauf (manuell + 10-Min-Auto-Grow), darum blieb der lose Pool (inkl. der 73xxx mit Sim 0.9) für immer liegen. Fix: schwere numpy/sklearn-Berechnungen via `asyncio.to_thread` (Loop bleibt frei, asyncpg lebt) + **Grow committet sofort** vor Stage 2 (DBSCAN-Fehler reißt Grow nicht mehr mit) + Read-Txn vor Compute beenden. (Warum suggest_faces lief: der holt für Writes frische Sessions, hält keine Verbindung über die Rechnung.)
-- **Vorschlags-Obergrenze raus** (v1.267): `suggest_faces` speicherte nur Gesichter mit `score < clustering_threshold` (0.5) → **starke Treffer (Sim ≥0.5, sogar Quasi-Duplikate mit Sim 1.0) wurden aktiv verworfen** und blieben für immer unzugeordnet — genau die „Top-Bilder, die nicht zugeordnet werden". Obergrenze entfernt; alles ≥ floor wird vorgeschlagen (1-Tap-Bestätigen, kein Auto-Merge). Diagnose-Lauf (numpy im Container) über 13.110 unzugeordnete: nur 90 haben Sim ≥0.5 (76 ≥0.6), **93,6 % liegen <0.40** = matchen objektiv niemanden (Profil/Kinder/Fremde/unbenannt) → Gesichts-Matching kann den Rest nicht retten.
-- **Vorschlags-Qualität neu** (v1.266): `suggest_faces_task` von 1-NN (ein nächstes Exemplar gewinnt) auf **robusten Per-Personen-Score** umgestellt = Mittel der **Top-K** ähnlichsten Exemplare *pro Person*. Killt den Popularitäts-Bias (Lea hatte 219/623 Vorschläge, weil sie die meisten Exemplare hat) und 1-NN-Ausreißer. Distinktheit jetzt **zwischen Personen** (2.-bester Personen-Score) statt zwischen Einzelgesichtern. Mind. `suggest_min_exemplars` Exemplare nötig. Alle Schwellen settings-steuerbar (`face.suggest_min_score`=0.42, `face.suggest_margin`=0.06, `face.suggest_topk`=3, `face.suggest_min_exemplars`=3) → Tuning ohne Redeploy. Diagnose: alle alten Vorschläge lagen bei 0.40–0.45 = ArcFace-Rauschen (echte Treffer 0.5+ sind längst geclustert). Chunk auf 500 (OOM). **Nach Deploy: Task neu laufen lassen + Verteilung/Konzentration prüfen.**
-- **Vorschläge „Alle ablehnen"** (v1.272): pro Personen-Gruppe Button neben „Alle bestätigen"; neues Endpoint `POST /people/suggestions/reject/{pid}` (löscht nur die Vorschläge, assignt/ignoriert nicht — spiegelt Einzel-Reject) + Bestätigungs-Dialog.
-- **Person-Detailseite Redesign** (v1.265): Profilkarte (größerer Avatar, Kontakt als klickbare Chips), **Unter-Tabs** Fotos/Gesichter/Beziehungen, **größere Gesichts-Crops**, **Beziehungen als SVG-Radial-Map** (Person mittig, Verbundene im Kreis, Linien nach Kategorie eingefärbt, Klick → Detailseite via `onOpenPerson`). Rein Frontend (`PersonDetailView` + neue `RelationshipsMap` in `frontend/src/pages/PeoplePage.tsx`), keine API-Änderung. Map nutzt `/relationships/person/:id`; Tab nur sichtbar wenn `features.relationships` an.
+### Verarbeitung / Worker
+- **Stau behoben** (v1.315): Box = nur 6 Kerne, Load ~24. ~17,8k Fotos hingen ewig in `processing` (Task starb bei Deploy/Recreate nach den Thumbnails) → blähten den Zähler; Retry-Sweeps re-enqueuten genau diese → 46,7k cpu-Tasks Endlos-Churn. Fix: Reaper `reap_stuck_photos` (alle 10 min: processing+Thumb+>30min → done), `watch_sources` 60s→300s. Einmalig: 18k Karteileichen→done, Queue→0, 189 degenerierte Videos reaktiviert. **Load 24→7,7, echter Rückstand ~6,7k.**
+- **Video-Beschreibungen** (Mac-Worker `m3-video`, Qwen3-VL): `mac_video_agent.py` — kosmetischer `TypeError`-Crash bei degenerierter „!!!!"-Ausgabe entfernt + **Sampling-Retry** (`temperature=0.6, repetition_penalty=1.15`) statt sofort `ai_error`.
+- **Zeitstempel app-weit** (v1.285): `datetime.utcnow()` (naiv) → `app/core/timeutil.utcnow()` (aware) in allen 11 Models (−2h-Bug). **Rest: `albums.py`.**
+- **Video-Pipeline** (v1.256–257, v1.287): atomare/validierte Transcodes, `.3gp`-Muxer-Fix (`-map 0:v:0? -map 0:a:0? -dn -sn`), `revalidate_transcodes`, `/video-broken`.
+- **Clustering** (v1.259, v1.266–268): OOM-Fix (Grow-Phase gechunkt), Wurzelbug (asyncpg-Verbindung über synchrone numpy-Phase → `asyncio.to_thread` + Grow committet sofort), robuster Per-Personen-Top-K-Score.
+- **Highlight-Render** (v1.283–284): ffmpeg via `asyncio.to_thread` (Connection-Starvation), Reaper für hängende Renders.
 
-### ⏳ Offen
+### Features
+- **Rebrand → NimtaFlow** (v1.295): Web + iOS (`CFBundleDisplayName`) + Listing; GitHub-Repo `lumaflow`→`mnimtz/nimtaflow`; interne `photoflow`-IDs bewusst unverändert.
+- **i18n komplett DE/EN** (v1.305): alle Seiten/Komponenten auf `useT`/`t()`, ~1000+ Keys, Browser-Erkennung + Umschalter, sandbox-tsc grün.
+- **Gold-Branding** (v1.303): Web-Logo/Favicon + iOS-App-Icon.
+- **Foto/Video-Upload** (v1.299–302): in `<home_root||folder_whitelist[0]||kürzeste Quelle||photos_path>/Upload/JJJJ/JJJJ-MM/`, deployment-agnostisch; iOS Auto (default AUS, „ab heute")/manuell.
+- **Personen:** Vorschläge-bestätigen-UI + Tabs (v1.260–264), Kontaktdaten (v1.262), Detailseite-Redesign + Beziehungs-Radial-Map (v1.265), „Alle ablehnen" (v1.272).
+- **Karte** (v1.270–271): Seerouten-Layer + durchblätterbares Orts-Panel.
+- **Reisen** (v1.274): Fotos hinzufügen/entfernen + Routenkarte.
+- **Highlights** (v1.275–278, v1.286): „Foto animieren"-MVP (Veo, opt-in), KI-Szenen-Presets, fal.ai-Provider, Album/Woche-Highlights + wöchentl. Auto-Lauf, Burst-Dedupe + Zeitverteilung, lokaler M3-Provider (Pull-Queue, LTX-Setup offen).
+- **App-Store-Prep:** Demo-User + Privacy-Seite (v1.292), Listing-Texte (`docs/appstore-listing.md`), Mobile-Bottom-Nav (v1.288).
+- **Lizenz/Recht** (v1.312): `LICENSE` (AGPL-3.0), Google-Fonts-Hotlink raus (DSGVO), AGPL-Quellcode-Link im Footer, `THIRD_PARTY_LICENSES.md` (NC-Modell-Disclaimer: buffalo_l/jina-clip-v2 nicht-kommerziell), Google-Map-Tiles (ToS) raus + OSM/CARTO-Attribution.
 
-- **Group-3-iOS = Web-only (Entscheidung User):** Karte-Routen + Reisen-Foto-add werden NICHT für iOS nachgezogen (iOS-Datenmodell weicht ab: kein `smart_criteria/route` in `AlbumV1`, Reisen event-basiert). Reicht im Web.
-1. **Karte** (Web erledigt v1.270–271): **Seerouten-Layer ✅** (v1.270) — Reise-Routen (Alben mit `smart_criteria.trip`+`route`) als ein-/ausblendbare Polylinien + Stations-Marker (`MapPage.tsx`, Umschalter „Routen", Farb-Palette pro Reise, Tooltip). **Orts-Panel ✅** (v1.271) — Orts-Suche zu durchblätterbarem Seitenpanel ausgebaut (alle Orte mit Foto-Zahl, Suche, Klick → Hinfliegen). Beides rein Frontend. **Offen nur noch iOS:** **Eigenposition-Bug** („immer Grönland") ist **iOS-only** — im Web KEIN Geolocation-Code (nur Clipboard-`navigator`), gehört zur iOS-Parität (#7).
-2. **Mobile-Ansicht** grundlegend überarbeiten + Menüstruktur.
-3. **Galerie „Erinnerungen" ✅** (v1.273): `MemoriesView` aufgewertet — Jahres-Badge (Gradient), „Heute vor X Jahren"-Wording (konsistent zur Startseite), Foto-Anzahl pro Gruppe, Video-Play-Indikator, bessere Empty-State-Hilfe (verweist auf Einstellungen → Erinnerungen-Personenfilter). Datenquelle `/photos/memories` (on-this-day ±1 Tag, optional personen-gefiltert) war ok; Punkt war Präsentation.
-4. **Reisen ✅** (v1.274): **Fotos hinzufügen** im TripDetail — neuer `AddPhotosModal` (Such- + Datumsfilter, vorbefüllt mit der Reise-Zeitspanne aus den vorhandenen Fotos, Mehrfachauswahl, bereits enthaltene Fotos markiert/disabled → `POST /albums/:id/photos`). Entfernen + Routenkarte (echte GPS-Linie + Wegpunkt-Route + nummerierte Stationen, gerade Linien = Schiffsroute) gab es bereits. Reisen sind manuelle Alben (`album_type=manual` + `smart_criteria.trip`), daher funktionieren add/remove.
-5. **Highlights**: **Lokale Highlights gefixt ✅** (v1.276) — `CreateHighlight` las das Motto-Feld als `x.key`, das Backend liefert aber `x.motto` → `m` immer undefined → **keine Personen-/Parameterfelder erschienen je** und es wurde `motto=""` gesendet (Hauptbug „kann keine Person wählen"). Fix: `motto`-Feld nutzen + Motto-Beschreibung als Hilfe + Erstellen-Button gesperrt bis nötige Params (Person/Jahr/Album) gewählt + Fehler-Toast. Backend war korrekt (`opts.get('person_id'…)`). **MVP „Foto animieren" ✅** (v1.275) — externe Video-KI (Veo 3.1 Fast) als Opt-in. Adapter `services/ai/video_gen/veo.py` (Gemini-REST `predictLongRunning`, image→video, Polling+Download), Celery-Task `animate_photo` (video-Queue) mit **harter Monats-Budgetbremse** (Summe `duration_sec` der photo_animate-Highlights im Monat) + Clip-Cache `/cache/highlights/clips/`, Endpoint `POST /highlights/animate-photo`, ✨-Button in der GalleryLightbox (nur wenn aktiviert, kein Video), Settings-Block „KI-Video (Highlights)" (Erinnerungen-Sektion): an/aus, Clip-Länge 4/6/8 s, Monatsbudget. Reuse `Highlight`-Model (`motto='photo_animate'`, `cover_photo_id`), keine Migration. **Default AUS** → Deploy kostet nichts. **Noch ungetestet gegen die echte Veo-API** (braucht Gemini-Key mit Veo-Zugang + Test-Spend). **Konzept-Doku:** `docs/highlights-externe-video-ki-konzept.md` (Provider-Vergleich Veo 3.1/Sora 2/Runway Gen-4/Kling/Luma mit Preisen Juni 2026, Kosten-Beispiele, Hybrid-Architektur auf vorhandener `ai.provider`-Abstraktion, neue Settings-Keys, Empfehlung: Veo 3.1 Fast + harte Budget-Bremse + Cache + Opt-in, MVP „Foto animieren"). **Offen (Code):** MVP bauen; außerdem Highlights fertigstellen/testen, Personenwahl in Vorschlägen, Einstellungen erweitern.
-6. **Externe-KI-Integration** (teilw. v1.277): **Alben/Smart-Alben → Highlight ✅** (neues Motto `album_highlight`, beste Fotos jedes Albums), **„Highlight der Woche" ✅** (Motto `week_review` = beste Fotos der letzten 7/30 Tage) + **wöchentlicher Auto-Lauf** (Beat-Task `generate_weekly_highlight`, Mo 07:00, **opt-in** `highlights.weekly_enabled`, default aus, Dedup) + Settings-Toggle. Alles **Slideshow-Ebene (gratis)**. **Offen:** KI-Clip-Verschmelzung — Highlights hybrid mit Veo-animierten Schlüsselbildern stitchen (paid, baut auf v1.275-MVP; ffmpeg-Concat von Slideshow + Clips).
-7. **iOS-App**: ALLE Punkte spiegeln (`ios-app/`) — jetzt inkl. Person-Detailseite-Redesign.
-8. **Push-Nachrichten-Konzept** + **iOS-Release-Readiness-Audit**.
+---
 
-### Älterer Backlog (kleinere offene Punkte)
-- **Vision-Chat:** beim Foto-Chat die Top-Treffer-Thumbnails an Gemini mitschicken (nicht nur Text), damit das Modell die Bilder „sieht".
-- **Video-Gesichts-Sweep (server-seitig):** Gesichter aus dem 1080p-Web-MP4 auf der SSD ziehen (insightface) statt 4K-Original — nightly/on-demand. (Teilweise vorhanden: `sweep_video_faces`/`detect_video_faces` auf der video-Queue.)
-- **Karten-Eigenposition** („immer Grönland") — siehe Punkt 2 oben; vmtl. iOS-MapKit.
+## Entscheidungen des Users
+- Clustering-Recall → „Vorschläge bestätigen"-UI (kein Threshold-Senken).
+- Externe Video-KI → erst Konzept-Doku, dann bauen.
+- iOS/Release → erst Features + iOS-Parität, Release-Audit + Push am Ende.
+- Group-3-iOS (Karte-Routen, Reisen-Foto-add) bleibt Web-only.
+- NC-Modelle (buffalo_l/jina-clip-v2): Disclaimer reicht fürs private Self-Hosting; Swap auf permissive Engines nur bei kommerzieller Nutzung.
 
-### Bekannte Daten-Realität
-- ~13k „unbekannte Gesichter": die meisten haben **objektiv niedrige ArcFace-Ähnlichkeit** (Profil/Bewegung/Kinder) → auto-Clustering kann sie nicht sicher zuordnen ohne Falsch-Merges. Darum die Vorschläge-UI (Mensch bestätigt).
-- Describe-Rückstau groß (~76k Bilder offen) — normaler Backlog, 1–2 Describe-Worker (~20–40 s/Bild).
-- CPU-Queue (`process_photo`) drainet langsam (~30/min @ Concurrency 6); Metadaten via `backfill_metadata` (scan-Queue) entkoppelt.
+## Bekannte Daten-Realität (kein Bug)
+- ~13k „unbekannte Gesichter": meist objektiv niedrige ArcFace-Ähnlichkeit (Profil/Bewegung/Kinder) → daher Vorschläge-UI.
+- Describe-Rückstau groß (normaler Backlog, 1–2 Worker, ~20–40 s/Bild).
+- Box (LXC 101) hat nur 6 Kerne → Verarbeitung ist grundsätzlich langsam; Reaper hält den Zähler aber ehrlich.
 
-_Letzter Stand-Commit: v1.292.0 (Demo-User + Privacy Policy). Versionen siehe git log._
+_Versionen im Detail: `git log`._
