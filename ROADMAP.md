@@ -12,6 +12,23 @@
 - iOS/Release → **erst Features bauen + iOS-Parität mitziehen**, Release-Readiness-Audit + Push-Konzept am Ende.
 - Alle Punkte autonom abarbeiten; kritische ans Ende + Optionen erfragen.
 
+### ✅ Backlog-Komplettabarbeitung (autonom)
+- **i18n komplett** (v1.305): ALLE Seiten + Galerie-Komponenten auf `useT`/`t()` migriert,
+  ~1000+ Keys DE/EN (Settings 330, People 215, Gallery 140, Highlights/Albums/Trips,
+  Search/Chat/Map/Dashboard, Profile/Relationships/Pipeline/Leitstand/Share/Setup/Login/
+  FolderBrowser). Gesamtes Frontend **sandbox-tsc grün (0 Fehler)** vor Deploy. Umschalter
+  DE/EN greift damit appweit.
+- **Gold-Branding NimtaFlow** (v1.303): Web-Logo (transparent freigestellt) + Favicon/manifest
+  + iOS-App-Icon (opak) — live verifiziert.
+- **Foto/Video-Upload** (v1.299–1.302): in den User-Baum, deployment-agnostisch, iOS Auto
+  (default AUS, „ab heute")/manuell — verifiziert.
+- **Security komplett** (v1.296–1.301, v1.304): H1–H4, C1–C5, M2, transcode-CRITICAL, chat-ACL,
+  fs/sources-Demo-Schutz — alle gegen Demo↔Admin verifiziert.
+- **iOS**: Highlights-Layout, PhotoPager-Crash-Guard, decode-Debug — auf TestFlight.
+- **albums** Timestamp (timestamptz-korrekt, v1.304).
+- **Noch offen (eigene Pakete):** Upload-Phase 3 (selbstverwaltete Quellen pro User);
+  iOS Masonry/Justified-Layout-Politur (kein Crash, braucht Geräte-Test).
+
 ### ✅ Erledigt (deployed) — Nacht-Session (Rebrand + Fixes)
 - **Rebrand → NimtaFlow** (v1.295): Name aus dem Nachnamen „Nimtz" abgeleitet, nach großer Verfügbarkeits-Recherche (LumaFlow war 🔴: Marke „Luma AI" Klasse 9 + bestehende LumaFlow-SaaS). NimtaFlow ist komplett frei (App Store, .com/.app/.io, npm/PyPI/GitHub, keine Marke). Umgesetzt: Web (Sidebar/Version-Badge/manifest/privacy/index), iOS (CFBundleDisplayName + Texte), App-Store-Listing. **GitHub-Public-Repo umbenannt:** `lumaflow` → **`mnimtz/nimtaflow`**. Interne `photoflow`-IDs (Container/Bundle-ID/Xcode-Scheme/DB) bewusst UNVERÄNDERT. Frontend-Rebuild verifiziert (NimtaFlow im nginx-Bundle).
 - **i18n-Basis DE/EN** (v1.295): `frontend/src/i18n/` — I18nProvider, `useT`, Browser-Sprach-Erkennung + localStorage, **DE/EN-Umschalter** (Sidebar + „Mehr"-Drawer). Wörterbuch-Fragmente pro Bereich (`strings/*.ts`), zentral via Object.assign gemerged. **Migriert: Nav + common.** Offen: ~23 Restseiten (Settings/People = Brocken) — Infra steht, Sandbox-tsc-Loop (Zweitbox node-Container) etabliert.
