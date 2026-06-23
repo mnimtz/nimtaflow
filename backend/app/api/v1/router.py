@@ -1007,15 +1007,22 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     except Exception:
         out["on_this_day"] = []
 
-    # named, visible people + their face counts
-    ppl = (await db.execute(select(Person).where(
-        Person.is_hidden == False, _f.length(_f.coalesce(Person.name, "")) > 0))).scalars().all()  # noqa: E712
-    if user is not None and user.role != UserRole.admin:
-        vis = (user.access_config or {}).get("visible_person_ids")
-        if vis:
-            ppl = [p for p in ppl if p.id in set(vis)]
-    counts = dict((await db.execute(
-        select(Face.person_id, _f.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id))).all())
+    # named, visible people + their face counts. A restricted account must only see
+    # persons that appear in photos it may access (else the home screen leaks the
+    # whole library's people — names, faces and counts) — see visible_person_subquery.
+    from app.core.access import visible_person_subquery
+    pq = select(Person).where(
+        Person.is_hidden == False, _f.length(_f.coalesce(Person.name, "")) > 0)  # noqa: E712
+    vps = visible_person_subquery(user)
+    if vps is not None:
+        pq = pq.where(Person.id.in_(vps))
+    ppl = (await db.execute(pq)).scalars().all()
+    # Counts are scoped to accessible photos too, so a restricted user never even
+    # learns how many photos a person has library-wide.
+    cq = select(Face.person_id, _f.count()).where(Face.person_id.isnot(None))
+    if acl:
+        cq = cq.where(Face.photo_id.in_(select(Photo.id).where(*acl)))
+    counts = dict((await db.execute(cq.group_by(Face.person_id))).all())
     named_sorted = sorted(ppl, key=lambda p: -counts.get(p.id, 0))
 
     def _person_obj(p):
@@ -1039,19 +1046,29 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     pow_id = out["person_of_week"]["id"] if out["person_of_week"] else None
     out["featured_people"] = [_person_obj(p) for p in named_sorted if p.id != pow_id][:12]
 
-    # 5) featured albums (random, with cover)
-    albums = (await db.execute(select(Album).order_by(_f.random()).limit(8))).scalars().all()
+    # 5) featured albums (random, with cover). For a restricted user, count only the
+    # photos it may see and SKIP albums it can't see into at all — otherwise album
+    # NAMES + library-wide counts leak even when every photo is off-limits.
+    albums = (await db.execute(select(Album).order_by(_f.random()).limit(24))).scalars().all()
     fa = []
     for a in albums:
-        cnt = await db.scalar(select(_f.count()).select_from(
-            select(AlbumPhoto).where(AlbumPhoto.album_id == a.id).subquery()))
+        cnt_q = (select(_f.count()).select_from(AlbumPhoto)
+                 .where(AlbumPhoto.album_id == a.id))
+        if acl:
+            cnt_q = cnt_q.join(Photo, Photo.id == AlbumPhoto.photo_id).where(*acl)
+        cnt = await db.scalar(cnt_q)
         # Cover must be a photo the user may actually see (folder/person ACL).
         cover = await db.scalar(
             select(Photo.id).join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
             .where(AlbumPhoto.album_id == a.id, Photo.thumb_small.isnot(None),
                    Photo.is_trashed == False, *acl).limit(1))  # noqa: E712
+        # Restricted user with no accessible photo in this album → don't reveal it.
+        if acl and not cnt and not cover:
+            continue
         fa.append({"id": a.id, "name": a.name, "photo_count": int(cnt or 0),
                    "cover_url": (f"{base}/api/photos/{cover}/thumbnail?size=medium" if cover else None)})
+        if len(fa) >= 8:
+            break
     out["featured_albums"] = fa
 
     # 6) recent additions

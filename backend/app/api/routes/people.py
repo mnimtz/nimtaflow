@@ -506,10 +506,17 @@ async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/faces/unassigned")
 async def unassigned_faces(page: int = 1, limit: int = Query(50, ge=1, le=500),
-                           db: AsyncSession = Depends(get_db)):
+                           db: AsyncSession = Depends(get_db),
+                           user=Depends(current_user_optional)):
     """Paginated — there can be thousands of loose faces; returning all of them as
-    on-demand crops froze the page. Best-confidence first."""
-    where = (Face.person_id == None, Face.is_ignored == False)  # noqa: E711,E712
+    on-demand crops froze the page. Best-confidence first.
+    A restricted account only sees loose faces in photos it may access."""
+    from app.core.access import photo_conditions
+    from app.models.photo import Photo
+    where = [Face.person_id == None, Face.is_ignored == False]  # noqa: E711,E712
+    acl = photo_conditions(user)
+    if acl:
+        where.append(Face.photo_id.in_(select(Photo.id).where(*acl)))
     total = await db.scalar(select(func.count()).select_from(Face).where(*where))
     rows = (await db.execute(
         select(Face.id, Face.photo_id, Face.confidence).where(*where)
@@ -521,11 +528,18 @@ async def unassigned_faces(page: int = 1, limit: int = Query(50, ge=1, le=500),
 
 
 @router.get("/faces/suggestions")
-async def face_suggestions(db: AsyncSession = Depends(get_db)):
+async def face_suggestions(db: AsyncSession = Depends(get_db),
+                           user=Depends(current_user_optional)):
     """Borderline ArcFace matches grouped by the suggested (named) person, so the user
-    confirms 'Is this Marcus?' with one tap. Populated by the suggest_faces task."""
-    where = (Face.suggested_person_id.isnot(None), Face.person_id == None,  # noqa: E711
-             Face.is_ignored == False)  # noqa: E712
+    confirms 'Is this Marcus?' with one tap. Populated by the suggest_faces task.
+    A restricted account only sees suggestions for faces/persons it may access."""
+    from app.core.access import photo_conditions, visible_person_subquery
+    from app.models.photo import Photo
+    acl = photo_conditions(user)
+    where = [Face.suggested_person_id.isnot(None), Face.person_id == None,  # noqa: E711
+             Face.is_ignored == False]  # noqa: E712
+    if acl:
+        where.append(Face.photo_id.in_(select(Photo.id).where(*acl)))
     rows = (await db.execute(
         select(Face.suggested_person_id, func.count(), func.avg(Face.suggested_score))
         .where(*where).group_by(Face.suggested_person_id)
@@ -536,10 +550,13 @@ async def face_suggestions(db: AsyncSession = Depends(get_db)):
         person = await db.get(Person, pid)
         if not person:
             continue
+        fwhere = [Face.suggested_person_id == pid, Face.person_id == None,  # noqa: E711
+                  Face.is_ignored == False]  # noqa: E712
+        if acl:
+            fwhere.append(Face.photo_id.in_(select(Photo.id).where(*acl)))
         faces = (await db.execute(
             select(Face.id, Face.photo_id, Face.suggested_score)
-            .where(Face.suggested_person_id == pid, Face.person_id == None,  # noqa: E711
-                   Face.is_ignored == False)  # noqa: E712
+            .where(*fwhere)
             .order_by(Face.suggested_score.desc()).limit(80)
         )).all()
         groups.append({
