@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
+import { useT } from '../i18n'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -29,23 +30,23 @@ const DEFAULT_TAGS_PROMPT = 'Nenne 5–12 prägnante Schlagwörter (Substantive)
 // ─── Layout helpers ──────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { id: 'sources',   icon: HardDrive, label: 'Foto-Quellen' },
-  { id: 'gallery',   icon: Layers,    label: 'Galerie' },
-  { id: 'features',  icon: Network,   label: 'Funktionen' },
-  { id: 'ai',        icon: Brain,     label: 'Bilder-AI' },
-  { id: 'chat',      icon: MessageCircle, label: 'Chat-Assistent' },
-  { id: 'video-ai',  icon: Video,     label: 'Video-AI' },
-  { id: 'faces',     icon: Eye,       label: 'Personen & Gesichter' },
-  { id: 'memories',  icon: Clock,     label: 'Erinnerungen' },
-  { id: 'highlights', icon: Sparkles, label: 'Highlights' },
-  { id: 'trips',     icon: Plane,     label: 'Reisen' },
-  { id: 'sharing',   icon: Share2,    label: 'Teilen' },
-  { id: 'pipeline',  icon: Cog,       label: 'Pipeline' },
-  { id: 'remote',    icon: Network,   label: 'Remote-Worker' },
-  { id: 'backup',    icon: HardDrive, label: 'Backup' },
-  { id: 'map',       icon: Map,       label: 'Karte' },
-  { id: 'users',     icon: Shield,    label: 'Benutzer & Login' },
-  { id: 'logs',      icon: Terminal,  label: 'Logs' },
+  { id: 'sources',   icon: HardDrive, navKey: 'nav.sources' },
+  { id: 'gallery',   icon: Layers,    navKey: 'nav.gallery' },
+  { id: 'features',  icon: Network,   navKey: 'nav.features' },
+  { id: 'ai',        icon: Brain,     navKey: 'nav.ai' },
+  { id: 'chat',      icon: MessageCircle, navKey: 'nav.chat' },
+  { id: 'video-ai',  icon: Video,     navKey: 'nav.videoAi' },
+  { id: 'faces',     icon: Eye,       navKey: 'nav.faces' },
+  { id: 'memories',  icon: Clock,     navKey: 'nav.memories' },
+  { id: 'highlights', icon: Sparkles, navKey: 'nav.highlights' },
+  { id: 'trips',     icon: Plane,     navKey: 'nav.trips' },
+  { id: 'sharing',   icon: Share2,    navKey: 'nav.sharing' },
+  { id: 'pipeline',  icon: Cog,       navKey: 'nav.pipeline' },
+  { id: 'remote',    icon: Network,   navKey: 'nav.remote' },
+  { id: 'backup',    icon: HardDrive, navKey: 'nav.backup' },
+  { id: 'map',       icon: Map,       navKey: 'nav.map' },
+  { id: 'users',     icon: Shield,    navKey: 'nav.users' },
+  { id: 'logs',      icon: Terminal,  navKey: 'nav.logs' },
 ] as const
 
 type SectionId = typeof SECTIONS[number]['id']
@@ -88,6 +89,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 }
 
 function SaveButton({ pending, saved, onClick }: { pending: boolean; saved: boolean; onClick: () => void }) {
+  const { t } = useT()
   return (
     <button
       onClick={onClick}
@@ -95,7 +97,7 @@ function SaveButton({ pending, saved, onClick }: { pending: boolean; saved: bool
       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
     >
       {pending ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : null}
-      {saved ? 'Gespeichert' : 'Speichern'}
+      {saved ? t('settings.saved') : t('settings.save')}
     </button>
   )
 }
@@ -104,7 +106,7 @@ function SaveButton({ pending, saved, onClick }: { pending: boolean; saved: bool
 
 function ModelSelect({
   label, value, onChange, models, loading, filter,
-  placeholder = 'Modell eingeben oder aus Liste wählen',
+  placeholder,
 }: {
   label: string
   value: string
@@ -114,13 +116,15 @@ function ModelSelect({
   filter?: (m: ModelInfo) => boolean
   placeholder?: string
 }) {
+  const { t } = useT()
   const filtered = filter ? models.filter(filter) : models
+  const ph = placeholder ?? t('settings.modelEnterOrPick')
   return (
     <div>
       <Label>{label}</Label>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-zinc-400 py-2">
-          <Loader2 size={13} className="animate-spin" /> Lade Modelle...
+          <Loader2 size={13} className="animate-spin" /> {t('settings.loadingModels')}
         </div>
       ) : filtered.length > 0 ? (
         <select
@@ -128,7 +132,7 @@ function ModelSelect({
           onChange={e => onChange(e.target.value)}
           className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
-          <option value="">— auswählen —</option>
+          <option value="">{t('settings.optChoose')}</option>
           {filtered.map(m => (
             <option key={m.id} value={m.id}>
               {m.name}{m.description ? ` (${m.description})` : ''}
@@ -136,7 +140,7 @@ function ModelSelect({
           ))}
         </select>
       ) : (
-        <Input value={value} onChange={onChange} placeholder={placeholder} />
+        <Input value={value} onChange={onChange} placeholder={ph} />
       )}
     </div>
   )
@@ -145,6 +149,7 @@ function ModelSelect({
 // ─── Provider health badge ────────────────────────────────────────────────────
 
 function HealthBadge({ provider, apiKey, baseUrl }: { provider: string; apiKey?: string; baseUrl?: string }) {
+  const { t } = useT()
   const { data, isLoading, refetch } = useQuery<{ ok: boolean; error?: string }>({
     queryKey: ['ai-health', provider, baseUrl],
     queryFn: () => api.get(`/ai/health/${provider}`, { params: { api_key: apiKey, base_url: baseUrl } }).then(r => r.data),
@@ -160,12 +165,12 @@ function HealthBadge({ provider, apiKey, baseUrl }: { provider: string; apiKey?:
         className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors"
       >
         {isLoading ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
-        Verbindung testen
+        {t('settings.testConnection')}
       </button>
       {data && (
         data.ok
-          ? <span className="flex items-center gap-1 text-xs text-emerald-400"><CircleCheck size={11} />Erreichbar</span>
-          : <span className="flex items-center gap-1 text-xs text-red-400"><CircleX size={11} />{data.error ?? 'Fehler'}</span>
+          ? <span className="flex items-center gap-1 text-xs text-emerald-400"><CircleCheck size={11} />{t('settings.reachable')}</span>
+          : <span className="flex items-center gap-1 text-xs text-red-400"><CircleX size={11} />{data.error ?? t('settings.error')}</span>
       )}
     </div>
   )
@@ -174,6 +179,7 @@ function HealthBadge({ provider, apiKey, baseUrl }: { provider: string; apiKey?:
 // ─── Sections ─────────────────────────────────────────────────────────────────
 
 function SourcesSection() {
+  const { t } = useT()
   const [newPath, setNewPath] = useState('')
   const [showBrowser, setShowBrowser] = useState(false)
   const [scanningIds, setScanningIds] = useState<Set<number>>(new Set())
@@ -237,19 +243,19 @@ function SourcesSection() {
   const reprocess = useMutation({
     mutationFn: ({ id, redoFaces }: { id: number; redoFaces: boolean }) =>
       api.post(`/sources/${id}/reprocess`, null, { params: { redo_faces: redoFaces } }).then(r => r.data),
-    onSuccess: (d: { reprocessing: number }) => alert(`${d.reprocessing} Dateien werden neu verarbeitet (Thumbnails + AI${'' }).`),
+    onSuccess: (d: { reprocessing: number }) => alert(t('settings.srcReprocessAlert', { n: d.reprocessing })),
   })
 
   const reprocessFailed = useMutation({
     mutationFn: () => api.post('/photos/reprocess-failed').then(r => r.data),
-    onSuccess: (d: { reprocessing: number }) => alert(`${d.reprocessing} fehlerhafte/unfertige Dateien werden erneut verarbeitet.`),
+    onSuccess: (d: { reprocessing: number }) => alert(t('settings.srcReprocessFailedAlert', { n: d.reprocessing })),
   })
 
   const [verifyResult, setVerifyResult] = useState<string | null>(null)
   const verify = useMutation({
     mutationFn: () => api.post('/sources/verify').then(r => r.data),
     onSuccess: (d: { checked: number; removed_photos: number; removed_files: number }) => {
-      setVerifyResult(`${d.checked} Einträge geprüft · ${d.removed_photos} verwaiste entfernt · ${d.removed_files} Dateien gelöscht`)
+      setVerifyResult(t('settings.srcVerifyResult', { checked: d.checked, photos: d.removed_photos, files: d.removed_files }))
       qc.invalidateQueries({ queryKey: ['photos'] })
       qc.invalidateQueries({ queryKey: ['photo-stats'] })
       qc.invalidateQueries({ queryKey: ['people'] })
@@ -258,21 +264,21 @@ function SourcesSection() {
   })
 
   const INTERVALS: { label: string; value: number }[] = [
-    { label: 'Manuell (kein Auto-Scan)', value: 0 },
-    { label: 'Alle 15 Minuten', value: 15 },
-    { label: 'Alle 30 Minuten', value: 30 },
-    { label: 'Stündlich', value: 60 },
-    { label: 'Alle 6 Stunden', value: 360 },
-    { label: 'Täglich', value: 1440 },
+    { label: t('settings.intervalManual'), value: 0 },
+    { label: t('settings.interval15'), value: 15 },
+    { label: t('settings.interval30'), value: 30 },
+    { label: t('settings.intervalHourly'), value: 60 },
+    { label: t('settings.interval6h'), value: 360 },
+    { label: t('settings.intervalDaily'), value: 1440 },
   ]
 
   return (
     <div>
-      <SectionHeader title="Foto-Quellen" desc="Ordner die NimtaFlow überwachen soll. Scan + Verarbeitung starten automatisch." />
+      <SectionHeader title={t('settings.srcTitle')} desc={t('settings.srcDesc')} />
 
       <div className="space-y-2 mb-5">
         {sources.length === 0 && (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 py-2">Noch keine Quellen. Ordner unten hinzufügen.</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 py-2">{t('settings.srcEmpty')}</p>
         )}
         {sources.map(s => {
           const isScanning = scanningIds.has(s.id)
@@ -285,28 +291,28 @@ function SourcesSection() {
                   <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate font-mono">{s.path}</p>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     {isScanning
-                      ? '⏳ Scannt und verarbeitet Fotos…'
+                      ? t('settings.srcScanning')
                       : s.last_scan_at
-                        ? `Letzter Scan: ${new Date(s.last_scan_at).toLocaleString('de')} · ${s.last_scan_count ?? 0} neue Fotos`
-                        : 'Noch nicht gescannt'}
+                        ? t('settings.srcLastScan', { date: new Date(s.last_scan_at).toLocaleString('de'), n: s.last_scan_count ?? 0 })
+                        : t('settings.srcNotScanned')}
                   </p>
                   {(() => { const c = countFor(s.id); return c ? (
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      📷 {c.images.toLocaleString('de')} Bilder · 🎬 {c.videos.toLocaleString('de')} Videos
-                      {c.missing > 0 && <span className="text-amber-500"> · ⚠️ {c.missing} fehlend</span>}
+                      📷 {c.images.toLocaleString('de')} {t('settings.images')} · 🎬 {c.videos.toLocaleString('de')} {t('settings.videos')}
+                      {c.missing > 0 && <span className="text-amber-500"> · ⚠️ {t('settings.srcMissing', { n: c.missing })}</span>}
                     </p>
                   ) : null })()}
                 </div>
                 <button
                   onClick={() => scan.mutate(s.id)}
                   disabled={isScanning}
-                  title="Erneut scannen"
+                  title={t('settings.srcRescan')}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-40"
                 >
                   <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
                 </button>
                 <button
-                  onClick={() => { if (confirm(`Ordner „${s.path}" entfernen?\n\nAlle daraus indizierten Fotos, Thumbnails, Vorschauen und Gesichter werden aus NimtaFlow gelöscht. Die Originaldateien auf der Festplatte bleiben unberührt.`)) del.mutate(s.id) }}
+                  onClick={() => { if (confirm(t('settings.srcRemoveConfirm', { path: s.path }))) del.mutate(s.id) }}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                   <Trash2 size={14} />
@@ -317,7 +323,7 @@ function SourcesSection() {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700/60">
                 <div className="flex items-center gap-2">
                   <Eye size={13} className={watching ? 'text-indigo-500' : 'text-zinc-400'} />
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Überwachung:</label>
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">{t('settings.srcWatch')}</label>
                   <select
                     value={s.scan_interval_minutes}
                     onChange={e => patch.mutate({
@@ -339,28 +345,28 @@ function SourcesSection() {
                     onChange={e => patch.mutate({ id: s.id, detect_deletions: e.target.checked })}
                     className="rounded accent-indigo-500"
                   />
-                  Gelöschte Dateien erkennen
+                  {t('settings.srcDetectDeletions')}
                 </label>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">KI:</label>
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">{t('settings.srcAiLabel')}</label>
                   <select
                     value={s.ai_provider ?? ''}
                     onChange={e => patch.mutate({ id: s.id, ai_provider: (e.target.value || null) } as any)}
-                    title="Welche KI für diesen Ordner genutzt wird"
+                    title={t('settings.srcAiTitle')}
                     className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="">Global (Standard)</option>
-                    <option value="gemini">Gemini (Cloud)</option>
-                    <option value="local">Embedded (lokal)</option>
+                    <option value="">{t('settings.srcAiGlobal')}</option>
+                    <option value="gemini">{t('settings.srcAiGemini')}</option>
+                    <option value="local">{t('settings.srcAiLocal')}</option>
                     <option value="ollama">Ollama</option>
-                    <option value="off">Keine KI</option>
+                    <option value="off">{t('settings.srcAiOff')}</option>
                   </select>
                 </div>
                 <button
-                  onClick={() => { if (confirm('Alle Dateien dieses Ordners neu verarbeiten (Thumbnails + AI + Gesichter)?')) reprocess.mutate({ id: s.id, redoFaces: true }) }}
+                  onClick={() => { if (confirm(t('settings.srcReprocessConfirm'))) reprocess.mutate({ id: s.id, redoFaces: true }) }}
                   className="ml-auto text-xs text-indigo-500 hover:underline"
                 >
-                  ↻ Neu verarbeiten
+                  {t('settings.srcReprocessBtn')}
                 </button>
               </div>
             </div>
@@ -374,7 +380,7 @@ function SourcesSection() {
             <input
               value={newPath}
               onChange={e => setNewPath(e.target.value)}
-              placeholder="/photos  oder  /photos/2024"
+              placeholder={t('settings.srcPathPlaceholder')}
               className="w-full pl-3 pr-10 py-2 text-sm font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button type="button" onClick={() => setShowBrowser(true)}
@@ -385,11 +391,11 @@ function SourcesSection() {
           <button type="submit" disabled={!newPath || add.isPending}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors shrink-0">
             {add.isPending ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-            Hinzufügen
+            {t('settings.add')}
           </button>
         </div>
         <p className="text-xs text-zinc-400">
-          Nach dem Hinzufügen startet der Scan automatisch. Mehrere Ordner können einzeln hinzugefügt werden.
+          {t('settings.srcAddHint')}
         </p>
       </form>
 
@@ -397,10 +403,9 @@ function SourcesSection() {
       <div className="mt-6 pt-5 border-t border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Bilddatenbank überprüfen</p>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.srcVerifyTitle')}</p>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Gleicht alle Einträge mit der Festplatte ab und entfernt verwaiste Fotos, Thumbnails, Vorschauen
-              und Gesichter von Dateien/Ordnern, die es nicht mehr gibt.
+              {t('settings.srcVerifyDesc')}
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -408,16 +413,16 @@ function SourcesSection() {
               onClick={() => reprocessFailed.mutate()}
               disabled={reprocessFailed.isPending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors"
-              title="Fehlerhafte oder unfertige Dateien erneut verarbeiten"
+              title={t('settings.srcRetryFailedTitle')}
             >
-              <RefreshCw size={14} className={reprocessFailed.isPending ? 'animate-spin' : ''} /> Fehler erneut
+              <RefreshCw size={14} className={reprocessFailed.isPending ? 'animate-spin' : ''} /> {t('settings.srcRetryFailed')}
             </button>
             <button
-              onClick={() => { if (confirm('Bibliothek überprüfen und verwaiste Einträge (gelöschte Dateien) entfernen?')) { setVerifyResult(null); verify.mutate() } }}
+              onClick={() => { if (confirm(t('settings.srcVerifyConfirm'))) { setVerifyResult(null); verify.mutate() } }}
               disabled={verify.isPending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors"
             >
-              <RefreshCw size={14} className={verify.isPending ? 'animate-spin' : ''} /> Jetzt überprüfen
+              <RefreshCw size={14} className={verify.isPending ? 'animate-spin' : ''} /> {t('settings.srcVerifyNow')}
             </button>
           </div>
         </div>
@@ -432,6 +437,7 @@ function SourcesSection() {
 }
 
 function GallerySection() {
+  const { t } = useT()
   const [rowHeight, setRowHeight] = useState(200)
   const [autoplay, setAutoplay] = useState(true)
   const [faceBoxes, setFaceBoxes] = useState(true)
@@ -440,39 +446,39 @@ function GallerySection() {
 
   return (
     <div>
-      <SectionHeader title="Galerie" desc="Anzeige, Thumbnails und Video-Verhalten anpassen." />
+      <SectionHeader title={t('settings.galTitle')} desc={t('settings.galDesc')} />
       <div className="space-y-6">
         <div>
-          <Label>Standard-Ansicht</Label>
+          <Label>{t('settings.galDefaultView')}</Label>
           <select value={defaultView} onChange={e => setDefaultView(e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="grid">Raster (Justified Grid)</option>
-            <option value="timeline">Timeline</option>
-            <option value="memories">Erinnerungen</option>
+            <option value="grid">{t('settings.galViewGrid')}</option>
+            <option value="timeline">{t('settings.galViewTimeline')}</option>
+            <option value="memories">{t('settings.galViewMemories')}</option>
           </select>
         </div>
 
         <div>
-          <Label>Zeilenhöhe: {rowHeight}px</Label>
+          <Label>{t('settings.galRowHeight', { n: rowHeight })}</Label>
           <input type="range" min={120} max={400} step={20} value={rowHeight}
             onChange={e => setRowHeight(Number(e.target.value))} className="w-full accent-indigo-500" />
           <div className="flex justify-between text-xs text-zinc-400 mt-0.5">
-            <span>Kompakt (120px)</span><span>Groß (400px)</span>
+            <span>{t('settings.galCompact')}</span><span>{t('settings.galLarge')}</span>
           </div>
         </div>
 
         <div className="space-y-4">
           <label className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Videos automatisch abspielen</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Video startet beim Öffnen im Lightbox</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.galAutoplay')}</p>
+              <p className="text-xs text-zinc-400 mt-0.5">{t('settings.galAutoplayDesc')}</p>
             </div>
             <Toggle value={autoplay} onChange={setAutoplay} />
           </label>
           <label className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichtsrahmen anzeigen</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Erkannte Gesichter im Lightbox hervorheben</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.galFaceBoxes')}</p>
+              <p className="text-xs text-zinc-400 mt-0.5">{t('settings.galFaceBoxesDesc')}</p>
             </div>
             <Toggle value={faceBoxes} onChange={setFaceBoxes} />
           </label>
@@ -485,6 +491,7 @@ function GallerySection() {
 }
 
 function AISection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -541,20 +548,20 @@ function AISection() {
 
   return (
     <div>
-      <SectionHeader title="Foto-AI" desc={'AI nur für Fotos: Bildbeschreibungen, Tags und Embeddings. Videos werden separat unter „Video-AI & Gesichter“ konfiguriert.'} />
+      <SectionHeader title={t('settings.aiTitle')} desc={t('settings.aiDesc')} />
       <div className="space-y-7">
 
         {/* Provider picker */}
         <div>
-          <Label>Aktiver Provider</Label>
+          <Label>{t('settings.aiActiveProvider')}</Label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {([
-              { id: 'none', label: 'Kein AI', sub: 'Nur EXIF' },
+              { id: 'none', label: t('settings.aiProviderNone'), sub: t('settings.aiProviderNoneSub') },
               { id: 'gemini', label: 'Gemini', sub: 'Google' },
               { id: 'openai', label: 'OpenAI', sub: 'GPT-4o' },
               { id: 'azure', label: 'Azure', sub: 'Copilot/OAI' },
-              { id: 'ollama', label: 'Ollama', sub: 'Lokal' },
-              { id: 'local', label: 'Integriert', sub: 'Lokal, eingebaut' },
+              { id: 'ollama', label: 'Ollama', sub: t('settings.aiProviderLocalSub') },
+              { id: 'local', label: t('settings.aiProviderIntegrated'), sub: t('settings.aiProviderIntegratedSub') },
             ] as const).map(p => (
               <button
                 key={p.id}
@@ -577,12 +584,12 @@ function AISection() {
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
             <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Google Gemini</p>
             <div>
-              <Label>API Key</Label>
+              <Label>{t('settings.aiApiKey')}</Label>
               <Input value={settings['ai.gemini.api_key'] ?? ''} onChange={v => set('ai.gemini.api_key', v)} type="password" placeholder="AIza..." />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <ModelSelect
-                label="Vision-Modell"
+                label={t('settings.aiVisionModel')}
                 value={settings['ai.gemini.model'] ?? ''}
                 onChange={v => set('ai.gemini.model', v)}
                 models={geminiModels.data ?? []}
@@ -591,7 +598,7 @@ function AISection() {
                 placeholder="gemini-2.5-flash"
               />
               <ModelSelect
-                label="Embedding-Modell"
+                label={t('settings.aiEmbedModel')}
                 value={settings['ai.gemini.embed_model'] ?? ''}
                 onChange={v => set('ai.gemini.embed_model', v)}
                 models={geminiModels.data ?? []}
@@ -609,12 +616,12 @@ function AISection() {
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
             <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">OpenAI</p>
             <div>
-              <Label>API Key</Label>
+              <Label>{t('settings.aiApiKey')}</Label>
               <Input value={settings['ai.openai.api_key'] ?? ''} onChange={v => set('ai.openai.api_key', v)} type="password" placeholder="sk-..." />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <ModelSelect
-                label="Vision-Modell"
+                label={t('settings.aiVisionModel')}
                 value={settings['ai.openai.model'] ?? ''}
                 onChange={v => set('ai.openai.model', v)}
                 models={openaiModels.data ?? []}
@@ -623,7 +630,7 @@ function AISection() {
                 placeholder="gpt-4o"
               />
               <ModelSelect
-                label="Embedding-Modell"
+                label={t('settings.aiEmbedModel')}
                 value={settings['ai.openai.embed_model'] ?? ''}
                 onChange={v => set('ai.openai.embed_model', v)}
                 models={openaiModels.data ?? []}
@@ -641,21 +648,21 @@ function AISection() {
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
             <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Azure OpenAI / Microsoft Copilot</p>
             <div>
-              <Label>API Key</Label>
+              <Label>{t('settings.aiApiKey')}</Label>
               <Input value={settings['ai.openai.api_key'] ?? ''} onChange={v => set('ai.openai.api_key', v)} type="password" placeholder="Azure-Key..." />
             </div>
             <div>
-              <Label>Endpoint URL</Label>
+              <Label>{t('settings.aiEndpointUrl')}</Label>
               <Input
                 value={settings['ai.openai.base_url'] ?? ''}
                 onChange={v => set('ai.openai.base_url', v)}
                 placeholder="https://your-resource.openai.azure.com/openai/v1"
               />
-              <p className="text-[11px] text-zinc-400 mt-1">Format: https://&lt;resource&gt;.openai.azure.com/openai/v1</p>
+              <p className="text-[11px] text-zinc-400 mt-1">{t('settings.aiAzureFormat')}</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <ModelSelect
-                label="Vision-Deployment"
+                label={t('settings.aiVisionDeployment')}
                 value={settings['ai.openai.model'] ?? ''}
                 onChange={v => set('ai.openai.model', v)}
                 models={openaiModels.data ?? []}
@@ -664,7 +671,7 @@ function AISection() {
                 placeholder="gpt-4o"
               />
               <ModelSelect
-                label="Embedding-Deployment"
+                label={t('settings.aiEmbedDeployment')}
                 value={settings['ai.openai.embed_model'] ?? ''}
                 onChange={v => set('ai.openai.embed_model', v)}
                 models={openaiModels.data ?? []}
@@ -680,14 +687,14 @@ function AISection() {
         {/* Ollama settings */}
         {provider === 'ollama' && (
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Ollama (lokal)</p>
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.aiOllamaLocal')}</p>
             <div>
-              <Label>Ollama URL</Label>
+              <Label>{t('settings.aiOllamaUrl')}</Label>
               <Input value={settings['ai.ollama.url'] ?? ''} onChange={v => set('ai.ollama.url', v)} placeholder="http://your-host:11434" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <ModelSelect
-                label="Vision-Modell"
+                label={t('settings.aiVisionModel')}
                 value={settings['ai.ollama.vision_model'] ?? ''}
                 onChange={v => set('ai.ollama.vision_model', v)}
                 models={ollamaModels.data ?? []}
@@ -696,7 +703,7 @@ function AISection() {
                 placeholder="llava:7b oder moondream"
               />
               <ModelSelect
-                label="Embedding-Modell"
+                label={t('settings.aiEmbedModel')}
                 value={settings['ai.ollama.embed_model'] ?? ''}
                 onChange={v => set('ai.ollama.embed_model', v)}
                 models={ollamaModels.data ?? []}
@@ -706,7 +713,7 @@ function AISection() {
               />
             </div>
             {ollamaModels.data?.length === 0 && !ollamaModels.isLoading && (
-              <p className="text-xs text-amber-400">Keine Modelle gefunden — läuft Ollama unter der angegebenen URL?</p>
+              <p className="text-xs text-amber-400">{t('settings.aiOllamaNoModels')}</p>
             )}
             <HealthBadge provider="ollama" baseUrl={settings['ai.ollama.url']} />
           </div>
@@ -715,11 +722,11 @@ function AISection() {
         {/* Integrated local model */}
         {provider === 'local' && (
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Integriertes Modell (läuft lokal, kein Ollama/Cloud)</p>
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.aiIntegratedModel')}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {([
-                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: '~0.7 GB · schnell · läuft in 4 GB' },
-                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: '~7 GB · multilingual · braucht ~12 GB RAM' },
+                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: t('settings.aiFlorenceSub') },
+                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: t('settings.aiQwenSub') },
               ] as const).map(m => (
                 <button key={m.id} onClick={() => set('ai.local.model', m.id)}
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
@@ -733,15 +740,14 @@ function AISection() {
               ))}
             </div>
             <p className="text-xs text-zinc-400">
-              Das Modell wird beim ersten Lauf einmalig heruntergeladen (in den Modell-Cache) und danach lokal ausgeführt.
-              Florence-2 liefert englische Captions, die für Deutsch lokal übersetzt werden; Qwen schreibt direkt Deutsch.
+              {t('settings.aiIntegratedHint')}
             </p>
           </div>
         )}
 
         {/* Description prompt */}
         <div>
-          <Label>Prompt für Bildbeschreibung</Label>
+          <Label>{t('settings.aiImagePrompt')}</Label>
           <textarea
             value={settings['ai.prompt.image'] ?? DEFAULT_IMAGE_PROMPT}
             onChange={e => set('ai.prompt.image', e.target.value)}
@@ -749,73 +755,70 @@ function AISection() {
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
           />
           <div className="flex justify-between items-center mt-1">
-            <p className="text-[11px] text-zinc-400">Geht an Gemini/OpenAI/Ollama/Qwen. (Florence-2 nutzt feste Tasks.)</p>
+            <p className="text-[11px] text-zinc-400">{t('settings.aiImagePromptHint')}</p>
             <button type="button" onClick={() => set('ai.prompt.image', DEFAULT_IMAGE_PROMPT)}
-              className="text-[11px] text-indigo-500 hover:underline">Standard</button>
+              className="text-[11px] text-indigo-500 hover:underline">{t('settings.default')}</button>
           </div>
         </div>
 
         {/* Tags prompt (optional) */}
         <div>
-          <Label>Prompt für Schlagwörter / Tags (optional)</Label>
+          <Label>{t('settings.aiTagsPrompt')}</Label>
           <textarea
             value={settings['ai.prompt.tags'] ?? ''}
             onChange={e => set('ai.prompt.tags', e.target.value)}
             rows={2}
-            placeholder={'Leer lassen = Tags aus der Beschreibung (schnell). Beispiel: ' + DEFAULT_TAGS_PROMPT}
+            placeholder={t('settings.aiTagsPlaceholder', { example: DEFAULT_TAGS_PROMPT })}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
           />
           <div className="flex justify-between items-center mt-1">
             <p className="text-[11px] text-zinc-400">
-              Leer = Tags aus der Beschreibung (kostenlos). Gesetzt = der VLM erzeugt echte Schlagwörter per
-              eigenem Durchlauf — <b>verdoppelt die GPU-Zeit pro Foto</b>. (Qwen/Gemini/Ollama; Florence ignoriert.)
+              {t('settings.aiTagsPromptHintA')} <b>{t('settings.aiTagsPromptHintBold')}</b> {t('settings.aiTagsPromptHintB')}
             </p>
             <button type="button" onClick={() => set('ai.prompt.tags', DEFAULT_TAGS_PROMPT)}
-              className="text-[11px] text-indigo-500 hover:underline whitespace-nowrap ml-2">Vorlage</button>
+              className="text-[11px] text-indigo-500 hover:underline whitespace-nowrap ml-2">{t('settings.template')}</button>
           </div>
         </div>
 
         {/* Language */}
         <div>
-          <Label>Sprache für Beschreibungen</Label>
+          <Label>{t('settings.aiLanguage')}</Label>
           <select value={settings['ai.language'] ?? 'de'} onChange={e => set('ai.language', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="de">Deutsch</option>
-            <option value="en">Englisch</option>
-            <option value="fr">Französisch</option>
-            <option value="es">Spanisch</option>
+            <option value="de">{t('settings.langDe')}</option>
+            <option value="en">{t('settings.langEn')}</option>
+            <option value="fr">{t('settings.langFr')}</option>
+            <option value="es">{t('settings.langEs')}</option>
           </select>
         </div>
 
         {/* Search accuracy */}
         <div>
-          <Label>Such-Genauigkeit (max. Distanz: {settings['search.max_distance'] ?? '0.78'})</Label>
+          <Label>{t('settings.aiSearchAccuracy', { d: settings['search.max_distance'] ?? '0.78' })}</Label>
           <input type="range" min={0.4} max={1.2} step={0.02}
             value={Number(settings['search.max_distance'] ?? 0.78)}
             onChange={e => set('search.max_distance', e.target.value)}
             className="w-full accent-indigo-500" />
           <div className="flex justify-between text-[11px] text-zinc-400 mt-0.5">
-            <span>streng / exakt</span><span>locker / mehr Treffer</span>
+            <span>{t('settings.aiSearchStrict')}</span><span>{t('settings.aiSearchLoose')}</span>
           </div>
         </div>
 
         {/* AI metadata write-back */}
         <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <Label>AI-Beschreibung & Tags zurückschreiben</Label>
+          <Label>{t('settings.aiWriteback')}</Label>
           <select
             value={settings['xmp.write_mode'] ?? 'off'}
             onChange={e => set('xmp.write_mode', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="off">Nur in die NimtaFlow-DB</option>
-            <option value="file">DB + ins Bild (EXIF/IPTC/XMP eingebettet)</option>
-            <option value="file_sidecar">DB + ins Bild + .xmp-Sidecar</option>
-            <option value="sidecar">DB + .xmp-Sidecar (Original unberührt)</option>
+            <option value="off">{t('settings.aiWritebackOff')}</option>
+            <option value="file">{t('settings.aiWritebackFile')}</option>
+            <option value="file_sidecar">{t('settings.aiWritebackFileSidecar')}</option>
+            <option value="sidecar">{t('settings.aiWritebackSidecar')}</option>
           </select>
           <p className="text-xs text-zinc-400 mt-1.5">
-            Schreibt <code>dc:description</code>/<code>IPTC:Caption</code> + Schlagwörter.
-            „Ins Bild" verändert die Originaldatei (mit Backup bei der ersten Änderung), „Sidecar" legt eine
-            <code>.xmp</code> daneben. Kompatibel mit Lightroom, digiKam, Immich.
+            {t('settings.aiWritebackHintA')} <code>dc:description</code>/<code>IPTC:Caption</code> {t('settings.aiWritebackHintB')}
           </p>
           <BackfillXmpButton />
         </div>
@@ -823,11 +826,9 @@ function AISection() {
         {/* Re-use existing file metadata on scan */}
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">KI trotz vorhandener Metadaten neu erkennen</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.aiForceReindex')}</p>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Standard AUS: Hat eine Datei bereits eine Beschreibung (eingebettetes XMP oder <code>.xmp</code>-Sidecar),
-              wird sie beim Scan <strong>übernommen</strong> und die KI übersprungen (schnell, spart GPU — z. B. nach
-              Re-Import/Wiederherstellung). AN = immer neu mit KI beschreiben.
+              {t('settings.aiForceReindexDesc')}
             </p>
           </div>
           <Toggle value={(settings['scan.force_reindex'] ?? 'false') === 'true'} onChange={v => set('scan.force_reindex', v ? 'true' : 'false')} />
@@ -835,11 +836,9 @@ function AISection() {
 
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichter auch bei importierten Metadaten erkennen</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.aiFacesOnImport')}</p>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Standard AN: Gesichter stehen <strong>nicht</strong> in den Dateimetadaten — auch wenn Beschreibung/Tags
-              übernommen wurden, läuft eine reine Gesichtserkennung (ohne erneute KI-Beschreibung). AUS = importierte
-              Fotos ganz ohne KI/Gesichter.
+              {t('settings.aiFacesOnImportDesc')}
             </p>
           </div>
           <Toggle value={(settings['scan.faces_on_import'] ?? 'true') !== 'false'} onChange={v => set('scan.faces_on_import', v ? 'true' : 'false')} />
@@ -852,21 +851,21 @@ function AISection() {
 }
 
 function BackfillXmpButton() {
+  const { t } = useT()
   const [msg, setMsg] = useState('')
   const m = useMutation({
     mutationFn: () => api.post('/photos/backfill-xmp').then(r => r.data),
-    onSuccess: (d: any) => setMsg(`Läuft im Hintergrund für ${d.described_photos} beschriebene Fotos — Fortschritt im AI-Log.`),
-    onError: () => setMsg('Fehler beim Starten.'),
+    onSuccess: (d: any) => setMsg(t('settings.backfillRunning', { n: d.described_photos })),
+    onError: () => setMsg(t('settings.backfillError')),
   })
   return (
     <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
       <button onClick={() => m.mutate()} disabled={m.isPending}
         className="px-3 py-2 rounded-lg border border-indigo-300 dark:border-indigo-700 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50">
-        {m.isPending ? 'Startet …' : 'Vorhandene Beschreibungen jetzt in die Dateien schreiben'}
+        {m.isPending ? t('settings.backfillStarting') : t('settings.backfillBtn')}
       </button>
       <p className="text-[11px] text-zinc-400 mt-1.5">
-        Einmaliger Nachtrag: schreibt bereits erzeugte Beschreibungen + Tags aus der DB in die Bilddateien
-        (nötig für Fotos, die der Remote-Worker verarbeitet hat, bevor das Datei-Schreiben aktiv war).
+        {t('settings.backfillHint')}
       </p>
       {msg && <p className="text-[11px] text-emerald-500 mt-1">{msg}</p>}
     </div>
@@ -874,6 +873,7 @@ function BackfillXmpButton() {
 }
 
 function VideoAISection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -912,18 +912,18 @@ function VideoAISection() {
 
   return (
     <div>
-      <SectionHeader title="Video-AI" desc="Separate AI-Konfiguration für Video-Analyse. Gesichter werden unter „Personen & Gesichter“ konfiguriert." />
+      <SectionHeader title={t('settings.vidTitle')} desc={t('settings.vidDesc')} />
       <div className="space-y-7">
 
         {/* Video AI provider */}
         <div>
-          <Label>Video-AI Provider</Label>
+          <Label>{t('settings.vidProvider')}</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {([
-              { id: 'same', label: 'Wie Fotos', sub: 'Gleicher Provider' },
-              { id: 'local', label: 'Integriert', sub: 'Lokal, eingebaut' },
-              { id: 'ollama', label: 'Ollama', sub: 'Lokal / privat' },
-              { id: 'gemini', label: 'Gemini', sub: 'Google Video AI' },
+              { id: 'same', label: t('settings.vidProviderSame'), sub: t('settings.vidProviderSameSub') },
+              { id: 'local', label: t('settings.aiProviderIntegrated'), sub: t('settings.aiProviderIntegratedSub') },
+              { id: 'ollama', label: 'Ollama', sub: t('settings.vidProviderOllamaSub') },
+              { id: 'gemini', label: 'Gemini', sub: t('settings.vidProviderGeminiSub') },
             ] as const).map(p => (
               <button key={p.id} onClick={() => set('video.ai_provider', p.id)}
                 className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
@@ -940,8 +940,8 @@ function VideoAISection() {
           {vidProvider === 'local' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
               {([
-                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: '~0.7 GB · schnell' },
-                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: '~7 GB · multilingual' },
+                { id: 'florence2-base', label: 'Optimum — Florence-2-base', sub: t('settings.vidFlorenceSub') },
+                { id: 'qwen2.5-vl-3b', label: 'Best — Qwen2.5-VL-3B', sub: t('settings.vidQwenSub') },
               ] as const).map(m => (
                 <button key={m.id} onClick={() => set('video.local.model', m.id)}
                   className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all text-left ${
@@ -959,13 +959,13 @@ function VideoAISection() {
 
         {vidProvider === 'ollama' && (
           <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Ollama für Videos</p>
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.vidOllamaForVideos')}</p>
             <div>
-              <Label>Ollama URL</Label>
+              <Label>{t('settings.aiOllamaUrl')}</Label>
               <Input value={settings['video.ollama_url'] ?? ollamaUrl} onChange={v => set('video.ollama_url', v)} placeholder="http://your-host:11434" />
             </div>
             <ModelSelect
-              label="Vision-Modell"
+              label={t('settings.aiVisionModel')}
               value={settings['video.ollama_model'] ?? ''}
               onChange={v => set('video.ollama_model', v)}
               models={ollamaModels.data ?? []}
@@ -978,7 +978,7 @@ function VideoAISection() {
 
         {/* Video description prompt */}
         <div>
-          <Label>Prompt für Videobeschreibung</Label>
+          <Label>{t('settings.vidPrompt')}</Label>
           <textarea
             value={settings['ai.prompt.video'] ?? DEFAULT_VIDEO_PROMPT}
             onChange={e => set('ai.prompt.video', e.target.value)}
@@ -986,39 +986,39 @@ function VideoAISection() {
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
           />
           <div className="flex justify-between items-center mt-1">
-            <p className="text-[11px] text-zinc-400">Angewendet auf den extrahierten Video-Frame.</p>
+            <p className="text-[11px] text-zinc-400">{t('settings.vidPromptHint')}</p>
             <button type="button" onClick={() => set('ai.prompt.video', DEFAULT_VIDEO_PROMPT)}
-              className="text-[11px] text-indigo-500 hover:underline">Standard</button>
+              className="text-[11px] text-indigo-500 hover:underline">{t('settings.default')}</button>
           </div>
         </div>
 
         {/* Video language (shared with images) */}
         <div>
-          <Label>Sprache für Videobeschreibungen</Label>
+          <Label>{t('settings.vidLanguage')}</Label>
           <select value={settings['ai.language'] ?? 'de'} onChange={e => set('ai.language', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-            <option value="fr">Français</option>
+            <option value="de">{t('settings.langDe')}</option>
+            <option value="en">{t('settings.langEn')}</option>
+            <option value="fr">{t('settings.langFr')}</option>
           </select>
-          <p className="text-[11px] text-zinc-400 mt-1">Gemeinsame Sprach-Einstellung für Bilder und Videos.</p>
+          <p className="text-[11px] text-zinc-400 mt-1">{t('settings.vidLanguageHint')}</p>
         </div>
 
         {/* Where video metadata goes */}
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 space-y-1.5">
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Wohin werden Video-Metadaten geschrieben?</p>
-          <p>• <b className="text-zinc-600 dark:text-zinc-300">Datenbank:</b> immer (Beschreibung + Tags → durchsuchbar in NimtaFlow).</p>
-          <p>• <b className="text-zinc-600 dark:text-zinc-300">Sidecar-Datei</b> <code>&lt;video&gt;.xmp</code> neben der Datei: wenn unter <b>Bilder-AI → „AI-Beschreibung &amp; Tags zurückschreiben"</b> ein Modus mit Sidecar aktiv ist (<code>Datei + Sidecar</code> oder <code>nur Sidecar</code>).</p>
-          <p>• <b className="text-zinc-600 dark:text-zinc-300">Ins Video selbst:</b> nein — gängige Video-Container können kein eingebettetes XMP, daher immer der Sidecar (verlustfreier Round-Trip, übersteht einen Lösungswechsel).</p>
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.vidMetaTitle')}</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">{t('settings.vidMetaDbLabel')}</b> {t('settings.vidMetaDb')}</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">{t('settings.vidMetaSidecarLabel')}</b> <code>&lt;video&gt;.xmp</code> {t('settings.vidMetaSidecar')}</p>
+          <p>• <b className="text-zinc-600 dark:text-zinc-300">{t('settings.vidMetaEmbedLabel')}</b> {t('settings.vidMetaEmbed')}</p>
         </div>
 
         {/* Video transcoding */}
         <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Transkodierung (H.264 MP4, faststart)</p>
+          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.vidTranscodeTitle')}</p>
           <label className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Alle Videos vorab transkodieren</p>
-              <p className="text-xs text-zinc-400">Standardmäßig AUS: Videos werden beim ersten Abspielen transkodiert (gecacht). AN = jedes Video direkt beim Scan vorab konvertieren — sofort abspielbar, aber rechenintensiv (HW/QSV, sonst CPU).</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.vidAutoTranscode')}</p>
+              <p className="text-xs text-zinc-400">{t('settings.vidAutoTranscodeDesc')}</p>
             </div>
             <Toggle
               value={(settings['video.auto_transcode'] ?? 'false') === 'true'}
@@ -1026,16 +1026,16 @@ function VideoAISection() {
             />
           </label>
           <div>
-            <Label>Max. Auflösung</Label>
+            <Label>{t('settings.vidMaxResolution')}</Label>
             <select value={settings['video.transcode_resolution'] ?? '1080'} onChange={e => set('video.transcode_resolution', e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="480">480p</option>
               <option value="720">720p</option>
-              <option value="1080">1080p (empfohlen)</option>
-              <option value="original">Original</option>
+              <option value="1080">{t('settings.vidRes1080')}</option>
+              <option value="original">{t('settings.vidResOriginal')}</option>
             </select>
             <p className="text-[11px] text-zinc-400 mt-1">
-              Obergrenze für die längere Seite (1080p ≙ max. 1920 px). Diese eine Web-Version dient <b>Player und Video-KI</b> gemeinsam — daher 1080p (≥ Frame-Budget der KI). Kleinere/ältere Videos behalten ihre <b>native Auflösung</b> (kein Hochskalieren). 4K wird heruntergerechnet.
+              {t('settings.vidResHint')}
             </p>
           </div>
         </div>
@@ -1047,6 +1047,7 @@ function VideoAISection() {
 }
 
 function ChatSettingsSection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -1064,14 +1065,14 @@ function ChatSettingsSection() {
 
   return (
     <div>
-      <SectionHeader title="Chat-Assistent" desc={'Unterhaltung über die Foto-Sammlung (RAG). Der Assistent durchsucht die Bilder per Vektorsuche (pgvector) und antwortet nur anhand der gefundenen Fotos. Öffnen über „Chat" in der Navigation.'} />
+      <SectionHeader title={t('settings.chatTitle')} desc={t('settings.chatDesc')} />
       <div className="space-y-6 max-w-xl">
         <div>
-          <Label>Modell für den Chat</Label>
+          <Label>{t('settings.chatModel')}</Label>
           <div className="grid grid-cols-2 gap-2 mt-1">
             {([
-              { id: 'gemini', label: 'Gemini', sub: 'Cloud · Tool-Agent · Kosten pro Frage' },
-              { id: 'local', label: 'Lokal (Qwen)', sub: 'privat · gratis · langsamer (Asus-GPU)' },
+              { id: 'gemini', label: 'Gemini', sub: t('settings.chatGeminiSub') },
+              { id: 'local', label: t('settings.chatLocalLabel'), sub: t('settings.chatLocalSub') },
             ] as const).map(o => (
               <button key={o.id} onClick={() => set('chat.provider', o.id)}
                 className={`text-left p-3 rounded-xl border transition ${
@@ -1084,8 +1085,7 @@ function ChatSettingsSection() {
             ))}
           </div>
           <p className="text-[11px] text-zinc-400 mt-2">
-            Gemini nutzt den unter <b>Bilder-AI</b> hinterlegten API-Key als Tool-Agent (entscheidet selbst, wann er sucht).
-            Lokal läuft über den Remote-Worker (Qwen) — gratis, aber langsamer. Beide antworten nur auf Basis gefundener Fotos.
+            {t('settings.chatHint')}
           </p>
         </div>
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
@@ -1095,6 +1095,7 @@ function ChatSettingsSection() {
 }
 
 function PipelineSection() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [busy, setBusy] = useState('')
   const { data: queues } = useQuery<{ cpu: number | null; gpu: number | null; celery: number | null; error?: string }>({
@@ -1119,7 +1120,7 @@ function PipelineSection() {
 
   const act = useMutation({
     mutationFn: (url: string) => api.post(url).then(r => r.data),
-    onSuccess: (d: any) => { setBusy(''); qc.invalidateQueries({ queryKey: ['photo-stats'] }); qc.invalidateQueries({ queryKey: ['queues'] }); alert(`${d?.reprocessing ?? d?.new ?? 'OK'} — Aktion gestartet.`) },
+    onSuccess: (d: any) => { setBusy(''); qc.invalidateQueries({ queryKey: ['photo-stats'] }); qc.invalidateQueries({ queryKey: ['queues'] }); alert(t('settings.pipActionStarted', { n: d?.reprocessing ?? d?.new ?? 'OK' })) },
     onError: () => setBusy(''),
   })
   const run = (key: string, url: string) => { setBusy(key); act.mutate(url) }
@@ -1134,35 +1135,35 @@ function PipelineSection() {
 
   return (
     <div>
-      <SectionHeader title="Pipeline" desc="Live-Warteschlangen, Fehler-Queue und Stapel-Verarbeitung." />
+      <SectionHeader title={t('settings.pipTitle')} desc={t('settings.pipDesc')} />
       <div className="space-y-6 max-w-2xl">
 
         {/* Live queues */}
         <div>
-          <Label>Warteschlangen (live)</Label>
+          <Label>{t('settings.pipQueuesLive')}</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
-            <QCard label="CPU-Queue" val={queues?.cpu} hint="Scans, Thumbnails (4 parallel)" cls="text-indigo-500" />
-            <QCard label="GPU-Queue (lokal)"
+            <QCard label={t('settings.pipCpuQueue')} val={queues?.cpu} hint={t('settings.pipCpuQueueHint')} cls="text-indigo-500" />
+            <QCard label={t('settings.pipGpuQueue')}
               val={queues?.gpu}
-              hint={remoteActive ? 'bei aktivem Remote-Worker ungenutzt → läuft remote' : 'lokale KI + Gesichter (1 Slot)'}
+              hint={remoteActive ? t('settings.pipGpuQueueRemote') : t('settings.pipGpuQueueLocal')}
               cls="text-zinc-400" />
-            <QCard label="In Arbeit" val={st['processing']}
-              hint={remoteActive ? 'an Remote-Worker übergeben, wartet auf Beschreibung' : 'aktuell verarbeitet'}
+            <QCard label={t('settings.pipProcessing')} val={st['processing']}
+              hint={remoteActive ? t('settings.pipProcessingRemote') : t('settings.pipProcessingLocal')}
               cls="text-sky-500" />
           </div>
-          {queues?.error && <p className="text-xs text-amber-500 mt-1">Queue-Status nicht lesbar: {queues.error}</p>}
+          {queues?.error && <p className="text-xs text-amber-500 mt-1">{t('settings.pipQueueError', { error: queues.error })}</p>}
         </div>
 
         {/* Remote AI backlog — the real description/face work when a remote worker runs */}
         {remoteActive && (
           <div>
-            <Label>Remote-Verarbeitung (KI auf der GPU)</Label>
+            <Label>{t('settings.pipRemoteTitle')}</Label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-1">
-              <QCard label="Beschreibungen offen" val={remote?.pending} hint="Fotos, die noch eine KI-Beschreibung brauchen" cls="text-violet-500" />
-              <QCard label="Gesichts-Erkennung offen" val={remote?.faces_pending} hint="Fotos ohne Gesichts-Durchlauf — NICHT die unzugeordneten Gesichter (die gruppieren nachts unter Personen)" cls="text-sky-500" />
-              <QCard label="Worker verbunden" val={remote?.workers?.length} hint="Details: Einstellungen → Remote-Worker" cls="text-emerald-500" />
+              <QCard label={t('settings.pipDescPending')} val={remote?.pending} hint={t('settings.pipDescPendingHint')} cls="text-violet-500" />
+              <QCard label={t('settings.pipFacesPending')} val={remote?.faces_pending} hint={t('settings.pipFacesPendingHint')} cls="text-sky-500" />
+              <QCard label={t('settings.pipWorkersConnected')} val={remote?.workers?.length} hint={t('settings.pipWorkersConnectedHint')} cls="text-emerald-500" />
             </div>
-            <p className="text-[11px] text-zinc-400 mt-1"><b>0 ist normal</b>, wenn alles erledigt ist. Beschreibung + Gesichtserkennung laufen über den Remote-Worker — deshalb ist die lokale GPU-Queue leer. Unzugeordnete Gesichter siehst du unter <b>Personen</b> (nicht hier); sie werden nachts automatisch geclustert.</p>
+            <p className="text-[11px] text-zinc-400 mt-1">{t('settings.pipRemoteHint')}</p>
           </div>
         )}
 
@@ -1170,11 +1171,11 @@ function PipelineSection() {
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5"><ImageIcon size={14} /> Crop-Cache (Personen-Vorschauen)</p>
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5"><ImageIcon size={14} /> {t('settings.pipCropCache')}</p>
               <p className="text-xs text-zinc-500 mt-0.5">
                 {crops && crops.total_faces > 0
-                  ? <><b className={crops.cached >= crops.total_faces ? 'text-emerald-500' : 'text-sky-500'}>{crops.cached.toLocaleString('de')}</b> / {crops.total_faces.toLocaleString('de')} Gesichts-Crops erzeugt ({Math.round((crops.cached / crops.total_faces) * 100)}%) — vorab erzeugen lässt die Personen-Seite sofort laden.</>
-                  : 'Vorschau-Crops für die Personen-Seite.'}
+                  ? <><b className={crops.cached >= crops.total_faces ? 'text-emerald-500' : 'text-sky-500'}>{crops.cached.toLocaleString('de')}</b> / {crops.total_faces.toLocaleString('de')} {t('settings.pipCropCacheProgress', { pct: Math.round((crops.cached / crops.total_faces) * 100) })}</>
+                  : t('settings.pipCropCacheEmpty')}
               </p>
               {crops && crops.total_faces > 0 && crops.cached < crops.total_faces && (
                 <div className="mt-2 h-1.5 w-full max-w-xs bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
@@ -1182,7 +1183,7 @@ function PipelineSection() {
                 </div>
               )}
             </div>
-            <ActBtn label={crops && crops.cached >= crops.total_faces ? 'Crops neu prüfen' : 'Crops vorbereiten'} busy={warmCrops.isPending} onClick={() => warmCrops.mutate()} />
+            <ActBtn label={crops && crops.cached >= crops.total_faces ? t('settings.pipCropRecheck') : t('settings.pipCropPrepare')} busy={warmCrops.isPending} onClick={() => warmCrops.mutate()} />
           </div>
         </div>
 
@@ -1190,29 +1191,29 @@ function PipelineSection() {
         <div className={`rounded-xl border p-4 ${errCount > 0 ? 'border-amber-400/60 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-700'}`}>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Fehler-Queue</p>
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.pipErrorQueue')}</p>
               <p className="text-xs text-zinc-500 mt-0.5">
                 {errCount > 0
-                  ? <><b className="text-amber-600 dark:text-amber-400">{errCount.toLocaleString('de')}</b> Fotos mit Fehler (Verarbeitung abgebrochen oder KI fehlgeschlagen).</>
-                  : 'Keine Fehler — alles sauber verarbeitet. ✅'}
+                  ? <><b className="text-amber-600 dark:text-amber-400">{errCount.toLocaleString('de')}</b> {t('settings.pipErrorCount')}</>
+                  : t('settings.pipNoErrors')}
               </p>
             </div>
             <span className={`text-2xl font-bold tabular-nums ${errCount > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>{errCount.toLocaleString('de')}</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
-            <ActBtn label="Alle Fehler neu verarbeiten" busy={busy === 'failed'} onClick={() => run('failed', '/photos/reprocess-failed')} />
-            <ActBtn label="KI nachholen" busy={busy === 'ai'} onClick={() => run('ai', '/photos/reprocess-missing-ai')} />
+            <ActBtn label={t('settings.pipReprocessAll')} busy={busy === 'failed'} onClick={() => run('failed', '/photos/reprocess-failed')} />
+            <ActBtn label={t('settings.pipRetryAi')} busy={busy === 'ai'} onClick={() => run('ai', '/photos/reprocess-missing-ai')} />
           </div>
         </div>
 
         {/* Batch actions */}
         <div>
-          <Label>Stapel-Verarbeitung</Label>
+          <Label>{t('settings.pipBatch')}</Label>
           <div className="flex flex-wrap gap-2 mt-1">
-            <ActBtn label="Alle Ordner scannen" busy={busy === 'scan'} onClick={() => run('scan', '/sources/scan-all')} />
-            <ActBtn label="Gesichter clustern" busy={busy === 'cluster'} onClick={() => run('cluster', '/people/cluster')} />
+            <ActBtn label={t('settings.pipScanAll')} busy={busy === 'scan'} onClick={() => run('scan', '/sources/scan-all')} />
+            <ActBtn label={t('settings.pipClusterFaces')} busy={busy === 'cluster'} onClick={() => run('cluster', '/people/cluster')} />
           </div>
-          <p className="text-[11px] text-zinc-400 mt-2">Live-Logs und Verlauf findest du unter <b>Pipeline</b> in der Navigation.</p>
+          <p className="text-[11px] text-zinc-400 mt-2">{t('settings.pipBatchHint')}</p>
         </div>
       </div>
     </div>
@@ -1229,6 +1230,7 @@ function PipelineSection() {
 }
 
 function MemoriesSettingsSection() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [ids, setIds] = useState<number[]>([])
   const [saved, setSaved] = useState(false)
@@ -1254,9 +1256,9 @@ function MemoriesSettingsSection() {
 
   return (
     <div>
-      <SectionHeader title="Erinnerungen" desc="Heute vor 1, 2, … Jahren — in der Galerie. Optional nur Fotos mit bestimmten benannten Personen. Ausgeblendete Personen werden automatisch nicht mehr berücksichtigt." />
+      <SectionHeader title={t('settings.memTitle')} desc={t('settings.memDesc')} />
       <div className="space-y-4 max-w-2xl">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">{selected.length === 0 ? 'Alle Fotos' : `Nur Fotos mit ${selected.length} ausgewählten Person(en)`}</p>
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">{selected.length === 0 ? t('settings.memAllPhotos') : t('settings.memSelectedPersons', { n: selected.length })}</p>
 
         {selected.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -1264,14 +1266,14 @@ function MemoriesSettingsSection() {
               <span key={p.id} className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full bg-indigo-600 text-white text-xs">
                 <span className="w-5 h-5 rounded-full overflow-hidden bg-white/20"><img src={av(p.id)} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} /></span>
                 {p.name}
-                <button onClick={() => remove(p.id)} className="hover:text-red-200" title="Entfernen"><X size={12} /></button>
+                <button onClick={() => remove(p.id)} className="hover:text-red-200" title={t('settings.remove')}><X size={12} /></button>
               </span>
             ))}
           </div>
         )}
 
         <div className="relative max-w-xs">
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Person hinzufügen … (${named.length})`}
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('settings.memAddPerson', { n: named.length })}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           {matches.length > 0 && (
             <div className="absolute z-10 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
@@ -1283,12 +1285,12 @@ function MemoriesSettingsSection() {
               ))}
             </div>
           )}
-          {named.length === 0 && <p className="text-sm text-zinc-400 mt-1">Noch keine benannten Personen — erst Gesichter benennen.</p>}
+          {named.length === 0 && <p className="text-sm text-zinc-400 mt-1">{t('settings.memNoNamed')}</p>}
         </div>
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-          {saved ? '✓ Gespeichert' : 'Speichern'}
+          {saved ? t('settings.savedCheck') : t('settings.save')}
         </button>
       </div>
     </div>
@@ -1296,6 +1298,7 @@ function MemoriesSettingsSection() {
 }
 
 function HighlightsAISettings() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [saved, setSaved] = useState(false)
   const { data: settings } = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
@@ -1332,12 +1335,12 @@ function HighlightsAISettings() {
 
   return (
     <div>
-      <SectionHeader title="Highlights" desc="Automatisches „Highlight der Woche“ (gratis Slideshow) und optional KI-Video (Fotos animieren — fal.ai günstig/gratis-testbar oder Google Veo Premium)." />
+      <SectionHeader title={t('settings.hlTitle')} desc={t('settings.hlDesc')} />
       <div className="space-y-4 max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Highlight der Woche (automatisch)</div>
-            <div className="text-xs text-zinc-500">Erstellt jeden Montag automatisch ein Slideshow-Highlight der besten Fotos der letzten Woche. Gratis (lokal, ffmpeg).</div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.hlWeekly')}</div>
+            <div className="text-xs text-zinc-500">{t('settings.hlWeeklyDesc')}</div>
           </div>
           <Toggle value={weekly} onChange={setWeekly} />
         </div>
@@ -1345,51 +1348,51 @@ function HighlightsAISettings() {
         <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800" />
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">KI-Video aktivieren</div>
-            <div className="text-xs text-zinc-500">Animiert einzelne Fotos zu kurzen Clips (Button ✨ in der Foto-Großansicht). Echte Fotos werden an den gewählten Anbieter gesendet.</div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.hlAiVideo')}</div>
+            <div className="text-xs text-zinc-500">{t('settings.hlAiVideoDesc')}</div>
           </div>
           <Toggle value={enabled} onChange={setEnabled} />
         </div>
 
         <label className="block text-sm text-zinc-700 dark:text-zinc-300">
-          Anbieter
+          {t('settings.hlProvider')}
           <select value={provider} onChange={e => setProvider(e.target.value)}
             className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="fal">fal.ai (günstig, ~$20 Gratis-Credits zum Testen)</option>
-            <option value="veo">Google Veo 3.1 Fast (Premium, teurer)</option>
-            <option value="local">Lokal auf M3 (LTX, gratis &amp; privat)</option>
+            <option value="fal">{t('settings.hlProviderFal')}</option>
+            <option value="veo">{t('settings.hlProviderVeo')}</option>
+            <option value="local">{t('settings.hlProviderLocal')}</option>
           </select>
         </label>
 
         {provider === 'veo' && enabled && !hasGemini && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein Gemini-API-Key gesetzt (Bilder-AI → Gemini). Veo nutzt diesen Key (mit Veo-Zugang).</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">{t('settings.hlNoGemini')}</p>
         )}
         {provider === 'fal' && (
           <div className="space-y-2">
-            <label className="block text-sm text-zinc-700 dark:text-zinc-300">fal.ai API-Key
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlFalKey')}
               <input type="password" value={falKey} onChange={e => setFalKey(e.target.value)} placeholder="fal_…"
                 className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </label>
-            <label className="block text-sm text-zinc-700 dark:text-zinc-300">Modell (fal model-id)
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlFalModel')}
               <input value={falModel} onChange={e => setFalModel(e.target.value)}
                 className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </label>
-            <p className="text-xs text-zinc-400">Günstig: <code>fal-ai/minimax/hailuo-02/standard/image-to-video</code> · <code>fal-ai/stable-video</code>. Premium: <code>fal-ai/veo3/image-to-video</code>.</p>
-            {enabled && !falKey.trim() && <p className="text-xs text-amber-600 dark:text-amber-400">⚠ Kein fal.ai-Key gesetzt. Key gibt's auf fal.ai (Signup → ~$20 Gratis-Credits).</p>}
+            <p className="text-xs text-zinc-400">{t('settings.hlFalModelHintA')} <code>fal-ai/minimax/hailuo-02/standard/image-to-video</code> · <code>fal-ai/stable-video</code>. {t('settings.hlFalModelHintB')} <code>fal-ai/veo3/image-to-video</code>.</p>
+            {enabled && !falKey.trim() && <p className="text-xs text-amber-600 dark:text-amber-400">{t('settings.hlNoFalKey')}</p>}
           </div>
         )}
 
         <div className="flex flex-wrap gap-6">
           <label className="text-sm text-zinc-700 dark:text-zinc-300">
-            Clip-Länge
+            {t('settings.hlClipLength')}
             <select value={seconds} onChange={e => setSeconds(e.target.value)}
               className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="4">4 Sek.</option><option value="6">6 Sek.</option><option value="8">8 Sek.</option>
+              <option value="4">{t('settings.hlSec', { n: 4 })}</option><option value="6">{t('settings.hlSec', { n: 6 })}</option><option value="8">{t('settings.hlSec', { n: 8 })}</option>
             </select>
-            {provider === 'fal' && <span className="ml-1 text-xs text-zinc-400">(bei fal modellabhängig)</span>}
+            {provider === 'fal' && <span className="ml-1 text-xs text-zinc-400">{t('settings.hlFalModelDep')}</span>}
           </label>
           <label className="text-sm text-zinc-700 dark:text-zinc-300">
-            Monatsbudget (Sek.)
+            {t('settings.hlMonthBudget')}
             <input type="number" min={0} value={budget} onChange={e => setBudget(e.target.value)}
               className="ml-2 w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </label>
@@ -1397,29 +1400,29 @@ function HighlightsAISettings() {
         <div className="text-xs text-zinc-500 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-3 space-y-1">
           {provider === 'local' ? (
             <>
-              <div className="font-medium text-zinc-700 dark:text-zinc-300">Lokal auf dem M3 (LTX) — gratis &amp; privat</div>
-              <div><strong>0 € pro Clip</strong>, Fotos verlassen den Server nicht. Erfordert den laufenden M3-LTX-Worker; Jobs werden in eine Warteschlange gelegt und erzeugt, sobald der M3 online ist (~5 Min/Clip).</div>
-              <div className="text-zinc-400">Solange der M3-Worker noch nicht eingerichtet ist, bleiben „Lokal"-Jobs in der Warteschlange (Status „wird erstellt").</div>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">{t('settings.hlLocalTitle')}</div>
+              <div><strong>{t('settings.hlLocalCostBold')}</strong>{t('settings.hlLocalCost')}</div>
+              <div className="text-zinc-400">{t('settings.hlLocalQueue')}</div>
             </>
           ) : provider === 'veo' ? (
             <>
-              <div className="font-medium text-zinc-700 dark:text-zinc-300">Kosten — Google Veo 3.1 Fast</div>
-              <div>Pro <strong>Sekunde</strong> erzeugtem Video ca. <strong>$0,15</strong> (inkl. Ton). 4 Sek. ≈ $0,60 · 8 Sek. ≈ $1,20.</div>
-              <div>Monatsbudget {budget || '0'} Sek. ≈ <strong>${((Number(budget) || 0) * 0.15).toFixed(0)}</strong>/Monat. Kein Gratis-Tier — Abrechnung über deinen Google-Account.</div>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">{t('settings.hlVeoTitle')}</div>
+              <div>{t('settings.hlVeoCost')}</div>
+              <div>{t('settings.hlVeoBudget', { budget: budget || '0', cost: ((Number(budget) || 0) * 0.15).toFixed(0) })}</div>
             </>
           ) : (
             <>
-              <div className="font-medium text-zinc-700 dark:text-zinc-300">Kosten — fal.ai (modellabhängig)</div>
-              <div>Günstige Modelle ≈ <strong>$0,04–0,05/Sek.</strong> (z. B. Hailuo ~$0,28/Clip). ~<strong>$20 Gratis-Credits</strong> zum Testen bei Signup.</div>
-              <div>Monatsbudget {budget || '0'} Sek. ≈ grob <strong>${((Number(budget) || 0) * 0.046).toFixed(0)}</strong>/Monat (Hailuo).</div>
+              <div className="font-medium text-zinc-700 dark:text-zinc-300">{t('settings.hlFalTitle')}</div>
+              <div>{t('settings.hlFalCost')}</div>
+              <div>{t('settings.hlFalBudget', { budget: budget || '0', cost: ((Number(budget) || 0) * 0.046).toFixed(0) })}</div>
             </>
           )}
-          <div className="text-zinc-400">Harte Bremse: ist das Sekunden-Budget erreicht, werden bis zum Monatswechsel keine weiteren Clips erzeugt. Generierte Clips werden lokal gecacht (kein Doppelkauf).</div>
+          <div className="text-zinc-400">{t('settings.hlHardLimit')}</div>
         </div>
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-          {saved ? '✓ Gespeichert' : 'Speichern'}
+          {saved ? t('settings.savedCheck') : t('settings.save')}
         </button>
       </div>
     </div>
@@ -1437,6 +1440,7 @@ function fmtEta(sec: number | null | undefined): string {
 }
 
 function RemoteWorkerSection() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
@@ -1485,70 +1489,69 @@ function RemoteWorkerSection() {
 
   return (
     <div>
-      <SectionHeader title="Remote-Worker" desc="Eine GPU auf einem anderen Rechner zur Beschleunigung der KI-Erstverarbeitung dazuschalten (über HTTP, kein geteilter Speicher)." />
+      <SectionHeader title={t('settings.rwTitle')} desc={t('settings.rwDesc')} />
       <div className="space-y-6 max-w-2xl">
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">Remote-Worker aktivieren</p>
-            <p className="text-xs text-zinc-400 mt-0.5">Wenn aktiv und ein Worker verbunden ist, werden KI-Jobs an ihn ausgelagert statt lokal (CPU) gerechnet.</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.rwEnable')}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">{t('settings.rwEnableDesc')}</p>
           </div>
           <Toggle value={enabled} onChange={v => set('remote.enabled', v ? 'true' : 'false')} />
         </label>
 
         <div>
-          <Label>Zugriffs-Token (geteiltes Geheimnis)</Label>
+          <Label>{t('settings.rwToken')}</Label>
           <div className="flex gap-2">
-            <input value={token} onChange={e => set('remote.token', e.target.value)} placeholder="noch keins"
+            <input value={token} onChange={e => set('remote.token', e.target.value)} placeholder={t('settings.rwTokenPlaceholder')}
               className="flex-1 px-3 py-2 text-sm font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100" />
-            <button onClick={genToken} className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Generieren</button>
+            <button onClick={genToken} className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.rwGenerate')}</button>
           </div>
         </div>
 
         {/* Worker-Builder: stell zusammen, was für ein Worker auf welchem Gerät laufen soll */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
-          <Label>Worker einrichten (Befehl generieren)</Label>
+          <Label>{t('settings.rwBuilder')}</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-            <label className="space-y-1"><span className="text-xs text-zinc-500">Typ</span>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwType')}</span>
               <select value={wType} onChange={e => setWType(e.target.value as any)} className={SEL}>
-                <option value="ollama">Ollama (Mac, nativ)</option>
-                <option value="bundled">Gebündelt (GPU-Box, Docker)</option>
+                <option value="ollama">{t('settings.rwTypeOllama')}</option>
+                <option value="bundled">{t('settings.rwTypeBundled')}</option>
               </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">Aufgabe</span>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwTask')}</span>
               <select value={wMode} onChange={e => setWMode(e.target.value)} className={SEL}>
-                <option value="describe">Beschreibung</option>
-                <option value="embed">Embeddings (jina)</option>
-                <option value="faces">Gesichter</option>
-                <option value="all">Alles</option>
+                <option value="describe">{t('settings.rwTaskDescribe')}</option>
+                <option value="embed">{t('settings.rwTaskEmbed')}</option>
+                <option value="faces">{t('settings.rwTaskFaces')}</option>
+                <option value="all">{t('settings.rwTaskAll')}</option>
               </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">Medien</span>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwMedia')}</span>
               <select value={wMedia} onChange={e => setWMedia(e.target.value)} className={SEL}>
-                <option value="images">Nur Bilder</option>
-                <option value="videos">Nur Videos</option>
-                <option value="both">Bilder + Videos</option>
+                <option value="images">{t('settings.rwMediaImages')}</option>
+                <option value="videos">{t('settings.rwMediaVideos')}</option>
+                <option value="both">{t('settings.rwMediaBoth')}</option>
               </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">Worker-Name</span>
+            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwWorkerName')}</span>
               <input value={wName} onChange={e => setWName(e.target.value)} className={SEL} /></label>
             {wType === 'ollama' && (
-              <label className="space-y-1 col-span-2"><span className="text-xs text-zinc-500">Ollama-Modell</span>
-                <input value={wModel} onChange={e => setWModel(e.target.value)} placeholder="z.B. gemma4:26b, qwen3-vl:8b" className={SEL} /></label>
+              <label className="space-y-1 col-span-2"><span className="text-xs text-zinc-500">{t('settings.rwOllamaModel')}</span>
+                <input value={wModel} onChange={e => setWModel(e.target.value)} placeholder={t('settings.rwOllamaModelPlaceholder')} className={SEL} /></label>
             )}
           </div>
           <p className="text-[11px] text-zinc-400">
-            Beispiele: M3 = Ollama · Beschreibung · nur Bilder · gemma4:26b · „m3-describe". M5 = Ollama · Beschreibung · nur Videos · qwen3-vl:8b.
-            Asus = Gebündelt · Embeddings (oder Gesichter). Embeddings/Gesichter brauchen die GPU-Box (jina/InsightFace).
+            {t('settings.rwBuilderHint')}
           </p>
         </div>
 
         <button onClick={() => save.mutate(settings)} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-          {saved ? '✓ Gespeichert' : 'Speichern'}
+          {saved ? t('settings.savedCheck') : t('settings.save')}
         </button>
 
         {/* Live status */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Verarbeitung – Live</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? 'aktiv' : 'inaktiv'}</span>
+            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.rwProcessingLive')}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? t('settings.rwActive') : t('settings.rwInactive')}</span>
           </div>
           {/* Pro Rolle getrennt — je eigener Backlog, eigenes Ø, eigene Restzeit.
               (Beschreibung ~10s vs Gesichter ~1s NICHT mehr zusammen gemittelt.) */}
@@ -1561,11 +1564,11 @@ function RemoteWorkerSection() {
                   <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-1">
                     <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{r.label}</span>
                     <div className="flex gap-4 text-xs text-zinc-500 tabular-nums">
-                      <span><b className={color}>{r.pending.toLocaleString('de')}</b> offen</span>
-                      {r.done != null && <span><b className="text-emerald-500">{r.done.toLocaleString('de')}</b> fertig</span>}
-                      <span><b className="text-zinc-700 dark:text-zinc-300">{r.workers}</b> Worker</span>
+                      <span><b className={color}>{r.pending.toLocaleString('de')}</b> {t('settings.rwOpen')}</span>
+                      {r.done != null && <span><b className="text-emerald-500">{r.done.toLocaleString('de')}</b> {t('settings.rwDone')}</span>}
+                      <span><b className="text-zinc-700 dark:text-zinc-300">{r.workers}</b> {t('settings.rwWorker')}</span>
                       <span>Ø {r.avg_dur != null ? `${r.avg_dur.toFixed(1)}s` : '—'}</span>
-                      <span>Rest <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
+                      <span>{t('settings.rwRemaining')} <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
                     </div>
                   </div>
                   {rolW.length > 0 && (
@@ -1576,9 +1579,9 @@ function RemoteWorkerSection() {
                           <li key={w.name} className="flex flex-wrap items-center gap-x-2">
                             <span className={idle < 30 ? 'text-emerald-500' : 'text-zinc-400'}>●</span>
                             <b className="text-zinc-700 dark:text-zinc-300">{w.name}</b>
-                            <span>· {w.jobs} Fotos</span>
+                            <span>· {t('settings.rwPhotos', { n: w.jobs })}</span>
                             {w.avg_dur != null && <span>· Ø {w.avg_dur.toFixed(1)}s</span>}
-                            <span className="text-zinc-400">· vor {idle}s</span>
+                            <span className="text-zinc-400">· {t('settings.rwAgo', { n: idle })}</span>
                           </li>
                         )
                       })}
@@ -1588,31 +1591,31 @@ function RemoteWorkerSection() {
               )
             })}
             {(status?.workers?.length ?? 0) === 0 && (
-              <p className="text-xs text-zinc-400">Kein Worker verbunden — KI-Jobs werden lokal (CPU) verarbeitet.</p>
+              <p className="text-xs text-zinc-400">{t('settings.rwNoWorker')}</p>
             )}
           </div>
         </div>
 
         {/* Schritt-für-Schritt + generierter Start-Befehl */}
         <div>
-          <Label>So fügst du diesen Worker hinzu</Label>
+          <Label>{t('settings.rwHowToAdd')}</Label>
           {wType === 'ollama' ? (
             <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
-              <li>Auf dem Mac <a className="text-indigo-500" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> installieren.</li>
-              <li>Modell laden: <code>ollama pull {wModel}</code></li>
-              <li><code>mac_describe_agent.py</code> aus dem PhotoFlow-Repo auf den Mac legen (z. B. <code>~/photoflow_worker/</code>).</li>
-              <li>Token oben <b>speichern</b>, dann den Befehl unten im Terminal ausführen (Mac-Python reicht — kein pip).</li>
-              <li>Optional dauerhaft: als <code>launchctl</code>-LaunchAgent einrichten (Autostart bei Login).</li>
+              <li>{t('settings.rwOllamaStep1a')} <a className="text-indigo-500" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> {t('settings.rwOllamaStep1b')}</li>
+              <li>{t('settings.rwOllamaStep2')} <code>ollama pull {wModel}</code></li>
+              <li><code>mac_describe_agent.py</code> {t('settings.rwOllamaStep3')} <code>~/photoflow_worker/</code>).</li>
+              <li>{t('settings.rwOllamaStep4')}</li>
+              <li>{t('settings.rwOllamaStep5a')} <code>launchctl</code>{t('settings.rwOllamaStep5b')}</li>
             </ol>
           ) : (
             <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
-              <li>Auf der GPU-Box das PhotoFlow-Repo unter <code>/opt/photoflow</code> bereitstellen (+ Docker, NVIDIA-Runtime).</li>
-              <li>Token oben <b>speichern</b>, dann den Befehl unten ausführen.</li>
-              <li>Stoppen: <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code></li>
+              <li>{t('settings.rwBundledStep1a')} <code>/opt/photoflow</code> {t('settings.rwBundledStep1b')}</li>
+              <li>{t('settings.rwBundledStep2')}</li>
+              <li>{t('settings.rwBundledStep3')} <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code></li>
             </ol>
           )}
           <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
-          {!token && <p className="text-[11px] text-amber-500 mt-1">⚠️ Noch kein Token gespeichert — oben „Generieren" + „Speichern", sonst lehnt der Server den Worker ab.</p>}
+          {!token && <p className="text-[11px] text-amber-500 mt-1">{t('settings.rwNoTokenWarn')}</p>}
         </div>
       </div>
 
@@ -1625,6 +1628,7 @@ function RemoteWorkerSection() {
 }
 
 function RemoteWorkerLog() {
+  const { t } = useT()
   const [open, setOpen] = useState(true)
   const { data = [] } = useQuery<{ ts: string; level: string; feature: string; message: string }[]>({
     queryKey: ['logs', 'remote-feed'],
@@ -1635,24 +1639,25 @@ function RemoteWorkerLog() {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <Label>Remote-Worker-Log (live)</Label>
-        <button onClick={() => setOpen(o => !o)} className="text-xs text-indigo-500 hover:underline">{open ? 'Pausieren' : 'Aktualisieren'}</button>
+        <Label>{t('settings.rwLogTitle')}</Label>
+        <button onClick={() => setOpen(o => !o)} className="text-xs text-indigo-500 hover:underline">{open ? t('settings.rwLogPause') : t('settings.rwLogResume')}</button>
       </div>
       <div className="h-64 overflow-y-auto rounded-lg bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed">
         {lines.length === 0 ? (
-          <p className="text-zinc-500">Noch keine Remote-Aktivität. Sobald ein Worker Fotos verarbeitet, erscheinen hier die Einträge (Dauer pro Foto, Beschreibung).</p>
+          <p className="text-zinc-500">{t('settings.rwLogEmpty')}</p>
         ) : lines.map((e, i) => (
           <div key={i} className={`whitespace-pre-wrap break-words py-0.5 ${e.level === 'WARNING' || e.level === 'ERROR' ? 'text-amber-400' : 'text-emerald-300'}`}>
             <span className="text-zinc-600">{(e.ts || '').slice(11, 19)} </span>{e.message}
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-zinc-400 mt-1">Zeigt jede vom Remote-Worker abgeschlossene Aufgabe mit Verarbeitungsdauer. Vollständige Logs unter „Logs“ → Remote-Worker.</p>
+      <p className="text-[11px] text-zinc-400 mt-1">{t('settings.rwLogHint')}</p>
     </div>
   )
 }
 
 function FacesSection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -1674,98 +1679,95 @@ function FacesSection() {
 
   return (
     <div>
-      <SectionHeader title="Personen & Gesichter" desc="Gesichtserkennung und automatisches Personen-Clustering (lokal, InsightFace)." />
+      <SectionHeader title={t('settings.facTitle')} desc={t('settings.facDesc')} />
       <div className="space-y-6 max-w-xl">
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">Gesichtserkennung aktivieren</p>
-            <p className="text-xs text-zinc-400 mt-0.5">Erkennt Gesichter pro Foto, speichert Position + Embedding für Clustering.</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.facEnable')}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">{t('settings.facEnableDesc')}</p>
           </div>
           <Toggle value={enabled} onChange={v => set('faces.enabled', v ? 'true' : 'false')} />
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label>Engine (Erkennung + Embedding)</Label>
+            <Label>{t('settings.facEngine')}</Label>
             <select value={settings['face.engine'] ?? 'facenet'} onChange={e => set('face.engine', e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="facenet">facenet (MTCNN + VGGFace2, leicht)</option>
-              <option value="insightface">InsightFace / ArcFace (genauer)</option>
+              <option value="facenet">{t('settings.facEngineFacenet')}</option>
+              <option value="insightface">{t('settings.facEngineInsight')}</option>
             </select>
           </div>
           <div>
-            <Label>Clustering-Algorithmus</Label>
+            <Label>{t('settings.facClusterAlgo')}</Label>
             <select value={settings['face.cluster_algo'] ?? 'dbscan'} onChange={e => set('face.cluster_algo', e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="dbscan">DBSCAN (Standard)</option>
-              <option value="hdbscan">HDBSCAN (variable Dichte)</option>
+              <option value="dbscan">{t('settings.facAlgoDbscan')}</option>
+              <option value="hdbscan">{t('settings.facAlgoHdbscan')}</option>
             </select>
           </div>
         </div>
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">Automatisch clustern</p>
-            <p className="text-xs text-zinc-400 mt-0.5">Gruppiert erkannte Gesichter alle 5 Min. selbstständig zu Personen.</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.facAutoCluster')}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">{t('settings.facAutoClusterDesc')}</p>
           </div>
           <Toggle value={(settings['face.auto_cluster'] ?? 'true') !== 'false'} onChange={v => set('face.auto_cluster', v ? 'true' : 'false')} />
         </label>
         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-700/40 text-xs text-amber-700 dark:text-amber-300">
-          Beide Engines liefern 512-dim-Embeddings — aber in <strong>unterschiedlichen Vektorräumen</strong>.
-          Nach einem Engine-Wechsel die Gesichter neu erkennen lassen („Neu verarbeiten“ pro Ordner),
-          damit alte und neue Embeddings nicht gemischt werden. InsightFace lädt beim ersten Lauf ein Modell (~300&nbsp;MB).
+          {t('settings.facEngineWarn')}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <Label>Cluster-Schwelle</Label>
+            <Label>{t('settings.facClusterThreshold')}</Label>
             <Input value={settings['face.clustering_threshold'] ?? '0.5'} onChange={v => set('face.clustering_threshold', v)} placeholder="0.5" />
-            <p className="text-xs text-zinc-400 mt-1">Wie ähnlich Gesichter sein müssen, um zusammen-/zugeordnet zu werden. Für InsightFace ~<b>0.5</b> (niedriger = mehr Treffer, aber Risiko falscher Zuordnungen; höher = strenger). Danach „Clustern" erneut ausführen.</p>
+            <p className="text-xs text-zinc-400 mt-1">{t('settings.facClusterThresholdHint')}</p>
           </div>
           <div>
-            <Label>Min. Konfidenz</Label>
+            <Label>{t('settings.facMinConfidence')}</Label>
             <Input value={settings['face.min_confidence'] ?? '0.7'} onChange={v => set('face.min_confidence', v)} placeholder="0.7" />
           </div>
           <div>
-            <Label>Min. Größe (px)</Label>
+            <Label>{t('settings.facMinSize')}</Label>
             <Input value={settings['face.min_size_px'] ?? '40'} onChange={v => set('face.min_size_px', v)} placeholder="40" />
           </div>
           <div>
-            <Label>Min. Gesichter/Person</Label>
+            <Label>{t('settings.facMinFaces')}</Label>
             <Input value={settings['face.min_cluster_size'] ?? '3'} onChange={v => set('face.min_cluster_size', v)} placeholder="3" />
           </div>
           <div>
-            <Label>Zusammenführen-Schwelle</Label>
+            <Label>{t('settings.facMergeThreshold')}</Label>
             <Input value={settings['face.merge_threshold'] ?? '0.5'} onChange={v => set('face.merge_threshold', v)} placeholder="0.5" />
           </div>
         </div>
-        <p className="text-xs text-zinc-400">Gegen tausende Mini-Gesichter: <b>Min. Größe</b> filtert winzige Hintergrund-Gesichter schon bei der Erkennung weg, <b>Min. Gesichter/Person</b> verhindert 1–2-Foto-„Personen" (Reste bleiben unter „Gesichter", werden aber nicht zu Personen).</p>
+        <p className="text-xs text-zinc-400">{t('settings.facMiniHint')}</p>
 
         <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-2">
-            <Video size={12} /> Gesichter in Videos
+            <Video size={12} /> {t('settings.facInVideos')}
           </p>
           <label className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Auch in Videos erkennen</p>
-              <p className="text-xs text-zinc-400">Extrahiert Frames und analysiert sie (langsamer).</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.facDetectInVideos')}</p>
+              <p className="text-xs text-zinc-400">{t('settings.facDetectInVideosDesc')}</p>
             </div>
             <Toggle value={(settings['video.face_recognition'] ?? 'false') === 'true'} onChange={v => set('video.face_recognition', v ? 'true' : 'false')} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Frame-Intervall (s)</Label>
+              <Label>{t('settings.facFrameInterval')}</Label>
               <Input value={settings['video.face_interval_sec'] ?? '5'} onChange={v => set('video.face_interval_sec', v)} placeholder="5" />
             </div>
             <div>
-              <Label>Max. Frames/Video</Label>
+              <Label>{t('settings.facMaxFrames')}</Label>
               <Input value={settings['video.max_frames'] ?? '30'} onChange={v => set('video.max_frames', v)} placeholder="30" />
             </div>
           </div>
         </div>
 
         <p className="text-xs text-emerald-500">
-          Gesichtserkennung ist aktiv — Gesichter werden beim Verarbeiten erkannt, gespeichert und
-          (sofern aktiviert) automatisch zu Personen gruppiert. Gruppen benennen/zusammenführen unter „Personen“.
+          {t('settings.facActiveHint')}
         </p>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
@@ -1778,6 +1780,7 @@ type BackupFile = { name: string; size_mb: number; created_at: string; type: str
 type HWInfo = { name: string; available: boolean; info: string; encode_h264_codec: string }
 
 function BackupSection() {
+  const { t } = useT()
   const [rcloneRemote, setRcloneRemote] = useState('')
   const [keepDays, setKeepDays] = useState(30)
   const [inclThumbs, setInclThumbs] = useState(true)
@@ -1832,19 +1835,19 @@ function BackupSection() {
   })
   const mirrorNow = useMutation({
     mutationFn: () => api.post('/backup/mirror-originals'),
-    onSuccess: () => alert('Originale-Spiegel gestartet (läuft im Hintergrund — kann je nach Größe lange dauern).'),
-    onError: () => alert('Konnte den Spiegel-Job nicht starten.'),
+    onSuccess: () => alert(t('settings.bkMirrorStarted')),
+    onError: () => alert(t('settings.bkMirrorError')),
   })
   const restore = useMutation({
     mutationFn: (b: BackupFile) => b.type === 'db'
       ? api.post('/backup/restore/db', null, { params: { filename: b.name } })
       : api.post('/backup/restore/files', null, { params: { filename: b.name } }),
-    onSuccess: (r: any) => alert(r?.data?.ok === false ? 'Wiederherstellung mit Fehlern — Server-Logs prüfen.' : 'Wiederhergestellt. Ggf. Seite neu laden / Backend neu starten.'),
-    onError: () => alert('Wiederherstellung fehlgeschlagen.'),
+    onSuccess: (r: any) => alert(r?.data?.ok === false ? t('settings.bkRestoreErrors') : t('settings.bkRestoreOk')),
+    onError: () => alert(t('settings.bkRestoreFailed')),
   })
   const verify = useMutation({
     mutationFn: (name: string) => api.post('/backup/verify', null, { params: { filename: name } }).then(r => r.data),
-    onSuccess: (d: any) => alert(d?.ok ? `✓ Backup ok — ${d.tables} Tabellen, ${d.photo_rows} Fotos (${d.size_mb} MB).` : `⚠ Verifikation fehlgeschlagen: ${d?.error ?? 'unbekannt'}`),
+    onSuccess: (d: any) => alert(d?.ok ? t('settings.bkVerifyOk', { tables: d.tables, photos: d.photo_rows, mb: d.size_mb }) : t('settings.bkVerifyFailed', { error: d?.error ?? t('settings.unknown') })),
   })
 
   const hwColor = !hw ? 'text-zinc-400'
@@ -1855,12 +1858,12 @@ function BackupSection() {
 
   return (
     <div>
-      <SectionHeader title="Backup & Hardware" desc="Datenbank-Sicherung, Offsiste-Sync und Hardware-Beschleunigung." />
+      <SectionHeader title={t('settings.bkTitle')} desc={t('settings.bkDesc')} />
 
       {/* HW acceleration status */}
       <div className="mb-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
         <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-          <Cpu size={12} /> Hardware-Beschleunigung
+          <Cpu size={12} /> {t('settings.bkHwAccel')}
         </p>
         {hw ? (
           <div className="flex items-center gap-3">
@@ -1869,26 +1872,26 @@ function BackupSection() {
                hw.name === 'qsv' ? 'Intel Quick Sync' :
                hw.name === 'vaapi' ? 'VAAPI' :
                hw.name === 'videotoolbox' ? 'Apple VideoToolbox' :
-               'Software (libx264/libvpx-vp9)'}
+               t('settings.bkHwSoftware')}
             </div>
             <span className="text-xs text-zinc-400">{hw.info}</span>
           </div>
         ) : (
-          <p className="text-sm text-zinc-400">Erkenne Hardware...</p>
+          <p className="text-sm text-zinc-400">{t('settings.bkDetectingHw')}</p>
         )}
-        <p className="text-xs text-zinc-500 mt-1">Encoder: <code className="text-indigo-400">{hw?.encode_h264_codec ?? '...'}</code></p>
+        <p className="text-xs text-zinc-500 mt-1">{t('settings.bkEncoder')} <code className="text-indigo-400">{hw?.encode_h264_codec ?? '...'}</code></p>
       </div>
 
       {/* Backup list */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Gespeicherte Backups</p>
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.bkSavedBackups')}</p>
           <button onClick={() => refetch()} className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
-            <RefreshCw size={11} /> Aktualisieren
+            <RefreshCw size={11} /> {t('settings.refresh')}
           </button>
         </div>
         {backups.length === 0 && (
-          <p className="text-sm text-zinc-400">Noch keine Backups erstellt.</p>
+          <p className="text-sm text-zinc-400">{t('settings.bkNoBackups')}</p>
         )}
         <div className="space-y-2">
           {backups.map(b => (
@@ -1898,11 +1901,11 @@ function BackupSection() {
               </span>
               <span className="flex-1 font-mono text-xs text-zinc-600 dark:text-zinc-400 truncate">{b.name}</span>
               <span className="text-zinc-400 text-xs">{b.size_mb} MB</span>
-              {b.type === 'db' && <button onClick={() => verify.mutate(b.name)} className="text-zinc-400 hover:text-zinc-200 text-xs">Prüfen</button>}
-              <button onClick={() => { if (confirm(`„${b.name}" wiederherstellen? Überschreibt aktuelle ${b.type === 'db' ? 'Datenbank' : 'Dateien'}.`)) restore.mutate(b) }}
-                className="text-amber-400 hover:text-amber-300 text-xs transition-colors">Restore</button>
+              {b.type === 'db' && <button onClick={() => verify.mutate(b.name)} className="text-zinc-400 hover:text-zinc-200 text-xs">{t('settings.bkVerify')}</button>}
+              <button onClick={() => { if (confirm(t('settings.bkRestoreConfirm', { name: b.name, target: b.type === 'db' ? t('settings.bkDatabase') : t('settings.bkFiles') }))) restore.mutate(b) }}
+                className="text-amber-400 hover:text-amber-300 text-xs transition-colors">{t('settings.bkRestore')}</button>
               <a href={`/api/backup/download/${b.name}`} download
-                className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors">Download</a>
+                className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors">{t('settings.download')}</a>
             </div>
           ))}
         </div>
@@ -1910,76 +1913,76 @@ function BackupSection() {
 
       {/* Automatic schedule */}
       <div className="mb-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Automatische Sicherung</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{t('settings.bkAutoBackup')}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label>Zeitplan</Label>
+            <Label>{t('settings.bkSchedule')}</Label>
             <select value={sched} onChange={e => setSched(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
-              <option value="off">Aus</option>
-              <option value="daily">Täglich</option>
-              <option value="weekly">Wöchentlich</option>
+              <option value="off">{t('settings.bkSchedOff')}</option>
+              <option value="daily">{t('settings.bkSchedDaily')}</option>
+              <option value="weekly">{t('settings.bkSchedWeekly')}</option>
             </select>
           </div>
           <div>
-            <Label>Aufbewahrung (Tage)</Label>
+            <Label>{t('settings.bkRetention')}</Label>
             <Input value={String(keepDays)} onChange={v => setKeepDays(Number(v) || 30)} placeholder="30" />
           </div>
         </div>
         <label className="flex items-center gap-2 mt-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
           <input type="checkbox" checked={inclThumbs} onChange={e => setInclThumbs(e.target.checked)} className="accent-indigo-600" />
-          Thumbnails mitsichern
-          <span className="text-[11px] text-zinc-400">(regenerierbar — abwählen macht das Backup deutlich kleiner)</span>
+          {t('settings.bkInclThumbs')}
+          <span className="text-[11px] text-zinc-400">{t('settings.bkInclThumbsHint')}</span>
         </label>
         <button onClick={() => saveSchedule.mutate()} disabled={saveSchedule.isPending}
           className="mt-3 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-          {savedSched ? '✓ Gespeichert' : 'Zeitplan speichern'}
+          {savedSched ? t('settings.savedCheck') : t('settings.bkSaveSchedule')}
         </button>
-        <p className="text-[11px] text-zinc-400 mt-2">Sichert die <b>Datenbank</b> (inkl. aller Beschreibungen, Gesichter & Such-Vektoren) + Config{inclThumbs ? ' + Thumbnails' : ''}. <b>Originaldateien sind NICHT enthalten</b> (nur deren Pfade) — daher ist das Backup viel kleiner als die Mediathek. Alte Backups werden nach der Aufbewahrungsdauer entfernt.</p>
+        <p className="text-[11px] text-zinc-400 mt-2">{t('settings.bkScheduleHint', { thumbs: inclThumbs ? t('settings.bkPlusThumbs') : '' })}</p>
 
         <label className="flex items-center gap-2 mt-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
           <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="accent-indigo-600" />
-          Backups verschlüsseln (AES-256)
+          {t('settings.bkEncrypt')}
         </label>
         {encrypt && (
           <div className="mt-1">
-            <Label>Passwort (leer lassen, wenn schon gesetzt / per ENV)</Label>
+            <Label>{t('settings.bkPassword')}</Label>
             <Input type="password" value={passphrase} onChange={setPassphrase} placeholder="••••••••" />
-            <p className="text-[11px] text-amber-500 mt-1">⚠️ Ohne dieses Passwort ist kein Restore möglich — sicher aufbewahren! (Besser: per ENV <code>PHOTOFLOW_BACKUP_PASSPHRASE</code>.)</p>
+            <p className="text-[11px] text-amber-500 mt-1">{t('settings.bkPasswordWarnA')} <code>PHOTOFLOW_BACKUP_PASSPHRASE</code>.)</p>
           </div>
         )}
       </div>
 
       {/* Originals offsite mirror */}
       <div className="space-y-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Originale offsite spiegeln</p>
-        <p className="text-[11px] text-zinc-400">Spiegelt die <b>Originaldateien</b> per rclone offsite. Löschungen werden mitgespiegelt — gelöschte/geänderte Dateien landen aber zuerst in einem datierten <b>Trash-Ordner</b> auf der Gegenseite (wiederherstellbar). Läuft nachts nach dem DB-Backup.</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.bkMirrorTitle')}</p>
+        <p className="text-[11px] text-zinc-400">{t('settings.bkMirrorDesc')}</p>
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <Label>Rclone-Ziel</Label>
+            <Label>{t('settings.bkRcloneTarget')}</Label>
             <Input value={mirrorRemote} onChange={setMirrorRemote} placeholder="b2:bucket/nimtaflow-originals" />
           </div>
           <div>
-            <Label>Zeitplan</Label>
+            <Label>{t('settings.bkSchedule')}</Label>
             <select value={mirrorSched} onChange={e => setMirrorSched(e.target.value)}
               className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm">
-              <option value="off">Aus</option><option value="daily">Täglich</option><option value="weekly">Wöchentlich</option>
+              <option value="off">{t('settings.bkSchedOff')}</option><option value="daily">{t('settings.bkSchedDaily')}</option><option value="weekly">{t('settings.bkSchedWeekly')}</option>
             </select>
           </div>
         </div>
         <button onClick={() => mirrorNow.mutate()} disabled={mirrorNow.isPending || !mirrorRemote}
           className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">
-          Jetzt spiegeln
+          {t('settings.bkMirrorNow')}
         </button>
       </div>
 
       {/* Run backup */}
       <div className="space-y-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Backup erstellen</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{t('settings.bkCreateBackup')}</p>
         <div>
-          <Label>Rclone Remote (optional)</Label>
+          <Label>{t('settings.bkRcloneRemote')}</Label>
           <Input value={rcloneRemote} onChange={setRcloneRemote} placeholder="b2:my-bucket/photoflow oder gdrive:backup" />
-          <p className="text-[11px] text-zinc-400 mt-1">Leer lassen = nur lokal. rclone muss auf dem Server konfiguriert sein.</p>
+          <p className="text-[11px] text-zinc-400 mt-1">{t('settings.bkRcloneRemoteHint')}</p>
         </div>
         <button
           onClick={() => runBackup.mutate()}
@@ -1987,25 +1990,25 @@ function BackupSection() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors"
         >
           {runBackup.isPending ? <Loader2 size={14} className="animate-spin" /> : <HardDrive size={14} />}
-          Backup jetzt starten
+          {t('settings.bkRunNow')}
         </button>
         {runBackup.isSuccess && (
-          <p className="text-xs text-emerald-400 flex items-center gap-1"><CircleCheck size={12} /> Backup erfolgreich!</p>
+          <p className="text-xs text-emerald-400 flex items-center gap-1"><CircleCheck size={12} /> {t('settings.bkSuccess')}</p>
         )}
       </div>
 
       {/* Prune */}
       <div className="mt-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Alte Backups löschen</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{t('settings.bkPruneTitle')}</p>
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <Label>Aufbewahrung (Tage): {keepDays}</Label>
+            <Label>{t('settings.bkRetentionDays', { n: keepDays })}</Label>
             <input type="range" min={7} max={365} step={7} value={keepDays} onChange={e => setKeepDays(Number(e.target.value))}
               className="w-full accent-indigo-500" />
           </div>
           <button onClick={() => prune.mutate()} disabled={prune.isPending}
             className="px-3 py-2 rounded-lg text-sm bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors shrink-0">
-            Bereinigen
+            {t('settings.bkPrune')}
           </button>
         </div>
       </div>
@@ -2014,6 +2017,7 @@ function BackupSection() {
 }
 
 function TripsSection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -2031,12 +2035,12 @@ function TripsSection() {
 
   return (
     <div>
-      <SectionHeader title="Reisen" desc="Automatisch erkannte Reisen/Events (gruppiert nach Zeit + Ort)." />
+      <SectionHeader title={t('settings.tripsTitle')} desc={t('settings.tripsDesc')} />
       <div className="space-y-5 max-w-xl">
         <div>
-          <Label>Minimum Fotos pro Reise</Label>
+          <Label>{t('settings.tripsMinPhotos')}</Label>
           <Input value={settings['trips.min_photos'] ?? '8'} onChange={v => set('trips.min_photos', v.replace(/[^0-9]/g, ''))} type="number" placeholder="8" />
-          <p className="text-xs text-zinc-400 mt-1">Ein automatisch erkannter Zeit-/Ort-Cluster wird erst ab so vielen Fotos als Reise vorgeschlagen. Höher = nur größere Trips; niedriger = auch kurze Ausflüge.</p>
+          <p className="text-xs text-zinc-400 mt-1">{t('settings.tripsMinPhotosHint')}</p>
         </div>
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
@@ -2050,6 +2054,7 @@ type ShareRow = {
 }
 
 function SharingSection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState<number | null>(null)
@@ -2075,28 +2080,27 @@ function SharingSection() {
   })
   const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
   const copy = (s: ShareRow) => { navigator.clipboard.writeText(s.url); setCopied(s.id); setTimeout(() => setCopied(null), 1500) }
-  const typeLabel = (t: string) => t === 'album' ? 'Album' : t === 'photo' ? 'Foto' : 'Reise'
+  const typeLabel = (ty: string) => ty === 'album' ? t('settings.shTypeAlbum') : ty === 'photo' ? t('settings.shTypePhoto') : t('settings.shTypeTrip')
 
   return (
     <div>
-      <SectionHeader title="Teilen" desc="Öffentliche Links für Alben, Fotos und Reisen — login-freier Gäste-Zugriff per geheimem Link." />
+      <SectionHeader title={t('settings.shTitle')} desc={t('settings.shDesc')} />
       <div className="space-y-6 max-w-2xl">
         <div>
-          <Label>Öffentliche Basis-URL</Label>
+          <Label>{t('settings.shPublicBaseUrl')}</Label>
           <Input value={settings['share.public_base_url'] ?? ''} onChange={v => set('share.public_base_url', v.trim())}
                  placeholder="https://fotos.example.com" />
           <p className="text-xs text-zinc-400 mt-1">
-            Die von außen erreichbare Adresse deiner NimtaFlow-Instanz. Geteilte Links werden damit gebaut
-            (z. B. <code>https://fotos.example.com/s/&lt;token&gt;</code>). Leer lassen = aktuelle Adresse des Browsers.
+            {t('settings.shPublicBaseUrlHintA')} <code>https://fotos.example.com/s/&lt;token&gt;</code>{t('settings.shPublicBaseUrlHintB')}
           </p>
           <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
         </div>
 
         <div>
-          <Label>Aktive Links {sharesQuery.data ? `(${sharesQuery.data.length})` : ''}</Label>
+          <Label>{t('settings.shActiveLinks')} {sharesQuery.data ? `(${sharesQuery.data.length})` : ''}</Label>
           <div className="mt-2 space-y-2">
             {(sharesQuery.data ?? []).length === 0 && (
-              <p className="text-sm text-zinc-400">Noch keine geteilten Links. Teile ein Album, Foto oder eine Reise über das Teilen-Symbol.</p>
+              <p className="text-sm text-zinc-400">{t('settings.shNoLinks')}</p>
             )}
             {(sharesQuery.data ?? []).map(s => (
               <div key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2">
@@ -2104,17 +2108,17 @@ function SharingSection() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{s.title || s.url}</div>
                   <div className="text-xs text-zinc-400 truncate">
-                    {s.has_password ? '🔒 Passwort · ' : ''}
-                    {s.expires_at ? `läuft ab ${new Date(s.expires_at).toLocaleDateString()} · ` : ''}
-                    {s.allow_download ? 'Download an' : 'nur ansehen'} · {s.view_count}× aufgerufen
+                    {s.has_password ? t('settings.shPassword') + ' · ' : ''}
+                    {s.expires_at ? t('settings.shExpires', { date: new Date(s.expires_at).toLocaleDateString() }) + ' · ' : ''}
+                    {s.allow_download ? t('settings.shDownloadOn') : t('settings.shViewOnly')} · {t('settings.shViewCount', { n: s.view_count })}
                   </div>
                 </div>
-                <button onClick={() => copy(s)} title="Link kopieren"
+                <button onClick={() => copy(s)} title={t('settings.shCopyLink')}
                   className="p-2 text-zinc-500 hover:text-indigo-500 shrink-0">
                   {copied === s.id ? <Check size={16} /> : <Copy size={16} />}
                 </button>
-                <button onClick={() => { if (confirm('Diesen Link widerrufen? Gäste verlieren sofort den Zugriff.')) del.mutate(s.id) }}
-                  title="Widerrufen" className="p-2 text-red-500 hover:text-red-400 shrink-0">
+                <button onClick={() => { if (confirm(t('settings.shRevokeConfirm'))) del.mutate(s.id) }}
+                  title={t('settings.shRevoke')} className="p-2 text-red-500 hover:text-red-400 shrink-0">
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -2127,6 +2131,7 @@ function SharingSection() {
 }
 
 function MapSection() {
+  const { t } = useT()
   const [settings, setSettings] = useState<Settings>({})
   const [saved, setSaved] = useState(false)
   const qc = useQueryClient()
@@ -2144,37 +2149,37 @@ function MapSection() {
 
   return (
     <div>
-      <SectionHeader title="Karte" desc="Kartendarstellung der Fotos mit GPS-Daten." />
+      <SectionHeader title={t('settings.mapTitle')} desc={t('settings.mapDesc')} />
       <div className="space-y-5 max-w-xl">
         <div>
-          <Label>Standard-Kartenebene</Label>
+          <Label>{t('settings.mapDefaultLayer')}</Label>
           <select value={settings['map.default_layer'] ?? 'osm'} onChange={e => set('map.default_layer', e.target.value)}
             className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="osm">Standard (OpenStreetMap)</option>
-            <option value="satellite">Satellit (Esri)</option>
-            <option value="dark">Dunkel (CARTO)</option>
-            <option value="light">Hell (CARTO)</option>
+            <option value="osm">{t('settings.mapLayerOsm')}</option>
+            <option value="satellite">{t('settings.mapLayerSatellite')}</option>
+            <option value="dark">{t('settings.mapLayerDark')}</option>
+            <option value="light">{t('settings.mapLayerLight')}</option>
             <option value="voyager">Voyager (CARTO)</option>
             <option value="topo">Topo (OpenTopoMap)</option>
             <option value="google">Google</option>
-            <option value="google_sat">Google Satellit</option>
+            <option value="google_sat">{t('settings.mapLayerGoogleSat')}</option>
             <option value="google_hybrid">Google Hybrid</option>
-            <option value="maptiler">MapTiler (Key nötig)</option>
-            <option value="maptiler_sat">MapTiler Satellit (Key nötig)</option>
+            <option value="maptiler">{t('settings.mapLayerMaptiler')}</option>
+            <option value="maptiler_sat">{t('settings.mapLayerMaptilerSat')}</option>
           </select>
-          <p className="text-xs text-zinc-400 mt-1">Alle Ebenen sind kostenlos & ohne API-Key. Auf der Karte jederzeit umschaltbar.</p>
+          <p className="text-xs text-zinc-400 mt-1">{t('settings.mapLayerHint')}</p>
         </div>
 
         <div>
-          <Label>MapTiler API-Key (optional)</Label>
-          <Input value={settings['map.maptiler_key'] ?? ''} onChange={v => set('map.maptiler_key', v)} type="password" placeholder="dein MapTiler-Key" />
-          <p className="text-xs text-zinc-400 mt-1">Aktiviert zusätzlich die Ebenen „MapTiler" und „MapTiler Satellit" (kostenloser Key auf maptiler.com). Leer lassen = nur freie Ebenen.</p>
+          <Label>{t('settings.mapMaptilerKey')}</Label>
+          <Input value={settings['map.maptiler_key'] ?? ''} onChange={v => set('map.maptiler_key', v)} type="password" placeholder={t('settings.mapMaptilerKeyPlaceholder')} />
+          <p className="text-xs text-zinc-400 mt-1">{t('settings.mapMaptilerKeyHint')}</p>
         </div>
 
         <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
           <div>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">Street-View-Link anzeigen</p>
-            <p className="text-xs text-zinc-400 mt-0.5">Öffnet Google Street View an den Foto-Koordinaten (kostenlos, kein Key).</p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.mapStreetView')}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">{t('settings.mapStreetViewDesc')}</p>
           </div>
           <Toggle value={(settings['map.streetview'] ?? 'true') !== 'false'} onChange={v => set('map.streetview', v ? 'true' : 'false')} />
         </label>
@@ -2197,6 +2202,7 @@ const LEVEL_COLORS: Record<string, string> = {
 }
 
 function FeaturesSection() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
@@ -2213,10 +2219,10 @@ function FeaturesSection() {
   )
   return (
     <div>
-      <SectionHeader title="Funktionen" desc="Optionale Bereiche der App ein- oder ausblenden." />
+      <SectionHeader title={t('settings.featTitle')} desc={t('settings.featDesc')} />
       <div className="space-y-3 max-w-xl">
-        <Row k="features.relationships" title="Beziehungen / Stammbaum" desc="Familien- & Freundes-Netzwerk in der Seitenleiste. Personen verknüpfen und als Graph anzeigen." />
-        <Row k="map.globe_default" title="Karte als 3D-Globus öffnen" desc="Standardansicht der Karte ist die 3D-Weltkugel statt der flachen Karte." />
+        <Row k="features.relationships" title={t('settings.featRelationships')} desc={t('settings.featRelationshipsDesc')} />
+        <Row k="map.globe_default" title={t('settings.featGlobe')} desc={t('settings.featGlobeDesc')} />
       </div>
     </div>
   )
@@ -2225,6 +2231,7 @@ function FeaturesSection() {
 type AppUser = { id: number; email: string; name: string; role: 'admin' | 'user'; is_active: boolean; last_login: string | null; access_config?: Record<string, any> | null }
 
 function UsersSection() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [settings, setSettings] = useState<Settings>({})
   const [pwFor, setPwFor] = useState<number | null>(null)
@@ -2264,21 +2271,21 @@ function UsersSection() {
 
   return (
     <div>
-      <SectionHeader title="Benutzer & Login" desc="Konten verwalten und festlegen, ob für NimtaFlow ein Login nötig ist." />
+      <SectionHeader title={t('settings.usrTitle')} desc={t('settings.usrDesc')} />
 
       {notAuthed ? (
         <div className="max-w-xl p-4 rounded-xl border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">
-          <p className="flex items-center gap-2 font-medium"><Lock size={15} /> Als Administrator anmelden</p>
-          <p className="mt-1 text-amber-700 dark:text-amber-300/90">Die Benutzerverwaltung ist nur für angemeldete Admins sichtbar. Start-Login: <strong>admin@photoflow.local</strong> / <strong>Nimtz@1977</strong>.</p>
-          <a href="/login" className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"><KeyRound size={14} /> Zur Anmeldung</a>
+          <p className="flex items-center gap-2 font-medium"><Lock size={15} /> {t('settings.usrLoginAsAdmin')}</p>
+          <p className="mt-1 text-amber-700 dark:text-amber-300/90">{t('settings.usrAdminOnlyHintA')} <strong>admin@photoflow.local</strong> / <strong>Nimtz@1977</strong>.</p>
+          <a href="/login" className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"><KeyRound size={14} /> {t('settings.usrToLogin')}</a>
         </div>
       ) : (
         <div className="space-y-6 max-w-2xl">
           {/* Login enforce */}
           <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
             <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">Login erzwingen</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Wenn aktiv, ist die Web-Oberfläche nur nach Anmeldung nutzbar. (Die iOS-App ist nicht betroffen.)</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.usrEnforceLogin')}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{t('settings.usrEnforceLoginDesc')}</p>
             </div>
             <Toggle value={enforce} onChange={setEnforce} />
           </label>
@@ -2289,78 +2296,78 @@ function UsersSection() {
               <div key={u.id} className="p-3 flex flex-wrap items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">{u.name.charAt(0).toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{u.name} {!u.is_active && <span className="text-xs text-zinc-500">(deaktiviert)</span>}</p>
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{u.name} {!u.is_active && <span className="text-xs text-zinc-500">{t('settings.usrDisabled')}</span>}</p>
                   <p className="text-xs text-zinc-500 truncate">{u.email}</p>
                 </div>
                 <select className={sel} value={u.role} onChange={e => patchU.mutate({ id: u.id, body: { role: e.target.value as 'admin' | 'user' } })}>
-                  <option value="admin">Admin</option>
-                  <option value="user">Benutzer</option>
+                  <option value="admin">{t('settings.usrRoleAdmin')}</option>
+                  <option value="user">{t('settings.usrRoleUser')}</option>
                 </select>
                 <button onClick={() => patchU.mutate({ id: u.id, body: { is_active: !u.is_active } })}
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
+                  {u.is_active ? t('settings.usrDeactivate') : t('settings.usrActivate')}
                 </button>
                 {u.role !== 'admin' && (
                   <button onClick={() => { setAccFor(accFor === u.id ? null : u.id); setAcc(u.access_config || {}) }}
-                    className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Zugriff</button>
+                    className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.usrAccess')}</button>
                 )}
                 <button onClick={() => { setEditFor(editFor === u.id ? null : u.id); setEditName(u.name); setEditEmail(u.email) }}
-                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bearbeiten</button>
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.edit')}</button>
                 <button onClick={() => { setPwFor(pwFor === u.id ? null : u.id); setPw('') }}
-                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Passwort</button>
-                <button onClick={() => delU.mutate(u.id)} className="text-zinc-400 hover:text-red-500" title="Löschen"><Trash2 size={15} /></button>
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.usrPassword')}</button>
+                <button onClick={() => delU.mutate(u.id)} className="text-zinc-400 hover:text-red-500" title={t('settings.delete')}><Trash2 size={15} /></button>
                 {editFor === u.id && (
                   <div className="w-full flex flex-wrap gap-2 mt-1">
-                    <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Name"
+                    <input value={editName} onChange={e => setEditName(e.target.value)} placeholder={t('settings.name')}
                       className="flex-1 min-w-[8rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
-                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="E-Mail (= Login)" type="email"
+                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder={t('settings.usrEmailLogin')} type="email"
                       className="flex-1 min-w-[10rem] px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm" />
                     <button onClick={() => { patchU.mutate({ id: u.id, body: { name: editName, email: editEmail } as any }); setEditFor(null) }}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">Speichern</button>
-                    <p className="w-full text-[11px] text-amber-600 dark:text-amber-400">⚠ Die E-Mail ist dein Login — sie muss ein echtes E-Mail-Format haben (z. B. name@domain). Der Anzeigename oben ist frei wählbar.</p>
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">{t('settings.save')}</button>
+                    <p className="w-full text-[11px] text-amber-600 dark:text-amber-400">{t('settings.usrEmailWarn')}</p>
                   </div>
                 )}
                 {pwFor === u.id && (
                   <div className="w-full flex gap-2 mt-1">
-                    <input type="text" value={pw} onChange={e => setPw(e.target.value)} placeholder="Neues Passwort (min. 6)"
+                    <input type="text" value={pw} onChange={e => setPw(e.target.value)} placeholder={t('settings.usrNewPassword')}
                       className="flex-1 px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     <button onClick={() => setPwM.mutate({ id: u.id, password: pw })} disabled={pw.length < 6}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Setzen</button>
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">{t('settings.usrSet')}</button>
                   </div>
                 )}
                 {accFor === u.id && (
                   <div className="w-full mt-2 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Sichtbar ab (Datum)</label>
+                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrVisibleFrom')}</label>
                         <input type="date" value={acc.visible_from || ''} onChange={e => setAcc(a => ({ ...a, visible_from: e.target.value || undefined }))} className={sel + ' w-full'} />
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Sichtbar bis (Datum)</label>
+                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrVisibleUntil')}</label>
                         <input type="date" value={acc.visible_until || ''} onChange={e => setAcc(a => ({ ...a, visible_until: e.target.value || undefined }))} className={sel + ' w-full'} />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-500 mb-1">Dieser Benutzer IST Person (KI weiß dann, wer fragt → „meine Frau" etc.)</label>
+                      <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrIsPerson')}</label>
                       <select value={acc.person_id ?? ''} onChange={e => setAcc(a => ({ ...a, person_id: e.target.value ? Number(e.target.value) : undefined }))} className={sel + ' w-full'}>
-                        <option value="">— nicht verknüpft —</option>
+                        <option value="">{t('settings.usrNotLinked')}</option>
                         {namedPeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-500 mb-1">Nur diese Personen sichtbar (keine Auswahl = alle)</label>
+                      <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrOnlyPersons')}</label>
                       <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
                         {namedPeople.map(p => {
                           const on = (acc.visible_person_ids || []).includes(p.id)
                           return <button key={p.id} type="button" onClick={() => setAcc(a => ({ ...a, visible_person_ids: toggleIn(a.visible_person_ids, p.id) }))}
                             className={`px-2 py-0.5 rounded-full text-xs ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{p.name}</button>
                         })}
-                        {namedPeople.length === 0 && <span className="text-xs text-zinc-400">Keine benannten Personen.</span>}
+                        {namedPeople.length === 0 && <span className="text-xs text-zinc-400">{t('settings.usrNoNamedPersons')}</span>}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Nur diese Ordner (keine = alle)</label>
+                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrOnlyFolders')}</label>
                         <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
                           {sourcePaths.map(path => (
                             <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
@@ -2368,11 +2375,11 @@ function UsersSection() {
                               <span className="truncate">{path}</span>
                             </label>
                           ))}
-                          {sourcePaths.length === 0 && <span className="text-xs text-zinc-400">Keine Quellen.</span>}
+                          {sourcePaths.length === 0 && <span className="text-xs text-zinc-400">{t('settings.usrNoSources')}</span>}
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Diese Ordner ausblenden</label>
+                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrHideFolders')}</label>
                         <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
                           {sourcePaths.map(path => (
                             <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
@@ -2384,7 +2391,7 @@ function UsersSection() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      {([['allow_download', 'Download'], ['allow_map', 'Karte'], ['allow_pipeline', 'Pipeline']] as const).map(([k, lbl]) => (
+                      {([['allow_download', t('settings.download')], ['allow_map', t('settings.usrAccMap')], ['allow_pipeline', t('settings.usrAccPipeline')]] as const).map(([k, lbl]) => (
                         <label key={k} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
                           <input type="checkbox" checked={acc[k] ?? true} onChange={e => setAcc(a => ({ ...a, [k]: e.target.checked }))} className="accent-indigo-500" /> {lbl}
                         </label>
@@ -2392,7 +2399,7 @@ function UsersSection() {
                     </div>
                     <div className="flex justify-end">
                       <button onClick={() => patchU.mutate({ id: u.id, body: { access_config: acc } as any })}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">Zugriff speichern</button>
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">{t('settings.usrSaveAccess')}</button>
                     </div>
                   </div>
                 )}
@@ -2404,24 +2411,24 @@ function UsersSection() {
           {showAdd ? (
             <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input value={add.email} onChange={e => setAdd(a => ({ ...a, email: e.target.value }))} placeholder="E-Mail" className={sel + ' w-full'} />
-                <input value={add.name} onChange={e => setAdd(a => ({ ...a, name: e.target.value }))} placeholder="Name" className={sel + ' w-full'} />
-                <input type="text" value={add.password} onChange={e => setAdd(a => ({ ...a, password: e.target.value }))} placeholder="Passwort (min. 6)" className={sel + ' w-full'} />
+                <input value={add.email} onChange={e => setAdd(a => ({ ...a, email: e.target.value }))} placeholder={t('settings.usrEmail')} className={sel + ' w-full'} />
+                <input value={add.name} onChange={e => setAdd(a => ({ ...a, name: e.target.value }))} placeholder={t('settings.name')} className={sel + ' w-full'} />
+                <input type="text" value={add.password} onChange={e => setAdd(a => ({ ...a, password: e.target.value }))} placeholder={t('settings.usrPasswordMin')} className={sel + ' w-full'} />
                 <select value={add.role} onChange={e => setAdd(a => ({ ...a, role: e.target.value }))} className={sel + ' w-full'}>
-                  <option value="user">Benutzer</option>
-                  <option value="admin">Admin</option>
+                  <option value="user">{t('settings.usrRoleUser')}</option>
+                  <option value="admin">{t('settings.usrRoleAdmin')}</option>
                 </select>
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+                <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.cancel')}</button>
                 <button onClick={() => createU.mutate()} disabled={createU.isPending || !add.email || !add.name || add.password.length < 6}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Anlegen</button>
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">{t('settings.usrCreate')}</button>
               </div>
-              {createU.isError && <p className="text-xs text-red-500">Anlegen fehlgeschlagen (E-Mail evtl. vergeben).</p>}
+              {createU.isError && <p className="text-xs text-red-500">{t('settings.usrCreateFailed')}</p>}
             </div>
           ) : (
             <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-              <Plus size={15} /> Benutzer hinzufügen
+              <Plus size={15} /> {t('settings.usrAddUser')}
             </button>
           )}
         </div>
@@ -2431,6 +2438,7 @@ function UsersSection() {
 }
 
 function LogsSection() {
+  const { t } = useT()
   const [feature, setFeature] = useState('all')
   const [level, setLevel] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(false)
@@ -2459,24 +2467,24 @@ function LogsSection() {
 
   return (
     <div>
-      <SectionHeader title="Feature-Logs" desc="Detaillierte Logs pro Funktion für Diagnose und Fehlersuche." />
+      <SectionHeader title={t('settings.logTitle')} desc={t('settings.logDesc')} />
 
       {/* Controls */}
       <div className="flex items-center gap-3 flex-wrap mb-4">
         <select value={feature} onChange={e => setFeature(e.target.value)}
           className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none">
-          <option value="all">Alle Features</option>
-          <option value="scanner">Scanner</option>
+          <option value="all">{t('settings.logAllFeatures')}</option>
+          <option value="scanner">{t('settings.logScanner')}</option>
           <option value="ai">AI</option>
-          <option value="video">Video</option>
-          <option value="faces">Gesichter</option>
-          <option value="remote">Remote-Worker</option>
-          <option value="system">System</option>
+          <option value="video">{t('settings.logVideo')}</option>
+          <option value="faces">{t('settings.logFaces')}</option>
+          <option value="remote">{t('settings.logRemote')}</option>
+          <option value="system">{t('settings.logSystem')}</option>
         </select>
 
         <select value={level} onChange={e => setLevel(e.target.value)}
           className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none">
-          <option value="">Alle Level</option>
+          <option value="">{t('settings.logAllLevels')}</option>
           <option value="DEBUG">DEBUG</option>
           <option value="INFO">INFO</option>
           <option value="WARNING">WARNING</option>
@@ -2485,17 +2493,17 @@ function LogsSection() {
 
         <label className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400 cursor-pointer">
           <Toggle value={autoRefresh} onChange={setAutoRefresh} />
-          Auto-Refresh (5s)
+          {t('settings.logAutoRefresh')}
         </label>
 
         <div className="ml-auto flex items-center gap-2">
           <button onClick={exportLogs} disabled={data.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-40">
-            <Download size={13} /> Export
+            <Download size={13} /> {t('settings.logExport')}
           </button>
           <button onClick={() => refetch()} disabled={isLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} /> Aktualisieren
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} /> {t('settings.refresh')}
           </button>
         </div>
       </div>
@@ -2504,13 +2512,13 @@ function LogsSection() {
       <div className="bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden">
         <div className="px-4 py-2 border-b border-zinc-800 flex items-center gap-2">
           <Terminal size={13} className="text-zinc-500" />
-          <span className="text-xs text-zinc-500">{data.length} Einträge</span>
+          <span className="text-xs text-zinc-500">{t('settings.logEntries', { n: data.length })}</span>
           {data.length === 0 && !isLoading && (
-            <span className="text-xs text-zinc-600 ml-2">— Noch keine Logs. Log-Dateien entstehen beim ersten Scan/AI-Lauf.</span>
+            <span className="text-xs text-zinc-600 ml-2">{t('settings.logEmpty')}</span>
           )}
         </div>
         <div className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto font-mono text-[13px] leading-relaxed p-4 space-y-0.5">
-          {isLoading && <span className="text-zinc-500">Lade...</span>}
+          {isLoading && <span className="text-zinc-500">{t('settings.loading')}</span>}
           {reversed.map((e, i) => (
             <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 py-1 rounded items-start">
               <span className="text-zinc-600 shrink-0 tabular-nums">{e.ts}</span>
@@ -2528,6 +2536,7 @@ function LogsSection() {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const { t } = useT()
   const [section, setSection] = useState<SectionId>('sources')
 
   // Settings are global/admin (sources, API keys, providers, instance flags). A
@@ -2543,8 +2552,8 @@ export default function SettingsPage() {
       <div className="flex h-full items-center justify-center p-8 text-center">
         <div className="max-w-sm">
           <Lock size={32} className="mx-auto text-zinc-400 mb-3" />
-          <h2 className="text-base font-semibold text-zinc-800 dark:text-zinc-200">Einstellungen sind Administratoren vorbehalten</h2>
-          <p className="text-sm text-zinc-500 mt-1">Wende dich an den Administrator dieser Instanz, um Einstellungen zu ändern.</p>
+          <h2 className="text-base font-semibold text-zinc-800 dark:text-zinc-200">{t('settings.adminOnlyTitle')}</h2>
+          <p className="text-sm text-zinc-500 mt-1">{t('settings.adminOnlyDesc')}</p>
         </div>
       </div>
     )
@@ -2554,7 +2563,7 @@ export default function SettingsPage() {
     <div className="flex h-full">
       {/* Sidebar */}
       <nav className="w-48 shrink-0 border-r border-zinc-200 dark:border-zinc-800 py-4 space-y-0.5 px-2">
-        {SECTIONS.map(({ id, icon: Icon, label }) => (
+        {SECTIONS.map(({ id, icon: Icon, navKey }) => (
           <button key={id} onClick={() => setSection(id)}
             className={`w-full flex items-center gap-2.5 text-left px-3 py-2 rounded-lg text-sm transition-colors ${
               section === id
@@ -2563,7 +2572,7 @@ export default function SettingsPage() {
             }`}
           >
             <Icon size={15} />
-            {label}
+            {t(`settings.${navKey}`)}
           </button>
         ))}
       </nav>

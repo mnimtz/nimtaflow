@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Camera, Calendar, Heart, Video, MapPin, SlidersHorizontal, Users } from 'lucide-react'
 import { api, type PhotoStats } from '../../lib/api'
+import { useT } from '../../i18n'
 
 export type Filters = {
   search: string
@@ -35,6 +36,7 @@ type Props = {
 }
 
 export default function FilterPanel({ filters, onChange }: Props) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
 
   const { data: stats } = useQuery<PhotoStats>({
@@ -73,7 +75,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
         }`}
       >
         <SlidersHorizontal size={15} />
-        Filter
+        {t('gallery.filter')}
         {active && (
           <span className="bg-white/30 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
             {[filters.search, filters.dateFrom || filters.dateTo, filters.camera, filters.mediaType, filters.favorites, filters.hasGps !== null, filters.personId !== null].filter(Boolean).length}
@@ -88,11 +90,11 @@ export default function FilterPanel({ filters, onChange }: Props) {
 
             {/* Search */}
             <div>
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Suche</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{t('gallery.search')}</label>
               <input
                 value={filters.search}
                 onChange={e => set({ search: e.target.value })}
-                placeholder="Beschreibung, Ort..."
+                placeholder={t('gallery.searchInputPlaceholder')}
                 className="mt-1 w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -100,7 +102,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
             {/* Person */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
-                <Users size={12} /> Person
+                <Users size={12} /> {t('gallery.person')}
               </label>
               {selectedPerson ? (
                 <div className="mt-1 flex items-center justify-between px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-700 dark:text-indigo-200 text-sm">
@@ -112,7 +114,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
                   <input
                     value={personQuery}
                     onChange={e => setPersonQuery(e.target.value)}
-                    placeholder={`Person suchen … (${namedPeople.length})`}
+                    placeholder={t('gallery.personSearchPlaceholder', { n: namedPeople.length })}
                     className="mt-1 w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   {personQuery.trim() && (
@@ -122,7 +124,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
                           className="block w-full text-left px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800">{p.name}</button>
                       ))}
                       {namedPeople.filter(p => (p.name || '').toLowerCase().includes(personQuery.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-1.5 text-sm text-gray-500">keine Treffer</div>
+                        <div className="px-3 py-1.5 text-sm text-gray-500">{t('gallery.noMatches')}</div>
                       )}
                     </div>
                   )}
@@ -133,7 +135,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
             {/* Date range */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
-                <Calendar size={12} /> Zeitraum
+                <Calendar size={12} /> {t('gallery.dateRange')}
               </label>
               <div className="flex gap-2 mt-1">
                 <input type="date" value={filters.dateFrom} onChange={e => set({ dateFrom: e.target.value })}
@@ -148,14 +150,14 @@ export default function FilterPanel({ filters, onChange }: Props) {
             {stats && stats.cameras.length > 0 && (
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
-                  <Camera size={12} /> Kamera
+                  <Camera size={12} /> {t('gallery.cameraLabel')}
                 </label>
                 <select
                   value={filters.camera}
                   onChange={e => set({ camera: e.target.value })}
                   className="mt-1 w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">Alle Kameras</option>
+                  <option value="">{t('gallery.allCameras')}</option>
                   {stats.cameras.map(c => (
                     <option key={c.model} value={c.model}>{c.model} ({c.count})</option>
                   ))}
@@ -166,20 +168,20 @@ export default function FilterPanel({ filters, onChange }: Props) {
             {/* Media type */}
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
-                <Video size={12} /> Medientyp
+                <Video size={12} /> {t('gallery.mediaType')}
               </label>
               <div className="flex gap-2 mt-1 flex-wrap">
-                {(['', 'photo', 'video', 'raw'] as const).map(t => (
+                {(['', 'photo', 'video', 'raw'] as const).map(mt => (
                   <button
-                    key={t}
-                    onClick={() => set({ mediaType: t })}
+                    key={mt}
+                    onClick={() => set({ mediaType: mt })}
                     className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                      filters.mediaType === t
+                      filters.mediaType === mt
                         ? 'bg-indigo-600 text-white'
                         : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                     }`}
                   >
-                    {t === '' ? 'Alle' : t === 'photo' ? 'Fotos' : t === 'video' ? 'Videos' : 'RAW'}
+                    {mt === '' ? t('gallery.mediaAll') : mt === 'photo' ? t('gallery.mediaPhotos') : mt === 'video' ? t('gallery.mediaVideos') : t('gallery.mediaRaw')}
                   </button>
                 ))}
               </div>
@@ -195,7 +197,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
                   <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${filters.favorites ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </div>
                 <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                  <Heart size={13} className="text-red-400" /> Nur Favoriten
+                  <Heart size={13} className="text-red-400" /> {t('gallery.onlyFavorites')}
                   {stats && <span className="text-xs text-gray-400">({stats.favorites})</span>}
                 </span>
               </label>
@@ -208,7 +210,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
                   <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${filters.hasGps === true ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </div>
                 <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                  <MapPin size={13} className="text-green-500" /> Mit GPS
+                  <MapPin size={13} className="text-green-500" /> {t('gallery.withGps')}
                   {stats && <span className="text-xs text-gray-400">({stats.with_gps})</span>}
                 </span>
               </label>
@@ -220,7 +222,7 @@ export default function FilterPanel({ filters, onChange }: Props) {
                 onClick={clear}
                 className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
               >
-                <X size={14} /> Filter zurücksetzen
+                <X size={14} /> {t('gallery.resetFilters')}
               </button>
             )}
           </div>

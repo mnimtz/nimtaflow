@@ -1,8 +1,10 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, syncAuthCookie } from '../lib/api'
+import { useT } from '../i18n'
 
 export default function LoginPage() {
+  const { t } = useT()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,7 +25,7 @@ export default function LoginPage() {
       syncAuthCookie()
       navigate('/')
     } catch {
-      setError('Ungültige E-Mail oder Passwort')
+      setError(t('login.invalid'))
     } finally {
       setLoading(false)
     }
@@ -34,12 +36,12 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src="/photoflow-logo.png" alt="NimtaFlow" className="h-16 w-auto object-contain mx-auto mb-3" />
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Deine private Fotoverwaltung</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('login.tagline')}</p>
         </div>
 
         <form onSubmit={submit} className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('login.email')}</label>
             <input
               type="email"
               value={email}
@@ -50,7 +52,7 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Passwort</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('login.password')}</label>
             <input
               type="password"
               value={password}
@@ -68,7 +70,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium text-sm transition-colors"
           >
-            {loading ? 'Anmelden…' : 'Anmelden'}
+            {loading ? t('login.submitting') : t('login.submit')}
           </button>
         </form>
       </div>

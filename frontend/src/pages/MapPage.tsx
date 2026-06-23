@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Tooltip
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Layers, Navigation, Globe2, Map as MapIcon, Route } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
+import { useT } from '../i18n'
 
 const GlobeView = lazy(() => import('./GlobeView'))
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
@@ -97,6 +98,15 @@ function FlyTo({ target }: { target: { lat: number; lng: number; seq: number } |
 }
 
 export default function MapPage() {
+  const { t } = useT()
+  // Translate the descriptive built-in layer labels; brand names stay as-is.
+  const LAYER_LABEL_KEYS: Record<string, string> = {
+    Standard: 'map.layerStandard',
+    Satellit: 'map.layerSatellite',
+    Dunkel: 'map.layerDark',
+    Hell: 'map.layerLight',
+  }
+  const layerLabel = (l: string) => (LAYER_LABEL_KEYS[l] ? t(LAYER_LABEL_KEYS[l]) : l)
   const [layer, setLayer] = useState<LayerKey>('osm')
   const [view3d, setView3d] = useState(false)
   const [lbIndex, setLbIndex] = useState<number | null>(null)
@@ -173,7 +183,7 @@ export default function MapPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-lg font-bold text-gray-900 dark:text-white">Karte</h1>
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('map.title')}</h1>
         <div className="flex items-center gap-3">
           {!view3d && places.length > 0 && (
             <button
@@ -181,18 +191,18 @@ export default function MapPage() {
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border ${showPlaces
                 ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30'
                 : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-              title="Orte durchsuchen und anspringen"
+              title={t('map.placesBtnTitle')}
             >
-              <Navigation size={14} /> Orte ({places.length})
+              <Navigation size={14} /> {t('map.places', { n: places.length })}
             </button>
           )}
-          <span className="text-sm text-gray-500 dark:text-gray-400">{withGps.length} Fotos mit GPS</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{t('map.gpsCount', { n: withGps.length })}</span>
           <button
             onClick={() => setView3d(v => !v)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            title={view3d ? 'Flache Karte' : '3D-Globus'}
+            title={view3d ? t('map.flatMap') : t('map.globe3d')}
           >
-            {view3d ? <><MapIcon size={14} /> Karte</> : <><Globe2 size={14} /> Globus</>}
+            {view3d ? <><MapIcon size={14} /> {t('map.mapLabel')}</> : <><Globe2 size={14} /> {t('map.globeLabel')}</>}
           </button>
           {!view3d && trips.length > 0 && (
             <button
@@ -200,9 +210,9 @@ export default function MapPage() {
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border ${showRoutes
                 ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30'
                 : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-              title="Reise-/Seerouten ein-/ausblenden"
+              title={t('map.routesToggleTitle')}
             >
-              <Route size={14} /> Routen{showRoutes ? ` (${trips.length})` : ''}
+              <Route size={14} /> {t('map.routes')}{showRoutes ? ` (${trips.length})` : ''}
             </button>
           )}
           {!view3d && (
@@ -214,7 +224,7 @@ export default function MapPage() {
                 className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {Object.keys(layers).map((k) => (
-                  <option key={k} value={k}>{layers[k].label}</option>
+                  <option key={k} value={k}>{layerLabel(layers[k].label)}</option>
                 ))}
               </select>
             </div>
@@ -224,15 +234,15 @@ export default function MapPage() {
 
       <div className="flex-1 relative">
         {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400">Lade Karte…</div>
+          <div className="absolute inset-0 flex items-center justify-center text-gray-400">{t('map.loadingMap')}</div>
         ) : withGps.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-gray-400">
             <Navigation size={40} className="mb-3 opacity-40" />
-            <p className="text-sm">Keine Fotos mit GPS-Daten gefunden.</p>
-            <p className="text-xs mt-1 opacity-70">Fotos mit Geo-Koordinaten erscheinen hier automatisch.</p>
+            <p className="text-sm">{t('map.noGpsTitle')}</p>
+            <p className="text-xs mt-1 opacity-70">{t('map.noGpsHint')}</p>
           </div>
         ) : view3d ? (
-          <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">Globus wird geladen…</div>}>
+          <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-[#0b1020]">{t('map.loadingGlobe')}</div>}>
             <GlobeView
               points={withGps.map(p => ({ id: p.id, lat: p.latitude!, lng: p.longitude!, label: p.filename }))}
               onPoint={(id) => { const i = withGps.findIndex(p => p.id === id); if (i >= 0) setLbIndex(i) }}
@@ -278,7 +288,7 @@ export default function MapPage() {
                         rel="noopener noreferrer"
                         className="inline-block mt-1 text-[11px] text-indigo-600 hover:underline"
                       >
-                        📍 In Street View öffnen
+                        {t('map.openStreetView')}
                       </a>
                     )}
                   </div>
@@ -297,7 +307,7 @@ export default function MapPage() {
                 autoFocus
                 value={placeQuery}
                 onChange={e => setPlaceQuery(e.target.value)}
-                placeholder={`Ort suchen … (${places.length})`}
+                placeholder={t('map.searchPlace', { n: places.length })}
                 className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -311,7 +321,7 @@ export default function MapPage() {
                 </button>
               ))}
               {placeQuery.trim() && placeMatches.length === 0 && (
-                <div className="px-3 py-3 text-xs text-gray-400">Keine Treffer</div>
+                <div className="px-3 py-3 text-xs text-gray-400">{t('map.noMatches')}</div>
               )}
             </div>
           </div>

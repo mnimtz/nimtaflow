@@ -3,17 +3,18 @@ import { useQuery } from '@tanstack/react-query'
 import { Send, Sparkles, Loader2, Cpu, Cloud } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
+import { useT } from '../i18n'
 
 type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[] }
 
-const EXAMPLES = [
-  'Zeig mir Fotos von Lea am Strand',
-  'Wann waren wir das letzte Mal im Zoo?',
-  'Welche Bilder gibt es von Weihnachten mit der ganzen Familie?',
-  'Auf welchen Fotos ist ein Hund zu sehen?',
-]
-
 export default function ChatPage() {
+  const { t } = useT()
+  const EXAMPLES = [
+    t('chat.example1'),
+    t('chat.example2'),
+    t('chat.example3'),
+    t('chat.example4'),
+  ]
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -38,9 +39,9 @@ export default function ChatPage() {
     setSending(true)
     try {
       const r = await api.post('/chat', { message: text, history, provider: provider || undefined })
-      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '(keine Antwort)', photo_ids: r.data.photo_ids || [] }])
+      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || t('chat.noAnswer'), photo_ids: r.data.photo_ids || [] }])
     } catch (e: any) {
-      setMessages(m => [...m, { role: 'assistant', content: 'Fehler: ' + (e?.response?.data?.detail || e?.message || 'unbekannt') }])
+      setMessages(m => [...m, { role: 'assistant', content: t('chat.errorPrefix') + (e?.response?.data?.detail || e?.message || t('chat.errorUnknown')) }])
     } finally { setSending(false) }
   }
 
@@ -60,15 +61,15 @@ export default function ChatPage() {
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles size={18} className="text-indigo-500 shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-base font-bold text-zinc-900 dark:text-white leading-tight">Foto-Chat</h1>
-            <p className="text-[11px] text-zinc-500 truncate">Stell Fragen zu deiner Sammlung — beantwortet nur anhand gefundener Fotos.</p>
+            <h1 className="text-base font-bold text-zinc-900 dark:text-white leading-tight">{t('chat.title')}</h1>
+            <p className="text-[11px] text-zinc-500 truncate">{t('chat.subtitle')}</p>
           </div>
         </div>
         {/* Provider-Umschalter */}
         <div className="flex items-center gap-1 text-xs shrink-0">
           {([
-            { id: 'gemini', label: 'Gemini', icon: Cloud, note: 'Cloud · Kosten' },
-            { id: 'local', label: 'Lokal', icon: Cpu, note: 'Qwen · gratis' },
+            { id: 'gemini', label: t('chat.providerGemini'), icon: Cloud, note: t('chat.providerGeminiNote') },
+            { id: 'local', label: t('chat.providerLocal'), icon: Cpu, note: t('chat.providerLocalNote') },
           ] as const).map(p => (
             <button key={p.id} onClick={() => setProvider(p.id === (status?.provider || 'gemini') ? '' : p.id)}
               title={p.note}
@@ -86,7 +87,7 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
         {messages.length === 0 && (
           <div className="text-center mt-10 space-y-5">
-            <p className="text-sm text-zinc-500">Frag mich etwas über deine Fotos:</p>
+            <p className="text-sm text-zinc-500">{t('chat.askMe')}</p>
             <div className="flex flex-col items-center gap-2">
               {EXAMPLES.map(ex => (
                 <button key={ex} onClick={() => send(ex)}
@@ -96,7 +97,7 @@ export default function ChatPage() {
               ))}
             </div>
             {eff === 'gemini' && !status?.gemini_ready && (
-              <p className="text-xs text-amber-500">Kein Gemini-API-Key hinterlegt — wähle „Lokal" oder trag den Key unter Einstellungen → Bilder-AI ein.</p>
+              <p className="text-xs text-amber-500">{t('chat.noGeminiKey')}</p>
             )}
           </div>
         )}
@@ -120,7 +121,7 @@ export default function ChatPage() {
         {sending && (
           <div className="flex justify-start">
             <div className="bg-zinc-100 dark:bg-zinc-800 rounded-2xl px-4 py-3 flex items-center gap-2 text-sm text-zinc-500">
-              <Loader2 size={15} className="animate-spin" /> sucht in den Fotos…
+              <Loader2 size={15} className="animate-spin" /> {t('chat.searching')}
             </div>
           </div>
         )}
@@ -132,7 +133,7 @@ export default function ChatPage() {
         <div className="flex items-end gap-2">
           <textarea ref={taRef} value={input} onChange={e => setInput(e.target.value)} rows={1}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
-            placeholder="Frage zu deinen Fotos… (Enter zum Senden)"
+            placeholder={t('chat.inputPlaceholder')}
             className="flex-1 resize-none max-h-32 px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           <button onClick={() => send(input)} disabled={sending || !input.trim()}
             className="p-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition shrink-0">

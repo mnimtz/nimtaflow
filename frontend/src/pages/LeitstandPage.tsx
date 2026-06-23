@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../lib/api'
+import { useT } from '../i18n'
 import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw } from 'lucide-react'
 import PipelinePage from './PipelinePage'
 
@@ -35,6 +36,7 @@ function fmtEta(s: number | null | undefined): string {
 const de = (n: number) => (n ?? 0).toLocaleString('de')
 
 export default function LeitstandPage() {
+  const { t } = useT()
   const [tab, setTab] = useState<'overview' | 'pipeline'>('overview')
   const { data, dataUpdatedAt } = useQuery<Status>({
     queryKey: ['leitstand'],
@@ -50,9 +52,9 @@ export default function LeitstandPage() {
     mutationFn: () => api.post('/photos/scan-metadata').then(r => r.data),
     onSuccess: (d: any) => {
       refetchStats()
-      alert(`${de(d?.candidates ?? 0)} Foto(s) werden auf Datum/GPS gescannt — Ergebnisse erscheinen in den nächsten Minuten.`)
+      alert(t('leitstand.scanStarted', { n: de(d?.candidates ?? 0) }))
     },
-    onError: () => alert('Metadaten-Scan konnte nicht gestartet werden.'),
+    onError: () => alert(t('leitstand.scanFailed')),
   })
   const roles = [...(data?.roles ?? [])].sort(
     (a, b) => CHAIN.indexOf(a.role) - CHAIN.indexOf(b.role))
@@ -63,19 +65,19 @@ export default function LeitstandPage() {
   const activeWorkers = workers.filter(w => (w.idle_s ?? 999) < 30).length
 
   const libCards = lib ? [
-    { icon: ImageIcon, label: 'Fotos', val: lib.images },
-    { icon: Film, label: 'Videos', val: lib.videos },
-    { icon: FileText, label: 'Beschrieben', val: lib.described },
-    { icon: Users, label: 'Mit Gesichtern', val: lib.with_faces },
-    { icon: Users, label: 'Benannte Personen', val: lib.named_persons },
-    { icon: Sparkles, label: 'Embeddings', val: lib.embeddings },
-    { icon: Layers, label: 'Thumbnails', val: lib.thumbnails },
+    { icon: ImageIcon, label: t('leitstand.libPhotos'), val: lib.images },
+    { icon: Film, label: t('leitstand.libVideos'), val: lib.videos },
+    { icon: FileText, label: t('leitstand.libDescribed'), val: lib.described },
+    { icon: Users, label: t('leitstand.libWithFaces'), val: lib.with_faces },
+    { icon: Users, label: t('leitstand.libNamedPersons'), val: lib.named_persons },
+    { icon: Sparkles, label: t('leitstand.libEmbeddings'), val: lib.embeddings },
+    { icon: Layers, label: t('leitstand.libThumbnails'), val: lib.thumbnails },
   ] : []
 
   return (
     <div className="p-4 max-w-6xl mx-auto space-y-6">
       <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {([['overview', 'Übersicht'], ['pipeline', 'Pipeline (Jobs)']] as const).map(([k, lbl]) => (
+        {([['overview', t('leitstand.tabOverview')], ['pipeline', t('leitstand.tabPipeline')]] as const).map(([k, lbl]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === k
               ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
@@ -88,16 +90,16 @@ export default function LeitstandPage() {
       {/* Header + Gesamt-ETA */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Leitstand</h1>
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">{t('leitstand.title')}</h1>
           <p className="text-xs text-zinc-400">
-            Live-Status aller Worker & Pipelines · aktualisiert alle 3 s
-            {dataUpdatedAt ? ` · zuletzt ${new Date(dataUpdatedAt).toLocaleTimeString('de')}` : ''}
+            {t('leitstand.headerInfo')}
+            {dataUpdatedAt ? t('leitstand.lastUpdate', { time: new Date(dataUpdatedAt).toLocaleTimeString('de') }) : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2">
           <Clock className="w-4 h-4 text-zinc-400" />
           <div className="text-right">
-            <div className="text-[11px] text-zinc-400 leading-none">geschätzt fertig in</div>
+            <div className="text-[11px] text-zinc-400 leading-none">{t('leitstand.etaLabel')}</div>
             <div className="text-lg font-bold tabular-nums text-zinc-900 dark:text-white">{fmtEta(totalEta)}</div>
           </div>
         </div>
@@ -110,14 +112,14 @@ export default function LeitstandPage() {
             <div className="flex items-center gap-3">
               <MapPin className="w-5 h-5 text-emerald-500 shrink-0" />
               <div>
-                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Metadaten &amp; GPS</h2>
+                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('leitstand.metadataGps')}</h2>
                 {(stats.metadata_pending ?? 0) > 0 ? (
                   <p className="text-xs text-amber-600 dark:text-amber-400">
-                    {de(stats.metadata_pending)} Foto(s) werden noch verarbeitet (Datum/GPS/Orte) — der Ordner-Scan ist fertig, die Verarbeitung läuft noch.
+                    {t('leitstand.metadataPending', { n: de(stats.metadata_pending) })}
                   </p>
                 ) : (
                   <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                    Alle Metadaten verarbeitet · {de(stats.with_gps)} Foto(s) mit GPS
+                    {t('leitstand.metadataDone', { n: de(stats.with_gps) })}
                   </p>
                 )}
               </div>
@@ -127,7 +129,7 @@ export default function LeitstandPage() {
               disabled={scanMeta.isPending}
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors">
               <RefreshCw size={16} className={scanMeta.isPending ? 'animate-spin' : ''} />
-              {scanMeta.isPending ? 'Wird gestartet…' : 'GPS/Metadaten jetzt scannen'}
+              {scanMeta.isPending ? t('leitstand.scanning') : t('leitstand.scanNow')}
             </button>
           </div>
           {(stats.metadata_pending ?? 0) > 0 && (stats.total_indexed ?? 0) > 0 && (
@@ -141,7 +143,7 @@ export default function LeitstandPage() {
 
       {/* Panel 1: Pipeline-Kette */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-        <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Verarbeitungs-Kette</h2>
+        <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{t('leitstand.processingChain')}</h2>
         <div className="space-y-3">
           {roles.map(r => {
             const done = r.done ?? 0, pend = r.pending ?? 0, tot = done + pend
@@ -152,12 +154,12 @@ export default function LeitstandPage() {
                 <div className="flex items-center justify-between text-sm mb-1 flex-wrap gap-x-3">
                   <span className="font-medium text-zinc-800 dark:text-zinc-200">{r.label}</span>
                   <div className="flex gap-3 text-xs text-zinc-500 tabular-nums">
-                    <span><b className="text-zinc-700 dark:text-zinc-300">{de(pend)}</b> offen</span>
-                    <span>{de(done)} fertig</span>
-                    <span>{r.workers} Worker</span>
-                    {jpm != null && <span>{jpm}/min</span>}
-                    {r.avg_dur != null && <span>Ø {r.avg_dur.toFixed(1)}s</span>}
-                    <span>Rest <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
+                    <span><b className="text-zinc-700 dark:text-zinc-300">{de(pend)}</b> {t('leitstand.open')}</span>
+                    <span>{de(done)} {t('leitstand.done')}</span>
+                    <span>{r.workers} {t('leitstand.workers')}</span>
+                    {jpm != null && <span>{t('leitstand.perMin', { n: jpm })}</span>}
+                    {r.avg_dur != null && <span>{t('leitstand.avg', { n: r.avg_dur.toFixed(1) })}</span>}
+                    <span>{t('leitstand.remaining')} <b className="text-zinc-700 dark:text-zinc-300">{fmtEta(r.eta_seconds)}</b></span>
                   </div>
                 </div>
                 <div className="h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
@@ -166,15 +168,15 @@ export default function LeitstandPage() {
               </div>
             )
           })}
-          {roles.length === 0 && <p className="text-sm text-zinc-400">Keine aktiven Pipelines.</p>}
+          {roles.length === 0 && <p className="text-sm text-zinc-400">{t('leitstand.noPipelines')}</p>}
         </div>
       </section>
 
       {/* Panel 2: Worker-Flotte */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Worker-Flotte</h2>
-          <span className="text-xs text-zinc-400">{activeWorkers} aktiv · {workers.length} verbunden</span>
+          <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">{t('leitstand.workerFleet')}</h2>
+          <span className="text-xs text-zinc-400">{t('leitstand.workersStatus', { active: activeWorkers, total: workers.length })}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {workers.map(w => {
@@ -187,20 +189,20 @@ export default function LeitstandPage() {
                   <b className="text-sm text-zinc-800 dark:text-zinc-200 truncate">{w.name}</b>
                 </div>
                 <div className="mt-1.5 text-[11px] text-zinc-500 space-y-0.5 tabular-nums">
-                  <div>{w.role} · <b className="text-zinc-700 dark:text-zinc-300">{de(w.jobs)}</b> Jobs</div>
-                  <div>Ø {w.avg_dur != null ? `${w.avg_dur.toFixed(1)}s` : '—'}{w.last_dur != null ? ` · zuletzt ${w.last_dur.toFixed(1)}s` : ''}</div>
-                  <div className="text-zinc-400">{live ? 'arbeitet gerade' : `idle · vor ${idle}s`}</div>
+                  <div>{w.role} · <b className="text-zinc-700 dark:text-zinc-300">{de(w.jobs)}</b> {t('leitstand.jobs')}</div>
+                  <div>Ø {w.avg_dur != null ? `${w.avg_dur.toFixed(1)}s` : '—'}{w.last_dur != null ? t('leitstand.lastDur', { n: w.last_dur.toFixed(1) }) : ''}</div>
+                  <div className="text-zinc-400">{live ? t('leitstand.working') : t('leitstand.idle', { n: idle })}</div>
                 </div>
               </div>
             )
           })}
-          {workers.length === 0 && <p className="text-sm text-zinc-400 col-span-full">Kein Worker verbunden.</p>}
+          {workers.length === 0 && <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.noWorker')}</p>}
         </div>
       </section>
 
       {/* Panel 3: Bibliothek-Kennzahlen */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-        <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Bibliothek</h2>
+        <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{t('leitstand.library')}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {libCards.map(({ icon: Icon, label, val }) => (
             <div key={label} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-3 text-center">
@@ -209,7 +211,7 @@ export default function LeitstandPage() {
               <div className="text-[11px] text-zinc-400 leading-tight">{label}</div>
             </div>
           ))}
-          {!lib && <p className="text-sm text-zinc-400 col-span-full">Lade Kennzahlen…</p>}
+          {!lib && <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.loadingMetrics')}</p>}
         </div>
       </section>
       </>)}

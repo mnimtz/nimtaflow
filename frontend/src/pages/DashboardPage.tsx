@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Images, Sparkles, Users, BookImage, Video, MapPin, Clock, Star, X } from 'lucide-react'
+import { useT } from '../i18n'
 
 type Ph = { id: number; thumb_url: string; thumb_medium_url: string; is_video: boolean }
 type Person = { id: number; name: string; face_count: number; avatar_url: string; items?: Ph[] }
@@ -19,6 +20,7 @@ type Dash = {
 }
 
 export default function DashboardPage() {
+  const { t } = useT()
   const nav = useNavigate()
   const [lightbox, setLightbox] = useState<Ph | null>(null)
   const { data, isLoading } = useQuery<Dash>({
@@ -27,12 +29,12 @@ export default function DashboardPage() {
     staleTime: 60_000,
   })
 
-  if (isLoading) return <div className="flex justify-center py-24 text-zinc-500">Lade Startseite…</div>
+  if (isLoading) return <div className="flex justify-center py-24 text-zinc-500">{t('dashboard.loading')}</div>
   if (!data) return null
 
   const greeting = (() => {
     const h = new Date().getHours()
-    return h < 5 ? 'Gute Nacht' : h < 11 ? 'Guten Morgen' : h < 17 ? 'Hallo' : h < 22 ? 'Guten Abend' : 'Gute Nacht'
+    return h < 5 ? t('dashboard.greetGoodNight') : h < 11 ? t('dashboard.greetGoodMorning') : h < 17 ? t('dashboard.greetHello') : h < 22 ? t('dashboard.greetGoodEvening') : t('dashboard.greetGoodNight')
   })()
 
   const Tile = ({ p }: { p: Ph }) => (
@@ -49,23 +51,27 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{greeting} 👋</h1>
         {data.stats && (
           <p className="text-sm text-zinc-500 mt-1">
-            {data.stats.total?.toLocaleString('de')} Medien · {data.stats.images?.toLocaleString('de')} Bilder · {data.stats.videos?.toLocaleString('de')} Videos
-            {data.stats.date_min && ` · seit ${String(data.stats.date_min).slice(0, 4)}`}
+            {t('dashboard.statsLine', {
+              total: data.stats.total?.toLocaleString('de'),
+              images: data.stats.images?.toLocaleString('de'),
+              videos: data.stats.videos?.toLocaleString('de'),
+            })}
+            {data.stats.date_min && t('dashboard.statsSince', { year: String(data.stats.date_min).slice(0, 4) })}
           </p>
         )}
       </div>
 
       {/* Quick stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile icon={Images} label="Galerie" value={data.stats?.total} color="indigo" onClick={() => nav('/gallery')} />
-        <StatTile icon={Users} label="Personen" value={data.stats?.with_faces} sub="mit Gesichtern" color="pink" onClick={() => nav('/people')} />
-        <StatTile icon={Sparkles} label="Beschrieben" value={data.stats?.described} color="violet" onClick={() => nav('/search')} />
-        <StatTile icon={MapPin} label="Mit GPS" value={data.stats?.with_gps} color="emerald" onClick={() => nav('/map')} />
+        <StatTile icon={Images} label={t('dashboard.statGallery')} value={data.stats?.total} color="indigo" onClick={() => nav('/gallery')} />
+        <StatTile icon={Users} label={t('dashboard.statPeople')} value={data.stats?.with_faces} sub={t('dashboard.statPeopleSub')} color="pink" onClick={() => nav('/people')} />
+        <StatTile icon={Sparkles} label={t('dashboard.statDescribed')} value={data.stats?.described} color="violet" onClick={() => nav('/search')} />
+        <StatTile icon={MapPin} label={t('dashboard.statGps')} value={data.stats?.with_gps} color="emerald" onClick={() => nav('/map')} />
       </div>
 
       {/* On this day */}
       {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
-        <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? 'Heute vor 1 Jahr' : `Heute vor ${m.years_ago} Jahren`}
+        <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
           sub={prettyDate(m.date)}>
           <Strip>{m.items.map(p => <Tile key={p.id} p={p} />)}</Strip>
         </Section>
@@ -73,12 +79,12 @@ export default function DashboardPage() {
 
       {/* Person of the week */}
       {data.person_of_week && (
-        <Section icon={Star} title="Person der Woche">
+        <Section icon={Star} title={t('dashboard.personOfWeek')}>
           <div className="flex flex-col sm:flex-row gap-4 items-start">
             <button onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 group">
               <img src={data.person_of_week.avatar_url} className="w-24 h-24 rounded-full object-cover ring-2 ring-indigo-400 group-hover:ring-indigo-500" />
               <span className="mt-2 font-medium text-zinc-900 dark:text-white">{data.person_of_week.name}</span>
-              <span className="text-xs text-zinc-500">{data.person_of_week.face_count} Fotos</span>
+              <span className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: data.person_of_week.face_count })}</span>
             </button>
             <Strip>{(data.person_of_week.items ?? []).map(p => <Tile key={p.id} p={p} />)}</Strip>
           </div>
@@ -87,14 +93,14 @@ export default function DashboardPage() {
 
       {/* Highlights */}
       {data.highlights?.length > 0 && (
-        <Section icon={Sparkles} title="Highlights" sub="zufällige Lieblingsmomente">
+        <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
           <Strip>{data.highlights.map(p => <Tile key={p.id} p={p} />)}</Strip>
         </Section>
       )}
 
       {/* Featured people */}
       {data.featured_people?.length > 0 && (
-        <Section icon={Users} title="Personen" onMore={() => nav('/people')}>
+        <Section icon={Users} title={t('dashboard.people')} onMore={() => nav('/people')}>
           <Strip>
             {data.featured_people.map(p => (
               <button key={p.id} onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 w-20 group">
@@ -108,7 +114,7 @@ export default function DashboardPage() {
 
       {/* Featured albums */}
       {data.featured_albums?.length > 0 && (
-        <Section icon={BookImage} title="Alben" onMore={() => nav('/albums')}>
+        <Section icon={BookImage} title={t('dashboard.albums')} onMore={() => nav('/albums')}>
           <Strip>
             {data.featured_albums.map(a => (
               <button key={a.id} onClick={() => nav('/albums')} className="shrink-0 w-40 group text-left">
@@ -116,7 +122,7 @@ export default function DashboardPage() {
                   {a.cover_url && <img src={a.cover_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />}
                 </div>
                 <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-white truncate">{a.name}</p>
-                <p className="text-xs text-zinc-500">{a.photo_count} Fotos</p>
+                <p className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: a.photo_count })}</p>
               </button>
             ))}
           </Strip>
@@ -125,7 +131,7 @@ export default function DashboardPage() {
 
       {/* Recent */}
       {data.recent?.length > 0 && (
-        <Section icon={Clock} title="Zuletzt hinzugefügt" onMore={() => nav('/gallery')}>
+        <Section icon={Clock} title={t('dashboard.recent')} onMore={() => nav('/gallery')}>
           <Strip>{data.recent.map(p => <Tile key={p.id} p={p} />)}</Strip>
         </Section>
       )}
@@ -144,13 +150,14 @@ export default function DashboardPage() {
 }
 
 function Section({ icon: Icon, title, sub, onMore, children }: any) {
+  const { t } = useT()
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
         <Icon size={18} className="text-indigo-500" />
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">{title}</h2>
         {sub && <span className="text-sm text-zinc-400">· {sub}</span>}
-        {onMore && <button onClick={onMore} className="ml-auto text-sm text-indigo-500 hover:text-indigo-400">Alle →</button>}
+        {onMore && <button onClick={onMore} className="ml-auto text-sm text-indigo-500 hover:text-indigo-400">{t('dashboard.all')}</button>}
       </div>
       {children}
     </section>

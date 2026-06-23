@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import VideoPlayer from './VideoPlayer'
+import { useT } from '../../i18n'
 
 type PhotoDetail = Photo & {
   description?: string
@@ -55,6 +56,7 @@ function ExifRow({ label, value }: { label: string; value?: string | number | nu
 }
 
 export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) {
+  const { t } = useT()
   const [index, setIndex] = useState(initialIndex)
   const [showInfo, setShowInfo] = useState(false)
   const [rating, setRating] = useState(0)
@@ -254,17 +256,17 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
           <div className="p-4 space-y-5">
             <div className="flex items-center justify-between">
               <div className="min-w-0">
-                <h3 className="text-white font-semibold text-sm">Details</h3>
+                <h3 className="text-white font-semibold text-sm">{t('gallery.details')}</h3>
                 <p className="text-[11px] text-gray-400 font-mono truncate" title={(detail as any)?.path || photo.filename}>{photo.filename}</p>
                 {(detail as any)?.path && <p className="text-[10px] text-gray-600 font-mono break-all">{(detail as any).path}</p>}
               </div>
               <div className="flex items-center gap-1">
                 {!editing ? (
                   <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors">
-                    <Pencil size={13} /> Bearbeiten
+                    <Pencil size={13} /> {t('gallery.edit')}
                   </button>
                 ) : (
-                  <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-white px-2 py-1">Abbrechen</button>
+                  <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-white px-2 py-1">{t('gallery.cancel')}</button>
                 )}
                 <button onClick={() => setShowInfo(false)} className="md:hidden text-gray-400 hover:text-white p-1"><X size={16} /></button>
               </div>
@@ -274,34 +276,34 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
             {editing ? (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[11px] text-gray-400 mb-1">Titel</label>
+                  <label className="block text-[11px] text-gray-400 mb-1">{t('gallery.title')}</label>
                   <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                     className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-gray-400 mb-1">Beschreibung</label>
+                  <label className="block text-[11px] text-gray-400 mb-1">{t('gallery.description')}</label>
                   <textarea value={form.user_description} onChange={e => setForm(f => ({ ...f, user_description: e.target.value }))} rows={3}
                     className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-gray-400 mb-1">Schlagwörter (Komma-getrennt)</label>
-                  <input value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} placeholder="urlaub, strand, 2024"
+                  <label className="block text-[11px] text-gray-400 mb-1">{t('gallery.keywordsLabel')}</label>
+                  <input value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} placeholder={t('gallery.keywordsPlaceholder')}
                     className="w-full px-2.5 py-1.5 text-sm rounded-lg bg-gray-800 border border-white/10 text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div className="space-y-1.5 pt-1">
                   <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
                     <input type="checkbox" checked={form.writeFile} onChange={e => setForm(f => ({ ...f, writeFile: e.target.checked }))} className="accent-indigo-500" />
-                    In Originaldatei schreiben (EXIF/IPTC)
+                    {t('gallery.writeToFile')}
                   </label>
                   <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
                     <input type="checkbox" checked={form.writeXmp} onChange={e => setForm(f => ({ ...f, writeXmp: e.target.checked }))} className="accent-indigo-500" />
-                    XMP-Sidecar (.xmp) schreiben
+                    {t('gallery.writeXmp')}
                   </label>
                 </div>
                 <button onClick={() => saveMeta.mutate()} disabled={saveMeta.isPending}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 transition-colors">
                   {saveMeta.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                  Speichern
+                  {t('gallery.save')}
                 </button>
               </div>
             ) : (detail?.title || detail?.user_description || detail?.description || detail?.keywords) ? (
@@ -318,7 +320,7 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
                   </div>
                 )}
                 {detail?.description_model && (
-                  <p className="text-[10px] text-gray-500">KI-Beschreibung via {detail.description_model}</p>
+                  <p className="text-[10px] text-gray-500">{t('gallery.aiDescriptionVia', { model: detail.description_model })}</p>
                 )}
               </div>
             ) : null}
@@ -326,11 +328,11 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
             {/* Recognized people */}
             {detail?.people && detail.people.length > 0 && (
               <div className="border-t border-white/10 pt-4">
-                <p className="text-xs text-gray-400 mb-1.5">Personen ({detail.people.length})</p>
+                <p className="text-xs text-gray-400 mb-1.5">{t('gallery.peopleCount', { n: detail.people.length })}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {detail.people.map(p => (
                     <span key={p.face_id} className={`px-2 py-0.5 rounded-full text-[11px] ${p.name ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-gray-400'}`}>
-                      {p.name || 'Unbenannt'}
+                      {p.name || t('gallery.unnamed')}
                     </span>
                   ))}
                 </div>
@@ -340,7 +342,7 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
             {/* AI tags */}
             {detail?.tags && detail.tags.length > 0 && (
               <div className="border-t border-white/10 pt-4">
-                <p className="text-xs text-gray-400 mb-1.5">KI-Tags</p>
+                <p className="text-xs text-gray-400 mb-1.5">{t('gallery.aiTags')}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {detail.tags.map(t => (
                     <span key={t} className="px-2 py-0.5 rounded-full bg-white/8 text-gray-300 text-[11px]">{t}</span>
@@ -406,20 +408,20 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
 
             {photo.width && (
               <div className="border-t border-white/10 pt-4 space-y-2">
-                <ExifRow label="Auflösung" value={`${photo.width} × ${photo.height}`} />
+                <ExifRow label={t('gallery.resolution')} value={`${photo.width} × ${photo.height}`} />
                 <ExifRow
-                  label="Dateigröße"
+                  label={t('gallery.fileSize')}
                   value={detail?.file_size ? `${(detail.file_size / 1024 / 1024).toFixed(1)} MB` : null}
                 />
-                <ExifRow label="Format" value={detail?.mime_type} />
-                <ExifRow label="Belichtungszeit" value={detail?.exposure_time ? `${detail.exposure_time}s` : null} />
-                <ExifRow label="KB-Brennweite" value={detail?.focal_length_35mm ? `${detail.focal_length_35mm}mm` : null} />
-                <ExifRow label="Blitz" value={detail?.flash != null ? (detail.flash ? 'Ja' : 'Nein') : null} />
-                <ExifRow label="Weißabgleich" value={detail?.white_balance != null ? (detail.white_balance ? 'Manuell' : 'Auto') : null} />
-                <ExifRow label="Farbraum" value={detail?.color_space} />
-                <ExifRow label="Software" value={detail?.software} />
-                <ExifRow label="Künstler" value={(detail as any)?.artist} />
-                {detail?.is_video && <ExifRow label="Dauer" value={photo.duration_seconds ? `${Math.round(photo.duration_seconds)}s` : null} />}
+                <ExifRow label={t('gallery.format')} value={detail?.mime_type} />
+                <ExifRow label={t('gallery.exposureTime')} value={detail?.exposure_time ? `${detail.exposure_time}s` : null} />
+                <ExifRow label={t('gallery.focalLength35')} value={detail?.focal_length_35mm ? `${detail.focal_length_35mm}mm` : null} />
+                <ExifRow label={t('gallery.flash')} value={detail?.flash != null ? (detail.flash ? t('gallery.yes') : t('gallery.no')) : null} />
+                <ExifRow label={t('gallery.whiteBalance')} value={detail?.white_balance != null ? (detail.white_balance ? t('gallery.manual') : t('gallery.auto')) : null} />
+                <ExifRow label={t('gallery.colorSpace')} value={detail?.color_space} />
+                <ExifRow label={t('gallery.software')} value={detail?.software} />
+                <ExifRow label={t('gallery.artist')} value={(detail as any)?.artist} />
+                {detail?.is_video && <ExifRow label={t('gallery.duration')} value={photo.duration_seconds ? `${Math.round(photo.duration_seconds)}s` : null} />}
               </div>
             )}
 
@@ -432,7 +434,7 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
                   className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                 >
                   <MapPin size={12} />
-                  In OpenStreetMap öffnen
+                  {t('gallery.openInOsm')}
                 </a>
               </div>
             )}

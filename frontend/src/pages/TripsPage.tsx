@@ -8,6 +8,7 @@ import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import ShareDialog from '../components/ShareDialog'
 import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
+import { useT } from '../i18n'
 
 type Waypoint = { place: string; country?: string; date?: string; lat: number; lng: number; note?: string }
 type Album = { id: number; name: string; cover_photo_id?: number | null; photo_count: number; smart_criteria?: any }
@@ -33,6 +34,7 @@ function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, on
   albumId: number; existing: Set<number>; defaultFrom?: string; defaultTo?: string
   onClose: () => void; onAdded: () => void
 }) {
+  const { t } = useT()
   const toast = useToast()
   const [q, setQ] = useState('')
   const [from, setFrom] = useState(defaultFrom || '')
@@ -50,23 +52,23 @@ function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, on
 
   const add = useMutation({
     mutationFn: () => api.post(`/albums/${albumId}/photos`, { photo_ids: [...sel] }).then(r => r.data),
-    onSuccess: (d: { added: number }) => { toast(`${d.added} Foto(s) zur Reise hinzugefügt`, 'success'); onAdded() },
+    onSuccess: (d: { added: number }) => { toast(t('trips.toastAdded', { n: d.added }), 'success'); onAdded() },
   })
   const toggle = (id: number) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const inp = 'px-2.5 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
   return (
-    <Modal open onClose={onClose} title="Fotos zur Reise hinzufügen" maxWidth="max-w-4xl">
+    <Modal open onClose={onClose} title={t('trips.addPhotosTitle')} maxWidth="max-w-4xl">
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Suche (Beschreibung, Ort …)" className={`${inp} flex-1 min-w-[10rem]`} />
-        <label className="text-xs text-zinc-500">von <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} /></label>
-        <label className="text-xs text-zinc-500">bis <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} /></label>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('trips.searchPlaceholder')} className={`${inp} flex-1 min-w-[10rem]`} />
+        <label className="text-xs text-zinc-500">{t('trips.from')} <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} /></label>
+        <label className="text-xs text-zinc-500">{t('trips.to')} <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} /></label>
       </div>
       <div className="h-[55vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 p-1.5">
         {isFetching && items.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-zinc-400 text-sm"><Loader2 className="animate-spin mr-2" size={16} /> Lädt…</div>
+          <div className="flex items-center justify-center h-full text-zinc-400 text-sm"><Loader2 className="animate-spin mr-2" size={16} /> {t('trips.loading')}</div>
         ) : items.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-zinc-400 text-sm">Keine Fotos für diese Filter.</div>
+          <div className="flex items-center justify-center h-full text-zinc-400 text-sm">{t('trips.noPhotosForFilter')}</div>
         ) : (
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
             {items.map(p => {
@@ -76,7 +78,7 @@ function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, on
                 <button key={p.id} disabled={already} onClick={() => toggle(p.id)}
                   className={`relative aspect-square rounded-lg overflow-hidden bg-zinc-800 ${already ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} ${picked ? 'ring-2 ring-indigo-500' : ''}`}>
                   <img src={thumbUrl(p as any, 'small')} className="w-full h-full object-cover" loading="lazy" />
-                  {already && <span className="absolute inset-x-0 bottom-0 text-[10px] bg-black/60 text-white text-center py-0.5">in Reise</span>}
+                  {already && <span className="absolute inset-x-0 bottom-0 text-[10px] bg-black/60 text-white text-center py-0.5">{t('trips.inTrip')}</span>}
                   {picked && <span className="absolute top-1 right-1 bg-indigo-500 rounded-full p-0.5"><Check size={11} className="text-white" /></span>}
                 </button>
               )
@@ -85,10 +87,10 @@ function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, on
         )}
       </div>
       <div className="flex items-center justify-end gap-2 mt-3">
-        <button onClick={onClose} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={onClose} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('trips.cancel')}</button>
         <button onClick={() => add.mutate()} disabled={sel.size === 0 || add.isPending}
           className="px-3.5 py-1.5 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50">
-          {add.isPending ? 'Füge hinzu…' : `${sel.size} hinzufügen`}
+          {add.isPending ? t('trips.adding') : t('trips.addN', { n: sel.size })}
         </button>
       </div>
     </Modal>
@@ -97,6 +99,7 @@ function AddPhotosModal({ albumId, existing, defaultFrom, defaultTo, onClose, on
 
 // ── Trip detail: map route (photo GPS line + named waypoints) + add/removable photos ──
 function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
+  const { t } = useT()
   const qc = useQueryClient()
   const confirm = useConfirm()
   const toast = useToast()
@@ -123,31 +126,31 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
 
   const remove = useMutation({
     mutationFn: (pid: number) => api.delete(`/albums/${album.id}/photos/${pid}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['album-photos', album.id] }); toast('Foto aus Reise entfernt', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['album-photos', album.id] }); toast(t('trips.photoRemoved'), 'success') },
   })
   const delTrip = useMutation({
     mutationFn: () => api.delete(`/albums/${album.id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Reise gelöscht', 'success'); onBack() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast(t('trips.tripDeleted'), 'success'); onBack() },
   })
   const renameTrip = useMutation({
     mutationFn: (name: string) => api.patch(`/albums/${album.id}`, { name }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Reise umbenannt', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast(t('trips.tripRenamed'), 'success') },
   })
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white text-sm mb-4"><ArrowLeft size={16} /> Zurück</button>
+      <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-white text-sm mb-4"><ArrowLeft size={16} /> {t('trips.back')}</button>
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{album.name}</h1>
         <div className="flex items-center gap-3 shrink-0">
           <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Plus size={15} /> Fotos hinzufügen</button>
-          <button onClick={() => { const n = window.prompt('Reise umbenennen:', album.name); if (n && n.trim() && n !== album.name) renameTrip.mutate(n.trim()) }}
-            className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><Pencil size={15} /> Umbenennen</button>
+            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Plus size={15} /> {t('trips.addPhotos')}</button>
+          <button onClick={() => { const n = window.prompt(t('trips.renamePrompt'), album.name); if (n && n.trim() && n !== album.name) renameTrip.mutate(n.trim()) }}
+            className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><Pencil size={15} /> {t('trips.rename')}</button>
           <button onClick={() => setShowShare(true)}
-            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Share2 size={15} /> Teilen</button>
-          <button onClick={async () => { if (await confirm({ title: `Reise „${album.name}" löschen?`, message: 'Das Album wird gelöscht. Die Fotos bleiben in deiner Galerie.', danger: true, confirmLabel: 'Löschen' })) delTrip.mutate() }}
-            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400"><Trash2 size={15} /> Reise löschen</button>
+            className="flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-400"><Share2 size={15} /> {t('trips.share')}</button>
+          <button onClick={async () => { if (await confirm({ title: t('trips.confirmDeleteTitle', { name: album.name }), message: t('trips.confirmDeleteMsg'), danger: true, confirmLabel: t('trips.confirmDeleteLabel') })) delTrip.mutate() }}
+            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400"><Trash2 size={15} /> {t('trips.deleteTrip')}</button>
         </div>
       </div>
       {showShare && <ShareDialog target={{ kind: 'album', albumId: album.id, title: album.name }} onClose={() => setShowShare(false)} />}
@@ -156,7 +159,7 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
           onClose={() => setShowAdd(false)}
           onAdded={() => { qc.invalidateQueries({ queryKey: ['album-photos', album.id] }); qc.invalidateQueries({ queryKey: ['albums'] }); setShowAdd(false) }} />
       )}
-      <p className="text-sm text-zinc-500 mb-4">{photos.length} Fotos{route.length ? ` · ${route.length} Stationen` : ''}</p>
+      <p className="text-sm text-zinc-500 mb-4">{route.length ? t('trips.photosStations', { photos: photos.length, stations: route.length }) : t('trips.photosOnly', { photos: photos.length })}</p>
 
       {allPts.length > 0 && (
         <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 h-72 mb-6">
@@ -179,8 +182,8 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
         {photos.map((photo, i) => (
           <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-zinc-800">
             <img src={thumbUrl(photo as any, 'small')} className="w-full h-full object-cover cursor-pointer" loading="lazy" onClick={() => setLbIdx(i)} />
-            <button onClick={async () => { if (await confirm({ title: 'Aus der Reise entfernen?', message: 'Das Foto bleibt in deiner Galerie, nur nicht in dieser Reise.', confirmLabel: 'Entfernen' })) remove.mutate(photo.id) }}
-              title="Aus Reise entfernen"
+            <button onClick={async () => { if (await confirm({ title: t('trips.removeFromTripTitle'), message: t('trips.removeFromTripMsg'), confirmLabel: t('trips.removeLabel') })) remove.mutate(photo.id) }}
+              title={t('trips.removeFromTripTooltip')}
               className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"><X size={12} /></button>
           </div>
         ))}
@@ -192,6 +195,7 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
 
 // ── Create-trip wizard ──────────────────────────────────────────────────────────
 function Wizard({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
+  const { t } = useT()
   const toast = useToast()
   const [desc, setDesc] = useState('')
   const [from, setFrom] = useState('')
@@ -202,34 +206,34 @@ function Wizard({ onClose, onCreated }: { onClose: () => void; onCreated: (id: n
   const planM = useMutation({
     mutationFn: () => api.post('/photos/plan-trip', { description: desc, date_from: from || null, date_to: to || null }).then(r => r.data),
     onSuccess: (d) => { if (d.error) toast(d.error, 'error'); else { setPlan(d); if (d.date_from && !from) setFrom(d.date_from); if (d.date_to && !to) setTo(d.date_to) } },
-    onError: () => toast('Planung fehlgeschlagen', 'error'),
+    onError: () => toast(t('trips.planFailed'), 'error'),
   })
   const saveM = useMutation({
     mutationFn: () => api.post('/photos/create-trip', { name: plan!.name, date_from: from || plan!.date_from, date_to: to || plan!.date_to, waypoints: plan!.waypoints, description: plan!.summary }).then(r => r.data),
-    onSuccess: (d) => { toast(`Reise „${d.name}" angelegt (${d.added} Fotos)`, 'success'); onCreated(d.album_id) },
-    onError: () => toast('Konnte Reise nicht speichern', 'error'),
+    onSuccess: (d) => { toast(t('trips.tripCreated', { name: d.name, added: d.added }), 'success'); onCreated(d.album_id) },
+    onError: () => toast(t('trips.saveFailed'), 'error'),
   })
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-base font-semibold flex items-center gap-2 text-zinc-900 dark:text-white"><Sparkles size={16} className="text-indigo-400" /> Reise anlegen</h2>
+          <h2 className="text-base font-semibold flex items-center gap-2 text-zinc-900 dark:text-white"><Sparkles size={16} className="text-indigo-400" /> {t('trips.createTitle')}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Beschreibe die Reise (Gemini baut die Route)</label>
+            <label className="block text-xs text-zinc-500 mb-1">{t('trips.describe')}</label>
             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} className={`${inp} resize-none`}
-              placeholder="z. B. AIDA Mittelmeer-Kreuzfahrt ab Mallorca über Barcelona, Marseille, Genua und Rom" />
+              placeholder={t('trips.describePlaceholder')} />
           </div>
           <div className="flex gap-2">
-            <div className="flex-1"><label className="block text-xs text-zinc-500 mb-1">von</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} /></div>
-            <div className="flex-1"><label className="block text-xs text-zinc-500 mb-1">bis</label><input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} /></div>
+            <div className="flex-1"><label className="block text-xs text-zinc-500 mb-1">{t('trips.from')}</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} /></div>
+            <div className="flex-1"><label className="block text-xs text-zinc-500 mb-1">{t('trips.to')}</label><input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} /></div>
           </div>
           <button onClick={() => planM.mutate()} disabled={!desc.trim() || planM.isPending}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-sm font-medium text-zinc-800 dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-50">
-            {planM.isPending ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} Route planen
+            {planM.isPending ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {t('trips.planRoute')}
           </button>
 
           {plan && (
@@ -247,7 +251,7 @@ function Wizard({ onClose, onCreated }: { onClose: () => void; onCreated: (id: n
               </ol>
               <button onClick={() => saveM.mutate()} disabled={saveM.isPending}
                 className="w-full mt-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-                {saveM.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plane size={15} />} Reise speichern + Fotos zuordnen
+                {saveM.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plane size={15} />} {t('trips.saveTrip')}
               </button>
             </div>
           )}
@@ -258,6 +262,7 @@ function Wizard({ onClose, onCreated }: { onClose: () => void; onCreated: (id: n
 }
 
 export default function TripsPage() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [wizard, setWizard] = useState(false)
   const [openTrip, setOpenTrip] = useState<Album | null>(null)
@@ -280,9 +285,9 @@ export default function TripsPage() {
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Plane size={20} /> Reisen</h1>
+        <h1 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Plane size={20} /> {t('trips.heading')}</h1>
         <button onClick={() => setWizard(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-          <Sparkles size={15} /> Reise anlegen
+          <Sparkles size={15} /> {t('trips.createTitle')}
         </button>
       </div>
 
@@ -308,7 +313,7 @@ export default function TripsPage() {
 
       {suggestions.length > 0 && (
         <>
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Automatisch erkannt</h2>
+          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">{t('trips.autoDetected')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {suggestions.map(e => (
               <button key={`${e.date_from}-${e.cover_photo_id}`} onClick={() => openEvent(e)}
@@ -317,9 +322,9 @@ export default function TripsPage() {
                   <img src={thumbUrl({ id: e.cover_photo_id } as any, 'medium')} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 </div>
                 <div className="p-3">
-                  <div className="font-semibold text-zinc-900 dark:text-white truncate flex items-center gap-1.5">{e.city ? <><MapPin size={13} className="text-indigo-400 shrink-0" /> {e.city}</> : 'Event'}</div>
+                  <div className="font-semibold text-zinc-900 dark:text-white truncate flex items-center gap-1.5">{e.city ? <><MapPin size={13} className="text-indigo-400 shrink-0" /> {e.city}</> : t('trips.event')}</div>
                   <div className="text-xs text-zinc-500 mt-0.5">{fmtRange(e.date_from, e.date_to)}</div>
-                  <div className="text-xs text-zinc-500 mt-1 flex items-center gap-3"><span className="flex items-center gap-1"><Images size={12} /> {e.count}</span>{e.days > 1 && <span>{e.days} Tage</span>}</div>
+                  <div className="text-xs text-zinc-500 mt-1 flex items-center gap-3"><span className="flex items-center gap-1"><Images size={12} /> {e.count}</span>{e.days > 1 && <span>{t('trips.days', { n: e.days })}</span>}</div>
                 </div>
               </button>
             ))}
@@ -328,7 +333,7 @@ export default function TripsPage() {
       )}
 
       {trips.length === 0 && suggestions.length === 0 && (
-        <p className="text-zinc-500 text-sm">Noch keine Reisen. Lege über „Reise anlegen" eine an — Gemini baut die Route und ordnet die Fotos automatisch zu.</p>
+        <p className="text-zinc-500 text-sm">{t('trips.emptyState')}</p>
       )}
 
       {wizard && <Wizard onClose={() => setWizard(false)} onCreated={(id) => { setWizard(false); qc.invalidateQueries({ queryKey: ['albums'] }); const a = albums.find(x => x.id === id); if (a) setOpenTrip(a) }} />}

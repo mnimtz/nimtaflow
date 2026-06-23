@@ -19,6 +19,7 @@ import 'leaflet/dist/leaflet.css'
 import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
+import { useT } from '../../i18n'
 
 function fmtBytes(b?: number) { if (!b) return null; const u = ['B', 'KB', 'MB', 'GB']; let i = 0, n = b; while (n >= 1024 && i < 3) { n /= 1024; i++ } return `${n.toFixed(1)} ${u[i]}` }
 
@@ -26,14 +27,15 @@ function fmtDur(s?: number) { if (!s) return null; const m = Math.floor(s / 60),
 function fmtDate(v?: string) { return v ? new Date(v).toLocaleString('de', { dateStyle: 'medium', timeStyle: 'short' }) : null }
 
 // Creative scene presets for "animate this photo / put the person into a world".
-const ANIM_PRESETS: { label: string; prompt: string }[] = [
-  { label: '🎬 Dezente Bewegung', prompt: '' },
-  { label: '🌊 Unterwasserwelt', prompt: 'Diese Person schwimmt langsam durch eine leuchtende Unterwasserwelt mit bunten Fischen und Korallen, sanfte Lichtstrahlen, ruhige Kamerafahrt.' },
-  { label: '🚀 Weltraum', prompt: 'Diese Person schwebt durch den Weltraum zwischen Sternen, Planeten und farbigen Nebeln, cinematische langsame Bewegung.' },
-  { label: '❄️ Winterwunderland', prompt: 'Diese Person geht durch einen verschneiten Märchenwald mit funkelndem Schnee und Polarlichtern am Himmel.' },
-  { label: '🧚 Märchenwald', prompt: 'Diese Person läuft durch einen magischen, leuchtenden Märchenwald voller Glühwürmchen und weichem Licht.' },
-  { label: '☁️ Über den Wolken', prompt: 'Diese Person fliegt sanft über goldene Wolken bei Sonnenuntergang, ruhige epische Kamerafahrt.' },
-  { label: '🌆 Cyberpunk-Stadt', prompt: 'Diese Person geht durch eine neonbeleuchtete Cyberpunk-Stadt bei Nacht, Regen, Spiegelungen, filmische Kamera.' },
+// labelKey/promptKey are resolved via i18n at render time.
+const ANIM_PRESETS: { labelKey: string; promptKey: string | null }[] = [
+  { labelKey: 'gallery.animSubtle', promptKey: null },
+  { labelKey: 'gallery.animUnderwater', promptKey: 'gallery.animUnderwaterPrompt' },
+  { labelKey: 'gallery.animSpace', promptKey: 'gallery.animSpacePrompt' },
+  { labelKey: 'gallery.animWinter', promptKey: 'gallery.animWinterPrompt' },
+  { labelKey: 'gallery.animFairy', promptKey: 'gallery.animFairyPrompt' },
+  { labelKey: 'gallery.animClouds', promptKey: 'gallery.animCloudsPrompt' },
+  { labelKey: 'gallery.animCyberpunk', promptKey: 'gallery.animCyberpunkPrompt' },
 ]
 
 function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void }) {
@@ -44,6 +46,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data),
     staleTime: 0, refetchOnMount: 'always',
   })
+  const { t } = useT()
   const toast = useToast()
   const qc = useQueryClient()
   const [scanning, setScanning] = useState(false)
@@ -51,7 +54,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     setScanning(true)
     try {
       await api.post(`/photos/${photoId}/reprocess`)
-      toast('Verarbeitung gestartet — Ergebnis erscheint gleich …', 'success')
+      toast(t('gallery.reprocessStarted'), 'success')
       // poll the detail for ~30s so the fresh description/faces/tags show up live
       let n = 0
       const iv = setInterval(() => {
@@ -59,15 +62,15 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         if (++n >= 10) { clearInterval(iv); setScanning(false) }
       }, 3000)
     } catch {
-      toast('Konnte Verarbeitung nicht starten', 'error'); setScanning(false)
+      toast(t('gallery.reprocessFailed'), 'error'); setScanning(false)
     }
   }
   const setCover = async (pp: any) => {
     try {
       await api.post(`/people/${pp.person_id}/profile-face/${pp.face_id}`)
-      toast(`Titelbild für ${pp.name} gesetzt`, 'success')
+      toast(t('gallery.coverSet', { name: pp.name }), 'success')
     } catch {
-      toast('Konnte Titelbild nicht setzen', 'error')
+      toast(t('gallery.coverFailed'), 'error')
     }
   }
   if (!p) return null
@@ -97,8 +100,8 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
       inset-x-0 bottom-0 max-h-[60vh] border-t rounded-t-2xl
       md:inset-y-0 md:right-0 md:left-auto md:w-[360px] md:max-h-none md:border-l md:border-t-0 md:rounded-none">
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 sticky top-0 bg-zinc-900/95">
-        <h3 className="font-semibold">Informationen</h3>
-        <button onClick={onClose} className="text-zinc-400 hover:text-white text-sm">Schließen</button>
+        <h3 className="font-semibold">{t('gallery.info')}</h3>
+        <button onClick={onClose} className="text-zinc-400 hover:text-white text-sm">{t('gallery.close')}</button>
       </div>
       <div className="p-4 space-y-4">
         <p className="text-sm font-medium text-zinc-100 break-all">{p.filename}</p>
@@ -106,39 +109,39 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         <a href={p.is_video ? `/api/photos/${p.id}/video/stream` : `/api/photos/${p.id}/original`}
            target="_blank" rel="noopener noreferrer"
            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
-          {p.is_video ? 'Original-Video öffnen' : 'Original in voller Qualität öffnen'}
+          {p.is_video ? t('gallery.openOriginalVideo') : t('gallery.openOriginalFull')}
         </a>
 
         <button onClick={reprocess} disabled={scanning}
           className="ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white font-medium disabled:opacity-60"
-          title="Dieses Foto neu verarbeiten (Beschreibung, Tags, Gesichter, Thumbnail)">
-          <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? 'Scanne …' : 'Neu verarbeiten'}
+          title={t('gallery.reprocessTitle')}>
+          <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? t('gallery.scanning') : t('gallery.reprocess')}
         </button>
 
         {p.description && (
           <div>
             <p className="text-sm text-zinc-300 italic">{p.description}</p>
-            {p.description_model && <p className="text-[11px] text-zinc-500 mt-1">KI: {p.description_model}</p>}
+            {p.description_model && <p className="text-[11px] text-zinc-500 mt-1">{t('gallery.ai')}: {p.description_model}</p>}
           </div>
         )}
 
-        {taken && <Row icon={Calendar} label="Aufgenommen">{taken}</Row>}
+        {taken && <Row icon={Calendar} label={t('gallery.takenAt')}>{taken}</Row>}
 
         {(p.camera_make || p.camera_model) && (
-          <Row icon={Camera} label="Kamera">
+          <Row icon={Camera} label={t('gallery.camera')}>
             {[p.camera_make, p.camera_model].filter(Boolean).join(' ')}
             {p.lens_model && <div className="text-xs text-zinc-400">{p.lens_model}</div>}
           </Row>
         )}
 
         {exposure.length > 0 && (
-          <Row icon={Aperture} label="Belichtung">
+          <Row icon={Aperture} label={t('gallery.exposure')}>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-zinc-300">{exposure.map((e, i) => <span key={i}>{e}</span>)}</div>
           </Row>
         )}
 
         {(p.width && p.height) && (
-          <Row icon={Info} label={p.is_video ? 'Video' : 'Bild'}>
+          <Row icon={Info} label={p.is_video ? t('gallery.video') : t('gallery.image')}>
             {p.width} × {p.height}{mp ? ` · ${mp} MP` : ''}
             <div className="text-xs text-zinc-400 flex flex-wrap gap-x-3">
               {fmtBytes(p.file_size) && <span>{fmtBytes(p.file_size)}</span>}
@@ -152,13 +155,13 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         )}
 
         {namedPeople.length > 0 && (
-          <Row icon={UsersIcon} label="Personen">
+          <Row icon={UsersIcon} label={t('gallery.people')}>
             <div className="flex flex-wrap gap-1.5">
               {namedPeople.map(pp => (
                 <span key={pp.face_id} className="group flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">
                   {pp.name}
                   {pp.person_id && pp.face_id && (
-                    <button onClick={() => setCover(pp)} title={`Als Titelbild für ${pp.name} setzen`}
+                    <button onClick={() => setCover(pp)} title={t('gallery.setCoverFor', { name: pp.name })}
                       className="text-indigo-300/70 hover:text-yellow-300 p-0.5"><Star size={11} /></button>
                   )}
                 </span>
@@ -167,7 +170,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
           </Row>
         )}
 
-        {(p.city || p.country || p.location_name) && <Row icon={MapPin} label="Ort">{[p.location_name, p.city, p.country].filter(Boolean).join(', ')}</Row>}
+        {(p.city || p.country || p.location_name) && <Row icon={MapPin} label={t('gallery.location')}>{[p.location_name, p.city, p.country].filter(Boolean).join(', ')}</Row>}
 
         {p.latitude != null && p.longitude != null && (
           <div className="space-y-1.5">
@@ -182,7 +185,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         )}
 
         {tags.length > 0 && (
-          <Row icon={TagIcon} label="Tags">
+          <Row icon={TagIcon} label={t('gallery.tags')}>
             <div className="flex flex-wrap gap-1.5">
               {tags.slice(0, 30).map((k) => <span key={k} className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-xs">{k}</span>)}
             </div>
@@ -190,16 +193,16 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         )}
 
         {(p.user_rating || p.is_favorite) && (
-          <Row icon={Heart} label="Bewertung">
-            {p.user_rating ? '★'.repeat(p.user_rating) + '☆'.repeat(5 - p.user_rating) : ''}{p.is_favorite ? '  ❤️ Favorit' : ''}
+          <Row icon={Heart} label={t('gallery.rating')}>
+            {p.user_rating ? '★'.repeat(p.user_rating) + '☆'.repeat(5 - p.user_rating) : ''}{p.is_favorite ? `  ❤️ ${t('gallery.favoriteBadge')}` : ''}
           </Row>
         )}
 
         <div className="pt-2 border-t border-zinc-800 space-y-1 text-[11px] text-zinc-500">
           <div className="break-all">{p.path}</div>
-          {fmtDate(p.indexed_at) && <div>Indexiert: {fmtDate(p.indexed_at)}</div>}
-          {fmtDate(p.processed_at) && <div>Verarbeitet: {fmtDate(p.processed_at)}</div>}
-          {p.ai_error && <div className="text-amber-400">KI-Fehler bei der Verarbeitung</div>}
+          {fmtDate(p.indexed_at) && <div>{t('gallery.indexed')}: {fmtDate(p.indexed_at)}</div>}
+          {fmtDate(p.processed_at) && <div>{t('gallery.processed')}: {fmtDate(p.processed_at)}</div>}
+          {p.ai_error && <div className="text-amber-400">{t('gallery.aiError')}</div>}
         </div>
       </div>
     </div>
@@ -210,6 +213,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   photos: Photo[]; index: number; onClose: () => void; onFavorite?: (photo: Photo) => void
   hasMore?: boolean; onLoadMore?: () => void
 }) {
+  const { t } = useT()
   const [cur, setCur] = useState(index)
   const [info, setInfo] = useState(false)
   // Track favorite state locally so the heart updates immediately (the `photos`
@@ -248,23 +252,23 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   const animate = useMutation({
     mutationFn: ({ id, prompt }: { id: number; prompt: string }) =>
       api.post('/highlights/animate-photo', { photo_id: id, prompt: prompt.trim() || undefined }).then(r => r.data),
-    onSuccess: () => { setAnimOpen(false); setAnimPrompt(''); toast('Animation gestartet — erscheint unter „Highlights", sobald fertig.', 'success') },
-    onError: (e: any) => toast(e?.response?.data?.detail || 'Animation fehlgeschlagen.', 'error'),
+    onSuccess: () => { setAnimOpen(false); setAnimPrompt(''); toast(t('gallery.animStarted'), 'success') },
+    onError: (e: any) => toast(e?.response?.data?.detail || t('gallery.animFailed'), 'error'),
   })
   const animBtn = (aiOn && photos[cur] && !photos[cur].is_video) ? (
     <button key="animate" type="button" className="yarl__button"
-      onClick={() => setAnimOpen(true)} title="Foto animieren / in eine KI-Szene setzen">
+      onClick={() => setAnimOpen(true)} title={t('gallery.animateTooltip')}>
       <Sparkles className="yarl__icon" />
     </button>
   ) : null
 
   const infoBtn = (
-    <button key="info" type="button" className="yarl__button" onClick={() => setInfo(v => !v)} title="Informationen (i)">
+    <button key="info" type="button" className="yarl__button" onClick={() => setInfo(v => !v)} title={t('gallery.infoTooltip')}>
       <Info className="yarl__icon" />
     </button>
   )
   const favBtn = onFavorite ? (
-    <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && toggleFav(photos[cur])} title="Favorit (f)">
+    <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && toggleFav(photos[cur])} title={t('gallery.favoriteTooltip')}>
       <Heart className="yarl__icon" fill={isFav(photos[cur]) ? 'currentColor' : 'none'} color={isFav(photos[cur]) ? '#f87171' : undefined} />
     </button>
   ) : null
@@ -295,26 +299,26 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <Sparkles size={18} className="text-indigo-500" />
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Foto animieren / in eine Szene setzen</h2>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t('gallery.animDialogTitle')}</h2>
             </div>
-            <p className="text-xs text-zinc-500">Beschreibe, was passieren soll — oder wähle eine Welt. Leer lassen = nur dezente, realistische Bewegung.</p>
+            <p className="text-xs text-zinc-500">{t('gallery.animDialogHint')}</p>
             <div className="flex flex-wrap gap-1.5">
               {ANIM_PRESETS.map(p => (
-                <button key={p.label} onClick={() => setAnimPrompt(p.prompt)}
+                <button key={p.labelKey} onClick={() => setAnimPrompt(p.promptKey ? t(p.promptKey) : '')}
                   className="px-2.5 py-1 rounded-full text-xs border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:border-indigo-400">
-                  {p.label}
+                  {t(p.labelKey)}
                 </button>
               ))}
             </div>
             <textarea value={animPrompt} onChange={e => setAnimPrompt(e.target.value)} rows={3}
-              placeholder="z. B. Diese Person läuft durch eine leuchtende Unterwasserwelt mit bunten Fischen …"
+              placeholder={t('gallery.animPromptPlaceholder')}
               className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <p className="text-[11px] text-zinc-400">Hinweis: Bei wilden Szenen kann die Ähnlichkeit der Person leiden — stärkere Modelle (Veo/Kling) halten Gesichter besser. Kostet je nach Anbieter (siehe Einstellungen → Highlights).</p>
+            <p className="text-[11px] text-zinc-400">{t('gallery.animNote')}</p>
             <div className="flex items-center justify-end gap-2">
-              <button onClick={() => setAnimOpen(false)} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+              <button onClick={() => setAnimOpen(false)} className="px-3 py-1.5 text-sm rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('gallery.cancel')}</button>
               <button onClick={() => photos[cur] && animate.mutate({ id: photos[cur].id, prompt: animPrompt })} disabled={animate.isPending}
                 className="px-4 py-1.5 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50">
-                {animate.isPending ? 'Startet…' : 'Animieren'}
+                {animate.isPending ? t('gallery.starting') : t('gallery.animate')}
               </button>
             </div>
           </div>

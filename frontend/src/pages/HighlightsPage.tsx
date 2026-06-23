@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useToast } from '../components/ui/dialogs'
 import { Sparkles, Film, Trash2, Plus, X, Clock } from 'lucide-react'
+import { useT } from '../i18n'
 
 type Motto = { motto: string; label: string; params: string[]; description?: string }
 type Highlight = {
@@ -12,6 +13,7 @@ type Highlight = {
 }
 
 export default function HighlightsPage() {
+  const { t } = useT()
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [play, setPlay] = useState<Highlight | null>(null)
@@ -30,17 +32,17 @@ export default function HighlightsPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
       <div className="flex items-center gap-3 mb-6">
         <Sparkles className="text-indigo-500" />
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Highlights</h1>
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{t('highlights.title')}</h1>
         <button onClick={() => setShowCreate(true)}
           className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-          <Plus size={16} /> Neues Highlight-Video
+          <Plus size={16} /> {t('highlights.newVideo')}
         </button>
       </div>
 
       {list.length === 0 && (
         <div className="flex flex-col items-center py-20 text-zinc-500">
           <Film size={40} className="mb-3" />
-          <p>Noch keine Highlight-Videos. Erstelle dein erstes oben rechts.</p>
+          <p>{t('highlights.empty')}</p>
         </div>
       )}
 
@@ -54,14 +56,14 @@ export default function HighlightsPage() {
                 {h.status === 'done'
                   ? <span className="w-12 h-12 rounded-full bg-black/50 text-white flex items-center justify-center"><Film size={22} /></span>
                   : <span className="px-3 py-1 rounded-full bg-black/60 text-white text-xs flex items-center gap-1.5">
-                      <Clock size={12} /> {h.status === 'error' ? 'Fehler' : h.status === 'rendering' ? 'Wird erstellt…' : 'Wartet…'}
+                      <Clock size={12} /> {h.status === 'error' ? t('highlights.statusError') : h.status === 'rendering' ? t('highlights.statusRendering') : t('highlights.statusPending')}
                     </span>}
               </span>
             </button>
             <div className="p-3 flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{h.title}</p>
-                <p className="text-xs text-zinc-500">{h.photo_count} Fotos · {Math.round(h.duration_sec)}s</p>
+                <p className="text-xs text-zinc-500">{t('highlights.photosDuration', { count: h.photo_count, sec: Math.round(h.duration_sec) })}</p>
                 {h.error_message && <p className="text-xs text-red-500 mt-0.5 line-clamp-2">{h.error_message}</p>}
               </div>
               <button onClick={() => del.mutate(h.id)} className="text-zinc-400 hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
@@ -84,6 +86,7 @@ export default function HighlightsPage() {
 }
 
 function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { t } = useT()
   const [motto, setMotto] = useState('')
   const [title, setTitle] = useState('')
   const [duration, setDuration] = useState(60)
@@ -112,8 +115,8 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       ...(needs('album') && albumId ? { album_id: albumId } : {}),
       ...(needs('season') ? { season } : {}),
     }),
-    onSuccess: () => { toast('Highlight wird erstellt — erscheint in Kürze in der Liste.', 'success'); onCreated() },
-    onError: (e: any) => toast(e?.response?.data?.detail || 'Erstellen fehlgeschlagen.', 'error'),
+    onSuccess: () => { toast(t('highlights.toastCreated'), 'success'); onCreated() },
+    onError: (e: any) => toast(e?.response?.data?.detail || t('highlights.toastError'), 'error'),
   })
 
   const ready = !!motto
@@ -129,64 +132,64 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-md border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Highlight-Video erstellen</h2>
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t('highlights.createTitle')}</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><X size={18} /></button>
         </div>
 
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Motto</label>
+          <label className="block text-xs text-zinc-500 mb-1">{t('highlights.motto')}</label>
           <select value={motto} onChange={e => setMotto(e.target.value)} className={sel}>
-            <option value="">— wählen —</option>
+            <option value="">{t('highlights.choose')}</option>
             {mottos.map(x => <option key={x.motto} value={x.motto}>{x.label}</option>)}
           </select>
           {m?.description && <p className="text-[11px] text-zinc-500 mt-1">{m.description}</p>}
         </div>
 
         {needs('person') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Person</label>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.person')}</label>
             <PersonCombobox people={named} value={personId} onChange={setPersonId} /></div>
         )}
         {needs('person2') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Zweite Person (z. B. das Kind)</label>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.person2')}</label>
             <PersonCombobox people={named} value={personId2} onChange={setPersonId2} exclude={personId ? [personId] : []} /></div>
         )}
         {needs('people') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Personen (mind. 2 — gemeinsame Fotos)</label>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.people')}</label>
             <PersonMultiPicker people={named} value={personIds} onChange={setPersonIds} /></div>
         )}
         {needs('year') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Jahr</label>
-            <input value={year} onChange={e => setYear(e.target.value)} placeholder="z. B. 2023" className={sel} /></div>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.year')}</label>
+            <input value={year} onChange={e => setYear(e.target.value)} placeholder={t('highlights.yearPlaceholder')} className={sel} /></div>
         )}
         {needs('album') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Album / Reise</label>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.albumTrip')}</label>
             <select value={albumId} onChange={e => setAlbumId(e.target.value ? Number(e.target.value) : '')} className={sel}>
-              <option value="">— wählen —</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              <option value="">{t('highlights.choose')}</option>{albums.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select></div>
         )}
         {needs('season') && (
-          <div><label className="block text-xs text-zinc-500 mb-1">Jahreszeit / Anlass</label>
+          <div><label className="block text-xs text-zinc-500 mb-1">{t('highlights.season')}</label>
             <select value={season} onChange={e => setSeason(e.target.value)} className={sel}>
-              <option value="weihnachten">Weihnachten</option><option value="ostern">Ostern</option>
-              <option value="sommer">Sommer</option><option value="winter">Winter</option>
-              <option value="herbst">Herbst</option><option value="halloween">Halloween</option>
+              <option value="weihnachten">{t('highlights.seasonChristmas')}</option><option value="ostern">{t('highlights.seasonEaster')}</option>
+              <option value="sommer">{t('highlights.seasonSummer')}</option><option value="winter">{t('highlights.seasonWinter')}</option>
+              <option value="herbst">{t('highlights.seasonAutumn')}</option><option value="halloween">{t('highlights.seasonHalloween')}</option>
             </select></div>
         )}
 
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Titel (optional)</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={m?.label || 'Mein Highlight'} className={sel} />
+          <label className="block text-xs text-zinc-500 mb-1">{t('highlights.titleOptional')}</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={m?.label || t('highlights.titlePlaceholder')} className={sel} />
         </div>
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Länge: {duration}s</label>
+          <label className="block text-xs text-zinc-500 mb-1">{t('highlights.length', { sec: duration })}</label>
           <input type="range" min={15} max={180} step={15} value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-full" />
         </div>
 
         <button onClick={() => create.mutate()} disabled={!ready || create.isPending}
           className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40">
-          {create.isPending ? 'Wird erstellt…' : !motto ? 'Motto wählen' : !ready ? 'Bitte Auswahl vervollständigen' : 'Video erstellen'}
+          {create.isPending ? t('highlights.btnCreating') : !motto ? t('highlights.btnChooseMotto') : !ready ? t('highlights.btnCompleteSelection') : t('highlights.btnCreateVideo')}
         </button>
-        <p className="text-[11px] text-zinc-400">Das Rendern läuft im Hintergrund (ffmpeg) und erscheint dann in der Liste.</p>
+        <p className="text-[11px] text-zinc-400">{t('highlights.renderHint')}</p>
       </div>
     </div>
   )
@@ -199,6 +202,7 @@ const PICKER_INPUT = 'w-full px-3 py-2 rounded-lg border border-zinc-300 dark:bo
 function PersonCombobox({ people, value, onChange, exclude = [] }: {
   people: PMin[]; value: number | ''; onChange: (id: number | '') => void; exclude?: number[]
 }) {
+  const { t } = useT()
   const [q, setQ] = useState('')
   const picked = value ? people.find(p => p.id === value) : undefined
   const matches = q.trim()
@@ -208,7 +212,7 @@ function PersonCombobox({ people, value, onChange, exclude = [] }: {
     <div className="relative">
       <input value={picked ? picked.name : q}
         onChange={e => { setQ(e.target.value); if (value) onChange('') }}
-        placeholder={`Person suchen … (${people.length})`} className={PICKER_INPUT} />
+        placeholder={t('highlights.searchPerson', { count: people.length })} className={PICKER_INPUT} />
       {picked && (
         <button onClick={() => { onChange(''); setQ('') }}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-red-500"><X size={14} /></button>
@@ -229,6 +233,7 @@ function PersonCombobox({ people, value, onChange, exclude = [] }: {
 function PersonMultiPicker({ people, value, onChange }: {
   people: PMin[]; value: number[]; onChange: (ids: number[]) => void
 }) {
+  const { t } = useT()
   const [q, setQ] = useState('')
   const selected = people.filter(p => value.includes(p.id))
   const matches = q.trim()
@@ -248,7 +253,7 @@ function PersonMultiPicker({ people, value, onChange }: {
       )}
       <div className="relative">
         <input value={q} onChange={e => setQ(e.target.value)}
-          placeholder={`Person hinzufügen … (${people.length})`} className={PICKER_INPUT} />
+          placeholder={t('highlights.addPerson', { count: people.length })} className={PICKER_INPUT} />
         {q.trim() && matches.length > 0 && (
           <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
             {matches.map(p => (

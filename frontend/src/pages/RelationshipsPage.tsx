@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, X, Network, Image as ImageIcon } from 'lucide-react'
 import { api } from '../lib/api'
+import { useT } from '../i18n'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 
 interface GNode { id: number; name: string; named: boolean; face_count: number }
@@ -10,10 +11,11 @@ interface RelType { value: string; label: string; inverse_label: string | null; 
 interface Pos { x: number; y: number; vx: number; vy: number }
 
 const CAT_COLOR: Record<string, string> = { family: '#10b981', social: '#0ea5e9', professional: '#f59e0b', other: '#a1a1aa' }
-const CAT_LABEL: Record<string, string> = { family: 'Familie', social: 'Sozial', professional: 'Beruflich', other: 'Sonstige' }
+const CAT_LABEL_KEY: Record<string, string> = { family: 'relationships.catFamily', social: 'relationships.catSocial', professional: 'relationships.catProfessional', other: 'relationships.catOther' }
 const W = 1000, H = 680
 
 export default function RelationshipsPage() {
+  const { t } = useT()
   const qc = useQueryClient()
   const { data } = useQuery<{ nodes: GNode[]; edges: GEdge[] }>({
     queryKey: ['rel-graph'], queryFn: () => api.get('/relationships/graph').then(r => r.data),
@@ -106,10 +108,10 @@ export default function RelationshipsPage() {
     onSuccess: (data: { created?: number }) => {
       qc.invalidateQueries({ queryKey: ['rel-graph'] })
       const n = data?.created ?? 0
-      if (n > 0) alert(`${n} neue Verbindung(en) abgeleitet (Geschwister/Großeltern).`)
-      else alert('Keine neuen Verbindungen ableitbar.\n\nAbgeleitet werden Geschwister (gemeinsame Eltern) und Großeltern (Eltern eines Elternteils). Lege dafür zuerst „Elternteil"-Verbindungen an.')
+      if (n > 0) alert(t('relationships.derived', { n }))
+      else alert(t('relationships.deriveNone'))
     },
-    onError: () => alert('Ableiten fehlgeschlagen.'),
+    onError: () => alert(t('relationships.deriveFailed')),
   })
   const { data: appSettings } = useQuery<Record<string, string>>({
     queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
@@ -129,32 +131,32 @@ export default function RelationshipsPage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2"><Network size={22} /> Beziehungen</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Familien- & Freundes-Netzwerk · {nodes.length} Personen, {edges.length} Verbindungen</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2"><Network size={22} /> {t('relationships.title')}</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('relationships.subtitle', { persons: nodes.length, edges: edges.length })}</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400" title="Bezugsperson für die Suche nach meiner Ehefrau / meinem Kollegen">
-            Ich bin:
+          <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400" title={t('relationships.selfHint')}>
+            {t('relationships.iAm')}
             <select value={selfId} onChange={e => setSelf.mutate(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs max-w-[10rem]">
-              <option value="">— niemand —</option>
+              <option value="">{t('relationships.nobody')}</option>
               {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
             </select>
           </label>
           <button onClick={() => derive.mutate()} disabled={derive.isPending}
             className="px-3.5 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-            title="Geschwister & Großeltern automatisch aus Eltern-Verbindungen ableiten">
-            {derive.isPending ? 'Leite ab…' : 'Verwandtschaft ableiten'}
+            title={t('relationships.deriveTitle')}>
+            {derive.isPending ? t('relationships.deriving') : t('relationships.deriveBtn')}
           </button>
           <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-            <Plus size={15} /> Verbindung
+            <Plus size={15} /> {t('relationships.connection')}
           </button>
         </div>
       </div>
 
       {/* Filter (Stammbaum vs. Kollegenbaum) + legend */}
       <div className="flex items-center gap-2 mb-3 flex-wrap text-xs">
-        {([['all', 'Alle'], ['family', 'Familie 🌳'], ['social', 'Sozial'], ['professional', 'Beruflich 🏢']] as const).map(([k, lbl]) => (
+        {([['all', t('relationships.filterAll')], ['family', t('relationships.filterFamily')], ['social', t('relationships.filterSocial')], ['professional', t('relationships.filterProfessional')]] as const).map(([k, lbl]) => (
           <button key={k} onClick={() => setCatFilter(k)}
             className={`px-2.5 py-1 rounded-full border transition-colors ${catFilter === k
               ? 'bg-indigo-600 text-white border-indigo-600'
@@ -163,8 +165,8 @@ export default function RelationshipsPage() {
           </button>
         ))}
         <span className="mx-1 text-zinc-300 dark:text-zinc-700">|</span>
-        {Object.entries(CAT_LABEL).map(([k, lbl]) => (
-          <span key={k} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400"><span className="w-3 h-0.5 rounded" style={{ background: CAT_COLOR[k] }} /> {lbl}</span>
+        {Object.entries(CAT_LABEL_KEY).map(([k, lblKey]) => (
+          <span key={k} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400"><span className="w-3 h-0.5 rounded" style={{ background: CAT_COLOR[k] }} /> {t(lblKey)}</span>
         ))}
       </div>
 
@@ -222,10 +224,10 @@ export default function RelationshipsPage() {
               </div>
               <button onClick={() => openPhotos(`/people/${sel}/photos?limit=200`)}
                 className="w-full mb-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-                <ImageIcon size={15} /> Fotos ansehen ({selNode.face_count})
+                <ImageIcon size={15} /> {t('relationships.viewPhotos', { n: selNode.face_count })}
               </button>
               {selEdges.length === 0 ? (
-                <p className="text-sm text-zinc-500">Noch keine Verbindungen. Lege oben eine an.</p>
+                <p className="text-sm text-zinc-500">{t('relationships.noConnections')}</p>
               ) : (
                 <ul className="space-y-1.5">
                   {selEdges.map(e => {
@@ -239,7 +241,7 @@ export default function RelationshipsPage() {
                         <span className="text-zinc-800 dark:text-zinc-200 truncate flex-1">{other?.name}</span>
                         {other && (
                           <button onClick={() => openPhotos(`/relationships/together/${sel}/${other.id}`)}
-                            title="Gemeinsame Fotos" className="text-zinc-400 hover:text-indigo-500"><ImageIcon size={14} /></button>
+                            title={t('relationships.commonPhotos')} className="text-zinc-400 hover:text-indigo-500"><ImageIcon size={14} /></button>
                         )}
                         <button onClick={() => del.mutate(e.id)} className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500"><Trash2 size={13} /></button>
                       </li>
@@ -249,7 +251,7 @@ export default function RelationshipsPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-zinc-500">Klicke eine Person im Graphen an, um ihre Verbindungen zu sehen. Knoten lassen sich ziehen.</p>
+            <p className="text-sm text-zinc-500">{t('relationships.selectHint')}</p>
           )}
         </div>
       </div>
@@ -259,7 +261,7 @@ export default function RelationshipsPage() {
       {lb && lb.length > 0 && <GalleryLightbox photos={lb as any} index={0} onClose={() => setLb(null)} />}
       {lb && lb.length === 0 && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => setLb(null)}>
-          <div className="px-4 py-3 rounded-xl bg-zinc-900 text-zinc-200 text-sm">Keine gemeinsamen Fotos gefunden.</div>
+          <div className="px-4 py-3 rounded-xl bg-zinc-900 text-zinc-200 text-sm">{t('relationships.noCommonPhotos')}</div>
         </div>
       )}
     </div>
@@ -269,6 +271,7 @@ export default function RelationshipsPage() {
 function AddRelationModal({ nodes, preselect, onClose, onSaved }: {
   nodes: GNode[]; preselect: number | null; onClose: () => void; onSaved: () => void
 }) {
+  const { t } = useT()
   const [from, setFrom] = useState<number | ''>(preselect ?? '')
   const [to, setTo] = useState<number | ''>('')
   const [type, setType] = useState('parent')
@@ -296,26 +299,26 @@ function AddRelationModal({ nodes, preselect, onClose, onSaved }: {
     onSuccess: onSaved,
   })
   const directedHint = cur?.directed
-    ? `„A ist ${cur.label} von B" (B ist ${cur.inverse_label} von A)`
-    : 'Symmetrisch — Reihenfolge egal'
+    ? t('relationships.directedHint', { label: cur.label, inverse: cur.inverse_label ?? '' })
+    : t('relationships.symmetricHint')
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Verbindung hinzufügen</h2>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">{t('relationships.addTitle')}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Person A</label>
+            <label className="block text-xs text-zinc-500 mb-1">{t('relationships.personA')}</label>
             <select value={from} onChange={e => setFrom(Number(e.target.value))} className={sel}>
-              <option value="">— wählen —</option>
+              <option value="">{t('relationships.choose')}</option>
               {sorted.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Beziehung</label>
+            <label className="block text-xs text-zinc-500 mb-1">{t('relationships.relationship')}</label>
             <select value={type} onChange={e => setType(e.target.value)} className={sel}>
               {Object.entries(grouped).map(([cat, list]) => (
                 <optgroup key={cat} label={cat}>
@@ -326,16 +329,16 @@ function AddRelationModal({ nodes, preselect, onClose, onSaved }: {
             <p className="text-xs text-zinc-500 mt-1">{directedHint}</p>
           </div>
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">Person B</label>
+            <label className="block text-xs text-zinc-500 mb-1">{t('relationships.personB')}</label>
             <select value={to} onChange={e => setTo(Number(e.target.value))} className={sel}>
-              <option value="">— wählen —</option>
+              <option value="">{t('relationships.choose')}</option>
               {sorted.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+            <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('relationships.cancel')}</button>
             <button onClick={() => save.mutate()} disabled={!from || !to || from === to || save.isPending}
-              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Speichern</button>
+              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">{t('relationships.save')}</button>
           </div>
         </div>
       </div>

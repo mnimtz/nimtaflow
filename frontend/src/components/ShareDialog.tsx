@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Copy, Check, Link as LinkIcon, Loader2 } from 'lucide-react'
 import { api } from '../lib/api'
+import { useT } from '../i18n'
 
 export type ShareTarget =
   | { kind: 'album'; albumId: number; title?: string }
@@ -10,6 +11,7 @@ export type ShareTarget =
 /** Create a public share link for an album, photo or trip — with optional
  *  password, expiry and download toggle. Shows the resulting link to copy. */
 export default function ShareDialog({ target, onClose }: { target: ShareTarget; onClose: () => void }) {
+  const { t } = useT()
   const [usePassword, setUsePassword] = useState(false)
   const [password, setPassword] = useState('')
   const [useExpiry, setUseExpiry] = useState(false)
@@ -20,7 +22,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const label = target.kind === 'album' ? 'Album' : target.kind === 'photo' ? 'Foto' : 'Reise'
+  const label = target.kind === 'album' ? t('share.dlg.labelAlbum') : target.kind === 'photo' ? t('share.dlg.labelPhoto') : t('share.dlg.labelTrip')
 
   async function create() {
     setCreating(true); setError(null)
@@ -38,7 +40,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
       const res = await api.post('/shares', body)
       setUrl(res.data.url as string)
     } catch {
-      setError('Link konnte nicht erstellt werden.')
+      setError(t('share.dlg.createFailed'))
     } finally { setCreating(false) }
   }
 
@@ -51,7 +53,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-5 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon size={18} /> {label} teilen</h3>
+          <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon size={18} /> {t('share.dlg.shareTitle', { label })}</h3>
           <button onClick={onClose} className="p-1 text-zinc-400 hover:text-zinc-200"><X size={20} /></button>
         </div>
 
@@ -59,45 +61,45 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
           <div className="space-y-4">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={usePassword} onChange={e => setUsePassword(e.target.checked)} />
-              Mit Passwort schützen
+              {t('share.dlg.usePassword')}
             </label>
             {usePassword && (
               <input type="text" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Passwort" className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm" />
+                placeholder={t('share.dlg.password')} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm" />
             )}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={useExpiry} onChange={e => setUseExpiry(e.target.checked)} />
-              Läuft ab nach
+              {t('share.dlg.expiresAfter')}
             </label>
             {useExpiry && (
               <select value={expiresDays} onChange={e => setExpiresDays(Number(e.target.value))}
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm">
-                <option value={1}>1 Tag</option>
-                <option value={7}>7 Tage</option>
-                <option value={30}>30 Tage</option>
-                <option value={90}>90 Tage</option>
+                <option value={1}>{t('share.dlg.day1')}</option>
+                <option value={7}>{t('share.dlg.days7')}</option>
+                <option value={30}>{t('share.dlg.days30')}</option>
+                <option value={90}>{t('share.dlg.days90')}</option>
               </select>
             )}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={allowDownload} onChange={e => setAllowDownload(e.target.checked)} />
-              Download der Originale erlauben
+              {t('share.dlg.allowDownload')}
             </label>
             {error && <p className="text-sm text-red-500">{error}</p>}
             <button onClick={create} disabled={creating}
               className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
-              {creating ? <Loader2 size={16} className="animate-spin" /> : <LinkIcon size={16} />} Link erstellen
+              {creating ? <Loader2 size={16} className="animate-spin" /> : <LinkIcon size={16} />} {t('share.dlg.createLink')}
             </button>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-zinc-400">Link erstellt — wer ihn hat, kann das {label} ansehen{usePassword ? ' (mit Passwort)' : ''}.</p>
+            <p className="text-sm text-zinc-400">{t('share.dlg.createdInfo', { label, pwSuffix: usePassword ? t('share.dlg.pwSuffix') : '' })}</p>
             <div className="flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2">
               <span className="text-sm truncate flex-1">{url}</span>
               <button onClick={copy} className="p-1.5 text-zinc-500 hover:text-indigo-500 shrink-0">
                 {copied ? <Check size={16} /> : <Copy size={16} />}
               </button>
             </div>
-            <button onClick={onClose} className="w-full rounded-lg bg-zinc-200 dark:bg-zinc-800 py-2.5 text-sm font-medium">Fertig</button>
+            <button onClick={onClose} className="w-full rounded-lg bg-zinc-200 dark:bg-zinc-800 py-2.5 text-sm font-medium">{t('share.dlg.done')}</button>
           </div>
         )}
       </div>

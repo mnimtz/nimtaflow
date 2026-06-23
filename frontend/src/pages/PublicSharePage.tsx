@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { Lock, Download, X, Loader2 } from 'lucide-react'
+import { useT } from '../i18n'
 
 type Item = { id: number; is_video: boolean; width?: number; height?: number }
 type Meta = { type: string; title?: string; requires_password: boolean; allow_download: boolean; items: Item[] }
 
 /** Login-free guest view for a shared album / photo / trip. */
 export default function PublicSharePage() {
+  const { t } = useT()
   const { token = '' } = useParams()
   const [meta, setMeta] = useState<Meta | null>(null)
   const [pw, setPw] = useState('')
@@ -20,13 +22,13 @@ export default function PublicSharePage() {
     try {
       const q = password ? `?pw=${encodeURIComponent(password)}` : ''
       const r = await fetch(`/api/public/${token}${q}`)
-      if (r.status === 404) { setError('Dieser Link ist ungültig oder abgelaufen.'); setMeta(null); return }
-      if (!r.ok) { setError('Inhalt konnte nicht geladen werden.'); return }
+      if (r.status === 404) { setError(t('share.pub.invalidLink')); setMeta(null); return }
+      if (!r.ok) { setError(t('share.pub.loadFailed')); return }
       const data = (await r.json()) as Meta
       setMeta(data)
       if (password && !data.requires_password) setPw(password)
-    } catch { setError('Netzwerkfehler.') } finally { setLoading(false) }
-  }, [token])
+    } catch { setError(t('share.pub.networkError')) } finally { setLoading(false) }
+  }, [token, t])
 
   useEffect(() => { load() }, [load])
 
@@ -48,14 +50,14 @@ export default function PublicSharePage() {
       <Centered>
         <div className="w-full max-w-xs text-center space-y-4">
           <Lock className="mx-auto text-indigo-400" size={32} />
-          <p className="text-zinc-300">Dieser Link ist passwortgeschützt.</p>
+          <p className="text-zinc-300">{t('share.pub.passwordProtected')}</p>
           <input type="password" value={pwInput} onChange={e => setPwInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') load(pwInput) }}
-            placeholder="Passwort" autoFocus
+            placeholder={t('share.pub.password')} autoFocus
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white" />
           <button onClick={() => load(pwInput)}
             className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-medium">
-            Ansehen
+            {t('share.pub.view')}
           </button>
         </div>
       </Centered>
@@ -65,8 +67,8 @@ export default function PublicSharePage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="px-5 py-4 border-b border-zinc-800 sticky top-0 bg-zinc-950/90 backdrop-blur z-10">
-        <h1 className="text-lg font-semibold">{meta.title || 'Geteilte Galerie'}</h1>
-        <p className="text-xs text-zinc-500">{meta.items.length} Medien · geteilt über NimtaFlow</p>
+        <h1 className="text-lg font-semibold">{meta.title || t('share.pub.defaultTitle')}</h1>
+        <p className="text-xs text-zinc-500">{t('share.pub.mediaCount', { n: meta.items.length })}</p>
       </header>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1 p-1">
         {meta.items.map(it => (
@@ -88,7 +90,7 @@ export default function PublicSharePage() {
           {meta.allow_download && (
             <a href={mediaUrl(lightbox, 'original')} download onClick={e => e.stopPropagation()}
               className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-white/15 hover:bg-white/25 px-4 py-2 text-sm">
-              <Download size={16} /> Original herunterladen
+              <Download size={16} /> {t('share.pub.downloadOriginal')}
             </a>
           )}
         </div>

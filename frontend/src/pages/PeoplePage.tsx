@@ -10,6 +10,7 @@ import { differenceInYears } from 'date-fns'
 import PhotoLightbox from '../components/gallery/PhotoLightbox'
 import QuickNameOverlay from '../components/people/QuickNameOverlay'
 import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
+import { useT } from '../i18n'
 
 interface Person {
   id: number
@@ -52,6 +53,7 @@ export default function PeoplePage() {
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
+  const { t } = useT()
 
   const { data: people = [], isLoading } = useQuery<Person[]>({
     queryKey: ['people', showHidden, sort],
@@ -89,7 +91,7 @@ export default function PeoplePage() {
       api.post('/people/faces/ignore', { face_ids: ids }, { params: { ignored } }),
     onSuccess: (_d, v) => {
       refresh(); setFaceSel(new Set())
-      toast(`${v.ids.length} Gesicht(er) ${v.ignored ? 'ausgeblendet' : 'wieder eingeblendet'}`, 'success')
+      toast(v.ignored ? t('people.toastFacesHidden', { count: v.ids.length }) : t('people.toastFacesShown', { count: v.ids.length }), 'success')
     },
   })
 
@@ -100,7 +102,7 @@ export default function PeoplePage() {
   })
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/people/${id}`),
-    onSuccess: () => { refresh(); toast('Person gelöscht', 'success') },
+    onSuccess: () => { refresh(); toast(t('people.toastPersonDeleted'), 'success') },
   })
   const clusterMutation = useMutation({
     // Endpoint dispatcht jetzt einen Celery-Task (cpu-Queue) und kehrt sofort mit
@@ -108,9 +110,9 @@ export default function PeoplePage() {
     // aus dem API-Prozess). Ergebnis erscheint nach dem Lauf in der Personenliste.
     mutationFn: () => api.post('/people/cluster').then(r => r.data),
     onSuccess: () => {
-      toast('Clustering gestartet… (läuft im Hintergrund, Ergebnis erscheint gleich)', 'success')
+      toast(t('people.toastClusterStarted'), 'success')
     },
-    onError: () => toast('Clustering konnte nicht gestartet werden', 'error'),
+    onError: () => toast(t('people.toastClusterFailed'), 'error'),
   })
 
   // Button-driven: persist every detected face as an MWG region (box + name
@@ -120,8 +122,8 @@ export default function PeoplePage() {
   const writeNamesMutation = useMutation({
     mutationFn: () => api.post('/people/write-faces').then(r => r.data),
     onSuccess: (d: { queued_photos: number }) =>
-      toast(`Gesichts-Regionen werden in ${d.queued_photos} Foto(s) geschrieben`, 'success'),
-    onError: () => toast('Gesichter-Schreiben fehlgeschlagen', 'error'),
+      toast(t('people.toastWriteFacesQueued', { count: d.queued_photos }), 'success'),
+    onError: () => toast(t('people.toastWriteFacesFailed'), 'error'),
   })
 
   // Server-side parallel face detection (insightface, CPU) — decoupled from the
@@ -130,9 +132,9 @@ export default function PeoplePage() {
     mutationFn: () => api.post('/people/detect-faces-local').then(r => r.data),
     onSuccess: (d: { queued_photos: number }) => {
       refresh()
-      toast(`Lokale Gesichtserkennung gestartet für ${d.queued_photos} Bild(er)`, 'success')
+      toast(t('people.toastDetectStarted', { count: d.queued_photos }), 'success')
     },
-    onError: () => toast('Lokale Gesichtserkennung fehlgeschlagen', 'error'),
+    onError: () => toast(t('people.toastDetectFailed'), 'error'),
   })
 
   // Pre-generate the face-crop cache so opening a person (esp. with video faces,
@@ -156,11 +158,11 @@ export default function PeoplePage() {
   }
   const confirmGroup = useMutation({
     mutationFn: (pid: number) => api.post(`/people/suggestions/confirm/${pid}`).then(r => r.data),
-    onSuccess: (d: { confirmed: number }) => { toast(`${d.confirmed} Gesicht(er) bestätigt`, 'success'); refreshSug() },
+    onSuccess: (d: { confirmed: number }) => { toast(t('people.toastConfirmed', { count: d.confirmed }), 'success'); refreshSug() },
   })
   const rejectGroup = useMutation({
     mutationFn: (pid: number) => api.post(`/people/suggestions/reject/${pid}`).then(r => r.data),
-    onSuccess: (d: { rejected: number }) => { toast(`${d.rejected} Vorschlag/Vorschläge abgelehnt`, 'success'); refreshSug() },
+    onSuccess: (d: { rejected: number }) => { toast(t('people.toastRejected', { count: d.rejected }), 'success'); refreshSug() },
   })
   const confirmFace = useMutation({
     mutationFn: (id: number) => api.post(`/people/faces/${id}/confirm-suggestion`).then(r => r.data),
@@ -172,13 +174,13 @@ export default function PeoplePage() {
   })
   const suggestMutation = useMutation({
     mutationFn: () => api.post('/people/suggest').then(r => r.data),
-    onSuccess: () => toast('Vorschläge werden berechnet — erscheinen in Kürze.', 'success'),
+    onSuccess: () => toast(t('people.toastSuggestQueued'), 'success'),
   })
   const warmCropsMutation = useMutation({
     mutationFn: () => api.post('/people/warm-crops').then(r => r.data),
     onSuccess: (d: { queued_faces: number }) =>
-      toast(`Crop-Cache wird vorbereitet (${d.queued_faces} Gesichter) — die Personen-Seite wird danach sofort schnell`, 'success'),
-    onError: () => toast('Crop-Cache vorbereiten fehlgeschlagen', 'error'),
+      toast(t('people.toastWarmCropsQueued', { count: d.queued_faces }), 'success'),
+    onError: () => toast(t('people.toastWarmCropsFailed'), 'error'),
   })
 
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
@@ -192,7 +194,7 @@ export default function PeoplePage() {
   const bulkHide = async (hidden: boolean) => {
     await Promise.all([...selection].map(id => api.post(`/people/${id}/hide`, null, { params: { hidden } })))
     qc.invalidateQueries({ queryKey: ['people'] })
-    toast(`${selection.size} Person(en) ${hidden ? 'verborgen' : 'eingeblendet'}`, 'success')
+    toast(hidden ? t('people.toastPersonsHidden', { count: selection.size }) : t('people.toastPersonsShown', { count: selection.size }), 'success')
     clearSelection()
   }
 
@@ -219,7 +221,7 @@ export default function PeoplePage() {
       onToggleHidden={() => hideMutation.mutate({ id: p.id, hidden: !p.is_hidden })}
       onRenamed={() => qc.invalidateQueries({ queryKey: ['people'] })}
       onDelete={async () => {
-        if (await confirm({ title: `"${p.name || 'Unbekannt'}" löschen?`, message: 'Die Gesichter werden wieder freigegeben.', danger: true, confirmLabel: 'Löschen' }))
+        if (await confirm({ title: t('people.deleteConfirmTitle', { name: p.name || t('people.unknown') }), message: t('people.deleteConfirmMessage'), danger: true, confirmLabel: t('people.deleteLabel') }))
           deleteMutation.mutate(p.id)
       }}
     />
@@ -229,97 +231,97 @@ export default function PeoplePage() {
     <div className="p-4 max-w-7xl mx-auto pb-24">
       <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Personen</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">{t('people.title')}</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {known.length} benannt · {unknown.length} unbekannt
+            {t('people.subtitleNamedUnknown', { named: known.length, unknown: unknown.length })}
             {cropStatus && cropStatus.total_faces > 0 && cropStatus.cached < cropStatus.total_faces && (
-              <span> · Crops {cropStatus.cached.toLocaleString()}/{cropStatus.total_faces.toLocaleString()}</span>
+              <span>{t('people.cropsProgress', { cached: cropStatus.cached.toLocaleString(), total: cropStatus.total_faces.toLocaleString() })}</span>
             )}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select value={sort} onChange={e => setSort(e.target.value)}
-            title="Personen sortieren"
+            title={t('people.sortTitle')}
             className="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="photos">Meiste Bilder</option>
-            <option value="photos_asc">Wenigste Bilder</option>
-            <option value="faces">Meiste Gesichter</option>
-            <option value="name">Name (A–Z)</option>
-            <option value="recent">Zuletzt hinzugefügt</option>
+            <option value="photos">{t('people.sortMostPhotos')}</option>
+            <option value="photos_asc">{t('people.sortLeastPhotos')}</option>
+            <option value="faces">{t('people.sortMostFaces')}</option>
+            <option value="name">{t('people.sortName')}</option>
+            <option value="recent">{t('people.sortRecent')}</option>
           </select>
-          <button onClick={() => setQuickName(true)} title="Unbenannte Gruppen schnell durchbenennen"
+          <button onClick={() => setQuickName(true)} title={t('people.quickNameTitle')}
             className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
-            Schnell benennen
+            {t('people.quickName')}
           </button>
           {selectMode ? (
             <button onClick={clearSelection} className={`${BTN_PRIMARY}`}>
-              <X size={15} /> Fertig
+              <X size={15} /> {t('people.done')}
             </button>
           ) : (
             <button onClick={() => setSelectMode(true)} className={BTN_GHOST}
-              title="Mehrere Personen auswählen, um sie zusammenzuführen oder zu verbergen">
-              <GitMerge size={15} /><span className="hidden sm:inline">Auswählen / Zusammenführen</span><span className="sm:hidden">Auswählen</span>
+              title={t('people.selectMergeTitle')}>
+              <GitMerge size={15} /><span className="hidden sm:inline">{t('people.selectMerge')}</span><span className="sm:hidden">{t('people.select')}</span>
             </button>
           )}
           <button onClick={() => setShowHidden(v => !v)}
             className={showHidden ? BTN_GHOST_ACTIVE : BTN_GHOST}
-            title={showHidden ? 'Verborgene ausblenden' : 'Verborgene anzeigen'}>
-            {showHidden ? <EyeOff size={15} /> : <Eye size={15} />}<span className="hidden sm:inline">Verborgene</span>
+            title={showHidden ? t('people.hideHiddenTitle') : t('people.showHiddenTitle')}>
+            {showHidden ? <EyeOff size={15} /> : <Eye size={15} />}<span className="hidden sm:inline">{t('people.hidden')}</span>
           </button>
           <button onClick={() => clusterMutation.mutate()} disabled={clusterMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
-            title="Unzugeordnete Gesichter automatisch gruppieren">
-            <Sparkles size={15} /><span className="hidden sm:inline">{clusterMutation.isPending ? 'Clustere…' : 'Clustern'}</span>
+            title={t('people.clusterTitle')}>
+            <Sparkles size={15} /><span className="hidden sm:inline">{clusterMutation.isPending ? t('people.clustering') : t('people.cluster')}</span>
           </button>
           <button onClick={() => detectFacesMutation.mutate()} disabled={detectFacesMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
-            title="Gesichter lokal auf dem Server erkennen (parallel zu den Beschreibungen) — schneller fertig, unabhängig vom KI-Backlog">
-            <Sparkles size={15} /><span className="hidden sm:inline">{detectFacesMutation.isPending ? 'Starte…' : 'Gesichter erkennen'}</span>
+            title={t('people.detectFacesTitle')}>
+            <Sparkles size={15} /><span className="hidden sm:inline">{detectFacesMutation.isPending ? t('people.starting') : t('people.detectFaces')}</span>
           </button>
           <button onClick={() => warmCropsMutation.mutate()} disabled={warmCropsMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
-            title="Alle Gesichts-Vorschaubilder (Crops) vorab erzeugen — danach lädt die Personen-Seite sofort, ohne pro Video-Gesicht ffmpeg zu starten">
-            <ImageIcon size={15} /><span className="hidden sm:inline">{warmCropsMutation.isPending ? 'Starte…' : 'Crops vorbereiten'}</span>
+            title={t('people.warmCropsTitle')}>
+            <ImageIcon size={15} /><span className="hidden sm:inline">{warmCropsMutation.isPending ? t('people.starting') : t('people.warmCrops')}</span>
           </button>
           <button onClick={() => writeNamesMutation.mutate()} disabled={writeNamesMutation.isPending}
             className={`${BTN_GHOST} disabled:opacity-50`}
-            title="Alle erkannten Gesichter (Koordinaten + Namen) dauerhaft in die Bilddateien schreiben (MWG-Regionen) — erspart später erneute Gesichtserkennung">
-            <Save size={15} /><span className="hidden sm:inline">{writeNamesMutation.isPending ? 'Schreibe…' : 'Gesichter schreiben'}</span>
+            title={t('people.writeFacesTitle')}>
+            <Save size={15} /><span className="hidden sm:inline">{writeNamesMutation.isPending ? t('people.writing') : t('people.writeFaces')}</span>
           </button>
           <button onClick={() => setShowAdd(true)} className={BTN_PRIMARY}>
-            <UserPlus size={15} /><span className="hidden sm:inline">Hinzufügen</span>
+            <UserPlus size={15} /><span className="hidden sm:inline">{t('people.add')}</span>
           </button>
         </div>
       </div>
 
       {selectMode && (
         <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-sm text-indigo-700 dark:text-indigo-300">
-          Wähle Personen aus (antippen). Mit <strong>2 oder mehr</strong> kannst du sie unten <strong>zusammenführen</strong> oder verbergen.
+          {t('people.selectBanner')}
         </div>
       )}
 
       <details className="mb-4 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2.5">
-        <summary className="cursor-pointer text-zinc-600 dark:text-zinc-300 select-none">Was machen die Aktionen oben? <span className="text-zinc-400">(läuft alles auch automatisch)</span></summary>
+        <summary className="cursor-pointer text-zinc-600 dark:text-zinc-300 select-none">{t('people.helpSummary')} <span className="text-zinc-400">{t('people.helpSummaryNote')}</span></summary>
         <ul className="mt-2 space-y-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-          <li>• <b>Gesichter erkennen</b> & <b>Clustern</b>: laufen <b>automatisch</b> im Hintergrund (Erkennung laufend, Gruppierung nachts). Die Buttons stoßen es nur sofort an — musst du normal nicht drücken.</li>
-          <li>• <b>Schnell benennen</b>: unbekannte Gruppen zügig durchbenennen. Tippst du einen <b>bereits bekannten Namen</b>, wird die Gruppe mit dieser Person <b>zusammengeführt</b> statt doppelt angelegt.</li>
-          <li>• <b>Crops vorbereiten</b>: erzeugt die Gesichts-Vorschaubilder vorab (Seite lädt dann schneller). Optional.</li>
-          <li>• <b>Gesichter schreiben</b>: speichert Namen dauerhaft in die Bilddateien (für Re-Import). Optional.</li>
+          <li>• {t('people.helpDetect')}</li>
+          <li>• {t('people.helpQuickName')}</li>
+          <li>• {t('people.helpWarmCrops')}</li>
+          <li>• {t('people.helpWriteFaces')}</li>
         </ul>
       </details>
 
       {isLoading ? (
-        <div className="flex justify-center py-16 text-zinc-500">Lade…</div>
+        <div className="flex justify-center py-16 text-zinc-500">{t('people.loading')}</div>
       ) : (people.length === 0 && looseTotal === 0) ? (
         <EmptyPeople />
       ) : (
         <div className="space-y-10">
           <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 -mt-2 overflow-x-auto">
             {([
-              ['personen', `Personen (${known.length + unknown.length})`],
-              ['vorschlaege', `Vorschläge${sugGroups.reduce((a, g) => a + g.count, 0) ? ` (${sugGroups.reduce((a, g) => a + g.count, 0)})` : ''}`],
-              ['gesichter', `Unbekannte Gesichter${looseTotal ? ` (${looseTotal})` : ''}`],
-              ['verborgen', 'Verborgen'],
+              ['personen', t('people.tabPeople', { count: known.length + unknown.length })],
+              ['vorschlaege', sugGroups.reduce((a, g) => a + g.count, 0) ? t('people.tabSuggestionsCount', { count: sugGroups.reduce((a, g) => a + g.count, 0) }) : t('people.tabSuggestions')],
+              ['gesichter', looseTotal ? t('people.tabUnknownFacesCount', { count: looseTotal }) : t('people.tabUnknownFaces')],
+              ['verborgen', t('people.tabHidden')],
             ] as const).map(([k, lbl]) => (
               <button key={k} onClick={() => { setPview(k); if (k === 'verborgen') setShowIgnored(true) }}
                 className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${pview === k ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>
@@ -328,18 +330,18 @@ export default function PeoplePage() {
             ))}
           </div>
           {pview === 'vorschlaege' && sugGroups.length === 0 && (
-            <p className="text-sm text-zinc-400 py-8 text-center">Keine offenen Vorschläge. Neue entstehen automatisch (oder „Neu berechnen" in der Pipeline).</p>
+            <p className="text-sm text-zinc-400 py-8 text-center">{t('people.noOpenSuggestions')}</p>
           )}
           {pview === 'vorschlaege' && sugGroups.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Vorschläge — „Ist das …?"</h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">Unsichere Treffer, die ArcFace nicht automatisch zuordnet. ✓ übernehmen · ✗ verwerfen.</p>
+                  <h2 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">{t('people.suggestionsHeading')}</h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">{t('people.suggestionsHint')}</p>
                 </div>
                 <button onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}
                   className="text-xs px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">
-                  {suggestMutation.isPending ? 'Berechne…' : 'Neu berechnen'}
+                  {suggestMutation.isPending ? t('people.recalculating') : t('people.recalculate')}
                 </button>
               </div>
               <div className="space-y-6">
@@ -355,12 +357,12 @@ export default function PeoplePage() {
                       <div className="flex items-center gap-2 shrink-0">
                         <button onClick={() => confirmGroup.mutate(g.person_id)} disabled={confirmGroup.isPending || rejectGroup.isPending}
                           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
-                          Alle bestätigen
+                          {t('people.confirmAll')}
                         </button>
-                        <button onClick={async () => { if (await confirm({ title: `Alle ${g.count} Vorschläge für „${g.name}" ablehnen?`, message: 'Die Gesichter werden nicht zugeordnet (nur der Vorschlag entfernt).', confirmLabel: 'Alle ablehnen', danger: true })) rejectGroup.mutate(g.person_id) }}
+                        <button onClick={async () => { if (await confirm({ title: t('people.rejectGroupConfirmTitle', { count: g.count, name: g.name }), message: t('people.rejectGroupConfirmMessage'), confirmLabel: t('people.rejectAll'), danger: true })) rejectGroup.mutate(g.person_id) }}
                           disabled={confirmGroup.isPending || rejectGroup.isPending}
                           className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">
-                          Alle ablehnen
+                          {t('people.rejectAll')}
                         </button>
                       </div>
                     </div>
@@ -371,9 +373,9 @@ export default function PeoplePage() {
                             onClick={() => setBigFace({ id: f.id, photo_id: f.photo_id, name: g.name, score: f.score })}
                             onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
                           <div className="absolute inset-x-0 bottom-0 flex opacity-90 group-hover:opacity-100">
-                            <button onClick={() => confirmFace.mutate(f.id)} title="Übernehmen"
+                            <button onClick={() => confirmFace.mutate(f.id)} title={t('people.adopt')}
                               className="flex-1 bg-emerald-600/90 hover:bg-emerald-600 text-white text-xs py-0.5">✓</button>
-                            <button onClick={() => rejectFace.mutate(f.id)} title="Verwerfen"
+                            <button onClick={() => rejectFace.mutate(f.id)} title={t('people.discard')}
                               className="flex-1 bg-rose-600/90 hover:bg-rose-600 text-white text-xs py-0.5">✗</button>
                           </div>
                         </div>
@@ -386,14 +388,14 @@ export default function PeoplePage() {
           )}
           {pview === 'personen' && known.length > 0 && (
             <section>
-              <SectionHeader title="Benannte Personen" count={known.length} />
+              <SectionHeader title={t('people.namedPeople')} count={known.length} />
               <div className={GRID}>{known.map(renderCard)}</div>
             </section>
           )}
           {pview === 'personen' && unknown.length > 0 && (
             <section>
-              <SectionHeader title="Unbekannte Personen" count={unknown.length}
-                hint="Klicke eine Person an, um sie zu benennen — oder wähle mehrere aus und führe sie zusammen." />
+              <SectionHeader title={t('people.unknownPeople')} count={unknown.length}
+                hint={t('people.unknownPeopleHint')} />
               <div className={GRID}>{unknown.map(renderCard)}</div>
             </section>
           )}
@@ -401,18 +403,18 @@ export default function PeoplePage() {
             <section>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Einzelne Gesichter <span className="text-zinc-500 font-normal">({looseTotal})</span></h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">Häkchen zum Auswählen, Bild antippen zum Zuordnen. Unbekannte einfach auswählen und ausblenden.</p>
+                  <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('people.singleFaces')} <span className="text-zinc-500 font-normal">({looseTotal})</span></h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">{t('people.singleFacesHint')}</p>
                 </div>
                 <div className="flex gap-2 text-xs">
                   <button onClick={() => setFaceSel(new Set(looseFaces.map(f => f.id)))}
                     className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                    Seite auswählen
+                    {t('people.selectPage')}
                   </button>
                   {ignoredFaces.length > 0 || showIgnored ? (
                     <button onClick={() => setShowIgnored(v => !v)}
                       className={`px-2.5 py-1 rounded-lg border ${showIgnored ? 'border-indigo-500 text-indigo-500' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'} hover:bg-zinc-100 dark:hover:bg-zinc-800`}>
-                      Ausgeblendete
+                      {t('people.showHiddenFaces')}
                     </button>
                   ) : null}
                 </div>
@@ -431,18 +433,18 @@ export default function PeoplePage() {
           {pview === 'verborgen' && (
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Ausgeblendete Gesichter <span className="text-zinc-500 font-normal">({ignoredFaces.length})</span></h2>
+                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('people.hiddenFaces')} <span className="text-zinc-500 font-normal">({ignoredFaces.length})</span></h2>
                 {ignoredFaces.length > 0 && (
                   <button onClick={() => ignoreFaces.mutate({ ids: ignoredFaces.map(f => f.id), ignored: false })}
                     className="text-xs px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                    Alle wieder einblenden
+                    {t('people.unhideAll')}
                   </button>
                 )}
               </div>
               <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-3">
                 {ignoredFaces.map(f => (
                   <button key={f.id} onClick={() => ignoreFaces.mutate({ ids: [f.id], ignored: false })}
-                    title="Wieder einblenden"
+                    title={t('people.unhide')}
                     className="relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-700 opacity-50 hover:opacity-100 hover:ring-emerald-500 transition-all">
                     <img src={`/api/people/faces/${f.id}/crop`} className="w-full h-full object-cover" loading="lazy"
                       onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
@@ -457,16 +459,16 @@ export default function PeoplePage() {
       {/* Selection action bar */}
       {selection.size > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur max-w-[calc(100vw-1.5rem)]">
-          <span className="text-sm text-zinc-300 px-2">{selection.size} ausgewählt</span>
+          <span className="text-sm text-zinc-300 px-2">{t('people.selectedCount', { count: selection.size })}</span>
           <button onClick={() => setMergeOpen(true)} disabled={selection.size < 2}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
-            <GitMerge size={14} /> Zusammenführen
+            <GitMerge size={14} /> {t('people.merge')}
           </button>
           <button onClick={() => bulkHide(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800">
-            <EyeOff size={14} /> Verbergen
+            <EyeOff size={14} /> {t('people.hide')}
           </button>
-          <button onClick={clearSelection} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title="Auswahl aufheben">
+          <button onClick={clearSelection} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title={t('people.clearSelection')}>
             <X size={16} />
           </button>
         </div>
@@ -475,37 +477,37 @@ export default function PeoplePage() {
       {/* Face selection action bar */}
       {faceSel.size > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-900/95 border border-zinc-700 shadow-2xl backdrop-blur max-w-[calc(100vw-1.5rem)]">
-          <span className="text-sm text-zinc-300 px-2">{faceSel.size} Gesicht(er)</span>
+          <span className="text-sm text-zinc-300 px-2">{t('people.facesCount', { count: faceSel.size })}</span>
           <button onClick={() => ignoreFaces.mutate({ ids: [...faceSel], ignored: true })} disabled={ignoreFaces.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-            <EyeOff size={14} /> Ausblenden
+            <EyeOff size={14} /> {t('people.hideFaces')}
           </button>
           <button onClick={() => setAssignIds([...faceSel])}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800">
-            <UserPlus size={14} /> Zu Person…
+            <UserPlus size={14} /> {t('people.toPerson')}
           </button>
-          <button onClick={() => setFaceSel(new Set())} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title="Auswahl aufheben">
+          <button onClick={() => setFaceSel(new Set())} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800" title={t('people.clearSelection')}>
             <X size={16} />
           </button>
         </div>
       )}
 
-      {showAdd && <AddPersonModal onClose={() => setShowAdd(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['people'] }); toast('Person erstellt', 'success') }} />}
+      {showAdd && <AddPersonModal onClose={() => setShowAdd(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['people'] }); toast(t('people.toastPersonCreated'), 'success') }} />}
       {quickName && <QuickNameOverlay onClose={() => setQuickName(false)} />}
       {bigFace && (
         <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4" onClick={() => setBigFace(null)}>
           <div className="absolute top-4 right-4 flex gap-2">
             <button onClick={(e) => { e.stopPropagation(); confirmFace.mutate(bigFace.id); setBigFace(null) }}
-              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500">✓ {bigFace.name || 'Übernehmen'}</button>
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500">✓ {bigFace.name || t('people.adoptFallback')}</button>
             <button onClick={(e) => { e.stopPropagation(); rejectFace.mutate(bigFace.id); setBigFace(null) }}
-              className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm hover:bg-rose-500">✗ Verwerfen</button>
+              className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm hover:bg-rose-500">✗ {t('people.discard')}</button>
             <button onClick={() => setBigFace(null)} className="px-3 py-2 rounded-lg bg-zinc-700 text-white text-sm"><X size={16} /></button>
           </div>
           <img src={thumbUrl({ id: bigFace.photo_id } as any, 'large')} onClick={e => e.stopPropagation()}
             className="max-h-[80vh] max-w-[92vw] object-contain rounded-lg shadow-2xl"
             onError={e => { (e.target as HTMLImageElement).src = `/api/people/faces/${bigFace.id}/crop` }} />
           {bigFace.score != null && (
-            <p className="mt-3 text-zinc-300 text-sm">Vorschlag: <b>{bigFace.name}</b> · Ähnlichkeit {Math.round((bigFace.score || 0) * 100)}%</p>
+            <p className="mt-3 text-zinc-300 text-sm">{t('people.suggestionLine', { name: bigFace.name || '', percent: Math.round((bigFace.score || 0) * 100) })}</p>
           )}
         </div>
       )}
@@ -513,7 +515,7 @@ export default function PeoplePage() {
         <MergeModal
           people={selectedPeople}
           onClose={() => setMergeOpen(false)}
-          onMerged={(n) => { refresh(); clearSelection(); setMergeOpen(false); toast(`${n} Person(en) zusammengeführt`, 'success') }}
+          onMerged={(n) => { refresh(); clearSelection(); setMergeOpen(false); toast(t('people.toastPeopleMerged', { count: n }), 'success') }}
         />
       )}
       {assignIds && assignIds.length > 0 && (
@@ -541,6 +543,7 @@ function Pager({ page, pageSize, total, onPage, onSize }: {
   page: number; pageSize: number; total: number;
   onPage: (p: number) => void; onSize: (n: number) => void;
 }) {
+  const { t } = useT()
   const pages = Math.max(1, Math.ceil(total / pageSize))
   if (total <= 25) return null
   const from = (page - 1) * pageSize + 1
@@ -548,7 +551,7 @@ function Pager({ page, pageSize, total, onPage, onSize }: {
   return (
     <div className="flex items-center gap-3 mt-4 text-xs flex-wrap">
       <div className="flex items-center gap-1">
-        <span className="text-zinc-500 mr-1">Pro Seite:</span>
+        <span className="text-zinc-500 mr-1">{t('people.perPage')}</span>
         {[25, 50, 100].map(n => (
           <button key={n} onClick={() => onSize(n)}
             className={`px-2.5 py-1 rounded-lg border ${pageSize === n
@@ -557,12 +560,12 @@ function Pager({ page, pageSize, total, onPage, onSize }: {
         ))}
       </div>
       <div className="flex items-center gap-2 ml-auto">
-        <span className="text-zinc-500">{from}–{to} von {total}</span>
+        <span className="text-zinc-500">{t('people.pagerRange', { from, to, total })}</span>
         <button disabled={page <= 1} onClick={() => onPage(page - 1)}
-          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">‹ Zurück</button>
-        <span className="text-zinc-500 tabular-nums">Seite {page} / {pages}</span>
+          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">{t('people.pagerPrev')}</button>
+        <span className="text-zinc-500 tabular-nums">{t('people.pagerPage', { page, pages })}</span>
         <button disabled={page >= pages} onClick={() => onPage(page + 1)}
-          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">Weiter ›</button>
+          className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">{t('people.pagerNext')}</button>
       </div>
     </div>
   )
@@ -572,22 +575,23 @@ function FaceTile({ face, selected, onToggle, onAssign }: {
   face: FaceRef; selected: boolean; onToggle: () => void; onAssign: () => void
 }) {
   const [showPhoto, setShowPhoto] = useState(false)
+  const { t } = useT()
   return (
     <div className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 transition-all ${
       selected ? 'ring-indigo-500' : 'ring-zinc-700 hover:ring-indigo-500/60'
     }`}>
       <img src={`/api/people/faces/${face.id}/crop`} onClick={onAssign} loading="lazy"
-        className="w-full h-full object-cover cursor-pointer" title="Gesicht zuordnen"
+        className="w-full h-full object-cover cursor-pointer" title={t('people.assignFace')}
         onError={e => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
       {/* always-visible select checkbox */}
-      <button onClick={e => { e.stopPropagation(); onToggle() }} title={selected ? 'Abwählen' : 'Auswählen'}
+      <button onClick={e => { e.stopPropagation(); onToggle() }} title={selected ? t('people.deselect') : t('people.selectOne')}
         className={`absolute top-1 left-1 w-5 h-5 rounded-md flex items-center justify-center ring-2 ${
           selected ? 'bg-indigo-500 text-white ring-indigo-400' : 'bg-black/60 text-white/50 ring-white/40'
         }`}>
         <Check size={12} />
       </button>
       {/* on-demand: reveal the WHOLE photo (object-contain) to judge who it is */}
-      <button onClick={e => { e.stopPropagation(); setShowPhoto(v => !v) }} title="Ganzes Foto anzeigen"
+      <button onClick={e => { e.stopPropagation(); setShowPhoto(v => !v) }} title={t('people.showWholePhoto')}
         className="absolute top-1 right-1 w-5 h-5 rounded-md flex items-center justify-center bg-black/60 text-white/70 ring-2 ring-white/40 hover:text-white">
         <ImageIcon size={12} />
       </button>
@@ -618,6 +622,7 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
   const [name, setName] = useState(person.name)
   const age = person.birthdate ? differenceInYears(new Date(), new Date(person.birthdate)) : null
   const toast = useToast()
+  const { t } = useT()
 
   const rename = useMutation({
     mutationFn: (n: string) => {
@@ -631,8 +636,8 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
       }
       return api.patch(`/people/${person.id}`, { name: n }).then(() => ({ merged: null }))
     },
-    onSuccess: (r: any) => { setEditing(false); onRenamed(); toast(r?.merged ? `Mit „${r.merged}" zusammengeführt` : 'Name gespeichert', 'success') },
-    onError: () => toast('Speichern fehlgeschlagen', 'error'),
+    onSuccess: (r: any) => { setEditing(false); onRenamed(); toast(r?.merged ? t('people.toastMergedInto', { name: r.merged }) : t('people.toastNameSaved'), 'success') },
+    onError: () => toast(t('people.toastSaveFailed'), 'error'),
   })
 
   return (
@@ -644,7 +649,7 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
           className={`absolute top-1 left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center ring-2 ${
             selected ? 'bg-indigo-500 text-white ring-indigo-400' : 'bg-black/60 text-white/40 ring-white/40'
           }`}
-          title={selected ? 'Abwählen' : 'Auswählen'}
+          title={selected ? t('people.deselect') : t('people.selectOne')}
         >
           <Check size={14} />
         </button>
@@ -655,11 +660,11 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
         <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
           <button onClick={e => { e.stopPropagation(); onToggleHidden() }}
             className="w-6 h-6 rounded-full bg-black/60 text-zinc-200 hover:text-indigo-300 flex items-center justify-center"
-            title={person.is_hidden ? 'Wieder einblenden' : 'Verbergen / Ignorieren'}>
+            title={person.is_hidden ? t('people.toggleHiddenShow') : t('people.toggleHiddenHide')}>
             {person.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />}
           </button>
           <button onClick={e => { e.stopPropagation(); onDelete() }}
-            className="w-6 h-6 rounded-full bg-black/60 text-zinc-200 hover:text-red-400 flex items-center justify-center" title="Löschen">
+            className="w-6 h-6 rounded-full bg-black/60 text-zinc-200 hover:text-red-400 flex items-center justify-center" title={t('people.deleteTitle')}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -676,7 +681,7 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         {person.is_hidden && (
           <span className="absolute bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] bg-black/70 text-zinc-200 flex items-center gap-0.5">
-            <EyeOff size={9} /> verborgen
+            <EyeOff size={9} /> {t('people.hiddenBadge')}
           </span>
         )}
       </button>
@@ -689,35 +694,36 @@ function PersonCard({ person, knownPeople, selected, selectMode, onOpen, onToggl
           onBlur={() => { if (name.trim() && name !== person.name) rename.mutate(name.trim()); else setEditing(false) }}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setName(person.name); setEditing(false) } }}
           className="w-full px-2 py-1 text-center text-sm rounded-md bg-zinc-50 dark:bg-zinc-800 border border-indigo-500 text-zinc-900 dark:text-white focus:outline-none"
-          placeholder="Name… (bekannte = zusammenführen)"
+          placeholder={t('people.namePlaceholderMerge')}
         />
         <datalist id={`names-${person.id}`}>
           {(knownPeople || []).filter(k => k.id !== person.id && k.name).map(k => <option key={k.id} value={k.name} />)}
         </datalist>
         </>
       ) : person.name ? (
-        <button onClick={() => setEditing(true)} className="text-sm font-medium text-zinc-900 dark:text-white text-center truncate w-full hover:text-indigo-500 dark:hover:text-indigo-300" title="Umbenennen">
+        <button onClick={() => setEditing(true)} className="text-sm font-medium text-zinc-900 dark:text-white text-center truncate w-full hover:text-indigo-500 dark:hover:text-indigo-300" title={t('people.rename')}>
           {person.name}
         </button>
       ) : (
         <button onClick={() => setEditing(true)} className="text-sm text-indigo-400 hover:text-indigo-300 text-center w-full">
-          + Name hinzufügen
+          {t('people.addName')}
         </button>
       )}
       <p className="text-[11px] text-zinc-500">
-        {(() => { const n = person.photo_count ?? person.face_count; return `${n} Foto${n === 1 ? '' : 's'}` })()}{age !== null ? ` · ${age} J.` : ''}
+        {(() => { const n = person.photo_count ?? person.face_count; return n === 1 ? t('people.photosCountOne', { n }) : t('people.photosCountMany', { n }) })()}{age !== null ? t('people.ageSuffix', { age }) : ''}
       </p>
     </div>
   )
 }
 
 function EmptyPeople() {
+  const { t } = useT()
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <Users size={48} className="text-zinc-700 mb-4" />
-      <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">Noch keine Personen</h3>
+      <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">{t('people.emptyTitle')}</h3>
       <p className="text-sm text-zinc-500 max-w-xs">
-        Starte die KI-Pipeline für automatische Gesichtserkennung oder füge Personen manuell hinzu.
+        {t('people.emptyHint')}
       </p>
     </div>
   )
@@ -730,6 +736,7 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
+  const { t } = useT()
   const [editing, setEditing] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [tab, setTab] = useState<'photos' | 'faces' | 'relations'>('photos')
@@ -769,15 +776,15 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
 
   const update = useMutation({
     mutationFn: (body: Record<string, any>) => api.patch(`/people/${personId}`, body),
-    onSuccess: () => { invalidate(); setEditing(false); toast('Gespeichert', 'success') },
+    onSuccess: () => { invalidate(); setEditing(false); toast(t('people.toastSaved'), 'success') },
   })
   const setCover = useMutation({
     mutationFn: (faceId: number) => api.post(`/people/${personId}/profile-face/${faceId}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['people'] }); qc.invalidateQueries({ queryKey: ['person', personId] }); toast('Titelbild gesetzt', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['people'] }); qc.invalidateQueries({ queryKey: ['person', personId] }); toast(t('people.toastCoverSet'), 'success') },
   })
   const removeFace = useMutation({
     mutationFn: (faceId: number) => api.delete(`/people/faces/${faceId}/unassign`),
-    onSuccess: () => { invalidate(); toast('Gesicht entfernt', 'success') },
+    onSuccess: () => { invalidate(); toast(t('people.toastFaceRemoved'), 'success') },
   })
   const del = useMutation({ mutationFn: () => api.delete(`/people/${personId}`), onSuccess: onDeleted })
   const hide = useMutation({
@@ -785,20 +792,20 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['person', personId] }); qc.invalidateQueries({ queryKey: ['people'] }) },
   })
 
-  if (!person) return <div className="p-8 text-zinc-500">Lade…</div>
+  if (!person) return <div className="p-8 text-zinc-500">{t('people.loading')}</div>
   const photos: Photo[] = photosData?.items || []
   const total = photosData?.total ?? person.face_count
 
   const TABS = [
-    { id: 'photos' as const, label: 'Fotos', count: total, icon: <ImageIcon size={15} /> },
-    { id: 'faces' as const, label: 'Gesichter', count: facesTotal, icon: <Users size={15} /> },
-    ...(relsOn ? [{ id: 'relations' as const, label: 'Beziehungen', count: -1, icon: <Share2 size={15} /> }] : []),
+    { id: 'photos' as const, label: t('people.detailTabPhotos'), count: total, icon: <ImageIcon size={15} /> },
+    { id: 'faces' as const, label: t('people.detailTabFaces'), count: facesTotal, icon: <Users size={15} /> },
+    ...(relsOn ? [{ id: 'relations' as const, label: t('people.detailTabRelations'), count: -1, icon: <Share2 size={15} /> }] : []),
   ]
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
       <button onClick={onBack} className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm mb-6">
-        <ArrowLeft size={16} /> Zurück
+        <ArrowLeft size={16} /> {t('people.back')}
       </button>
 
       {/* Profilkarte */}
@@ -815,14 +822,14 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <h1 className={`text-3xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || 'Unbenannte Person'}</h1>
-                <button onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 shrink-0" title="Bearbeiten"><Pencil size={17} /></button>
+                <h1 className={`text-3xl font-bold truncate ${person.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{person.name || t('people.unnamedPerson')}</h1>
+                <button onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 shrink-0" title={t('people.edit')}><Pencil size={17} /></button>
               </div>
-              {!person.name && <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">+ Namen vergeben</button>}
+              {!person.name && <button onClick={() => setEditing(true)} className="mt-1 text-sm text-indigo-400 hover:text-indigo-300">{t('people.addNameLink')}</button>}
               {person.alias && <p className="text-zinc-400 text-sm mt-0.5">„{person.alias}“</p>}
               <div className="flex items-center gap-3 text-zinc-500 text-sm mt-1.5">
-                <span>{total} Fotos</span>
-                {person.birthdate && <span>· geb. {new Date(person.birthdate).toLocaleDateString('de')} ({differenceInYears(new Date(), new Date(person.birthdate))} J.)</span>}
+                <span>{t('people.photos', { count: total })}</span>
+                {person.birthdate && <span>{t('people.born', { date: new Date(person.birthdate).toLocaleDateString('de'), age: differenceInYears(new Date(), new Date(person.birthdate)) })}</span>}
               </div>
               {person.notes && <p className="text-zinc-400 text-sm mt-2 italic">{person.notes}</p>}
               {/* Kontakt prominent: klickbare Chips */}
@@ -836,11 +843,11 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
               <div className="mt-4 flex items-center gap-4">
                 <button onClick={() => hide.mutate(!person.is_hidden)} disabled={hide.isPending}
                   className="flex items-center gap-1 text-xs text-zinc-400 hover:text-indigo-300 disabled:opacity-50">
-                  {person.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />} {person.is_hidden ? 'Wieder anzeigen' : 'Verbergen'}
+                  {person.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />} {person.is_hidden ? t('people.showAgain') : t('people.hideOne')}
                 </button>
-                <button onClick={async () => { if (await confirm({ title: `"${person.name || 'Unbekannt'}" löschen?`, danger: true, confirmLabel: 'Löschen' })) del.mutate() }}
+                <button onClick={async () => { if (await confirm({ title: t('people.deleteConfirmTitle', { name: person.name || t('people.unknown') }), danger: true, confirmLabel: t('people.deleteLabel') })) del.mutate() }}
                   className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300">
-                  <Trash2 size={12} /> Person löschen
+                  <Trash2 size={12} /> {t('people.deletePerson')}
                 </button>
               </div>
             </>
@@ -863,7 +870,7 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
         <>
           <div className="flex items-center gap-3 mb-3">
             <div className="ml-auto flex rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs">
-              {([['newest', 'Neueste'], ['oldest', 'Älteste']] as const).map(([v, l]) => (
+              {([['newest', t('people.photoSortNewest')], ['oldest', t('people.photoSortOldest')]] as const).map(([v, l]) => (
                 <button key={v} onClick={() => { setPhotoSort(v); setPhotoPage(1) }}
                   className={`px-2.5 py-1 ${photoSort === v ? 'bg-indigo-600 text-white' : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{l}</button>
               ))}
@@ -883,7 +890,7 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
           </div>
           <Pager page={photoPage} pageSize={photoPageSize} total={total}
             onPage={setPhotoPage} onSize={(n) => { setPhotoPageSize(n); setPhotoPage(1) }} />
-          {photos.length === 0 && <p className="text-sm text-zinc-500">Noch keine Fotos — Gesichtserkennung läuft beim Verarbeiten.</p>}
+          {photos.length === 0 && <p className="text-sm text-zinc-500">{t('people.noPhotosYet')}</p>}
         </>
       )}
 
@@ -891,10 +898,10 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
       {tab === 'faces' && (
         <div>
           {facesTotal === 0 ? (
-            <p className="text-sm text-zinc-500">Noch keine Gesichter zugeordnet.</p>
+            <p className="text-sm text-zinc-500">{t('people.noFacesAssigned')}</p>
           ) : (
             <>
-              <p className="text-xs text-zinc-500 mb-3">Tippe ★ um ein Gesicht als <strong>Profilbild</strong> zu setzen · ✕ entfernt es von dieser Person.</p>
+              <p className="text-xs text-zinc-500 mb-3">{t('people.facesTabHint')}</p>
               <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-3">
                 {faces.map(f => (
                   <div key={f.id} className={`group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 ring-2 ${person.profile_face_id === f.id ? 'ring-indigo-500' : 'ring-zinc-200 dark:ring-zinc-700'}`}>
@@ -904,10 +911,10 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
                       <div className="absolute top-1 left-1 bg-indigo-500 rounded-full p-1"><Star size={11} className="text-white" fill="white" /></div>
                     )}
                     <div className="absolute inset-x-0 bottom-0 h-9 bg-black/55 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
-                      <button onClick={() => setCover.mutate(f.id)} title="Als Profilbild"
+                      <button onClick={() => setCover.mutate(f.id)} title={t('people.setAsProfile')}
                         className="text-white/90 hover:text-yellow-300"><Star size={17} fill={person.profile_face_id === f.id ? 'currentColor' : 'none'} /></button>
-                      <button onClick={async () => { if (await confirm({ title: 'Gehört nicht zu dieser Person?', message: 'Das Gesicht wird wieder freigegeben.' })) removeFace.mutate(f.id) }}
-                        title="Ist nicht diese Person" className="text-white/90 hover:text-red-400"><X size={17} /></button>
+                      <button onClick={async () => { if (await confirm({ title: t('people.removeFaceConfirmTitle'), message: t('people.removeFaceConfirmMessage') })) removeFace.mutate(f.id) }}
+                        title={t('people.notThisPerson')} className="text-white/90 hover:text-red-400"><X size={17} /></button>
                     </div>
                   </div>
                 ))}
@@ -923,7 +930,7 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
       {tab === 'relations' && relsOn && (
         <div>
           <RelationshipsMap personId={personId} profileFaceId={person.profile_face_id ?? 0} onOpenPerson={onOpenPerson} />
-          <RelationshipsPanel personId={personId} personName={person.name || 'Unbekannt'} />
+          <RelationshipsPanel personId={personId} personName={person.name || t('people.unknown')} />
         </div>
       )}
 
@@ -932,10 +939,11 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
   )
 }
 
+// value → i18n key suffix (label translated at render via t('people.<key>'))
 const REL_TYPES: [string, string][] = [
-  ['parent', 'Elternteil von'], ['grandparent', 'Großelternteil von'],
-  ['partner', 'Partner'], ['sibling', 'Geschwister'], ['relative', 'Verwandt'],
-  ['friend', 'Freund/in'], ['colleague', 'Kollege/in'], ['other', 'Verbindung'],
+  ['parent', 'relParent'], ['grandparent', 'relGrandparent'],
+  ['partner', 'relPartner'], ['sibling', 'relSibling'], ['relative', 'relRelative'],
+  ['friend', 'relFriend'], ['colleague', 'relColleague'], ['other', 'relOther'],
 ]
 const REL_DOT: Record<string, string> = { family: 'bg-emerald-500', social: 'bg-sky-500', other: 'bg-zinc-400' }
 const REL_STROKE: Record<string, string> = { family: '#10b981', social: '#0ea5e9', other: '#a1a1aa' }
@@ -944,6 +952,7 @@ const REL_STROKE: Record<string, string> = { family: '#10b981', social: '#0ea5e9
 function RelationshipsMap({ personId, profileFaceId, onOpenPerson }: {
   personId: number; profileFaceId: number; onOpenPerson: (id: number) => void
 }) {
+  const { t } = useT()
   const { data: rels = [] } = useQuery<any[]>({
     queryKey: ['rels', personId], queryFn: () => api.get(`/relationships/person/${personId}`).then(r => r.data),
   })
@@ -960,7 +969,7 @@ function RelationshipsMap({ personId, profileFaceId, onOpenPerson }: {
 
   return (
     <div className="mb-6">
-      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">Beziehungs-Map</h2>
+      <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">{t('people.relMapHeading')}</h2>
       <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-md mx-auto select-none">
         <defs>
           <clipPath id={`relclip-center`}><circle cx={cx} cy={cy} r={rCenter} /></clipPath>
@@ -992,7 +1001,7 @@ function RelationshipsMap({ personId, profileFaceId, onOpenPerson }: {
         <circle cx={cx} cy={cy} r={rCenter} fill="none" className="stroke-indigo-500" strokeWidth={3} />
       </svg>
       {rels.length > shown.length && (
-        <p className="text-center text-xs text-zinc-400 mt-1">+{rels.length - shown.length} weitere — in der Liste unten</p>
+        <p className="text-center text-xs text-zinc-400 mt-1">{t('people.relMore', { count: rels.length - shown.length })}</p>
       )}
     </div>
   )
@@ -1002,6 +1011,7 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
   const qc = useQueryClient()
   const toast = useToast()
   const confirm = useConfirm()
+  const { t } = useT()
   const [adding, setAdding] = useState(false)
   const [type, setType] = useState('parent')
   const [otherId, setOtherId] = useState<number | ''>('')
@@ -1015,15 +1025,15 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
   const inval = () => { qc.invalidateQueries({ queryKey: ['rels', personId] }); qc.invalidateQueries({ queryKey: ['rel-graph'] }) }
   const add = useMutation({
     mutationFn: () => api.post('/relationships', { from_person_id: personId, to_person_id: otherId, rel_type: type }),
-    onSuccess: () => { inval(); setAdding(false); setOtherId(''); toast('Verbindung hinzugefügt', 'success') },
+    onSuccess: () => { inval(); setAdding(false); setOtherId(''); toast(t('people.toastConnectionAdded'), 'success') },
   })
   const del = useMutation({ mutationFn: (id: number) => api.delete(`/relationships/${id}`), onSuccess: inval })
   const makeAlbum = useMutation({
     mutationFn: () => {
       const ids = Array.from(new Set([personId, ...rels.map(r => r.other_id)]))
-      return api.post('/albums', { name: `Familie ${personName}`, album_type: 'smart', smart_criteria: { person_ids: ids, person_match: 'any' } })
+      return api.post('/albums', { name: t('people.familyAlbumName', { name: personName }), album_type: 'smart', smart_criteria: { person_ids: ids, person_match: 'any' } })
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast('Smart-Album „Familie …" erstellt', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['albums'] }); toast(t('people.toastFamilyAlbumCreated'), 'success') },
   })
 
   if (!on) return null
@@ -1032,18 +1042,18 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
   return (
     <div className="mb-8">
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Beziehungen ({rels.length})</h2>
-        <button onClick={() => setAdding(v => !v)} className="text-xs text-indigo-500 hover:text-indigo-400 font-medium">+ Verbindung</button>
+        <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{t('people.relationships', { count: rels.length })}</h2>
+        <button onClick={() => setAdding(v => !v)} className="text-xs text-indigo-500 hover:text-indigo-400 font-medium">{t('people.addConnection')}</button>
         {rels.length > 0 && (
-          <button onClick={() => makeAlbum.mutate()} className="ml-auto text-xs text-zinc-500 hover:text-indigo-400">Familien-Album erstellen</button>
+          <button onClick={() => makeAlbum.mutate()} className="ml-auto text-xs text-zinc-500 hover:text-indigo-400">{t('people.createFamilyAlbum')}</button>
         )}
       </div>
 
       {adding && (
         <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
-          <span className="text-sm text-zinc-500">{personName} ist</span>
+          <span className="text-sm text-zinc-500">{t('people.relPersonIs', { name: personName })}</span>
           <select value={type} onChange={e => setType(e.target.value)} className={sel}>
-            {REL_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {REL_TYPES.map(([v, l]) => <option key={v} value={v}>{t(`people.${l}`)}</option>)}
           </select>
           {(() => {
             const named = people.filter(p => p.id !== personId && (p.name || '').trim())
@@ -1055,12 +1065,12 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
                 <input
                   value={picked ? picked.name : q}
                   onChange={e => { setQ(e.target.value); setOtherId('') }}
-                  placeholder={`Person suchen … (${named.length})`}
+                  placeholder={t('people.searchPersonCount', { count: named.length })}
                   className={`${sel} min-w-[12rem]`} />
                 {!otherId && q.trim() && (
                   <div className="absolute z-20 mt-1 w-60 max-h-56 overflow-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
                     {matches.length === 0
-                      ? <div className="px-3 py-1.5 text-sm text-zinc-500">keine Treffer</div>
+                      ? <div className="px-3 py-1.5 text-sm text-zinc-500">{t('people.noMatches')}</div>
                       : matches.slice(0, 80).map(p => (
                         <button key={p.id} onClick={() => { setOtherId(p.id); setQ('') }}
                           className="block w-full text-left px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">{p.name}</button>
@@ -1071,12 +1081,12 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
             )
           })()}
           <button onClick={() => add.mutate()} disabled={!otherId || add.isPending}
-            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">Hinzufügen</button>
+            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">{t('people.addConnectionBtn')}</button>
         </div>
       )}
 
       {rels.length === 0 ? (
-        <p className="text-sm text-zinc-500">Noch keine Verbindungen. Lege über „+ Verbindung“ Familie, Freunde oder Kollegen an.</p>
+        <p className="text-sm text-zinc-500">{t('people.noConnections')}</p>
       ) : (
         <div className="flex flex-wrap gap-2">
           {rels.map(r => (
@@ -1086,7 +1096,7 @@ function RelationshipsPanel({ personId, personName }: { personId: number; person
               </span>
               <span className="text-sm text-zinc-800 dark:text-zinc-200">{r.other_name}</span>
               <span className="flex items-center gap-1 text-xs text-zinc-400"><span className={`w-1.5 h-1.5 rounded-full ${REL_DOT[r.category]}`} />{r.label}</span>
-              <button onClick={async () => { if (await confirm({ title: 'Verbindung entfernen?', danger: true, confirmLabel: 'Entfernen' })) del.mutate(r.id) }}
+              <button onClick={async () => { if (await confirm({ title: t('people.removeConnectionConfirm'), danger: true, confirmLabel: t('people.removeLabel') })) del.mutate(r.id) }}
                 className="text-zinc-300 hover:text-red-500 ml-0.5"><X size={13} /></button>
             </div>
           ))}
@@ -1107,23 +1117,24 @@ function EditPersonForm({ person, onCancel, onSave, saving }: {
   const [phone, setPhone] = useState(person.phone || '')
   const [address, setAddress] = useState(person.address || '')
   const input = INPUT
+  const { t } = useT()
   return (
     <div className="space-y-2">
-      <input value={name} onChange={e => setName(e.target.value)} className={input} placeholder="Name" />
+      <input value={name} onChange={e => setName(e.target.value)} className={input} placeholder={t('people.namePlaceholder')} />
       <div className="flex gap-2">
-        <input value={alias} onChange={e => setAlias(e.target.value)} className={`${input} flex-1`} placeholder="Spitzname" />
-        <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className={input + ' w-auto'} title="Geburtsdatum" />
+        <input value={alias} onChange={e => setAlias(e.target.value)} className={`${input} flex-1`} placeholder={t('people.nicknamePlaceholder')} />
+        <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className={input + ' w-auto'} title={t('people.birthdateTitle')} />
       </div>
-      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${input} resize-none`} placeholder="Notizen" />
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${input} resize-none`} placeholder={t('people.notesPlaceholder')} />
       <div className="flex gap-2">
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={`${input} flex-1`} placeholder="E-Mail" />
-        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={`${input} flex-1`} placeholder="Telefon" />
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={`${input} flex-1`} placeholder={t('people.emailPlaceholder')} />
+        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={`${input} flex-1`} placeholder={t('people.phonePlaceholder')} />
       </div>
-      <input value={address} onChange={e => setAddress(e.target.value)} className={input} placeholder="Adresse" />
+      <input value={address} onChange={e => setAddress(e.target.value)} className={input} placeholder={t('people.addressPlaceholder')} />
       <div className="flex gap-2">
-        <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('people.cancel')}</button>
         <button onClick={() => onSave({ name, alias, notes, birthdate: birthdate || null, email: email || null, phone: phone || null, address: address || null })} disabled={saving || !name.trim()}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">Speichern</button>
+          className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50">{t('people.save')}</button>
       </div>
     </div>
   )
@@ -1137,6 +1148,7 @@ function MergeModal({ people, onClose, onMerged }: {
   const [targetId, setTargetId] = useState<number>(named?.id ?? people[0]?.id ?? 0)
   const [name, setName] = useState(named?.name || '')
   const toast = useToast()
+  const { t } = useT()
 
   const merge = useMutation({
     mutationFn: () => api.post('/people/merge-multi', {
@@ -1145,12 +1157,12 @@ function MergeModal({ people, onClose, onMerged }: {
       keep_name: name.trim() || undefined,
     }),
     onSuccess: () => onMerged(people.length - 1),
-    onError: () => toast('Zusammenführen fehlgeschlagen', 'error'),
+    onError: () => toast(t('people.toastMergeFailed'), 'error'),
   })
 
   return (
-    <Modal open onClose={onClose} title={`${people.length} Personen zusammenführen`}>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3">Wähle die Person, die <strong className="text-zinc-700 dark:text-zinc-200">behalten</strong> wird. Alle Gesichter der anderen werden zu ihr verschoben.</p>
+    <Modal open onClose={onClose} title={t('people.mergeModalTitle', { count: people.length })}>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3">{t('people.mergeModalIntro')}</p>
       <div className="space-y-1.5 max-h-64 overflow-y-auto mb-4">
         {people.map(p => (
           <button key={p.id} onClick={() => { setTargetId(p.id); if (p.name) setName(p.name) }}
@@ -1160,21 +1172,21 @@ function MergeModal({ people, onClose, onMerged }: {
               <img src={`/api/people/${p.id}/avatar?v=${p.profile_face_id ?? 0}`} className="w-full h-full object-cover relative" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-sm truncate ${p.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{p.name || 'Unbekannt'}</p>
-              <p className="text-xs text-zinc-500">{p.face_count} Fotos</p>
+              <p className={`text-sm truncate ${p.name ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 italic'}`}>{p.name || t('people.unknown')}</p>
+              <p className="text-xs text-zinc-500">{t('people.photosShort', { count: p.face_count })}</p>
             </div>
-            {targetId === p.id && <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500 text-white font-medium">behalten</span>}
+            {targetId === p.id && <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500 text-white font-medium">{t('people.keepBadge')}</span>}
           </button>
         ))}
       </div>
-      <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Name nach dem Zusammenführen</label>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (optional)"
+      <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{t('people.mergeNameLabel')}</label>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder={t('people.nameOptional')}
         className="w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
       <div className="flex gap-2 justify-end">
-        <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+        <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('people.cancel')}</button>
         <button onClick={() => merge.mutate()} disabled={merge.isPending}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-          <GitMerge size={14} /> Zusammenführen
+          <GitMerge size={14} /> {t('people.merge')}
         </button>
       </div>
     </Modal>
@@ -1188,22 +1200,23 @@ function FaceAssignModal({ faceIds, people, onClose, onDone }: {
   const [search, setSearch] = useState('')
   const [newName, setNewName] = useState('')
   const toast = useToast()
+  const { t } = useT()
   const filtered = people.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
   const n = faceIds.length
 
   const assign = useMutation({
     mutationFn: (personId: number) => api.post('/people/faces/assign-many', { face_ids: faceIds, person_id: personId }),
-    onSuccess: () => { toast(`${n} Gesicht(er) zugeordnet`, 'success'); onDone() },
-    onError: () => toast('Zuordnen fehlgeschlagen', 'error'),
+    onSuccess: () => { toast(t('people.toastFacesAssigned', { count: n }), 'success'); onDone() },
+    onError: () => toast(t('people.toastAssignFailed'), 'error'),
   })
   const createNew = useMutation({
     mutationFn: () => api.post('/people/faces/new-person-many', { face_ids: faceIds, name: newName.trim() || undefined }),
-    onSuccess: () => { toast('Neue Person erstellt', 'success'); onDone() },
-    onError: () => toast('Erstellen fehlgeschlagen', 'error'),
+    onSuccess: () => { toast(t('people.toastNewPersonCreated'), 'success'); onDone() },
+    onError: () => toast(t('people.toastCreateFailed'), 'error'),
   })
 
   return (
-    <Modal open onClose={onClose} maxWidth="max-w-lg" title={n === 1 ? 'Gesicht zuordnen' : `${n} Gesichter zuordnen`}>
+    <Modal open onClose={onClose} maxWidth="max-w-lg" title={n === 1 ? t('people.assignOneFace') : t('people.assignManyFaces', { count: n })}>
       <div className="flex gap-4 mb-4">
         <div className="flex -space-x-3 flex-shrink-0">
           {faceIds.slice(0, 4).map((id, i) => (
@@ -1214,29 +1227,29 @@ function FaceAssignModal({ faceIds, people, onClose, onDone }: {
           {n > 4 && <div className="w-16 h-16 rounded-xl bg-zinc-200 dark:bg-zinc-800 ring-2 ring-white dark:ring-zinc-900 flex items-center justify-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">+{n - 4}</div>}
         </div>
         <div className="flex-1">
-          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{n === 1 ? 'Neue Person aus diesem Gesicht' : `Neue Person aus ${n} Gesichtern`}</label>
+          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{n === 1 ? t('people.newPersonFromFace') : t('people.newPersonFromFaces', { count: n })}</label>
           <div className="flex gap-2">
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)"
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder={t('people.nameOptional')}
               onKeyDown={e => { if (e.key === 'Enter') createNew.mutate() }}
               className="flex-1 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             <button onClick={() => createNew.mutate()} disabled={createNew.isPending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-              <UserPlus size={14} /> Neu
+              <UserPlus size={14} /> {t('people.new')}
             </button>
           </div>
         </div>
       </div>
 
       <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-        <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">…oder zu vorhandener Person</label>
+        <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{t('people.orToExisting')}</label>
         <div className="relative mb-2">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Person suchen…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('people.searchPerson')}
             className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
         <div className="max-h-52 overflow-y-auto space-y-1">
           {filtered.length === 0 ? (
-            <p className="text-sm text-zinc-500 py-2 text-center">Keine benannten Personen.</p>
+            <p className="text-sm text-zinc-500 py-2 text-center">{t('people.noNamedPeople')}</p>
           ) : filtered.map(p => (
             <button key={p.id} onClick={() => assign.mutate(p.id)} disabled={assign.isPending}
               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left disabled:opacity-50">
@@ -1260,25 +1273,26 @@ function AddPersonModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [alias, setAlias] = useState('')
   const [birthdate, setBirthdate] = useState('')
   const input = INPUT
+  const { t } = useT()
   const mutation = useMutation({
     mutationFn: () => api.post('/people', { name, alias: alias || undefined, birthdate: birthdate || undefined }),
     onSuccess: () => { onCreated(); onClose() },
   })
   return (
-    <Modal open onClose={onClose} title="Person hinzufügen">
+    <Modal open onClose={onClose} title={t('people.addPersonTitle')}>
       <form onSubmit={e => { e.preventDefault(); mutation.mutate() }} className="space-y-3">
-        <input required placeholder="Name *" value={name} onChange={e => setName(e.target.value)} className={input} />
-        <input placeholder="Alias / Spitzname" value={alias} onChange={e => setAlias(e.target.value)} className={input} />
+        <input required placeholder={t('people.nameRequired')} value={name} onChange={e => setName(e.target.value)} className={input} />
+        <input placeholder={t('people.aliasNickname')} value={alias} onChange={e => setAlias(e.target.value)} className={input} />
         <div>
-          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">Geburtsdatum (optional)</label>
+          <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{t('people.birthdateOptional')}</label>
           <input type="date" value={birthdate} onChange={e => setBirthdate(e.target.value)} className={input} />
         </div>
-        <p className="text-xs text-zinc-500">Tipp: Personen entstehen normalerweise automatisch aus erkannten Gesichtern. Manuell angelegte Personen haben zunächst keine Fotos.</p>
+        <p className="text-xs text-zinc-500">{t('people.addPersonTip')}</p>
         <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">Abbrechen</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('people.cancel')}</button>
           <button type="submit" disabled={mutation.isPending || !name.trim()}
             className="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
-            {mutation.isPending ? 'Erstelle…' : 'Hinzufügen'}
+            {mutation.isPending ? t('people.creating') : t('people.add')}
           </button>
         </div>
       </form>

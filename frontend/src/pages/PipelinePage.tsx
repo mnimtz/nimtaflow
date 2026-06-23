@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { RefreshCw, CheckCircle, XCircle, SkipForward, Users, Sparkles, Brain, DollarSign, AlertTriangle } from 'lucide-react'
 import { api, Job } from '../lib/api'
+import { useT } from '../i18n'
 
 type Stats = { total?: number; total_indexed?: number; by_status?: Record<string, number>; coverage?: Record<string, number> }
 
 export default function PipelinePage() {
+  const { t } = useT()
   const { data: jobs = [], refetch } = useQuery<Job[]>({
     queryKey: ['jobs'],
     queryFn: () => api.get('/jobs').then((r) => r.data),
@@ -26,7 +28,7 @@ export default function PipelinePage() {
 
   const act = useMutation({
     mutationFn: ({ url }: { url: string }) => api.post(url).then(r => r.data),
-    onSuccess: (d: any) => { setBusy(''); refetch(); refetchStats(); alert(`${d?.reprocessing ?? d?.new_persons ?? d?.clustered ?? 'OK'} — Aktion gestartet.`) },
+    onSuccess: (d: any) => { setBusy(''); refetch(); refetchStats(); alert(t('pipeline.actionStarted', { result: d?.reprocessing ?? d?.new_persons ?? d?.clustered ?? 'OK' })) },
     onError: () => setBusy(''),
   })
   const doAct = (key: string, url: string) => { setBusy(key); act.mutate({ url }) }
@@ -37,22 +39,22 @@ export default function PipelinePage() {
   return (
     <div className="p-4 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Verarbeitungs-Pipeline</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('pipeline.title')}</h1>
         <button
           onClick={() => api.post('/sources/scan-all').then(() => refetch())}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
         >
           <RefreshCw size={16} />
-          Alle Ordner scannen
+          {t('pipeline.scanAll')}
         </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {([
-          { k: 'pending', label: 'Wartend', cls: 'text-amber-500' },
-          { k: 'processing', label: 'In Arbeit', cls: 'text-indigo-500' },
-          { k: 'done', label: 'Fertig', cls: 'text-emerald-500' },
-          { k: 'error', label: 'Fehler', cls: 'text-red-500' },
+          { k: 'pending', label: t('pipeline.statPending'), cls: 'text-amber-500' },
+          { k: 'processing', label: t('pipeline.statProcessing'), cls: 'text-indigo-500' },
+          { k: 'done', label: t('pipeline.statDone'), cls: 'text-emerald-500' },
+          { k: 'error', label: t('pipeline.statError'), cls: 'text-red-500' },
         ] as const).map(s => (
           <div key={s.k} className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-4">
             <p className={`text-2xl font-bold tabular-nums ${s.cls}`}>{st[s.k] ?? 0}</p>
@@ -63,13 +65,13 @@ export default function PipelinePage() {
 
       {/* Stage coverage */}
       <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-5">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Verarbeitungs-Abdeckung <span className="text-gray-400 font-normal">({total.toLocaleString('de')} Fotos)</span></h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">{t('pipeline.coverage')} <span className="text-gray-400 font-normal">{t('pipeline.coverageCount', { n: total.toLocaleString('de') })}</span></h2>
         <div className="space-y-3">
           {([
-            { k: 'thumbnailed', label: 'Thumbnails', icon: CheckCircle, cls: 'bg-emerald-500' },
-            { k: 'described', label: 'KI-Beschreibung', icon: Brain, cls: 'bg-violet-500' },
-            { k: 'embedded', label: 'Suchindex (Embedding)', icon: Sparkles, cls: 'bg-indigo-500' },
-            { k: 'with_faces', label: 'Gesichter erkannt', icon: Users, cls: 'bg-sky-500' },
+            { k: 'thumbnailed', label: t('pipeline.covThumbnails'), icon: CheckCircle, cls: 'bg-emerald-500' },
+            { k: 'described', label: t('pipeline.covDescribed'), icon: Brain, cls: 'bg-violet-500' },
+            { k: 'embedded', label: t('pipeline.covEmbedded'), icon: Sparkles, cls: 'bg-indigo-500' },
+            { k: 'with_faces', label: t('pipeline.covFaces'), icon: Users, cls: 'bg-sky-500' },
           ] as const).map(r => {
             const v = cov[r.k] ?? 0
             const pct = total ? Math.round((v / total) * 100) : 0
@@ -85,26 +87,26 @@ export default function PipelinePage() {
             )
           })}
           {(cov.ai_error ?? 0) > 0 && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 pt-1"><AlertTriangle size={13} /> {cov.ai_error} Fotos mit KI-Fehler (z. B. Provider überlastet) — „KI nachholen" oder „Fehler erneut".</p>
+            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 pt-1"><AlertTriangle size={13} /> {t('pipeline.aiError', { n: cov.ai_error })}</p>
           )}
         </div>
         {/* Actions */}
         <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-gray-200 dark:border-gray-800">
-          <ActBtn label="Fehler erneut" busy={busy === 'failed'} onClick={() => doAct('failed', '/photos/reprocess-failed')} />
-          <ActBtn label="KI nachholen" busy={busy === 'ai'} onClick={() => doAct('ai', '/photos/reprocess-missing-ai')} />
-          <ActBtn label="Gesichter clustern" busy={busy === 'cluster'} onClick={() => doAct('cluster', '/people/cluster')} />
+          <ActBtn label={t('pipeline.retryErrors')} busy={busy === 'failed'} onClick={() => doAct('failed', '/photos/reprocess-failed')} />
+          <ActBtn label={t('pipeline.catchupAi')} busy={busy === 'ai'} onClick={() => doAct('ai', '/photos/reprocess-missing-ai')} />
+          <ActBtn label={t('pipeline.clusterFaces')} busy={busy === 'cluster'} onClick={() => doAct('cluster', '/people/cluster')} />
         </div>
       </div>
 
       {activeJob ? <ActiveJobCard job={activeJob} /> : (
         <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 text-center text-gray-500 dark:text-gray-400 text-sm">
-          Keine aktive Verarbeitung — starte die Pipeline um Fotos zu verarbeiten.
+          {t('pipeline.noActive')}
         </div>
       )}
 
       {recentJobs.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Letzte Läufe</h2>
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{t('pipeline.recentRuns')}</h2>
           <div className="space-y-2">
             {recentJobs.map((j) => <JobRow key={j.id} job={j} />)}
           </div>
@@ -126,6 +128,7 @@ function ActBtn({ label, busy, onClick }: { label: string; busy: boolean; onClic
 }
 
 function ActiveJobCard({ job }: { job: Job }) {
+  const { t } = useT()
   const pct = job.total > 0 ? Math.round((job.processed / job.total) * 100) : 0
 
   return (
@@ -134,8 +137,8 @@ function ActiveJobCard({ job }: { job: Job }) {
         <div>
           <p className="font-semibold text-gray-900 dark:text-white">{job.name}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {job.processed.toLocaleString('de')} / {job.total.toLocaleString('de')} Fotos
-            {job.speed_per_min ? ` · ${Math.round(job.speed_per_min)} Fotos/min` : ''}
+            {t('pipeline.jobPhotos', { processed: job.processed.toLocaleString('de'), total: job.total.toLocaleString('de') })}
+            {job.speed_per_min ? t('pipeline.jobPerMin', { n: Math.round(job.speed_per_min) }) : ''}
           </p>
         </div>
         <StatusBadge status={job.status} />
@@ -152,10 +155,10 @@ function ActiveJobCard({ job }: { job: Job }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatChip icon={<CheckCircle size={14} className="text-green-500" />} label="Verarbeitet" value={job.processed} />
-        <StatChip icon={<XCircle size={14} className="text-red-500" />} label="Fehler" value={job.errors} />
-        <StatChip icon={<SkipForward size={14} className="text-yellow-500" />} label="Übersprungen" value={job.skipped} />
-        <StatChip icon={<DollarSign size={14} className="text-blue-500" />} label="Kosten" value={`$${job.api_cost_usd.toFixed(2)}`} />
+        <StatChip icon={<CheckCircle size={14} className="text-green-500" />} label={t('pipeline.statProcessed')} value={job.processed} />
+        <StatChip icon={<XCircle size={14} className="text-red-500" />} label={t('pipeline.statErrors')} value={job.errors} />
+        <StatChip icon={<SkipForward size={14} className="text-yellow-500" />} label={t('pipeline.statSkipped')} value={job.skipped} />
+        <StatChip icon={<DollarSign size={14} className="text-blue-500" />} label={t('pipeline.statCost')} value={`$${job.api_cost_usd.toFixed(2)}`} />
       </div>
     </div>
   )
@@ -174,11 +177,12 @@ function StatChip({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 function JobRow({ job }: { job: Job }) {
+  const { t } = useT()
   return (
     <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-sm">
       <div>
         <span className="font-medium text-gray-900 dark:text-white">{job.name}</span>
-        <span className="text-gray-400 ml-2">{job.processed.toLocaleString('de')} Fotos</span>
+        <span className="text-gray-400 ml-2">{t('pipeline.rowPhotos', { n: job.processed.toLocaleString('de') })}</span>
       </div>
       <StatusBadge status={job.status} />
     </div>
@@ -186,6 +190,7 @@ function JobRow({ job }: { job: Job }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useT()
   const map: Record<string, string> = {
     running: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
     queued: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
@@ -194,7 +199,7 @@ function StatusBadge({ status }: { status: string }) {
     cancelled: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',
   }
   const labels: Record<string, string> = {
-    running: 'Läuft', queued: 'Warteschlange', done: 'Fertig', error: 'Fehler', cancelled: 'Abgebrochen',
+    running: t('pipeline.badgeRunning'), queued: t('pipeline.badgeQueued'), done: t('pipeline.badgeDone'), error: t('pipeline.badgeError'), cancelled: t('pipeline.badgeCancelled'),
   }
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${map[status] ?? map.cancelled}`}>
@@ -204,6 +209,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function LiveLog() {
+  const { t } = useT()
   const [logs, setLogs] = useState<string[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -230,7 +236,7 @@ function LiveLog() {
 
   return (
     <div>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Live-Log</h2>
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{t('pipeline.liveLog')}</h2>
       <div className="rounded-xl bg-gray-950 text-gray-300 font-mono text-xs p-4 h-64 overflow-y-auto space-y-0.5">
         {logs.map((l, i) => <div key={i}>{l}</div>)}
         <div ref={bottomRef} />

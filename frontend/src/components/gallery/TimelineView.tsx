@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { type Photo, type TimelineGroup } from '../../lib/api'
 import { JustifiedRows, type Indexed } from './justified'
+import { useT } from '../../i18n'
 
 type Props = {
   groups: TimelineGroup[]
@@ -9,8 +10,8 @@ type Props = {
   onFavoriteToggle?: (photo: Photo) => void
 }
 
-function formatDateHeader(dateStr: string): { primary: string; secondary: string } {
-  if (dateStr === 'unknown') return { primary: 'Unbekanntes Datum', secondary: '' }
+function formatDateHeader(dateStr: string, unknownLabel: string): { primary: string; secondary: string } {
+  if (dateStr === 'unknown') return { primary: unknownLabel, secondary: '' }
   const d = new Date(dateStr)
   return {
     primary: d.toLocaleDateString('de', { weekday: 'long', day: 'numeric', month: 'long' }),
@@ -60,6 +61,7 @@ function DateScrubber({ scrollEl, label }: { scrollEl: HTMLElement | null; label
 }
 
 export default function TimelineView({ groups, rowHeight = 180, onPhotoClick, onFavoriteToggle }: Props) {
+  const { t } = useT()
   const allPhotos = groups.flatMap(g => g.photos)
   const indexOf = new Map(allPhotos.map((p, i) => [p.id, i]))
   const rootRef = useRef<HTMLDivElement>(null)
@@ -101,7 +103,7 @@ export default function TimelineView({ groups, rowHeight = 180, onPhotoClick, on
     <div ref={rootRef} className="w-full">
       <div ref={containerRef} className="space-y-6">
         {groups.map((group) => {
-          const { primary, secondary } = formatDateHeader(group.date)
+          const { primary, secondary } = formatDateHeader(group.date, t('gallery.unknownDate'))
           const items: Indexed[] = group.photos.map(p => ({ photo: p, index: indexOf.get(p.id)! }))
           return (
             <section key={group.date}>
@@ -109,7 +111,7 @@ export default function TimelineView({ groups, rowHeight = 180, onPhotoClick, on
                 className="sticky top-0 z-10 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-3">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-white capitalize">{primary}</h3>
                 <span className="text-xs text-zinc-400">{secondary}</span>
-                {group.count > group.photos.length && <span className="ml-auto text-xs text-zinc-400">{group.count} Fotos</span>}
+                {group.count > group.photos.length && <span className="ml-auto text-xs text-zinc-400">{t('gallery.photosCount', { n: group.count })}</span>}
               </div>
               <JustifiedRows items={items} containerWidth={w} rowHeight={rowHeight} gap={5} isLastGroup
                 onPhotoClick={i => onPhotoClick(allPhotos[i], allPhotos, i)}

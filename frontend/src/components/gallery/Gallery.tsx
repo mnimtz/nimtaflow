@@ -4,6 +4,7 @@ import 'react-photo-album/masonry.css'
 import { Heart, Play, Star, Check } from 'lucide-react'
 import { thumbUrl, type Photo } from '../../lib/api'
 import { groupByDate, type Indexed } from './justified'
+import { useT } from '../../i18n'
 
 export type LayoutMode = 'rows' | 'masonry'
 
@@ -27,6 +28,7 @@ function Overlay({ photo, index, selectable, isSel, onFav, onToggle }: {
   photo: Photo; index: number; selectable?: boolean; isSel: boolean
   onFav?: (p: Photo) => void; onToggle?: (p: Photo, i: number, shift: boolean) => void
 }) {
+  const { t } = useT()
   return (
     <>
       {photo.is_video && (
@@ -36,7 +38,7 @@ function Overlay({ photo, index, selectable, isSel, onFav, onToggle }: {
       )}
       <div className={`absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/40 to-transparent pointer-events-none ${isSel ? '' : 'pf-show'}`} />
       {selectable && (
-        <button onClick={e => { e.stopPropagation(); onToggle?.(photo, index, (e as any).shiftKey) }} title="Auswählen"
+        <button onClick={e => { e.stopPropagation(); onToggle?.(photo, index, (e as any).shiftKey) }} title={t('gallery.select')}
           className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center z-10 ${isSel ? 'bg-indigo-500 text-white' : 'bg-black/35 text-white/90 pf-show hover:bg-black/55'}`}>
           <Check size={15} strokeWidth={3} />
         </button>
@@ -110,6 +112,7 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
 }
 
 export default function Gallery({ photos, layout = 'rows', rowHeight = 200, groupBy = 'none', ...cb }: Props) {
+  const { t } = useT()
   const anySelected = (cb.selected?.size ?? 0) > 0
   if (groupBy === 'none') {
     return <Album items={photos.map((photo, index) => ({ photo, index }))} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
@@ -127,7 +130,7 @@ export default function Gallery({ photos, layout = 'rows', rowHeight = 200, grou
               {cb.selectable && (
                 <button onClick={() => cb.onSelectMany?.(ids, !allSel)}
                   className="ml-1 text-xs text-indigo-500 hover:text-indigo-400 font-medium">
-                  {allSel ? 'Abwählen' : 'Alle'}
+                  {allSel ? t('gallery.deselect') : t('gallery.selectAll')}
                 </button>
               )}
             </div>

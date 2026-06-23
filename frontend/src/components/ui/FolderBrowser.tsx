@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Folder, FolderOpen, ChevronRight, ChevronUp, Check, X, HardDrive } from 'lucide-react'
 import { api } from '../../lib/api'
+import { useT } from '../../i18n'
 
 type DirEntry = { name: string; path: string; has_children: boolean }
 type DirListing = { path: string; parent: string | null; entries: DirEntry[] }
@@ -13,6 +14,7 @@ type Props = {
 }
 
 export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: Props) {
+  const { t } = useT()
   const [currentPath, setCurrentPath] = useState(initialPath)
 
   const { data, isLoading, error } = useQuery<DirListing>({
@@ -41,7 +43,7 @@ export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: 
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center gap-2">
             <HardDrive size={16} className="text-gray-500" />
-            <span className="text-sm font-semibold text-gray-900 dark:text-white">Ordner auswählen</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">{t('misc.folderSelect')}</span>
           </div>
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
             <X size={18} />
@@ -77,13 +79,13 @@ export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: 
         {/* Directory list */}
         <div className="flex-1 overflow-y-auto">
           {isLoading && (
-            <div className="flex justify-center py-8 text-gray-400 text-sm">Lade...</div>
+            <div className="flex justify-center py-8 text-gray-400 text-sm">{t('misc.loading')}</div>
           )}
           {error && (
-            <div className="px-4 py-3 text-sm text-red-500">Zugriff verweigert oder Verzeichnis nicht gefunden.</div>
+            <div className="px-4 py-3 text-sm text-red-500">{t('misc.accessDenied')}</div>
           )}
           {data?.entries.length === 0 && !isLoading && (
-            <div className="px-4 py-8 text-center text-sm text-gray-400">Keine Unterordner</div>
+            <div className="px-4 py-8 text-center text-sm text-gray-400">{t('misc.noSubfolders')}</div>
           )}
           {data?.entries.map((entry) => (
             <button
@@ -104,7 +106,7 @@ export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: 
         {/* Footer — current selection */}
         <div className="border-t border-gray-200 dark:border-gray-800 px-4 py-3 space-y-2">
           <p className="text-[10px] text-gray-400 dark:text-gray-500">
-            Aktueller Ordner (klicke auf Unterordner zum Navigieren):
+            {t('misc.currentFolderHint')}
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs text-indigo-600 dark:text-indigo-400 font-mono truncate bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/40 px-2 py-1.5 rounded">
@@ -115,7 +117,7 @@ export default function FolderBrowser({ onSelect, onClose, initialPath = '/' }: 
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
             >
               <Check size={14} />
-              Diesen wählen
+              {t('misc.chooseThis')}
             </button>
           </div>
         </div>
