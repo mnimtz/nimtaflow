@@ -49,6 +49,16 @@ private struct AutoUploadSection: View {
     var body: some View {
         Section("Automatischer Upload") {
             Toggle("Automatisch hochladen", isOn: $mgr.enabled)
+                .onChange(of: mgr.enabled) { _, on in
+                    // Default OFF; when the user turns it ON for the first time, only
+                    // upload photos from TODAY onward — never silently push the whole
+                    // library's history. The user can move the date back deliberately.
+                    if on && mgr.fromDateTS == 0 {
+                        let today = Calendar.current.startOfDay(for: Date())
+                        mgr.fromDate = today
+                        fromDate = today
+                    }
+                }
             if mgr.enabled {
                 DatePicker("Nur ab Datum", selection: $fromDate, displayedComponents: .date)
                     .onChange(of: fromDate) { _, d in mgr.fromDate = d }

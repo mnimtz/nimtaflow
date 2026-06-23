@@ -477,7 +477,7 @@ struct PhotoPager: View {
                 Menu {
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button { showAlbumPicker = true } label: { Label("Zu Album hinzufügen", systemImage: "rectangle.stack.badge.plus") }
-                    if !photos[index].is_video {
+                    if let c = cur, !c.is_video {
                         Button { showAnimate = true } label: { Label("Animieren / KI-Szene", systemImage: "sparkles") }
                     }
                     Button { Task { await loadProfileFaces() } } label: { Label("Als Personen-Titelbild", systemImage: "person.crop.circle.badge.checkmark") }
@@ -496,7 +496,7 @@ struct PhotoPager: View {
                     }
                 } label: { Image(systemName: "ellipsis.circle.fill").foregroundStyle(.white) }
                 .sheet(isPresented: $showAnimate) {
-                    AnimateSceneSheet(isPresented: $showAnimate, photoId: photos[index].id) { actionNote = "Animation gestartet — erscheint unter Highlights." }
+                    AnimateSceneSheet(isPresented: $showAnimate, photoId: cur?.id ?? 0) { actionNote = "Animation gestartet — erscheint unter Highlights." }
                         .presentationDetents([.medium, .large])
                 }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
@@ -532,8 +532,10 @@ struct PhotoPager: View {
         }
         .onChange(of: index) { _, _ in actionNote = nil }
         .sheet(isPresented: $showShare) {
-            ShareSheetView(target: .photo(id: photos[index].id, title: photos[index].filename))
-                .presentationDetents([.medium])
+            if let c = cur {
+                ShareSheetView(target: .photo(id: c.id, title: c.filename))
+                    .presentationDetents([.medium])
+            }
         }
         .sheet(isPresented: $showInfo) {
             if let p = photos[safe: index] { PhotoInfoView(photo: p).presentationDetents([.medium, .large]) }
@@ -568,6 +570,10 @@ struct PhotoPager: View {
         else { profileFaces = faces; showProfileDialog = true }
     }
 
+    /// The currently shown photo, bounds-safe — `photos` can shrink under the open
+    /// pager (trash/delete → parent removes the item), so never index it raw at
+    /// render time.
+    var cur: PhotoV1? { photos[safe: index] }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
     func toggleLocal() { let id = photos[index].id; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }

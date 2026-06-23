@@ -76,7 +76,12 @@ final class APIClient: ObservableObject {
         }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         do { return try JSONDecoder().decode(T.self, from: data) }
-        catch { throw APIError.decode }
+        catch {
+            #if DEBUG
+            print("[APIClient] decode failed for \(T.self): \(error)")
+            #endif
+            throw APIError.decode
+        }
     }
 
     @discardableResult
