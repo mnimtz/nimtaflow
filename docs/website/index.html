@@ -3,125 +3,278 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NimtaFlow — Deine eigene Foto-Cloud, selbst gehostet</title>
-<meta name="description" content="NimtaFlow ist eine selbst-gehostete Foto- und Videoverwaltung mit KI-Suche, Personen, Karte, Erinnerungen und iOS-App. Deine Daten bleiben auf deinem Server." />
+<title>NimtaFlow — Deine eigene Foto-Cloud. Selbst gehostet.</title>
+<meta name="description" content="NimtaFlow: selbst-gehostete Foto- & Videoverwaltung mit KI-Suche, Personen, Karte, Erinnerungen, Highlights und nativer iOS-App. Deine Daten bleiben auf deinem Server." />
 <link rel="icon" href="icon.png" />
+<link rel="apple-touch-icon" href="icon.png" />
+<meta name="theme-color" content="#0b0b0e" />
 <meta property="og:title" content="NimtaFlow — Deine eigene Foto-Cloud" />
-<meta property="og:description" content="Selbst-gehostete Foto-/Videoverwaltung mit KI, Personen, Karte & iOS-App. Deine Daten, deine Regeln." />
+<meta property="og:description" content="Selbst-gehostete Foto-/Videoverwaltung mit KI, Personen, Karte, Highlights & iOS-App. Deine Daten, deine Regeln." />
 <meta property="og:image" content="icon.png" />
+<meta property="og:type" content="website" />
 <style>
   :root{
-    --bg:#0b0b0e; --bg2:#121218; --card:#16161d; --line:rgba(232,181,74,.18);
-    --gold:#e8b54a; --gold2:#f6d488; --txt:#f3f0e9; --mut:#9a958c;
+    --bg:#0a0a0d; --bg2:#101017; --card:#15151d; --card2:#191922;
+    --line:rgba(232,181,74,.16); --line2:rgba(255,255,255,.06);
+    --gold:#e8b54a; --gold2:#f6d488; --goldd:#b6863a;
+    --txt:#f4f1ea; --mut:#9c978d; --mut2:#6f6b63;
+    --grad:linear-gradient(100deg,var(--goldd),var(--gold),var(--gold2));
   }
-  *{box-sizing:border-box} html{scroll-behavior:smooth}
-  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#1d1810 0%,var(--bg) 55%);
-    color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6}
-  a{color:var(--gold2);text-decoration:none} a:hover{color:var(--gold)}
-  .wrap{max-width:1040px;margin:0 auto;padding:0 1.25rem}
-  .gold{background:linear-gradient(90deg,var(--gold),var(--gold2));-webkit-background-clip:text;background-clip:text;color:transparent}
-  /* Hero */
-  header{padding:4.5rem 0 3rem;text-align:center}
-  header img.logo{width:min(420px,82vw);filter:drop-shadow(0 6px 30px rgba(232,181,74,.18))}
-  header p.tag{font-size:1.35rem;margin:.6rem 0 .2rem;font-weight:600}
-  header p.sub{color:var(--mut);max-width:640px;margin:.4rem auto 2rem;font-size:1.05rem}
-  .cta{display:inline-flex;gap:.6rem;align-items:center;justify-content:center;flex-wrap:wrap}
-  .btn{display:inline-block;padding:.8rem 1.4rem;border-radius:12px;font-weight:700;font-size:.98rem}
-  .btn-gold{background:linear-gradient(90deg,var(--gold),var(--gold2));color:#1a1407}
-  .btn-ghost{border:1px solid var(--line);color:var(--txt)}
-  .btn-ghost:hover{border-color:var(--gold)}
-  .hint{color:var(--mut);font-size:.82rem;margin-top:.7rem}
-  /* Sections */
-  section{padding:2.6rem 0;border-top:1px solid rgba(255,255,255,.05)}
-  h2{font-size:1.6rem;margin:.2rem 0 1.2rem}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem}
-  .feat{background:var(--card);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:1.2rem 1.25rem}
-  .feat .ic{font-size:1.5rem}
-  .feat h3{margin:.5rem 0 .35rem;font-size:1.08rem}
-  .feat p{margin:0;color:var(--mut);font-size:.95rem}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem}
-  @media(max-width:720px){.two{grid-template-columns:1fr}}
-  .panel{background:linear-gradient(180deg,var(--bg2),var(--card));border:1px solid var(--line);border-radius:18px;padding:1.6rem}
-  ul.checks{list-style:none;padding:0;margin:.6rem 0 0}
-  ul.checks li{padding:.25rem 0 .25rem 1.6rem;position:relative;color:var(--mut)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:
+      radial-gradient(900px 480px at 80% -8%,rgba(232,181,74,.10),transparent 60%),
+      radial-gradient(700px 420px at 8% 4%,rgba(232,181,74,.06),transparent 55%),
+      var(--bg);
+    color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 1.3rem}
+  .gold{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .muted{color:var(--mut)}
+
+  /* ── Top nav ── */
+  .nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+    background:rgba(10,10,13,.72);border-bottom:1px solid var(--line2)}
+  .nav .row{display:flex;align-items:center;gap:.5rem;height:62px}
+  .nav img{height:30px}
+  .nav .brand{font-weight:800;letter-spacing:.2px;font-size:1.05rem}
+  .nav .links{margin-left:auto;display:flex;gap:.25rem;align-items:center}
+  .tab{padding:.5rem .9rem;border-radius:10px;font-weight:600;font-size:.93rem;color:var(--mut);cursor:pointer;border:1px solid transparent;background:none}
+  .tab:hover{color:var(--txt)}
+  .tab.active{color:#1a1407;background:var(--grad)}
+  .nav .gh{padding:.5rem .9rem;border:1px solid var(--line);border-radius:10px;font-weight:700;font-size:.9rem;color:var(--gold2)}
+  .nav .gh:hover{border-color:var(--gold)}
+
+  /* ── Panels (registers) ── */
+  .panel{display:none;animation:fade .4s ease}
+  .panel.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* ── Hero ── */
+  .hero{text-align:center;padding:4.5rem 0 3rem}
+  .hero img{width:min(440px,84vw);filter:drop-shadow(0 10px 40px rgba(232,181,74,.18))}
+  .hero h1{font-size:clamp(1.5rem,4.4vw,2.4rem);font-weight:800;margin:1rem 0 .3rem;letter-spacing:-.5px}
+  .hero p.sub{color:var(--mut);max-width:640px;margin:.3rem auto 0;font-size:clamp(1rem,2.4vw,1.12rem)}
+  .cta{display:flex;gap:.65rem;justify-content:center;flex-wrap:wrap;margin-top:1.8rem}
+  .btn{padding:.85rem 1.5rem;border-radius:12px;font-weight:700;font-size:1rem;cursor:pointer;border:1px solid transparent;transition:.15s}
+  .btn-gold{background:var(--grad);color:#1a1407}
+  .btn-gold:hover{filter:brightness(1.06)}
+  .btn-ghost{border-color:var(--line);color:var(--txt)}
+  .btn-ghost:hover{border-color:var(--gold);color:var(--gold2)}
+  .hint{color:var(--mut2);font-size:.82rem;margin-top:.9rem}
+
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin:2.6rem 0 0}
+  .pill{background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:.9rem;text-align:center}
+  .pill .n{font-size:1.5rem}
+  .pill .l{font-size:.82rem;color:var(--mut);margin-top:.2rem}
+
+  section.block{padding:2.4rem 0;border-top:1px solid var(--line2)}
+  .eyebrow{display:inline-block;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+    border:1px solid var(--line);border-radius:999px;padding:.28rem .8rem;margin-bottom:.9rem}
+  h2{font-size:clamp(1.4rem,3.4vw,1.9rem);font-weight:800;letter-spacing:-.4px;margin-bottom:.5rem}
+  .lead{color:var(--mut);max-width:680px;margin-bottom:1.6rem}
+
+  /* ── Feature cards ── */
+  .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:1rem}
+  .fc{position:relative;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line2);
+    border-radius:18px;padding:1.4rem;transition:.18s}
+  .fc:hover{border-color:var(--line);transform:translateY(-3px);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+  .fc .ic{width:42px;height:42px;display:grid;place-items:center;border-radius:11px;font-size:1.3rem;
+    background:rgba(232,181,74,.12);border:1px solid var(--line);margin-bottom:.7rem}
+  .fc h3{font-size:1.12rem;margin-bottom:.35rem}
+  .fc p{color:var(--mut);font-size:.95rem}
+  .fc ul{list-style:none;margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.4rem}
+  .fc ul li{font-size:.78rem;color:var(--gold2);background:rgba(232,181,74,.08);border:1px solid var(--line);border-radius:7px;padding:.15rem .5rem}
+
+  /* ── Download / steps ── */
+  .two{display:grid;grid-template-columns:1.1fr .9fr;gap:1.4rem}
+  @media(max-width:760px){.two{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;padding:1.6rem}
+  ol.steps{list-style:none;counter-reset:s;margin-top:.4rem}
+  ol.steps li{counter-increment:s;position:relative;padding:.55rem 0 .55rem 2.4rem;color:var(--mut);border-bottom:1px solid var(--line2)}
+  ol.steps li:last-child{border-bottom:none}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:.5rem;width:1.7rem;height:1.7rem;
+    display:grid;place-items:center;border-radius:8px;background:var(--grad);color:#1a1407;font-weight:800;font-size:.85rem}
+  ol.steps b{color:var(--txt)}
+  pre{background:#0c0c11;border:1px solid var(--line2);border-radius:12px;padding:.9rem 1rem;overflow:auto;margin-top:.7rem}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;color:var(--gold2)}
+  ul.checks{list-style:none;margin-top:.5rem}
+  ul.checks li{padding:.28rem 0 .28rem 1.6rem;position:relative;color:var(--mut)}
   ul.checks li::before{content:"✓";position:absolute;left:0;color:var(--gold);font-weight:800}
-  code{background:rgba(232,181,74,.12);color:var(--gold2);padding:.12em .4em;border-radius:6px;font-size:.9em}
-  footer{padding:2.4rem 0 3rem;color:var(--mut);font-size:.88rem;text-align:center;border-top:1px solid rgba(255,255,255,.05)}
-  footer a{margin:0 .5rem}
-  .badge{display:inline-block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);
-    border:1px solid var(--line);border-radius:999px;padding:.25rem .7rem;margin-bottom:1rem}
+
+  footer{padding:2.6rem 0 3.2rem;border-top:1px solid var(--line2);text-align:center;color:var(--mut)}
+  footer img{height:34px;opacity:.92;margin-bottom:.6rem}
+  footer .fl{display:flex;gap:1.1rem;justify-content:center;flex-wrap:wrap;margin:.4rem 0 .8rem;font-size:.9rem}
+  footer .fl a:hover{color:var(--gold2)}
+  footer .cp{font-size:.8rem;color:var(--mut2)}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="wrap">
-    <img class="logo" src="logo.png" alt="NimtaFlow" />
-    <p class="tag">Deine eigene Foto-Cloud. <span class="gold">Selbst gehostet.</span></p>
-    <p class="sub">NimtaFlow verwaltet deine Fotos &amp; Videos auf <strong>deiner eigenen</strong> Hardware —
-      mit KI-Suche, Gesichtserkennung, Karte und Erinnerungen. Kein Abo, kein fremder Cloud-Anbieter,
-      keine Auswertung deiner Daten. Mit Web-Oberfläche <strong>und</strong> nativer iOS-App.</p>
-    <div class="cta">
-      <a class="btn btn-gold" href="https://github.com/mnimtz/nimtaflow">★ Auf GitHub ansehen</a>
-      <a class="btn btn-ghost" href="#features">Funktionen</a>
-      <a class="btn btn-ghost" href="https://login.nimtaflow.com">Zum Login</a>
-    </div>
-    <p class="hint">iOS-App: in Vorbereitung für den App Store · Server &amp; App sind Open Source.</p>
+<!-- NAV -->
+<div class="nav"><div class="wrap row">
+  <img src="logo.png" alt="NimtaFlow" />
+  <div class="links">
+    <button class="tab active" data-t="start">Start</button>
+    <button class="tab" data-t="features">Funktionen</button>
+    <button class="tab" data-t="download">Download</button>
+    <a class="gh" href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">GitHub ★</a>
   </div>
-</header>
+</div></div>
 
-<section id="features">
-  <div class="wrap">
-    <span class="badge">Funktionen</span>
-    <h2>Alles für deine Mediathek — <span class="gold">auf deinem Server</span></h2>
-    <div class="grid">
-      <div class="feat"><div class="ic">🔒</div><h3>Selbst gehostet &amp; privat</h3><p>Läuft auf deiner Hardware (Docker). Originale bleiben unangetastet. Kein Tracking, keine Werbung, kein Datenverkauf.</p></div>
-      <div class="feat"><div class="ic">🔎</div><h3>KI-Suche &amp; Foto-Chat</h3><p>Finde Fotos in natürlicher Sprache („Lea am Strand 2023") — optional, lokal oder per konfiguriertem KI-Anbieter.</p></div>
-      <div class="feat"><div class="ic">🙂</div><h3>Personen &amp; Beziehungen</h3><p>Automatische Gesichtserkennung &amp; Gruppierung, mit Bestätigungs-Vorschlägen und Familien-Graph.</p></div>
-      <div class="feat"><div class="ic">🗺️</div><h3>Karte &amp; Reisen</h3><p>Sieh, wo deine Aufnahmen entstanden sind — inklusive Reiserouten und Orten.</p></div>
-      <div class="feat"><div class="ic">✨</div><h3>Highlights &amp; „Foto animieren"</h3><p>Automatische Rückblick-Videos und KI-Clips aus einzelnen Bildern (optional).</p></div>
-      <div class="feat"><div class="ic">📱</div><h3>iOS-App</h3><p>Native App mit Upload (manuell &amp; automatisch), Galerie, Suche, Karte &amp; mehr — verbindet sich mit deinem Server.</p></div>
+<div class="wrap">
+
+  <!-- ───────── START ───────── -->
+  <div class="panel active" id="start">
+    <div class="hero">
+      <img src="logo.png" alt="NimtaFlow" />
+      <h1>Deine eigene Foto-Cloud. <span class="gold">Selbst gehostet.</span></h1>
+      <p class="sub">Verwalte deine Fotos &amp; Videos auf <strong>deiner eigenen</strong> Hardware — mit KI-Suche,
+        Gesichtserkennung, Karte und Erinnerungen. Kein Abo, kein fremder Cloud-Anbieter, keine Auswertung deiner Daten.
+        Web-Oberfläche <strong>und</strong> native iOS-App.</p>
+      <div class="cta">
+        <button class="btn btn-gold" data-t="download">Loslegen</button>
+        <button class="btn btn-ghost" data-t="features">Funktionen ansehen</button>
+        <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener">Zum Login</a>
+      </div>
+      <p class="hint">Open Source · iOS-App in Vorbereitung für den App Store</p>
+
+      <div class="strip">
+        <div class="pill"><div class="n">🔒</div><div class="l">100 % selbst gehostet</div></div>
+        <div class="pill"><div class="n">🤖</div><div class="l">KI-Suche &amp; Chat</div></div>
+        <div class="pill"><div class="n">📱</div><div class="l">Native iOS-App</div></div>
+        <div class="pill"><div class="n">🌍</div><div class="l">DE / EN</div></div>
+        <div class="pill"><div class="n">⭐</div><div class="l">Open Source</div></div>
+      </div>
     </div>
+
+    <section class="block">
+      <span class="eyebrow">Warum NimtaFlow</span>
+      <h2>Deine Erinnerungen gehören <span class="gold">dir</span></h2>
+      <p class="lead">Große Foto-Dienste leben von deinen Daten. NimtaFlow dreht das um: alles läuft auf deinem Server,
+        Originale bleiben unangetastet, und moderne Features bekommst du trotzdem.</p>
+      <div class="feats">
+        <div class="fc"><div class="ic">🏠</div><h3>Auf deiner Hardware</h3><p>Läuft per Docker auf Heimserver, NAS oder Mini-PC. Deine Fotos verlassen dein Netzwerk nicht.</p></div>
+        <div class="fc"><div class="ic">🛡️</div><h3>Privat by Design</h3><p>Kein Tracking, keine Werbung, kein Datenverkauf. Optionale KI nur per Opt-in und nur für das gewählte Bild.</p></div>
+        <div class="fc"><div class="ic">⚡</div><h3>Schnell &amp; modern</h3><p>Schnelle Galerie, Caching, flüssiges Blättern, Web + App aus einer Quelle.</p></div>
+      </div>
+    </section>
   </div>
-</section>
 
-<section>
-  <div class="wrap two">
-    <div class="panel">
-      <span class="badge">Deine Daten</span>
-      <h2 style="margin-top:.2rem">Deine Regeln</h2>
-      <p style="color:var(--mut)">Standardmäßig verlässt nichts deinen Server.</p>
-      <ul class="checks">
-        <li>Fotos, Videos &amp; Metadaten bleiben bei dir</li>
-        <li>Optionale KI nur per Opt-in &amp; nur das ausgewählte Bild</li>
-        <li>Mehrbenutzer mit feiner Zugriffssteuerung (Ordner/Personen/Funktionen)</li>
-        <li>Zweisprachig (Deutsch/Englisch), App &amp; Web</li>
-      </ul>
-    </div>
-    <div class="panel">
-      <span class="badge">Open Source</span>
-      <h2 style="margin-top:.2rem">Transparent &amp; selbst betreibbar</h2>
-      <p style="color:var(--mut)">Server &amp; App sind quelloffen. Hol dir den Code, betreibe deine eigene Instanz, passe alles an.</p>
-      <p style="margin-top:1rem">
-        <a class="btn btn-gold" href="https://github.com/mnimtz/nimtaflow">github.com/mnimtz/nimtaflow</a>
-      </p>
-      <p class="hint">Start mit <code>docker compose up -d</code> + deinen Foto-Ordnern.</p>
-    </div>
+  <!-- ───────── FUNKTIONEN ───────── -->
+  <div class="panel" id="features">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow">Funktionen</span>
+      <h2>Alles für deine Mediathek</h2>
+      <p class="lead">Von der automatischen Indexierung bis zur KI — übersichtlich, schnell, auf deinem Server.</p>
+      <div class="feats">
+
+        <div class="fc"><div class="ic">📚</div><h3>Bibliothek &amp; Quellen</h3>
+          <p>Beliebig viele beobachtete Ordner mit automatischem Re-Scan. Originale werden nur gelesen, nie verändert.</p>
+          <ul><li>Ordner-Watching</li><li>Lösch-Erkennung</li><li>Read-only Originale</li></ul></div>
+
+        <div class="fc"><div class="ic">🔎</div><h3>KI-Suche &amp; Foto-Chat</h3>
+          <p>Finde Fotos in natürlicher Sprache („Lea am Strand 2023"). Frag deine Mediathek im Chat — optional, lokal oder per KI-Anbieter.</p>
+          <ul><li>Semantische Suche</li><li>Foto-Chat</li><li>Auto-Beschreibungen</li></ul></div>
+
+        <div class="fc"><div class="ic">🙂</div><h3>Personen &amp; Beziehungen</h3>
+          <p>Automatische Gesichtserkennung &amp; Gruppierung mit Bestätigungs-Vorschlägen. Pflege einen Familien-/Beziehungsgraphen.</p>
+          <ul><li>Gesichtserkennung</li><li>Vorschläge</li><li>Stammbaum</li></ul></div>
+
+        <div class="fc"><div class="ic">🗺️</div><h3>Karte &amp; Reisen</h3>
+          <p>Sieh auf der Karte, wo deine Aufnahmen entstanden sind — inklusive automatisch erkannter Reisen &amp; Routen.</p>
+          <ul><li>GPS-Karte</li><li>Reiserouten</li><li>Orte</li></ul></div>
+
+        <div class="fc"><div class="ic">✨</div><h3>Erinnerungen &amp; Highlights</h3>
+          <p>„Heute vor X Jahren", automatische Rückblick-Videos und „Foto animieren" — KI-Clips aus einzelnen Bildern.</p>
+          <ul><li>Erinnerungen</li><li>Highlight-Videos</li><li>Foto animieren</li></ul></div>
+
+        <div class="fc"><div class="ic">📱</div><h3>iOS-App &amp; Upload</h3>
+          <p>Native App: Galerie, Suche, Karte, Chat — plus Upload (manuell &amp; automatisch ab Datum) direkt in deinen eigenen Ordner.</p>
+          <ul><li>SwiftUI</li><li>Auto-Upload</li><li>Hintergrund-Sync</li></ul></div>
+
+        <div class="fc"><div class="ic">👥</div><h3>Mehrbenutzer &amp; Rechte</h3>
+          <p>Mehrere Konten mit feiner Zugriffssteuerung: Ordner, Personen, Datumsbereiche und Funktions-Schalter pro Nutzer.</p>
+          <ul><li>Pro-User-Zugriff</li><li>Demo-Konto</li><li>Feature-Flags</li></ul></div>
+
+        <div class="fc"><div class="ic">🌐</div><h3>Zweisprachig</h3>
+          <p>Komplette Oberfläche in Deutsch &amp; Englisch — automatische Browser-Erkennung plus manueller Umschalter.</p>
+          <ul><li>DE / EN</li><li>Auto-Erkennung</li><li>Umschalter</li></ul></div>
+
+        <div class="fc"><div class="ic">⭐</div><h3>Open Source</h3>
+          <p>Server &amp; App sind quelloffen. Transparent, anpassbar, selbst betreibbar — keine Blackbox.</p>
+          <ul><li>GitHub</li><li>Docker</li><li>Self-hosted</li></ul></div>
+
+      </div>
+    </section>
   </div>
-</section>
 
+  <!-- ───────── DOWNLOAD ───────── -->
+  <div class="panel" id="download">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow">Download &amp; Installation</span>
+      <h2>In wenigen Minuten startklar</h2>
+      <p class="lead">NimtaFlow läuft per Docker auf deiner eigenen Hardware. Hol dir den Code von GitHub und starte deine Instanz.</p>
+      <div class="two">
+        <div class="card">
+          <h3 style="margin-bottom:.3rem">Schnellstart (Docker)</h3>
+          <ol class="steps">
+            <li><b>Repository holen</b> — klone das Projekt von GitHub.</li>
+            <li><b>.env anlegen</b> — kopiere <code>.env.example</code> und setze Passwort &amp; Foto-Pfad.</li>
+            <li><b>Starten</b> — <code>docker compose up -d</code> baut &amp; startet alles.</li>
+            <li><b>Quellen hinzufügen</b> — im Web deine Foto-Ordner eintragen; Indexierung läuft automatisch.</li>
+            <li><b>iOS-App</b> verbinden — Server-URL eintragen, anmelden, fertig.</li>
+          </ol>
+          <pre><code>git clone https://github.com/mnimtz/nimtaflow.git
+cd nimtaflow
+cp .env.example .env   # Passwort + PHOTOS_PATH setzen
+docker compose up -d</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:.3rem">Voraussetzungen</h3>
+          <ul class="checks">
+            <li>Docker &amp; Docker Compose</li>
+            <li>Ein Verzeichnis mit deinen Fotos/Videos</li>
+            <li>Optional: GPU für schnellere lokale KI</li>
+            <li>Optional: KI-Schlüssel (Gemini/OpenAI) für Cloud-KI</li>
+          </ul>
+          <div class="cta" style="justify-content:flex-start;margin-top:1.4rem">
+            <a class="btn btn-gold" href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">Auf GitHub →</a>
+            <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener">Live-Login</a>
+          </div>
+          <p class="hint">iOS-App: in Vorbereitung für den App Store. Bis dahin via TestFlight / eigener Build.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
 <footer>
   <div class="wrap">
-    <img src="icon.png" alt="" style="width:40px;opacity:.9;vertical-align:middle" />
-    <p>
-      <a href="https://login.nimtaflow.com">Login</a> ·
-      <a href="https://login.nimtaflow.com/privacy.html">Datenschutz</a> ·
-      <a href="https://github.com/mnimtz/nimtaflow">GitHub</a> ·
+    <img src="icon.png" alt="NimtaFlow" />
+    <div class="fl">
+      <a href="https://login.nimtaflow.com" target="_blank" rel="noopener">Login</a>
+      <a href="https://login.nimtaflow.com/privacy.html" target="_blank" rel="noopener">Datenschutz</a>
+      <a href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">GitHub</a>
       <a href="mailto:marcus@nimtz.email">Kontakt</a>
-    </p>
-    <p>© 2026 NimtaFlow · Selbst-gehostete Foto- &amp; Videoverwaltung</p>
+    </div>
+    <div class="cp">© 2026 NimtaFlow · Selbst-gehostete Foto- &amp; Videoverwaltung</div>
   </div>
 </footer>
 
+<script>
+  // Register/Tab switching (Start · Funktionen · Download) + CTA buttons with data-t.
+  const panels = document.querySelectorAll('.panel');
+  const tabs = document.querySelectorAll('.tab');
+  function show(id){
+    panels.forEach(p=>p.classList.toggle('active', p.id===id));
+    tabs.forEach(t=>t.classList.toggle('active', t.dataset.t===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('[data-t]').forEach(el=>el.addEventListener('click',()=>show(el.dataset.t)));
+</script>
 </body>
 </html>
