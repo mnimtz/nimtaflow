@@ -31,6 +31,21 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-400">Lädt…</div>
   }
   if (status?.needs_setup) return <SetupPage />
+
+  // Auth gate: when login is enforced and there's no session token, render ONLY the
+  // login (and public share) — never the app shell. Prevents the brief "flash" of the
+  // navigation/registers before the 401-redirect would kick in. (Data is already
+  // API-protected; this also removes the security-optics leak of the empty shell.)
+  const authed = !!localStorage.getItem('access_token')
+  if (status?.enforce && !authed) {
+    return (
+      <Routes>
+        <Route path="/s/:token" element={<PublicSharePage />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    )
+  }
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

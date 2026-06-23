@@ -4,6 +4,10 @@
 > NICHT auf projekt-gebundene Auto-Memory verlassen — die ist pro Ordner unterschiedlich.
 > Bei neuem Stand: hier aktualisieren + committen.
 
+
+### 🌐 Domain
+- **nimtaflow.com** registriert (Stand 2026-06-23) — vorgemerkt für Landing/Marketing bzw. künftig Server-URL. Aktueller Demo-/App-Server bleibt vorerst `foto.marcusnimtz.de`.
+
 ## Große Feature-Kampagne (15 Punkte, blockweise, jeweils deployen)
 
 ### Entscheidungen des Users
