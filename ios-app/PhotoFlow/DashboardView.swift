@@ -10,15 +10,18 @@ struct DashboardView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var selected: PhotoV1?
+    @State private var userName = ""
 
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
+        let base: String
         switch h {
-        case 5..<11:  return "Guten Morgen"
-        case 11..<17: return "Hallo"
-        case 17..<22: return "Guten Abend"
-        default:      return "Gute Nacht"
+        case 5..<11:  base = "Guten Morgen"
+        case 11..<17: base = "Hallo"
+        case 17..<22: base = "Guten Abend"
+        default:      base = "Gute Nacht"
         }
+        return userName.isEmpty ? base : "\(base), \(userName)"
     }
 
     var body: some View {
@@ -44,7 +47,12 @@ struct DashboardView: View {
                 }
                 if loading && data == nil { ProgressView().padding(.top, 80) }
             }
-            .navigationTitle("NimtaFlow")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Image("Logo").resizable().scaledToFit().frame(height: 26)
+                }
+            }
             .navigationDestination(for: PersonV1.self) { PersonDetailView(person: $0) }
             .navigationDestination(for: AlbumV1.self) { AlbumDetailView(album: $0) }
             .refreshable { await load() }
@@ -222,5 +230,9 @@ struct DashboardView: View {
         loading = true; defer { loading = false }
         do { data = try await api.dashboard(); error = nil }
         catch { self.error = "Start-Seite konnte nicht geladen werden." }
+        if userName.isEmpty {
+            let n = await api.meName()
+            if !n.isEmpty { userName = n.split(separator: " ").first.map(String.init) ?? n }
+        }
     }
 }

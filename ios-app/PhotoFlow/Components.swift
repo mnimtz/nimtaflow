@@ -177,8 +177,8 @@ struct PhotoGridView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 8).padding(.vertical, 6)
-                .onChange(of: sort?.wrappedValue) { _ in onControlsChange?() }
-                .onChange(of: mediaFilter?.wrappedValue) { _ in onControlsChange?() }
+                .onChange(of: sort?.wrappedValue) { _, _ in onControlsChange?() }
+                .onChange(of: mediaFilter?.wrappedValue) { _, _ in onControlsChange?() }
             }
             LazyVGrid(columns: cols, spacing: 2) {
                 ForEach(photos) { p in

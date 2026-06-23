@@ -264,6 +264,11 @@ final class APIClient: ObservableObject {
 
     // MARK: Memories
     func memories() async throws -> [MemoryGroupV1] { try await get("api/v1/memories", as: [MemoryGroupV1].self) }
+    /// Display name of the logged-in user (for the dashboard greeting). Empty on failure.
+    func meName() async -> String {
+        struct M: Decodable { let name: String }
+        return (try? await get("api/auth/me", as: M.self))?.name ?? ""
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

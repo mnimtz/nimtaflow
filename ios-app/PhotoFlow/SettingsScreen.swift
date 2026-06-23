@@ -30,7 +30,11 @@ struct SettingsScreen: View {
                 }
                 if api.loggedIn { AutoUploadSection() }
                 if api.loggedIn { HighlightsAISection() }
-                Section { Text("NimtaFlow iOS · v1.0") .font(.caption).foregroundStyle(.secondary) }
+                Section {
+                    let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+                    Text("NimtaFlow iOS · v\(v) (\(b))").font(.caption).foregroundStyle(.secondary)
+                }
             }
             .navigationTitle("Einstellungen")
             .onAppear { serverDraft = api.serverURL }

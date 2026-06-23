@@ -28,13 +28,20 @@ export default function DashboardPage() {
     queryFn: () => api.get('/v1/dashboard').then(r => r.data),
     staleTime: 60_000,
   })
+  const { data: me } = useQuery<{ name: string }>({
+    queryKey: ['me'],
+    queryFn: () => api.get('/auth/me').then(r => r.data),
+    staleTime: 300_000, retry: false,
+  })
 
   if (isLoading) return <div className="flex justify-center py-24 text-zinc-500">{t('dashboard.loading')}</div>
   if (!data) return null
 
+  const firstName = (me?.name || '').trim().split(' ')[0]
   const greeting = (() => {
     const h = new Date().getHours()
-    return h < 5 ? t('dashboard.greetGoodNight') : h < 11 ? t('dashboard.greetGoodMorning') : h < 17 ? t('dashboard.greetHello') : h < 22 ? t('dashboard.greetGoodEvening') : t('dashboard.greetGoodNight')
+    const g = h < 5 ? t('dashboard.greetGoodNight') : h < 11 ? t('dashboard.greetGoodMorning') : h < 17 ? t('dashboard.greetHello') : h < 22 ? t('dashboard.greetGoodEvening') : t('dashboard.greetGoodNight')
+    return firstName ? `${g}, ${firstName}` : g
   })()
 
   const Tile = ({ p }: { p: Ph }) => (

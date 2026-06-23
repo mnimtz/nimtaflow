@@ -234,8 +234,8 @@ struct PersonDetailView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 8)
-                .onChange(of: sort) { _ in Task { await reloadPhotos() } }
-                .onChange(of: mediaFilter) { _ in Task { await reloadPhotos() } }
+                .onChange(of: sort) { _, _ in Task { await reloadPhotos() } }
+                .onChange(of: mediaFilter) { _, _ in Task { await reloadPhotos() } }
 
                 LazyVGrid(columns: cols, spacing: 2) {
                     ForEach(photos) { p in
