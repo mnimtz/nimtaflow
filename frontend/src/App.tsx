@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from './lib/api'
+import { api, getToken } from './lib/api'
 import SetupPage from './pages/SetupPage'
 import Layout from './components/layout/Layout'
 import DashboardPage from './pages/DashboardPage'
@@ -36,7 +36,7 @@ export default function App() {
   // login (and public share) — never the app shell. Prevents the brief "flash" of the
   // navigation/registers before the 401-redirect would kick in. (Data is already
   // API-protected; this also removes the security-optics leak of the empty shell.)
-  const authed = !!localStorage.getItem('access_token')
+  const authed = !!getToken()
   if (status?.enforce && !authed) {
     return (
       <Routes>

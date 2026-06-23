@@ -4,14 +4,14 @@ import ErrorBoundary from '../ErrorBoundary'
 import { Images, Users, Map, Activity, Gauge, Settings, Sun, Moon, BookImage, Sparkles, MessageCircle, LogOut, LogIn, Network, UserCircle, Plane, Home , Clapperboard, Menu, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../store/theme'
-import { api } from '../../lib/api'
+import { api, getToken, clearTokens } from '../../lib/api'
 import { useT } from '../../i18n'
 import LanguageSwitcher from '../LanguageSwitcher'
 import clsx from 'clsx'
 
 function UserBadge() {
   const { t } = useT()
-  const hasToken = !!localStorage.getItem('access_token')
+  const hasToken = !!getToken()
   const { data: me } = useQuery<{ id: number; name: string; role: string; avatar_path: string | null }>({
     queryKey: ['me'],
     queryFn: () => api.get('/auth/me').then(r => r.data),
@@ -20,8 +20,7 @@ function UserBadge() {
     staleTime: 300_000,
   })
   const logout = () => {
-    localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token')
-    document.cookie = 'pf_token=; path=/; max-age=0'
+    clearTokens()
     window.location.href = '/login'
   }
   if (!me) {
@@ -91,7 +90,7 @@ export default function Layout() {
   const { dark, toggle } = useTheme()
   const { t } = useT()
   const [moreOpen, setMoreOpen] = useState(false)
-  const hasToken = !!localStorage.getItem('access_token')
+  const hasToken = !!getToken()
   const { data: me } = useQuery<Me>({
     queryKey: ['me'], queryFn: () => api.get('/auth/me').then(r => r.data),
     enabled: hasToken, retry: false, staleTime: 300_000,
