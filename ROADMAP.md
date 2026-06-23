@@ -22,20 +22,25 @@
 - **TestFlight**: 2 Builds hochgeladen (Memories/Highlights-Fix; danach NimtaFlow-Rebrand).
 
 ### ⚠️ Security-Backlog (Audit-Funde, NICHT blind über Nacht gefixt — teils Produktentscheidung)
-Ein eingeloggter **eingeschränkter User (Demo)** kann aktuell noch (alles `app/api/routes/` bzw. `api/v1/router.py`):
-- **H2** Personen-Management ausführen (rename/merge/**delete**/hide/face-assign) → datenzerstörend; sollte admin-only sein (`people.py`).
-- **C1** Personen-Liste/Detail + **Face-Crops/Avatare** fremder Fotos lesen (`people.py`, kein `user`/`can_see_photo`).
-- **C3** Relationships-Graph + `together/{a}/{b}`-**Fotos** ungefiltert (`relationships.py`, auch `/v1/relationships`).
-- **C4/C5** Album-Namen/Cover-Existenz + **`/stats`** (Gesamtzahl/Datumsspanne/Kameras der ganzen Bibliothek) ungefiltert (`albums.py`, `photos.py get_stats`, v1 stats/dashboard).
-- **H3** **Shares**: Demo kann öffentlichen Link auf FREMDE Alben/Fotos erstellen (Whitelist-Umgehung!) + alle Share-Tokens listen/löschen (`shares.py`).
-- **H4** Feature-Flags `allow_map`/`allow_share`/`allow_pipeline` werden serverseitig NICHT durchgesetzt (nur `allow_download`).
-- **M*** preview/sprite/transcode/upload/chat teils ohne ACL.
-- Muster: `user=Depends(current_user_optional)` fehlt; delegierte Funktionen (`get_stats`, `relationships.graph`, `list_people`) ohne `user` → auch v1-Wrapper ungefiltert. Fix-Reihenfolge im Abschlussbericht.
+**✅ GEFIXT & verifiziert (v1.296–1.298)** — alle gegen Demo- vs. Admin-Token getestet:
+- **H1** destruktive Foto-IDOR (favorite/archive/rating/trash/delete/meta/reprocess/batch + v1) → `can_see_photo` (v1.296). Demo bekommt 404.
+- **H2** Personen-Management (rename/merge/delete/…) → Write-Guard, Demo 403 (v1.297).
+- **H3** Shares: Create geblockt (403), Liste nur eigene (v1.297).
+- **C5** `/stats` per `photo_conditions` gescoped → Demo total_indexed=0, Admin 139712 (v1.297).
+- **C1** People list/get/avatar/faces/crop → Demo 0/404, Admin voll (v1.298).
+- **C3** Relationships Graph/for_person leer für Demo; together-Fotos gefiltert (v1.298).
+- **C4** Albums list/get nur mit ≥1 sichtbarem Foto → Demo 0, Admin 2 (v1.298).
+- **transcode-CRITICAL** an Worker delegiert (0,04s statt 600s-Blockade) (v1.298).
+- **fs/sources** (Ordner-Browser „Quelle hinzufügen") → Demo 403 verifiziert (war schon v1.291 require_admin; jetzt bestätigt: kein Leak fremder Ordnernamen).
+
+**⚠️ Security-Rest (klein):**
+- **H4** Feature-Flags `allow_map` (low — Daten ohnehin gescoped) + `allow_pipeline` auf den bibliotheksweiten Pipeline-POSTs (reprocess-failed/scan-metadata/…; DoS, nicht Leak). `allow_share` ist via Write-Guard de facto durchgesetzt.
+- **M*** `/photos/{id}/preview` + `/sprite.jpg|vtt` (Video-Vorschau-Bildinhalt) ohne `can_see_photo`; `/v1/upload`, `/v1/chat` ACL.
 
 ### ⚠️ Weitere Code-Check-Funde (nicht Security)
-- **Backend CRITICAL**: `photos.py` `transcode_video`-Endpoint (~Z.887) läuft `subprocess.run` (bis 2×600s) mit **offener DB-Session** → asyncpg-Starvation/idle-in-transaction-Timeout. Auf Worker-Task delegieren (Worker macht's korrekt).
-- **iOS**: `GalleryView` Masonry/Justified nutzen `GeometryReader` in `LazyVStack` mit Höhe aus `UIScreen.width` (≠ geo.width) → Clipping/Pagination-Bug (gleiche Klasse wie der gefixte Highlights-Bug); `showAnimate`-`.sheet` am `Menu` (mehrere Sheets); `PhotoPager` `photos[index]` ohne `[safe:]` → OOB-Crash-Risiko bei Mutation; `APIError.decode` verschluckt `DecodingError` (Debug-Print empfohlen).
-- **Backend medium**: `albums.py` `datetime.utcnow()` (naiv) in timestamptz.
+- ✅ **transcode-CRITICAL** gefixt (s.o.).
+- **iOS** (offen): `GalleryView` Masonry/Justified `GeometryReader` in `LazyVStack` (Höhe aus `UIScreen.width` ≠ geo) → Clipping/Pagination; `showAnimate`-`.sheet` am `Menu`; `PhotoPager` `photos[index]` ohne `[safe:]` → OOB-Crash-Risiko; `APIError.decode` verschluckt `DecodingError` (Debug-Print).
+- **Backend medium** (offen): `albums.py` `datetime.utcnow()` (naiv) in timestamptz.
 
 ### ✅ Erledigt (deployed)
 - **App-Store-Listing-Texte (Doku)**: `docs/appstore-listing.md` — Name/Subtitle/Beschreibung (DE+EN, inkl. **Open-Source-/GitHub-Verweis**), Keywords, „Was ist neu", URLs, **Review-Notizen** (Self-Hosted-Client, eigene/nicht-statische Server-URL, Demo-Server+Login), App-Privacy-Angaben. ⚠️ Vor GitHub-public: **CLAUDE.md ist in der History** (interne Infra/SSH/IPs) → nicht so veröffentlichen; sauberen Weg siehe Chat. Demo-PW steht in der Doku (bei public sichtbar).
