@@ -4,17 +4,41 @@ export const api = axios.create({
   baseURL: '/api',
 })
 
+// Token storage: "remember me" → localStorage (persists across browser restarts),
+// otherwise sessionStorage (cleared when the browser closes). Reads check both so
+// the rest of the app doesn't care which was used.
+export function getToken(): string | null {
+  return localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
+}
+function getRefresh(): string | null {
+  return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token')
+}
+/** Persist tokens to the chosen storage (and clear the other). */
+export function setTokens(access: string, refresh: string, remember = true) {
+  const keep = remember ? localStorage : sessionStorage
+  const drop = remember ? sessionStorage : localStorage
+  keep.setItem('access_token', access); keep.setItem('refresh_token', refresh)
+  drop.removeItem('access_token'); drop.removeItem('refresh_token')
+  syncAuthCookie()
+}
+export function clearTokens() {
+  for (const s of [localStorage, sessionStorage]) {
+    s.removeItem('access_token'); s.removeItem('refresh_token')
+  }
+  syncAuthCookie()
+}
+
 // Mirror the access token into a cookie so <img>/AsyncImage requests (thumbnails,
 // avatars, face crops) authenticate too — they can't send an Authorization header.
 export function syncAuthCookie() {
-  const t = localStorage.getItem('access_token')
+  const t = getToken()
   if (t) document.cookie = `pf_token=${t}; path=/; max-age=2592000; SameSite=Lax`
   else document.cookie = 'pf_token=; path=/; max-age=0'
 }
 syncAuthCookie()
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
+  const token = getToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -23,19 +47,17 @@ api.interceptors.response.use(
   (r) => r,
   async (error) => {
     if (error.response?.status === 401) {
-      const refresh = localStorage.getItem('refresh_token')
+      const refresh = getRefresh()
       if (refresh) {
+        // Preserve the user's "remember me" choice on refresh.
+        const remember = !!localStorage.getItem('refresh_token')
         try {
           const res = await axios.post('/api/auth/refresh', null, { params: { refresh_token: refresh } })
-          localStorage.setItem('access_token', res.data.access_token)
-          localStorage.setItem('refresh_token', res.data.refresh_token)
-          syncAuthCookie()
+          setTokens(res.data.access_token, res.data.refresh_token, remember)
           error.config.headers.Authorization = `Bearer ${res.data.access_token}`
           return api.request(error.config)
         } catch {
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          syncAuthCookie()
+          clearTokens()
           if (window.location.pathname !== '/login') window.location.href = '/login'
         }
       } else if (window.location.pathname !== '/login') {
