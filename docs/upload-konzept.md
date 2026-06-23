@@ -74,7 +74,53 @@ Upload **in den Whitelist-Ordner** des Users, ist das Foto für ihn automatisch 
 4. Verifikation: Demo lädt hoch → landet in `/photos/Demo/Upload/...`, ist für Demo sichtbar,
    NICHT für andere; Admin-Upload nach `/photos/Upload/...`.
 
-## Offene Produktentscheidungen
-- **Ordner-Layout:** `Upload/YYYY/YYYY-MM/` (empfohlen) vs. flach `Upload/`.
-- **Admin-Default-Ablage:** `/photos/Upload` ok? (oder eigener Source-Root?)
-- **Darf der Demo-User überhaupt hochladen?** (für App-Store-Demo evtl. ja, in seinen Ordner.)
+## Entschieden
+- **Ordner-Layout:** `Upload/YYYY/YYYY-MM/` ✅
+- **Upload-Ordner wird dynamisch angelegt** unter dem erlaubten Ordner des Users:
+  erlaubt `/photos/demouser/` → `/photos/demouser/Upload/2026/2026-06/…`.
+  Jeder User schreibt ausschließlich in SEINEN Baum → **kein Vermischen** der Uploads.
+
+---
+
+# Erweiterung: Per-User-Root + selbstverwaltete Quellen
+
+> Idee des Users: jeder Nutzer bekommt einen eigenen „Root" (Heimatverzeichnis); zusätzlich
+> kann er sich selbst weitere Foto-Quellen hinzufügen — beides sauber von anderen getrennt.
+
+## Modell
+- Neues Feld `access_config.home_root` = persönliches Wurzelverzeichnis, z.B. `/photos/demouser`.
+  - Upload-Ziel = `<home_root>/Upload/YYYY/YYYY-MM/`.
+  - `home_root` wird automatisch der effektiven `folder_whitelist` hinzugefügt (User sieht sein Zeug).
+  - Fehlt `home_root`, gilt weiterhin `folder_whitelist[0]` als Heimat (rückwärtskompatibel).
+- **Selbstverwaltete Quellen:** `PhotoSource` bekommt `owner_user_id` (nullable; NULL = global/admin).
+  - Nicht-Admin darf eigene Quellen anlegen/scannen/entfernen — **nur unter seinem `home_root`**.
+  - Vom User angelegte Quellen werden automatisch für ihn whitelisted (er sieht nur seine).
+  - Admin sieht/verwaltet alles wie bisher.
+
+## Sicherheit (entscheidend)
+- **Pfad-Constraint:** jede vom User angelegte Quelle MUSS unter `home_root` liegen
+  (`realpath`-Prüfung, keine Symlink-Ausbrüche) → ein User kann nie `/photos/otheruser`
+  als Quelle hinzufügen.
+- **Ordner-Browser pro User:** der heute admin-only `/api/fs/browse` braucht eine
+  **gescopte Variante**, die als Wurzel `home_root` erzwingt (User browst nur seinen Teilbaum,
+  nie das gesamte Dateisystem/fremde Ordner).
+- `sources`-CRUD: für Nicht-Admin nur eigene (`owner_user_id == user.id`) + Pfad-Constraint;
+  Admin unverändert.
+- Quotas optional (max GB pro User) als spätere Ausbaustufe.
+
+## Migration / Kompatibilität
+- Bestehende Quellen bleiben global (`owner_user_id = NULL`).
+- Admin (unrestricted) unverändert; das Modell ist additiv.
+- `home_root` für bestehende eingeschränkte User = vorhandener `folder_whitelist[0]`.
+
+## Phasen (deploybar, klein)
+- **Phase 1 — Upload (jetzt):** Upload landet dynamisch in `<home_root||whitelist[0]>/Upload/…`,
+  `allow_upload`-Flag, atomic write, Dedup, Pipeline, Verifikation Demo↔Admin. *(keine Schema-Änderung nötig, nutzt access_config)*
+- **Phase 2 — Per-User-Root formalisiert:** `home_root`-Feld + Auto-Whitelist, Upload nutzt es.
+- **Phase 3 — Selbstverwaltete Quellen:** `PhotoSource.owner_user_id`, gescopter Ordner-Browser,
+  User-Source-CRUD mit Pfad-Constraint, UI in Settings (für Nicht-Admins freigeschaltet, gescoped).
+
+## Offene Entscheidung
+- **Darf der Demo-User hochladen** (in seinen Ordner)? Für die App-Store-Demo sinnvoll (zeigt das Feature).
+- **Phase 2+3 jetzt mitbauen** oder erst Phase 1 (Upload) liefern und Root/Quellen-Selbstverwaltung
+  als eigenes Paket danach?
