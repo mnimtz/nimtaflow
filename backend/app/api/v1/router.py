@@ -85,7 +85,11 @@ class SyncResultV1(BaseModel):
 
 
 def _to_v1(photo: Photo, req: Request) -> PhotoV1:
-    base = str(req.base_url).rstrip("/")
+    # Relative URLs (no scheme/host): same-origin on web so the pf_token cookie is
+    # sent and the port is never lost (request.base_url drops :8090 behind the proxy,
+    # which broke every <img> on the web dashboard). iOS strips host anyway via
+    # api.url(path+query), so relative is safe there too.
+    base = ""
     aspect = (photo.width / photo.height) if photo.width and photo.height else None
     return PhotoV1(
         id=photo.id,
@@ -619,24 +623,26 @@ async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSes
     from app.models.person import Person
     from app.models.face import Face
     from sqlalchemy import func as _f
-    base = str(request.base_url).rstrip("/")
+    from app.core.access import visible_person_subquery, photo_conditions
     pq = select(Person).where(Person.is_hidden == False).order_by(Person.name)  # noqa: E712
-    # If the user is restricted to specific people, only list those.
-    if user is not None and user.role != UserRole.admin:
-        vis = (user.access_config or {}).get("visible_person_ids")
-        if vis:
-            pq = pq.where(Person.id.in_(vis))
+    # A restricted account only sees persons that appear in photos it may access
+    # (else the iOS People tab leaks the whole library) — see visible_person_subquery.
+    vps = visible_person_subquery(user)
+    if vps is not None:
+        pq = pq.where(Person.id.in_(vps))
     persons = (await db.execute(pq)).scalars().all()
-    counts = dict((await db.execute(
-        select(Face.person_id, _f.count()).where(Face.person_id.isnot(None)).group_by(Face.person_id)
-    )).all())
+    acl = photo_conditions(user)
+    cq = select(Face.person_id, _f.count()).where(Face.person_id.isnot(None))
+    if acl:
+        cq = cq.where(Face.photo_id.in_(select(Photo.id).where(*acl)))
+    counts = dict((await db.execute(cq.group_by(Face.person_id))).all())
     out = []
     for p in persons:
         named = bool((p.name or "").strip())
         if not named and not include_unnamed:
             continue
         out.append(PersonV1(id=p.id, name=p.name or "Unbekannt", face_count=counts.get(p.id, 0),
-                            avatar_url=f"{base}/api/people/{p.id}/avatar"))
+                            avatar_url=f"/api/people/{p.id}/avatar"))
     return out
 
 
@@ -689,23 +695,31 @@ async def albums_v1(request: Request, db: AsyncSession = Depends(get_db),
     """Album list with cover thumbnails — same shape the gallery grid understands."""
     from app.models.album import Album, AlbumPhoto
     from sqlalchemy import func as _f
-    base = str(request.base_url).rstrip("/")
+    from app.core.access import photo_conditions
+    acl = photo_conditions(user)
     albums = (await db.execute(select(Album).order_by(Album.created_at.desc()))).scalars().all()
-    counts = dict((await db.execute(
-        select(AlbumPhoto.album_id, _f.count()).group_by(AlbumPhoto.album_id)
-    )).all())
-    # cover = explicit cover_photo_id, else the first photo in the album
-    first_photo = dict((await db.execute(
-        select(AlbumPhoto.album_id, _f.min(AlbumPhoto.photo_id)).group_by(AlbumPhoto.album_id)
-    )).all())
+    # Counts + covers scoped to accessible photos so a restricted account never sees
+    # album names/counts/covers for albums it has no access into.
+    cnt_q = select(AlbumPhoto.album_id, _f.count())
+    if acl:
+        cnt_q = cnt_q.join(Photo, Photo.id == AlbumPhoto.photo_id).where(*acl)
+    counts = dict((await db.execute(cnt_q.group_by(AlbumPhoto.album_id))).all())
+    # cover = explicit cover_photo_id (if visible), else the first accessible photo
+    cov_q = select(AlbumPhoto.album_id, _f.min(AlbumPhoto.photo_id))
+    if acl:
+        cov_q = cov_q.join(Photo, Photo.id == AlbumPhoto.photo_id).where(*acl)
+    first_photo = dict((await db.execute(cov_q.group_by(AlbumPhoto.album_id))).all())
     out = []
     for a in albums:
-        cover_id = a.cover_photo_id or first_photo.get(a.id)
+        cnt = counts.get(a.id, 0)
+        if acl and not cnt:
+            continue  # restricted user can't see into this album at all → hide it
+        cover_id = first_photo.get(a.id) if acl else (a.cover_photo_id or first_photo.get(a.id))
         out.append(AlbumV1(
             id=a.id, name=a.name, description=a.description,
             album_type=a.album_type.value if hasattr(a.album_type, "value") else str(a.album_type),
-            photo_count=counts.get(a.id, 0),
-            cover_url=(f"{base}/api/photos/{cover_id}/thumbnail?size=medium" if cover_id else None),
+            photo_count=cnt,
+            cover_url=(f"/api/photos/{cover_id}/thumbnail?size=medium" if cover_id else None),
             is_trip=bool((a.smart_criteria or {}).get("trip")),
         ))
     return out
@@ -899,7 +913,6 @@ async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
     photos via /v1/photos?date_from=&date_to=. trips_only hides everyday clusters;
     min_photos overrides the server threshold so the app can tune it live."""
     from app.api.routes.photos import trips as _trips
-    base = str(request.base_url).rstrip("/")
     res = await _trips(db=db, user=user, min_photos=min_photos)
     events = res.get("events", [])
     if trips_only:
@@ -910,7 +923,7 @@ async def trips_v1(request: Request, db: AsyncSession = Depends(get_db),
         out.append(TripEventV1(
             count=e["count"], date_from=e["date_from"], date_to=e["date_to"], days=e["days"],
             city=e.get("city"), is_trip=e.get("is_trip", False), cover_photo_id=cid,
-            cover_url=(f"{base}/api/photos/{cid}/thumbnail?size=medium" if cid else None),
+            cover_url=(f"/api/photos/{cid}/thumbnail?size=medium" if cid else None),
         ))
     return TripsV1(home_city=res.get("home_city"), events=out)
 
@@ -981,7 +994,6 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     from app.models.person import Person
     from app.models.face import Face
     from app.models.album import Album, AlbumPhoto
-    base = str(request.base_url).rstrip("/")
     acl = photo_conditions(user)
 
     out: dict = {}
@@ -1027,7 +1039,7 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
 
     def _person_obj(p):
         return {"id": p.id, "name": p.name, "face_count": counts.get(p.id, 0),
-                "avatar_url": f"{base}/api/people/{p.id}/avatar"}
+                "avatar_url": f"/api/people/{p.id}/avatar"}
 
     # 3) Person of the Week — rotates by ISO week so it changes weekly
     out["person_of_week"] = None
@@ -1066,7 +1078,7 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
         if acl and not cnt and not cover:
             continue
         fa.append({"id": a.id, "name": a.name, "photo_count": int(cnt or 0),
-                   "cover_url": (f"{base}/api/photos/{cover}/thumbnail?size=medium" if cover else None)})
+                   "cover_url": (f"/api/photos/{cover}/thumbnail?size=medium" if cover else None)})
         if len(fa) >= 8:
             break
     out["featured_albums"] = fa
