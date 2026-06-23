@@ -127,6 +127,37 @@
   footer .fl a{cursor:pointer}
   footer .fl a:hover{color:var(--gold2)}
   footer .cp{font-size:.8rem;color:var(--mut2)}
+
+  /* ── Mobile (≤640px) ───────────────────────────────── */
+  @media(max-width:640px){
+    .wrap{padding:0 1rem}
+    /* Nav: Logo oben, Tabs als zentrierte, scrollbare Zeile darunter */
+    .nav .row{height:auto;flex-direction:column;gap:.5rem;padding:.55rem 0}
+    .nav .logo{height:34px}
+    .nav .links{margin-left:0;width:100%;justify-content:center;gap:.3rem;flex-wrap:wrap}
+    .tab{padding:.42rem .6rem;font-size:.82rem}
+    .gh{padding:.42rem .6rem;font-size:.78rem}
+    .lang{margin-left:0}
+    /* Hero kompakter */
+    .hero{padding:2.4rem 0 1.8rem}
+    .hero .biglogo{width:min(300px,72vw)}
+    .cta{gap:.5rem;margin-top:1.4rem}
+    .btn{padding:.75rem 1.2rem;font-size:.95rem}
+    .strip{grid-template-columns:repeat(2,1fr);gap:.6rem;margin-top:1.8rem}
+    section.block{padding:1.8rem 0}
+    /* Screenshots: Bildunterschrift über das Bild, volle Breite, dezenterer Schatten */
+    .shot{gap:.8rem}
+    .browser{box-shadow:0 12px 32px rgba(0,0,0,.45)}
+    .browser .addr{font-size:.66rem}
+    .two{gap:1rem}
+    .card{padding:1.2rem}
+    pre{font-size:.78rem}
+  }
+  /* Sehr schmale Geräte (≤380px): Tabs noch etwas kleiner */
+  @media(max-width:380px){
+    .tab{padding:.38rem .5rem;font-size:.78rem}
+    .strip{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>

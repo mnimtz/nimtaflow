@@ -7,6 +7,17 @@ and enriches your library with local or cloud AI. Web app **and** a native iOS c
 > Previously called *PhotoFlow*; some internal identifiers (Docker container names, the Xcode
 > target `PhotoFlow`, `PHOTOFLOW_*` env vars) keep the old name for stability.
 
+**🌐 Website:** [www.nimtaflow.com](https://www.nimtaflow.com)  ·  **Login / App:** [login.nimtaflow.com](https://login.nimtaflow.com)  ·  **License:** AGPL-3.0
+
+![NimtaFlow gallery](docs/website/shots/gallery.jpg)
+
+<p align="center">
+  <img src="docs/website/shots/globe.jpg" alt="Photo locations on a 3D globe" width="49%" />
+  <img src="docs/website/shots/dashboard.jpg" alt="Home screen with memories & highlights" width="49%" />
+</p>
+
+> Screenshots use license-free sample images (no private photos).
+
 ---
 
 ## 🆕 Recent additions
@@ -206,6 +217,7 @@ PHOTOFLOW_SERVER=http://<server>:8090 PHOTOFLOW_REMOTE_TOKEN=<token> \
 ## 🚀 Run
 
 ```bash
+git clone https://github.com/mnimtz/nimtaflow.git && cd nimtaflow
 cp .env.example .env   # set DB_PASSWORD, SECRET_KEY, PHOTOS_PATH, PORT
 docker compose up -d --build
 ```
