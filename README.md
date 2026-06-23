@@ -25,6 +25,17 @@ and enriches your library with local or cloud AI. Web app **and** a native iOS c
 
 ---
 
+## ⚖️ Lizenz & Modelle
+NimtaFlow steht unter **AGPL-3.0**. KI-Modell-**Gewichte sind NICHT enthalten** — sie werden zur
+Laufzeit von den Anbietern geladen. Die Standard-Modelle **InsightFace `buffalo_l`** und
+**`jina-clip-v2`** sind **nur für nicht-kommerzielle Nutzung** lizenziert; für privates
+Self-Hosting ist das in Ordnung, für **kommerzielle** Nutzung bitte permissive Engines wählen.
+Du als Betreiber bist für lizenzkonforme Nutzung verantwortlich. Cloud-KI (Gemini/OpenAI/fal.ai)
+läuft nur mit **deinem eigenen Key** (deren ToS gelten). Details + Karten-Attributionen:
+siehe **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**. *(Einschätzung, keine Rechtsberatung.)*
+
+---
+
 ## ✨ Features
 
 ### Library & Sources
