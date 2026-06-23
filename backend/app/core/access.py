@@ -91,6 +91,40 @@ def upload_base_dir(user: Optional[User], default_dir: str) -> str:
     return (base or default_dir).rstrip("/")
 
 
+def user_scope_prefixes(user: Optional[User]) -> List[str]:
+    """The folder prefixes a restricted user is confined to (home_root + whitelist).
+    Empty list means 'no confinement configured'."""
+    cfg = (user.access_config or {}) if user else {}
+    out = []
+    if cfg.get("home_root"):
+        out.append(cfg["home_root"])
+    out.extend(p for p in (cfg.get("folder_whitelist") or []) if p)
+    return [p.rstrip("/") for p in out if p]
+
+
+def path_within_user_scope(user: Optional[User], path: str) -> bool:
+    """True if `path` is inside the user's allowed area — the gate for letting a
+    non-admin add their OWN source folder (Upload-Phase 3). SECURITY-critical: uses
+    realpath so neither '..' nor a symlink can escape the allowed prefix. Admin /
+    unrestricted may use any path; a restricted user with NO configured scope is
+    denied (can't add sources at all)."""
+    import os
+    if _is_unrestricted(user):
+        return True
+    prefixes = user_scope_prefixes(user)
+    if not prefixes:
+        return False
+    try:
+        real = os.path.realpath(path)
+    except Exception:
+        return False
+    for pre in prefixes:
+        rpre = os.path.realpath(pre)
+        if real == rpre or real.startswith(rpre + os.sep):
+            return True
+    return False
+
+
 def feature_allowed(user: Optional[User], flag: str, default: bool = True) -> bool:
     if user is None or user.role == UserRole.admin:
         return True

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Trash2, User as UserIcon, ArrowLeft } from 'lucide-react'
+import { Camera, Trash2, User as UserIcon, ArrowLeft, FolderPlus, RefreshCw, FolderOpen } from 'lucide-react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
 
@@ -142,6 +142,80 @@ export default function ProfilePage() {
           {changePw.isPending ? t('profile.changing') : t('profile.changePassword')}
         </button>
       </section>
+
+      {/* Meine Quellen (Upload-Phase 3) — rendert nur, wenn freigeschaltet */}
+      <MySources />
     </div>
+  )
+}
+
+type MySource = { id: number; path: string; name: string | null; last_scan_count: number | null }
+
+function MySources() {
+  const { t } = useT()
+  const qc = useQueryClient()
+  const [path, setPath] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  // Self-gating: a 403 (feature not enabled for this account) hides the whole section.
+  const { data: sources, isError } = useQuery<MySource[]>({
+    queryKey: ['my-sources'], queryFn: () => api.get('/my-sources').then(r => r.data), retry: false,
+  })
+  const { data: roots } = useQuery<{ roots: string[] }>({
+    queryKey: ['my-sources-roots'], queryFn: () => api.get('/my-sources/allowed-roots').then(r => r.data),
+    retry: false, enabled: !isError,
+  })
+  const add = useMutation({
+    mutationFn: () => api.post('/my-sources', { path: path.trim() }),
+    onSuccess: () => { setPath(''); setErr(null); qc.invalidateQueries({ queryKey: ['my-sources'] }) },
+    onError: (e: any) => setErr(e?.response?.data?.detail || t('profile.sourceFailed')),
+  })
+  const del = useMutation({
+    mutationFn: (id: number) => api.delete(`/my-sources/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-sources'] }),
+  })
+  const scan = useMutation({ mutationFn: (id: number) => api.post(`/my-sources/${id}/scan`) })
+
+  if (isError) return null  // feature not enabled for this account
+  const base = roots?.roots?.[0] || ''
+
+  return (
+    <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 md:p-5 mt-6 space-y-4">
+      <h2 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2"><FolderOpen size={18} /> {t('profile.sourcesSection')}</h2>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('profile.sourcesIntro')}</p>
+      {roots?.roots?.length ? (
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+          {t('profile.sourceAllowed')}: <code className="text-zinc-700 dark:text-zinc-300">{roots.roots.join(', ')}</code>
+        </p>
+      ) : null}
+
+      <div className="flex gap-2 flex-wrap">
+        <input className={inp + ' flex-1 min-w-[180px] font-mono text-xs'} value={path}
+          onChange={e => setPath(e.target.value)} placeholder={base ? `${base}/…` : t('profile.sourcePath')} />
+        <button onClick={() => add.mutate()} disabled={add.isPending || !path.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50 shrink-0">
+          <FolderPlus size={15} /> {t('profile.sourceAdd')}
+        </button>
+      </div>
+      {err && <p className="text-xs text-red-500">{err}</p>}
+
+      {sources && sources.length > 0 ? (
+        <ul className="space-y-2">
+          {sources.map(s => (
+            <li key={s.id} className="flex items-center gap-2 text-sm border-t border-zinc-100 dark:border-zinc-800 pt-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-zinc-800 dark:text-zinc-200 truncate">{s.name || s.path}</p>
+                <p className="text-[11px] text-zinc-500 font-mono truncate">{s.path}{s.last_scan_count != null ? ` · ${s.last_scan_count}` : ''}</p>
+              </div>
+              <button onClick={() => scan.mutate(s.id)} title={t('profile.sourceScan')}
+                className="text-zinc-500 hover:text-indigo-500 shrink-0"><RefreshCw size={15} /></button>
+              <button onClick={() => del.mutate(s.id)} title={t('profile.sourceDelete')}
+                className="text-zinc-500 hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-zinc-400">{t('profile.sourcesEmpty')}</p>
+      )}
+    </section>
   )
 }

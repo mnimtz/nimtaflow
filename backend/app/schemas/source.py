@@ -41,6 +41,7 @@ class SourceOut(BaseModel):
     last_scan_at: Optional[datetime]
     last_scan_count: Optional[int]
     created_at: datetime
+    owner_user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db, _engine
 from app.version import __version__
-from app.api.routes import auth, photos, people, sources, settings_api, jobs
+from app.api.routes import auth, photos, people, sources, settings_api, jobs, my_sources
 from app.api.routes import fs, ai_api, logs, backup, albums
 from app.api.v1 import router as v1_router
 
@@ -70,6 +70,8 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(32)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(512)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS person_id INTEGER",
+    # ── photo_sources: Upload-Phase 3 — per-user owned sources ────────────────
+    "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS owner_user_id INTEGER",
     # ── photos: updated_at + trigger (drives iOS incremental sync) ────────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "CREATE OR REPLACE FUNCTION pf_touch_updated_at() RETURNS trigger AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql",
@@ -201,6 +203,10 @@ _guard_ro = [Depends(enforce_auth), Depends(block_restricted_writes)]
 app.include_router(photos.router, prefix="/api", dependencies=_guard)
 app.include_router(people.router, prefix="/api", dependencies=_guard_ro)
 app.include_router(sources.router, prefix="/api", dependencies=_guard)
+# Per-user self-managed sources (Upload-Phase 3) — auth only; the router itself
+# enforces the allow_manage_sources flag + path-scope, so NOT _guard_ro (restricted
+# users must be able to create their own).
+app.include_router(my_sources.router, prefix="/api", dependencies=_guard)
 app.include_router(settings_api.router, prefix="/api", dependencies=_guard)
 app.include_router(jobs.router, prefix="/api", dependencies=_guard)
 app.include_router(fs.router, prefix="/api", dependencies=_guard)

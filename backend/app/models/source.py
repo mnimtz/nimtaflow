@@ -17,6 +17,10 @@ class PhotoSource(Base):
     recursive: Mapped[bool] = mapped_column(Boolean, default=True)
     exclusion_patterns: Mapped[Optional[str]] = mapped_column(String(1024))  # comma-separated
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Upload-Phase 3: a non-admin may manage their OWN sources (folders within their
+    # allowed scope). null = global/admin source. Plain Integer (no FK — a 2nd FK path
+    # onto users has bitten the mapper before); ownership is enforced in the router.
+    owner_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     # Folder watching: re-scan every N minutes (0 = manual only)
     scan_interval_minutes: Mapped[int] = mapped_column(Integer, default=0)
