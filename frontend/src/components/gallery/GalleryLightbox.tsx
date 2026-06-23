@@ -289,7 +289,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
         captions={{ descriptionTextAlign: 'center' }}
-        carousel={{ finite: true, preload: 2 }}
+        carousel={{ finite: true, preload: 3 }}
         styles={{ container: { backgroundColor: 'rgba(0,0,0,0.94)' } }}
         animation={{ fade: 250, swipe: 300 }}
       />

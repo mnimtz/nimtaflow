@@ -1,10 +1,27 @@
-# 📸 PhotoFlow
+# 📸 NimtaFlow
 
-Self-hosted photo & video management — a privacy-first alternative to Google Photos / Immich.
-Runs entirely on your own hardware (LXC / Docker), keeps **originals read-only and untouched**,
-and enriches your library with local or cloud AI.
+Self-hosted photo & video management — a privacy-first, fully self-hosted photo cloud.
+Runs entirely on your own hardware (Docker), keeps **originals read-only and untouched**,
+and enriches your library with local or cloud AI. Web app **and** a native iOS companion app.
 
-> Status: active development. Deploys automatically from `main` to the LXC via a 5-minute git-poll + `docker compose build`.
+> Previously called *PhotoFlow*; some internal identifiers (Docker container names, the Xcode
+> target `PhotoFlow`, `PHOTOFLOW_*` env vars) keep the old name for stability.
+
+---
+
+## 🆕 Recent additions
+- **NimtaFlow** rebrand (web + iOS, gold branding).
+- **Bilingual UI (DE/EN)** — automatic browser-language detection + a manual in-app switcher; the
+  whole web UI is translated.
+- **In-app upload** — upload photos/videos from the iOS app (manual + optional auto-upload from a
+  chosen date). Each upload is filed into the **uploader's own** `Upload/YYYY/MM/` tree, so uploads
+  never mix between users and stay private to that user.
+- **Per-user access** — restrict a user to specific folders/persons/date ranges + feature flags
+  (map/share/download/pipeline/upload). A locked-down **demo account** can browse without seeing
+  others' folders, names, stats or files.
+- **"Animate photo" / Highlights** — turn a still into a short AI clip; automatic recap videos.
+- **Performance** — immutable thumbnail caching, neighbour-prefetch in the full-screen pager,
+  in-app image cache with a "clear cache" control (iOS).
 
 ---
 

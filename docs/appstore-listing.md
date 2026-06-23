@@ -95,8 +95,8 @@ You need the NimtaFlow server first. This app is the mobile companion to it.
 `fotos,fotoverwaltung,selfhosted,self-hosted,nas,backup,videos,galerie,server,privat,erinnerungen,homeserver`
 
 ## Was ist neu (Versionshinweise, Beispiel)
-DE: `Neues App-Icon & Design, „Foto animieren" (KI-Clips), schnellere Galerie, viele Detail-Verbesserungen.`
-EN: `New app icon & design, "Animate photo" (AI clips), faster gallery, many refinements.`
+DE: `Neues NimtaFlow-Design & App-Icon, Foto-/Video-Upload (manuell + automatisch ab Datum) in deinen eigenen Ordner, persönliche Begrüßung, schnelleres Blättern (Vorladen) + Bild-Cache mit „leeren"-Funktion, „Foto animieren" (KI-Clips), viele Detail-Verbesserungen.`
+EN: `New NimtaFlow design & app icon, photo/video upload (manual + auto from a chosen date) into your own folder, personal greeting, faster swiping (prefetch) + image cache with a "clear" option, "Animate photo" (AI clips), many refinements.`
 
 ## URLs
 - Support-URL: `https://foto.marcusnimtz.de` (oder eine Support-/Info-Seite)
