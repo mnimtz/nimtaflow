@@ -77,15 +77,24 @@ celery_app.conf.update(
         "animate_photo":      {"queue": "video"},  # external video-AI (Veo) image→clip
         "generate_weekly_highlight": {"queue": "cpu"},  # light: creates a Highlight + dispatches render
         "reap_stuck_highlights": {"queue": "cpu"},  # self-heal jobs killed mid-render
+        "reap_stuck_photos":  {"queue": "cpu"},   # self-heal photos stuck in 'processing'
     },
 )
 
 # Periodic folder watching — check every minute which sources are due for a re-scan.
 # The per-source interval (scan_interval_minutes) is honoured inside the task itself.
 celery_app.conf.beat_schedule = {
+    # Every 5 min (was 60s): on a busy box a watch_sources run can take longer than
+    # its interval, so a 60s cadence let thousands pile up on the cpu queue. The
+    # per-source scan_interval_minutes still governs when a source is actually due.
     "watch-sources": {
         "task": "watch_sources",
-        "schedule": 60.0,
+        "schedule": 300.0,
+    },
+    # Self-heal photos orphaned at status=processing by a deploy/restart (see task).
+    "reap-stuck-photos": {
+        "task": "reap_stuck_photos",
+        "schedule": 600.0,
     },
     # Grow existing people from loose faces (light, grow_only). New-cluster forming
     # (heavy HDBSCAN) is manual-only. Every 10 min keeps it gentle on the server.

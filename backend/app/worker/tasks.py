@@ -390,6 +390,37 @@ def retry_failed_ai_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="reap_stuck_photos")
+def reap_stuck_photos_task(self):
+    """Self-heal photos stuck at status=processing: a deploy/container-recreate (or
+    max-tasks-per-child restart) kills process_photo mid-flight, leaving the row in
+    'processing' forever even though the thumbnail work already finished. Those
+    orphans both inflate the "noch in Verarbeitung"-counter AND get re-queued by the
+    retry sweeps → the worker churns photos that are actually done. A photo that has
+    a thumbnail and hasn't been touched in 30 min is no longer being worked → mark it
+    done (faces/AI run off their own flags, not status). Beat-scheduled every 10 min."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo, PhotoStatus
+        from app.services.feature_log import log as flog
+        from sqlalchemy import update, func
+        import datetime
+        init_db()
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30)
+        async for db in get_db():
+            res = await db.execute(update(Photo).where(
+                Photo.status == PhotoStatus.processing,
+                Photo.thumb_small.isnot(None),
+                Photo.updated_at < cutoff,
+            ).values(status=PhotoStatus.done))
+            await db.commit()
+            n = res.rowcount or 0
+            if n:
+                flog("scanner", "INFO", f"Reaper: {n} hängende 'processing'-Foto(s) → done")
+            return {"reaped": n}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="retry_missing_thumbnails")
 def retry_missing_thumbnails_task(self):
     """Self-heal thumbnail gaps: re-queue EVERY photo still missing its large
