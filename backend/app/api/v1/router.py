@@ -333,7 +333,19 @@ async def upload_photos(
 
     from app.services.settings_loader import load_settings
     settings = await load_settings(db)
-    default_dir = settings.get("upload.default_dir") or "/photos/Upload"
+    # Deployment-agnostic upload base for unrestricted (admin) users: an explicit
+    # `upload.default_dir` setting wins; otherwise derive from the FIRST configured
+    # photo source root (guarantees the upload lands under a real, scanned source —
+    # whatever the host's folder layout is), falling back to the configured
+    # photos_path mount. No hardcoded "/photos" assumption.
+    from app.models.source import PhotoSource
+    from app.core.config import get_settings
+    default_dir = settings.get("upload.default_dir")
+    if not default_dir:
+        default_dir = await db.scalar(
+            select(PhotoSource.path).where(PhotoSource.enabled == True)  # noqa: E712
+            .order_by(PhotoSource.id).limit(1))
+    default_dir = default_dir or get_settings().photos_path
     base = upload_base_dir(user, default_dir)
     now = datetime.now(timezone.utc)
     dest_dir = Path(base) / "Upload" / now.strftime("%Y") / now.strftime("%Y-%m")
