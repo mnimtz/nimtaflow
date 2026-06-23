@@ -181,17 +181,20 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
 async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 20,
                     medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
                     jahr_bis: Optional[int] = None, person: Optional[str] = None,
-                    datum_von: Optional[str] = None, datum_bis: Optional[str] = None) -> List[dict]:
-    extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis)
+                    datum_von: Optional[str] = None, datum_bis: Optional[str] = None,
+                    acl: Optional[list] = None) -> List[dict]:
+    # acl = photo_conditions(user): a restricted account only ever searches within the
+    # photos it may see (else chat would surface the whole library).
+    extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis) + list(acl or [])
     photos = await search_photos(db, query or "", settings, limit=limit,
                                  extra_conditions=extra or None)
     return await _fused_records(db, photos)
 
 
 async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[int],
-                 jahr_bis: Optional[int], person: Optional[str]) -> dict:
+                 jahr_bis: Optional[int], person: Optional[str], acl: Optional[list] = None) -> dict:
     """Exact count for 'wie viele …' questions — structural filters, not top-K search."""
-    conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [Photo.is_trashed == False]  # noqa: E712
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [Photo.is_trashed == False] + list(acl or [])  # noqa: E712
     q = select(func.count(func.distinct(Photo.id))).select_from(Photo)
     if person and person.strip():
         q = (q.join(Face, Face.photo_id == Photo.id)
@@ -373,6 +376,9 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     img_budget = 8
     # Identity block (who is the user + relations) so 'meine Frau' resolves without
     # a clarifying round-trip.
+    from app.core.access import photo_conditions, _is_unrestricted
+    acl = photo_conditions(user)                 # [] for admin/open; folder/date/person scope otherwise
+    restricted = not _is_unrestricted(user)      # restricted accounts get read-only chat
     system_text = SYSTEM + await _identity_context(db, settings, user)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
@@ -405,15 +411,17 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     args = c.get("args") or {}
                     if c.get("name") == "zaehle_fotos":
                         resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
-                                            args.get("jahr_bis"), args.get("person"))
+                                            args.get("jahr_bis"), args.get("person"), acl=acl)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
-                    elif c.get("name") == "album_erstellen":
-                        resp = await _action_create_album(db, settings, args)
-                        contents.append({"role": "user", "parts": [{"functionResponse": {
-                            "name": c["name"], "response": resp}}]})
-                    elif c.get("name") == "als_favorit_markieren":
-                        resp = await _action_favorite(db, settings, args)
+                    elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):
+                        # Write actions stay disabled for restricted accounts (read-only chat).
+                        if restricted:
+                            resp = {"fehler": "Aktionen sind in diesem Konto nicht verfügbar."}
+                        elif c.get("name") == "album_erstellen":
+                            resp = await _action_create_album(db, settings, args)
+                        else:
+                            resp = await _action_favorite(db, settings, args)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     else:
@@ -421,7 +429,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                                medientyp=args.get("medientyp"),
                                                jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"),
                                                person=args.get("person"),
-                                               datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
+                                               datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
+                                               acl=acl)
                         seen_ids.extend([rrec["id"] for rrec in recs])
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": {"treffer": recs}}}]})
@@ -439,8 +448,9 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": list(dict.fromkeys(seen_ids))}
 
 
-async def _local_rag(message: str, settings: dict, db: AsyncSession) -> dict:
-    recs = await _retrieve(db, message, settings)
+async def _local_rag(message: str, settings: dict, db: AsyncSession, user=None) -> dict:
+    from app.core.access import photo_conditions
+    recs = await _retrieve(db, message, settings, acl=photo_conditions(user))
     if not recs:
         return {"answer": "Dazu habe ich keine passenden Fotos gefunden.", "photo_ids": []}
     from app.services.ai.local_vlm import LocalVLMProvider
@@ -464,5 +474,5 @@ async def chat(message: str, history: list, settings: dict, db: AsyncSession,
                provider: Optional[str] = None, user=None) -> dict:
     prov = (provider or settings.get("chat.provider") or "gemini").lower()
     if prov == "local":
-        return await _local_rag(message, settings, db)
+        return await _local_rag(message, settings, db, user=user)
     return await _gemini_agent(message, history, settings, db, user=user)

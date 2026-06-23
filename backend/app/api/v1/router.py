@@ -873,12 +873,9 @@ async def chat_status_v1(db: AsyncSession = Depends(get_db)):
 @router.post("/chat")
 async def chat_v1(body: ChatRequestV1, db: AsyncSession = Depends(get_db),
                   user: Optional[User] = Depends(current_user_optional)):
-    """Returns {answer, photo_ids}. The app then loads each photo via /v1/photos/{id}."""
-    from app.core.access import _is_unrestricted
-    # Chat searches across the whole library; until per-user-scoped chat exists, a
-    # restricted account must not use it (would surface photos outside its scope).
-    if not _is_unrestricted(user):
-        raise HTTPException(403, "Chat ist für dieses Konto nicht verfügbar")
+    """Returns {answer, photo_ids}. The app then loads each photo via /v1/photos/{id}.
+    Chat search/count is now scoped per user (photo_conditions in chat.py), so a
+    restricted account safely chats over only its own photos; write-actions stay off."""
     from app.services import chat as chat_svc
     from app.services.settings_loader import load_settings
     s = await load_settings(db)
