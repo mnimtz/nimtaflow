@@ -1,6 +1,6 @@
 """Albums API — manual, smart, and AI albums."""
 from typing import Optional, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
@@ -144,7 +144,7 @@ async def update_album(album_id: int, body: AlbumUpdate, db: AsyncSession = Depe
             except ValueError:
                 continue
         setattr(album, field, val)
-    album.updated_at = datetime.utcnow()
+    album.updated_at = datetime.now(timezone.utc)
     # If this is (now) a SMART album and the criteria/type were touched, REPOPULATE
     # immediately — otherwise changing the person did nothing (the old bug) and a
     # converted album stayed empty/capped.
@@ -234,7 +234,7 @@ async def add_photos(album_id: int, body: AddPhotosRequest, db: AsyncSession = D
             db.add(AlbumPhoto(album_id=album_id, photo_id=pid, sort_order=max_order + i + 1))
             added += 1
 
-    album.updated_at = datetime.utcnow()
+    album.updated_at = datetime.now(timezone.utc)
     if not album.cover_photo_id and body.photo_ids:
         album.cover_photo_id = body.photo_ids[0]
 
@@ -326,7 +326,7 @@ async def _populate_smart(album: Album, db: AsyncSession):
 
     if photos and not album.cover_photo_id:
         album.cover_photo_id = photos[0].id
-    album.ai_last_evaluated = datetime.utcnow()
+    album.ai_last_evaluated = datetime.now(timezone.utc)
 
 
 @router.post("/{album_id}/refresh")
@@ -371,5 +371,5 @@ async def _populate_ai_album_bg(album_id: int, prompt: str):
 
         if photos and not album.cover_photo_id:
             album.cover_photo_id = photos[0].id
-        album.ai_last_evaluated = datetime.utcnow()
+        album.ai_last_evaluated = datetime.now(timezone.utc)
         await db.commit()
