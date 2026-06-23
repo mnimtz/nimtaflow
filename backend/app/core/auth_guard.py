@@ -88,6 +88,20 @@ async def block_restricted_writes(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur lesender Zugriff für dieses Konto")
 
 
+async def require_pipeline(
+    request: Request,
+    token: Optional[str] = Depends(_optional_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Guard for library-wide pipeline actions (reprocess/scan/backfill): a
+    restricted account must not be able to trigger heavy worker jobs over the whole
+    library. No-op for admins / open mode."""
+    from app.core.access import feature_allowed
+    user = await _user_from_token(_extract_token(request, token), db)
+    if not feature_allowed(user, "allow_pipeline"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Pipeline-Aktionen nicht erlaubt")
+
+
 async def require_admin(
     request: Request,
     token: Optional[str] = Depends(_optional_scheme),

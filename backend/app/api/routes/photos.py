@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 import os, subprocess, pathlib, mimetypes
 
 from app.core.database import get_db
-from app.core.auth_guard import current_user_optional
+from app.core.auth_guard import current_user_optional, require_pipeline
 from app.core.access import photo_conditions, can_see_photo, feature_allowed, _is_unrestricted
 from app.models.photo import Photo, PhotoStatus
 from app.models.user import User
@@ -619,7 +619,7 @@ async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db
     return {"album_id": album.id, "added": added, "name": album.name}
 
 
-@router.post("/reprocess-failed")
+@router.post("/reprocess-failed", dependencies=[Depends(require_pipeline)])
 async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     """Re-queue all photos that errored, never finished, or whose AI step failed
     (e.g. a transient Gemini 503) while the thumbnail succeeded."""
@@ -636,7 +636,7 @@ async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     return {"reprocessing": len(ids)}
 
 
-@router.post("/scan-metadata")
+@router.post("/scan-metadata", dependencies=[Depends(require_pipeline)])
 async def scan_metadata(db: AsyncSession = Depends(get_db)):
     """Manually trigger the fast EXIF date+GPS(+city) backfill (Leitstand button).
     Runs on the 'scan' queue so it bypasses the slow process_photo backlog — date,
@@ -669,7 +669,7 @@ async def reprocess_photo(photo_id: int, db: AsyncSession = Depends(get_db),
     return {"ok": True, "photo_id": photo_id}
 
 
-@router.post("/reprocess-missing-ai")
+@router.post("/reprocess-missing-ai", dependencies=[Depends(require_pipeline)])
 async def reprocess_missing_ai(db: AsyncSession = Depends(get_db)):
     """Re-queue done photos that have no embedding yet (AI never ran / was off) —
     'KI nachholen' so search & AI albums work for them."""
@@ -686,7 +686,7 @@ async def reprocess_missing_ai(db: AsyncSession = Depends(get_db)):
     return {"reprocessing": len(ids)}
 
 
-@router.post("/backfill-xmp")
+@router.post("/backfill-xmp", dependencies=[Depends(require_pipeline)])
 async def backfill_xmp(db: AsyncSession = Depends(get_db)):
     """Write existing DB descriptions + tags INTO the image files (honours
     xmp.write_mode). Repairs photos processed by the remote worker before it

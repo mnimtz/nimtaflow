@@ -475,10 +475,11 @@ async def stream_video_v1(
 # ── Video preview (animated WebP) ─────────────────────────────────────────────
 
 @router.get("/photos/{photo_id}/preview")
-async def video_preview_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def video_preview_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                           user: Optional[User] = Depends(current_user_optional)):
     """Return animated WebP hover preview for a video."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video:
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
@@ -494,10 +495,11 @@ async def video_preview_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
 # ── Sprite sheet for video scrubbing ─────────────────────────────────────────
 
 @router.get("/photos/{photo_id}/sprite.jpg")
-async def video_sprite_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def video_sprite_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
     """JPEG sprite sheet for video scrubbing (thumbnail track)."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video:
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
@@ -510,10 +512,11 @@ async def video_sprite_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/photos/{photo_id}/sprite.vtt")
-async def video_sprite_vtt_v1(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def video_sprite_vtt_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                              user: Optional[User] = Depends(current_user_optional)):
     """WebVTT thumbnail track for timeline scrubbing."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video:
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
