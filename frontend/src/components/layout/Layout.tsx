@@ -120,8 +120,8 @@ export default function Layout() {
       {/* ── Sidebar ──────────────────────────────── */}
       <aside className="hidden md:flex w-[220px] flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 border-r border-white/5 shrink-0 select-none">
         {/* Logo */}
-        <div className="h-20 flex items-center justify-center px-2 border-b border-white/5">
-          <img src="/photoflow-logo.png" alt="NimtaFlow" className="w-full max-h-16 object-contain" />
+        <div className="h-28 flex items-center justify-center px-2 border-b border-white/5">
+          <img src="/photoflow-logo.png" alt="NimtaFlow" className="w-full max-h-24 object-contain" />
         </div>
 
         {/* Nav */}
