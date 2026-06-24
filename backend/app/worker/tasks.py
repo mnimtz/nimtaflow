@@ -2082,6 +2082,18 @@ def render_highlight_task(self, highlight_id: int):
         init_db()
         cache_path = get_settings().cache_path
 
+        # KI-Clips + ffmpeg can run for minutes; the request's DB connection may be
+        # dropped meanwhile (asyncpg idle close). Final status writes therefore go
+        # through a FRESH short-lived session so a long render never loses its result.
+        async def _finalize(**fields):
+            async for db2 in get_db():
+                h2 = await db2.get(Highlight, highlight_id)
+                if h2:
+                    for k, v in fields.items():
+                        setattr(h2, k, v)
+                    await db2.commit()
+                return
+
         async for db in get_db():
             h = await db.get(Highlight, highlight_id)
             if not h:
@@ -2169,7 +2181,12 @@ def render_highlight_task(self, highlight_id: int):
 
                 # End the read txn and run the BLOCKING ffmpeg OFF the event loop
                 # (holding asyncpg across the subprocess starved it → ConnectionDoesNotExist).
-                await db.commit()
+                # After minutes of AI work this connection may already be dead — that's fine,
+                # the final status write uses a fresh session (_finalize), so don't abort here.
+                try:
+                    await db.commit()
+                except Exception:
+                    pass
 
                 def _render():
                     slide = out_path
@@ -2184,34 +2201,27 @@ def render_highlight_task(self, highlight_id: int):
                         except Exception: pass
                     return (True, video_duration(out_path))
                 ok, actual = await asyncio.to_thread(_render)
+                motto = h.motto
                 if not ok:
-                    h.status = HighlightStatus.error
-                    h.error_message = "Video-Erstellung (ffmpeg) fehlgeschlagen."
-                    await db.commit()
+                    await _finalize(status=HighlightStatus.error,
+                                    error_message="Video-Erstellung (ffmpeg) fehlgeschlagen.")
                     flog("highlights", "ERROR",
-                         f"Highlight {highlight_id} ({h.motto}): ffmpeg fehlgeschlagen")
+                         f"Highlight {highlight_id} ({motto}): ffmpeg fehlgeschlagen")
                     return {"error": "render failed"}
 
-                h.file_path = out_path
-                h.photo_count = len(image_paths)
-                h.cover_photo_id = cover_id
+                final = dict(file_path=out_path, photo_count=len(image_paths),
+                             cover_photo_id=cover_id, status=HighlightStatus.done,
+                             error_message=None)
                 if actual:
-                    h.duration_sec = round(actual, 1)
-                h.status = HighlightStatus.done
-                h.error_message = None
-                await db.commit()
+                    final["duration_sec"] = round(actual, 1)
+                await _finalize(**final)
                 flog("highlights", "INFO",
-                     f"Highlight {highlight_id} ({h.motto}) fertig: "
-                     f"{len(image_paths)} Fotos, {h.duration_sec}s")
+                     f"Highlight {highlight_id} ({motto}) fertig: "
+                     f"{len(image_paths)} Fotos, {final.get('duration_sec')}s")
                 return {"ok": True, "photos": len(image_paths)}
             except Exception as e:
                 try:
-                    await db.rollback()
-                    h2 = await db.get(Highlight, highlight_id)
-                    if h2:
-                        h2.status = HighlightStatus.error
-                        h2.error_message = str(e)[:500]
-                        await db.commit()
+                    await _finalize(status=HighlightStatus.error, error_message=str(e)[:500])
                 except Exception:
                     pass
                 flog("highlights", "ERROR",
