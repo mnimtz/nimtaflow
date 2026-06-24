@@ -104,6 +104,10 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
             Photo.is_trashed == False,
             Photo.thumb_small.isnot(None),   # never return thumbnail-less photos → no grey tiles
             *(extra_conditions or [])]
+    # The set of photos the caller may see — applied to EVERY match path (tags,
+    # persons, relationships) AND the final fetch so a restricted account (incl. the
+    # public demo) never gets a tag/person hit from outside its scope via search/chat.
+    acc_sub = select(Photo.id).where(*base)
     tokens = _tokens(q)
 
     # ── semantic (jina-clip-v2) ───────────────────────────────────────────────
@@ -144,20 +148,21 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
             )))).all()
             for (pid,) in rows:
                 kw[pid] += 1
-        # tags
+        # tags (scoped to accessible photos)
         rows = (await db.execute(
             select(PhotoTag.photo_id).join(Tag, Tag.id == PhotoTag.tag_id)
-            .where(or_(*[Tag.name.ilike(f"%{t}%") for t in tokens]))
+            .where(PhotoTag.photo_id.in_(acc_sub), or_(*[Tag.name.ilike(f"%{t}%") for t in tokens]))
         )).all()
         for (pid,) in rows:
             kw[pid] += 1
-        # person names → that person's photos
+        # person names → that person's accessible photos
         prows = (await db.execute(
             select(Person.id).where(or_(*[Person.name.ilike(f"%{t}%") for t in tokens]))
         )).all()
         pids = [r[0] for r in prows]
         if pids:
-            frows = (await db.execute(select(Face.photo_id).where(Face.person_id.in_(pids)))).all()
+            frows = (await db.execute(select(Face.photo_id).where(
+                Face.person_id.in_(pids), Face.photo_id.in_(acc_sub)))).all()
             for (pid,) in frows:
                 kw[pid] += 2  # a named-person match is a strong signal
 
@@ -168,7 +173,8 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         if roles and self_id:
             related = await resolve_relationship_people(db, int(self_id), roles)
             if related:
-                frows = (await db.execute(select(Face.photo_id).where(Face.person_id.in_(related)))).all()
+                frows = (await db.execute(select(Face.photo_id).where(
+                    Face.person_id.in_(related), Face.photo_id.in_(acc_sub)))).all()
                 for (pid,) in frows:
                     kw[pid] += 3  # explicit relationship resolution is the strongest signal
     except Exception:
@@ -189,7 +195,9 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     if not scores:
         return []
     top = sorted(scores, key=lambda p: -scores[p])[:limit]
-    photos = (await db.execute(select(Photo).where(Photo.id.in_(top)))).scalars().all()
+    # Re-apply base here too (defense in depth): nothing outside the caller's scope
+    # can be returned even if a future match path forgets to scope itself.
+    photos = (await db.execute(select(Photo).where(Photo.id.in_(top), *base))).scalars().all()
     order = {pid: i for i, pid in enumerate(top)}
     photos.sort(key=lambda p: order.get(p.id, 1e9))
     return photos
