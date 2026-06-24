@@ -85,7 +85,7 @@ export default function DashboardPage() {
           <div className="rounded-2xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 max-w-2xl">
             <video controls playsInline
               poster={data.weekly_highlight.cover_url || undefined}
-              src={`/api${data.weekly_highlight.video_url.replace(/^\/api/, '')}?access_token=${localStorage.getItem('access_token')}`}
+              src={data.weekly_highlight.video_url.startsWith('/api') ? data.weekly_highlight.video_url : `/api${data.weekly_highlight.video_url}`}
               className="w-full aspect-video bg-black" />
           </div>
         </Section>

@@ -77,8 +77,8 @@ export default function HighlightsPage() {
       {play && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setPlay(null)}>
           <button className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={28} /></button>
-          <video src={`/api/highlights/${play.id}/video?access_token=${localStorage.getItem('access_token')}`}
-            controls autoPlay className="max-h-[90vh] max-w-[95vw]" onClick={e => e.stopPropagation()} />
+          <video src={`/api/highlights/${play.id}/video`}
+            controls autoPlay playsInline className="max-h-[90vh] max-w-[95vw]" onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>

@@ -1101,7 +1101,8 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     # Only for unrestricted users (highlights aren't per-folder scoped); excludes the
     # single-photo photo_animate clips.
     out["weekly_highlight"] = None
-    if not acl:  # unrestricted / admin only
+    from app.core.access import _is_unrestricted
+    if _is_unrestricted(user):  # admin / open mode only (not per-folder scoped)
         from app.models.highlight import Highlight, HighlightStatus
         wh = (await db.execute(select(Highlight).where(
             Highlight.status == HighlightStatus.done, Highlight.file_path.isnot(None),
