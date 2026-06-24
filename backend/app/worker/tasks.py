@@ -2077,6 +2077,7 @@ def render_highlight_task(self, highlight_id: int):
         from app.models.highlight import Highlight, HighlightStatus
         from app.services import highlights as hl
         from app.services.feature_log import log as flog
+        from app.services.settings_loader import load_settings
 
         init_db()
         cache_path = get_settings().cache_path
@@ -2100,22 +2101,82 @@ def render_highlight_task(self, highlight_id: int):
                          f"Highlight {highlight_id} ({h.motto}): keine Fotos")
                     return {"error": "no photos"}
 
-                image_paths = [p.thumb_large for p in photos if p.thumb_large]
                 cover_id = photos[0].id
                 duration = float(h.duration_sec or 60.0)
-                seconds_per = max(0.8, duration / max(1, len(image_paths)))
                 out_path = hl.highlight_output_path(cache_path, highlight_id)
-
-                # End the read txn and run the BLOCKING ffmpeg/ffprobe OFF the event loop.
-                # Holding the asyncpg connection across the synchronous subprocess starved
-                # it → ConnectionDoesNotExistError (same root cause as the clustering bug).
-                import asyncio
+                import asyncio, os as _os
                 from app.services.processing.thumbnails import video_duration
+
+                # ── KI-Clip-Verschmelzung: animate the top-K keyframes (fal/veo) and
+                # stitch them in front of a slideshow of the REST → a real "wow" reel
+                # instead of a plain slideshow. Opt-in (highlights.weekly_ai_clips +
+                # ai_enabled), budget-capped per render, falls back to slideshow on any
+                # hiccup. Only for recap-style mottos.
+                clip_files: list = []
+                s_hl: dict = {}
+                try:
+                    s_hl = await load_settings(db)
+                    ai_on = (str(s_hl.get("highlights.weekly_ai_clips", "false")).lower() == "true"
+                             and str(s_hl.get("highlights.ai_enabled", "false")).lower() == "true"
+                             and h.motto in ("week_review", "year_review", "album_highlight",
+                                             "season", "through_the_years", "newest_50"))
+                    if ai_on:
+                        from app.services.ai.video_gen import veo, fal
+                        provider = str(s_hl.get("highlights.ai_provider", "veo")).lower()
+                        K = max(1, min(5, int(float(s_hl.get("highlights.weekly_ai_clip_count", "2") or 2))))
+                        sec = int(float(s_hl.get("highlights.ai_clip_seconds", "4") or 4))
+                        prompt = (s_hl.get("highlights.ai_prompt")
+                                  or "Subtle, natural cinematic motion. Keep faces and identity "
+                                     "recognizable; no morphing or distortion.")
+                        clipdir = _os.path.join(cache_path, "highlights", "clips")
+                        _os.makedirs(clipdir, exist_ok=True)
+                        for idx, p in enumerate(photos[:K]):
+                            if not p.thumb_large or not _os.path.exists(p.thumb_large):
+                                continue
+                            try:
+                                with open(p.thumb_large, "rb") as fh:
+                                    ib = fh.read()
+                                if provider == "fal":
+                                    vid = await fal.animate_image(
+                                        s_hl.get("highlights.fal_api_key") or "", ib, prompt,
+                                        model=s_hl.get("highlights.fal_model") or fal.DEFAULT_MODEL)
+                                else:
+                                    vid = await veo.animate_image(
+                                        s_hl.get("ai.gemini.api_key") or "", ib, prompt, seconds=sec, aspect="16:9")
+                                cf = _os.path.join(clipdir, f"{highlight_id}_kf{idx}.mp4")
+                                with open(cf, "wb") as fh:
+                                    fh.write(vid)
+                                clip_files.append(cf)
+                            except Exception as ce:
+                                flog("highlights", "WARNING",
+                                     f"Highlight {highlight_id}: Keyframe {idx} nicht animiert: {str(ce)[:120]}")
+                        if clip_files:
+                            flog("highlights", "INFO",
+                                 f"Highlight {highlight_id}: {len(clip_files)} KI-Clip(s) animiert ({provider})")
+                except Exception as ae:
+                    flog("highlights", "WARNING", f"Highlight {highlight_id}: KI-Clips übersprungen: {str(ae)[:120]}")
+
+                # Slideshow covers the photos NOT already animated (avoid duplicates).
+                rest = photos[len(clip_files):] if clip_files else photos
+                image_paths = [p.thumb_large for p in rest if p.thumb_large]
+                seconds_per = max(0.8, duration / max(1, len(image_paths)))
+                music = (s_hl.get("highlights.music_path") or "").strip() or None
+
+                # End the read txn and run the BLOCKING ffmpeg OFF the event loop
+                # (holding asyncpg across the subprocess starved it → ConnectionDoesNotExist).
                 await db.commit()
 
                 def _render():
-                    if not hl.render_slideshow(image_paths, out_path, seconds_per):
+                    slide = out_path
+                    if clip_files:
+                        slide = out_path + ".slide.mp4"
+                    if image_paths and not hl.render_slideshow(image_paths, slide, seconds_per):
                         return (False, None)
+                    if clip_files:
+                        if not hl.render_hybrid(clip_files, slide if image_paths else None, out_path, music_path=music):
+                            return (False, None)
+                        try: _os.remove(slide)
+                        except Exception: pass
                     return (True, video_duration(out_path))
                 ok, actual = await asyncio.to_thread(_render)
                 if not ok:

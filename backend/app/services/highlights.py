@@ -616,5 +616,39 @@ def _render_concat(images: List[str], out_path: str, seconds_per: float,
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def render_hybrid(clip_paths: List[str], slideshow_path: Optional[str], out_path: str,
+                  width: int = 1920, height: int = 1080, music_path: Optional[str] = None) -> bool:
+    """Stitch AI-animated clips + the still slideshow into ONE reel. Every segment is
+    re-encoded to the same WxH/30fps (via the concat FILTER, not the demuxer, so
+    mismatched fal/veo clip sizes don't break it). Optional background music over the
+    whole thing. Robust → returns False on any failure so the caller falls back to the
+    plain slideshow. Order: animated clips first, then the slideshow of the rest."""
+    segments = [c for c in (clip_paths or []) if c and os.path.exists(c) and os.path.getsize(c) > 1000]
+    if slideshow_path and os.path.exists(slideshow_path):
+        segments.append(slideshow_path)
+    if not segments:
+        return False
+    cmd = [_FFMPEG, "-y", "-hide_banner", "-loglevel", "error"]
+    for s in segments:
+        cmd += ["-i", s]
+    music_idx = None
+    if music_path and os.path.exists(music_path):
+        cmd += ["-i", music_path]
+        music_idx = len(segments)
+    sp = _scale_pad(width, height)
+    filt = [f"[{i}:v]{sp},fps=30,setsar=1,format=yuv420p[v{i}]" for i in range(len(segments))]
+    filt.append("".join(f"[v{i}]" for i in range(len(segments))) + f"concat=n={len(segments)}:v=1:a=0[outv]")
+    cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]"]
+    if music_idx is not None:
+        cmd += ["-map", f"{music_idx}:a", "-shortest", "-c:a", "aac", "-b:a", "160k"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
+        return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
+    except Exception:
+        return False
+
+
 def highlight_output_path(cache_path: str, highlight_id: int) -> str:
     return os.path.join(cache_path, "highlights", f"{highlight_id}.mp4")

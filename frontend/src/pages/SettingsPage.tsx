@@ -1355,11 +1355,15 @@ function HighlightsAISettings() {
   const [falModel, setFalModel] = useState('fal-ai/minimax/hailuo-02/standard/image-to-video')
   const [windowDays, setWindowDays] = useState('7')
   const [weeklyPersons, setWeeklyPersons] = useState('')
+  const [aiClips, setAiClips] = useState(false)
+  const [aiClipCount, setAiClipCount] = useState('2')
   useEffect(() => {
     if (!settings) return
     setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
     setWindowDays(String(settings['highlights.weekly_window_days'] ?? '7'))
     setWeeklyPersons(String(settings['highlights.weekly_person_ids'] ?? ''))
+    setAiClips((settings['highlights.weekly_ai_clips'] ?? 'false') === 'true')
+    setAiClipCount(String(settings['highlights.weekly_ai_clip_count'] ?? '2'))
     setEnabled((settings['highlights.ai_enabled'] ?? 'false') === 'true')
     setProvider(String(settings['highlights.ai_provider'] ?? 'veo'))
     setSeconds(String(settings['highlights.ai_clip_seconds'] ?? '4'))
@@ -1373,6 +1377,8 @@ function HighlightsAISettings() {
       'highlights.weekly_enabled': weekly ? 'true' : 'false',
       'highlights.weekly_window_days': windowDays,
       'highlights.weekly_person_ids': weeklyPersons,
+      'highlights.weekly_ai_clips': aiClips ? 'true' : 'false',
+      'highlights.weekly_ai_clip_count': aiClipCount,
       'highlights.ai_enabled': enabled ? 'true' : 'false',
       'highlights.ai_provider': provider,
       'highlights.ai_clip_seconds': seconds,
@@ -1413,6 +1419,21 @@ function HighlightsAISettings() {
                 className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlWeeklyPersonsHint')}</p>
             </div>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.hlWeeklyAiClips')}</div>
+                <div className="text-xs text-zinc-500">{t('settings.hlWeeklyAiClipsDesc')}</div>
+              </div>
+              <Toggle value={aiClips} onChange={setAiClips} />
+            </div>
+            {aiClips && (
+              <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+                {t('settings.hlWeeklyAiClipCount')}
+                <input type="number" min={1} max={5} value={aiClipCount} onChange={e => setAiClipCount(e.target.value)}
+                  className="ml-2 w-16 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlWeeklyAiClipsBudget')}</p>
+              </label>
+            )}
           </div>
         )}
 
