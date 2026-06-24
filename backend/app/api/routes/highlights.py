@@ -19,6 +19,16 @@ from app.services.highlights import MOTTOS
 router = APIRouter(prefix="/highlights", tags=["highlights"])
 
 _VALID_MOTTOS = {m["motto"] for m in MOTTOS}
+_MOTTO_LABEL = {m["motto"]: m["label"] for m in MOTTOS}
+
+
+def _default_title(motto: str) -> str:
+    """A human title when the client sends none (or just the raw motto). week_review
+    gets the current calendar week so it reads 'Highlight der Woche (KW 26)'."""
+    if motto == "week_review":
+        import datetime
+        return f"Highlight der Woche (KW {datetime.datetime.now(datetime.timezone.utc).isocalendar().week})"
+    return _MOTTO_LABEL.get(motto, motto)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -115,8 +125,13 @@ async def create_highlight(
     params = {k: v for k, v in params.items() if v is not None}
     params["duration_sec"] = duration
 
+    # Empty title (or the client just echoing the raw motto) → a proper German label.
+    title = (body.title or "").strip()
+    if not title or title == body.motto:
+        title = _default_title(body.motto)
+
     h = Highlight(
-        title=body.title,
+        title=title,
         motto=body.motto,
         duration_sec=duration,
         params=params,
