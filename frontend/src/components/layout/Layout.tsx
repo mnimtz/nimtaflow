@@ -104,6 +104,8 @@ export default function Layout() {
     queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
   })
   const relationsOn = (settings?.['features.relationships'] ?? 'false') === 'true'
+  // KI-Chat is opt-out (default on); hide the nav entry when features.chat=false.
+  const chatOn = (settings?.['features.chat'] ?? 'true') === 'true'
   // Gate nav by per-user access_config (admins + unauthenticated see everything).
   const allow = (flag: string) =>
     !me || me.role === 'admin' || (me.access_config?.[flag] ?? true)
@@ -111,6 +113,7 @@ export default function Layout() {
     ? [...nav.slice(0, 4), { to: '/relationships', icon: Network, labelKey: 'nav.relationships' }, ...nav.slice(4)]
     : nav
   const visibleNav = fullNav.filter(n =>
+    (n.to !== '/chat' || chatOn) &&
     (n.to !== '/map' || allow('allow_map')) &&
     ((n.to !== '/pipeline' && n.to !== '/leitstand') || (me ? me.role === 'admin' || me.access_config?.allow_pipeline : true)),
   )

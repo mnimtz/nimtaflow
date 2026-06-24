@@ -5,7 +5,8 @@ import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { useT } from '../i18n'
 
-type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[] }
+type ChatPhoto = { id: number; titel?: string | null; beschreibung?: string | null; datum?: string | null; ort?: string | null; ist_video?: boolean }
+type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[]; photos?: ChatPhoto[] }
 
 export default function ChatPage() {
   const { t } = useT()
@@ -39,7 +40,7 @@ export default function ChatPage() {
     setSending(true)
     try {
       const r = await api.post('/chat', { message: text, history, provider: provider || undefined })
-      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || t('chat.noAnswer'), photo_ids: r.data.photo_ids || [] }])
+      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || t('chat.noAnswer'), photo_ids: r.data.photo_ids || [], photos: r.data.photos || [] }])
     } catch (e: any) {
       setMessages(m => [...m, { role: 'assistant', content: t('chat.errorPrefix') + (e?.response?.data?.detail || e?.message || t('chat.errorUnknown')) }])
     } finally { setSending(false) }
@@ -103,9 +104,24 @@ export default function ChatPage() {
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            <div className={`max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100'} rounded-2xl px-4 py-2.5`}>
+            <div className={`${m.photos && m.photos.length ? 'w-full max-w-full' : 'max-w-[85%]'} ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100'} rounded-2xl px-4 py-2.5`}>
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
-              {m.photo_ids && m.photo_ids.length > 0 && (
+              {m.photos && m.photos.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+                  {m.photos.slice(0, 12).map((ph, idx) => {
+                    const cap = (ph.titel || ph.beschreibung || '').trim()
+                    return (
+                      <button key={ph.id} onClick={() => openLightbox(m.photos!.slice(0, 12).map(x => x.id), idx)} className="text-left group">
+                        <div className="relative aspect-square rounded-lg overflow-hidden border border-black/10 group-hover:ring-2 group-hover:ring-indigo-400 transition">
+                          <img src={thumbUrl({ id: ph.id }, 'medium')} className="w-full h-full object-cover" loading="lazy" />
+                          {ph.ist_video && <span className="absolute bottom-1 right-1 text-white text-[10px] bg-black/55 rounded px-1">▶</span>}
+                        </div>
+                        {cap && <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400 mt-1">{cap.slice(0, 110)}{cap.length > 110 ? '…' : ''}</p>}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : m.photo_ids && m.photo_ids.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 mt-2.5">
                   {m.photo_ids.slice(0, 12).map((id, idx) => (
                     <button key={id} onClick={() => openLightbox(m.photo_ids!.slice(0, 12), idx)}
@@ -114,7 +130,7 @@ export default function ChatPage() {
                     </button>
                   ))}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         ))}

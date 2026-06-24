@@ -199,7 +199,10 @@ export const settings = {
     'settings.chatGeminiSub': 'Cloud · Tool-Agent · Kosten pro Frage',
     'settings.chatLocalLabel': 'Lokal (Qwen)',
     'settings.chatLocalSub': 'privat · gratis · langsamer (Asus-GPU)',
-    'settings.chatHint': 'Gemini nutzt den unter Bilder-AI hinterlegten API-Key als Tool-Agent (entscheidet selbst, wann er sucht). Lokal läuft über den Remote-Worker (Qwen) — gratis, aber langsamer. Beide antworten nur auf Basis gefundener Fotos.',
+    'settings.chatHint': 'Gemini = Cloud-Tool-Agent (entscheidet selbst, wann er sucht). Lokal läuft über den Remote-Worker (Qwen) — gratis, aber langsamer. Beide antworten nur auf Basis gefundener Fotos.',
+    'settings.chatGeminiKey': 'Eigener Gemini-API-Key (Chat)',
+    'settings.chatGeminiKeyHint': 'Leer = es wird der Bilder-AI-Key verwendet. Hier kannst du einen separaten Key nur für den Chat hinterlegen.',
+    'settings.chatEnable': 'KI-Chat im Menü anzeigen',
 
     // ── Pipeline ──
     'settings.pipTitle': 'Pipeline',
@@ -713,7 +716,10 @@ export const settings = {
     'settings.chatGeminiSub': 'Cloud · tool agent · cost per question',
     'settings.chatLocalLabel': 'Local (Qwen)',
     'settings.chatLocalSub': 'private · free · slower (Asus GPU)',
-    'settings.chatHint': 'Gemini uses the API key set under Image AI as a tool agent (decides itself when to search). Local runs via the remote worker (Qwen) — free but slower. Both answer only based on found photos.',
+    'settings.chatHint': 'Gemini = cloud tool agent (decides itself when to search). Local runs via the remote worker (Qwen) — free but slower. Both answer only based on found photos.',
+    'settings.chatGeminiKey': 'Own Gemini API key (chat)',
+    'settings.chatGeminiKeyHint': 'Empty = the image-AI key is used. Set a separate key just for chat here.',
+    'settings.chatEnable': 'Show AI Chat in the menu',
 
     // ── Pipeline ──
     'settings.pipTitle': 'Pipeline',

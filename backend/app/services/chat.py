@@ -307,10 +307,12 @@ async def _action_favorite(db: AsyncSession, settings: dict, args: dict) -> dict
 
 
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession, user=None) -> dict:
-    key = (settings.get("ai.gemini.api_key") or "").strip()
+    # Chat may use its OWN Gemini key (Einstellungen → KI-Chat); falls back to the
+    # shared image-AI key so existing setups keep working.
+    key = (settings.get("chat.gemini.api_key") or settings.get("ai.gemini.api_key") or "").strip()
     if not key:
-        return {"answer": "Kein Gemini-API-Key hinterlegt (Einstellungen → KI).", "photo_ids": []}
-    model = settings.get("ai.gemini.model", "gemini-2.5-flash")
+        return {"answer": "Kein Gemini-API-Key hinterlegt (Einstellungen → KI-Chat).", "photo_ids": []}
+    model = settings.get("chat.gemini.model") or settings.get("ai.gemini.model", "gemini-2.5-flash")
     base = "https://generativelanguage.googleapis.com/v1beta"
     _filter_props = {
         "person": {"type": "string", "description": "Name einer ERKANNTEN Person — schränkt auf Fotos MIT dieser Person ein. Nutze das IMMER, wenn die Frage einen Namen enthält (z. B. 'Lea traurig' → person='Lea', suchbegriff='traurig weinen')."},
@@ -370,6 +372,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     contents.append({"role": "user", "parts": [{"text": message}]})
 
     seen_ids: list = []
+    seen_recs: dict = {}   # id → fused record (description/date/place) for a rich gallery reply
     # Multimodal: send the top hits' thumbnails so Gemini can SEE them. Budget caps
     # total images across the conversation to bound token cost (chat.vision=off disables).
     vision = str(settings.get("chat.vision", "true")).lower() != "false"
@@ -432,6 +435,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
                                                acl=acl)
                         seen_ids.extend([rrec["id"] for rrec in recs])
+                        for rrec in recs:
+                            seen_recs.setdefault(rrec["id"], rrec)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": {"treffer": recs}}}]})
                         if vision and img_budget > 0 and recs:
@@ -444,8 +449,11 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             text = " ".join(p["text"] for p in parts if "text" in p).strip()
             # de-dupe preserving order
             uniq = list(dict.fromkeys(seen_ids))
-            return {"answer": text or "(keine Antwort)", "photo_ids": uniq}
-    return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": list(dict.fromkeys(seen_ids))}
+            return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
+                    "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
+    _u = list(dict.fromkeys(seen_ids))
+    return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": _u,
+            "photos": [seen_recs[i] for i in _u if i in seen_recs]}
 
 
 async def _local_rag(message: str, settings: dict, db: AsyncSession, user=None) -> dict:
@@ -467,7 +475,7 @@ async def _local_rag(message: str, settings: dict, db: AsyncSession, user=None) 
                           "Stell den Chat-Assistenten auf Gemini um (Einstellungen → Chat-Assistent) "
                           "— die gefundenen Fotos siehst du unten.",
                 "photo_ids": [r["id"] for r in recs]}
-    return {"answer": answer, "photo_ids": [r["id"] for r in recs]}
+    return {"answer": answer, "photo_ids": [r["id"] for r in recs], "photos": recs}
 
 
 async def chat(message: str, history: list, settings: dict, db: AsyncSession,

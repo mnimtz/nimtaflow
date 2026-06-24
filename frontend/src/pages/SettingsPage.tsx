@@ -1088,6 +1088,25 @@ function ChatSettingsSection() {
             {t('settings.chatHint')}
           </p>
         </div>
+
+        {/* Eigener Gemini-Key für den Chat (Fallback: Bilder-AI-Key) */}
+        {provider === 'gemini' && (
+          <div>
+            <Label>{t('settings.chatGeminiKey')}</Label>
+            <Input value={settings['chat.gemini.api_key'] ?? ''} onChange={v => set('chat.gemini.api_key', v)}
+                   type="password" placeholder="AIza…" />
+            <p className="text-[11px] text-zinc-400 mt-1">{t('settings.chatGeminiKeyHint')}</p>
+          </div>
+        )}
+
+        {/* KI-Chat im Menü an/aus */}
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" className="w-4 h-4 accent-indigo-600"
+                 checked={(settings['features.chat'] ?? 'true') !== 'false'}
+                 onChange={e => set('features.chat', e.target.checked ? 'true' : 'false')} />
+          <span className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.chatEnable')}</span>
+        </label>
+
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
     </div>

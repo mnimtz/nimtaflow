@@ -29,7 +29,9 @@ async def chat_status(db: AsyncSession = Depends(get_db)):
     s = await load_settings(db)
     return {
         "provider": (s.get("chat.provider") or "gemini").lower(),
-        "gemini_ready": bool((s.get("ai.gemini.api_key") or "").strip()),
+        # chat-specific key OR the shared image-AI key (matches chat.py's fallback).
+        "gemini_ready": bool((s.get("chat.gemini.api_key") or s.get("ai.gemini.api_key") or "").strip()),
+        "chat_enabled": (s.get("features.chat") or "true").lower() != "false",
     }
 
 
