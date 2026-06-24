@@ -35,6 +35,9 @@ export const highlights = {
     'highlights.toastError': 'Erstellen fehlgeschlagen.',
     'highlights.searchPerson': 'Person suchen … ({count})',
     'highlights.addPerson': 'Person hinzufügen … ({count})',
+    'highlights.aiClips': 'KI-Clips (Wow-Modus)',
+    'highlights.aiClipsDesc': 'Die schönsten Fotos werden per KI zu kurzen, bewegten Filmclips animiert und vorangestellt — der Rest läuft als Slideshow. Kostet KI-Budget.',
+    'highlights.aiClipsOff': 'KI-Video ist aus. Aktiviere es unter Einstellungen → Highlights, dann ist diese Option wählbar.',
   } as Record<string, string>,
   en: {
     'highlights.title': 'Highlights',
@@ -72,5 +75,8 @@ export const highlights = {
     'highlights.toastError': 'Creation failed.',
     'highlights.searchPerson': 'Search person … ({count})',
     'highlights.addPerson': 'Add person … ({count})',
+    'highlights.aiClips': 'AI clips (wow mode)',
+    'highlights.aiClipsDesc': 'Your best photos are turned into short animated film clips by AI and placed up front — the rest plays as a slideshow. Uses AI budget.',
+    'highlights.aiClipsOff': 'AI video is off. Enable it under Settings → Highlights to use this option.',
   } as Record<string, string>,
 }

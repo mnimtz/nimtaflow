@@ -1341,6 +1341,49 @@ function MemoriesSettingsSection() {
   )
 }
 
+// Person picker with search-while-typing; stores a comma-separated id string.
+function PersonIdPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { t } = useT()
+  const [q, setQ] = useState('')
+  const { data: people = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 300_000,
+  })
+  const named = people.filter(p => (p.name || '').trim())
+  const ids = value.split(',').map(s => s.trim()).filter(Boolean).map(Number).filter(n => !isNaN(n))
+  const set = (next: number[]) => onChange(next.join(','))
+  const selected = named.filter(p => ids.includes(p.id))
+  const matches = q.trim()
+    ? named.filter(p => !ids.includes(p.id) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 30)
+    : []
+  const inp = 'w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {selected.map(p => (
+            <span key={p.id} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600 text-white text-xs">
+              {p.name}
+              <button type="button" onClick={() => set(ids.filter(x => x !== p.id))} className="hover:text-red-200">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative">
+        <input value={q} onChange={e => setQ(e.target.value)}
+          placeholder={t('settings.hlWeeklyPersonsPh')} className={inp} />
+        {q.trim() && matches.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg">
+            {matches.map(p => (
+              <button key={p.id} type="button" onClick={() => { set([...ids, p.id]); setQ('') }}
+                className="block w-full text-left px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">{p.name}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function HighlightsAISettings() {
   const { t } = useT()
   const qc = useQueryClient()
@@ -1413,10 +1456,8 @@ function HighlightsAISettings() {
               </select>
             </label>
             <div>
-              <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlWeeklyPersons')}</label>
-              <input value={weeklyPersons} onChange={e => setWeeklyPersons(e.target.value)}
-                placeholder={t('settings.hlWeeklyPersonsPh')}
-                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <label className="block text-sm text-zinc-700 dark:text-zinc-300 mb-1">{t('settings.hlWeeklyPersons')}</label>
+              <PersonIdPicker value={weeklyPersons} onChange={setWeeklyPersons} />
               <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlWeeklyPersonsHint')}</p>
             </div>
             <div className="flex items-center justify-between pt-1">

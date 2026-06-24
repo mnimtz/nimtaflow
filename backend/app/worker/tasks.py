@@ -2116,14 +2116,19 @@ def render_highlight_task(self, highlight_id: int):
                 s_hl: dict = {}
                 try:
                     s_hl = await load_settings(db)
-                    ai_on = (str(s_hl.get("highlights.weekly_ai_clips", "false")).lower() == "true"
+                    # Either the weekly auto-flag OR this highlight opted in at creation
+                    # (per-highlight "KI-Clips" toggle). AI master switch must be on either way.
+                    want_ai = (str(s_hl.get("highlights.weekly_ai_clips", "false")).lower() == "true"
+                               or bool(opts.get("ai_clips")))
+                    ai_on = (want_ai
                              and str(s_hl.get("highlights.ai_enabled", "false")).lower() == "true"
                              and h.motto in ("week_review", "year_review", "album_highlight",
                                              "season", "through_the_years", "newest_50"))
                     if ai_on:
                         from app.services.ai.video_gen import veo, fal
                         provider = str(s_hl.get("highlights.ai_provider", "veo")).lower()
-                        K = max(1, min(5, int(float(s_hl.get("highlights.weekly_ai_clip_count", "2") or 2))))
+                        _kc = opts.get("ai_clip_count") or s_hl.get("highlights.weekly_ai_clip_count", "2")
+                        K = max(1, min(5, int(float(_kc or 2))))
                         sec = int(float(s_hl.get("highlights.ai_clip_seconds", "4") or 4))
                         prompt = (s_hl.get("highlights.ai_prompt")
                                   or "Subtle, natural cinematic motion. Keep faces and identity "

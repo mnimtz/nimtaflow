@@ -511,6 +511,32 @@ def _scale_pad(w: int, h: int) -> str:
             f"fps=30,format=yuv420p")
 
 
+def _fill_graph(inp: str, out: str, w: int, h: int) -> str:
+    """Modern 'blur-fill' look instead of black bars: cover the WxH frame with a
+    zoomed, blurred + dimmed copy of the image, then overlay the full image centred
+    on top. Portraits/odd ratios fill the frame nicely (no tiny-thumbnail-on-black
+    look). `inp`/`out` are filtergraph stream labels (without brackets)."""
+    return (
+        f"[{inp}]split=2[bg_{out}][fg_{out}];"
+        f"[bg_{out}]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+        f"gblur=sigma=22,eq=brightness=-0.07[bgb_{out}];"
+        f"[fg_{out}]scale={w}:{h}:force_original_aspect_ratio=decrease[fgb_{out}];"
+        f"[bgb_{out}][fgb_{out}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p[{out}]"
+    )
+
+
+def _fill_vf(w: int, h: int) -> str:
+    """Same blur-fill as `_fill_graph`, but as a simple `-vf` chain (implicit single
+    in/out) for the concat fallback path."""
+    return (
+        f"split=2[a][b];"
+        f"[b]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+        f"gblur=sigma=22,eq=brightness=-0.07[bg];"
+        f"[a]scale={w}:{h}:force_original_aspect_ratio=decrease[fg];"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p"
+    )
+
+
 def render_slideshow(image_paths: List[str], out_path: str, seconds_per: float,
                      width: int = 1920, height: int = 1080) -> bool:
     """Render a slideshow MP4 from `image_paths` (cached large thumbnails).
@@ -553,10 +579,9 @@ def _render_xfade(images: List[str], out_path: str, seconds_per: float,
     for img in images:
         cmd += ["-loop", "1", "-t", f"{clip:.3f}", "-i", img]
 
-    sp = _scale_pad(width, height)
     filt = []
     for i in range(len(images)):
-        filt.append(f"[{i}:v]{sp}[v{i}]")
+        filt.append(_fill_graph(f"{i}:v", f"v{i}", width, height))
 
     # Chain xfades: offset accumulates by `hold` each step.
     last = "v0"
@@ -603,7 +628,7 @@ def _render_concat(images: List[str], out_path: str, seconds_per: float,
         cmd = [
             _FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
             "-f", "concat", "-safe", "0", "-i", list_file,
-            "-vf", _scale_pad(width, height),
+            "-vf", _fill_vf(width, height),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,

@@ -44,6 +44,8 @@ class HighlightCreate(BaseModel):
     album_id: Optional[int] = None
     season: Optional[str] = None
     month: Optional[int] = None
+    ai_clips: Optional[bool] = None       # opt-in: animate top keyframes into film clips (KI-Verschmelzung)
+    ai_clip_count: Optional[int] = None   # how many keyframes to animate (1–5)
 
 
 class HighlightOut(BaseModel):
@@ -121,6 +123,8 @@ async def create_highlight(
         "album_id": body.album_id,
         "season": body.season,
         "month": body.month,
+        "ai_clips": body.ai_clips,
+        "ai_clip_count": body.ai_clip_count,
     }
     params = {k: v for k, v in params.items() if v is not None}
     params["duration_sec"] = duration

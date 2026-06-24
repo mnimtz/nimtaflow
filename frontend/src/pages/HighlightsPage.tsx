@@ -96,13 +96,19 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const [year, setYear] = useState('')
   const [albumId, setAlbumId] = useState<number | ''>('')
   const [season, setSeason] = useState('weihnachten')
+  const [aiClips, setAiClips] = useState(false)
 
   const { data: mottos = [] } = useQuery<Motto[]>({ queryKey: ['highlight-mottos'], queryFn: () => api.get('/highlights/mottos').then(r => r.data.mottos) })
   const { data: people = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data) })
   const { data: albums = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['albums'], queryFn: () => api.get('/albums').then(r => r.data) })
+  const { data: settings = {} } = useQuery<Record<string, string>>({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000 })
   const named = people.filter(p => (p.name || '').trim())
   const m = mottos.find(x => x.motto === motto)
   const needs = (p: string) => m?.params?.includes(p)
+  // KI-Clips only make sense for recap-style mottos (must match the worker's allow-list).
+  const AI_MOTTOS = ['week_review', 'year_review', 'album_highlight', 'season', 'through_the_years', 'newest_50']
+  const aiAvailable = AI_MOTTOS.includes(motto)
+  const aiEnabled = (settings['highlights.ai_enabled'] ?? 'false') === 'true'
 
   const toast = useToast()
   const create = useMutation({
@@ -114,6 +120,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       ...(needs('year') && year ? { year: Number(year) } : {}),
       ...(needs('album') && albumId ? { album_id: albumId } : {}),
       ...(needs('season') ? { season } : {}),
+      ...(aiAvailable && aiClips && aiEnabled ? { ai_clips: true } : {}),
     }),
     onSuccess: () => { toast(t('highlights.toastCreated'), 'success'); onCreated() },
     onError: (e: any) => toast(e?.response?.data?.detail || t('highlights.toastError'), 'error'),
@@ -174,6 +181,20 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
               <option value="sommer">{t('highlights.seasonSummer')}</option><option value="winter">{t('highlights.seasonWinter')}</option>
               <option value="herbst">{t('highlights.seasonAutumn')}</option><option value="halloween">{t('highlights.seasonHalloween')}</option>
             </select></div>
+        )}
+
+        {aiAvailable && (
+          <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
+            <label className={`flex items-start gap-2.5 ${aiEnabled ? 'cursor-pointer' : 'opacity-60'}`}>
+              <input type="checkbox" checked={aiClips && aiEnabled} disabled={!aiEnabled}
+                onChange={e => setAiClips(e.target.checked)} className="mt-0.5 accent-indigo-600" />
+              <span className="text-sm">
+                <span className="font-medium text-zinc-800 dark:text-zinc-100">✨ {t('highlights.aiClips')}</span>
+                <span className="block text-[11px] text-zinc-500 mt-0.5">{t('highlights.aiClipsDesc')}</span>
+                {!aiEnabled && <span className="block text-[11px] text-amber-600 dark:text-amber-400 mt-1">{t('highlights.aiClipsOff')}</span>}
+              </span>
+            </label>
+          </div>
         )}
 
         <div>
