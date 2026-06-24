@@ -26,11 +26,15 @@ def _esc(s: str) -> str:
 
 
 def photo_conditions(user: Optional[User]) -> List:
-    """SQLAlchemy WHERE clauses restricting a photo query to what `user` may see."""
+    """SQLAlchemy WHERE clauses restricting a photo query to what `user` may see.
+    `Photo.is_hidden == False` is applied to EVERYONE (incl. admin) — a folder marked
+    in display.hidden_folders disappears from all display; face recognition is
+    unaffected because the workers never call this."""
+    base: List = [Photo.is_hidden == False]  # noqa: E712 — global display-hide
     if _is_unrestricted(user):
-        return []
+        return base
     cfg = user.access_config or {}
-    conds: List = []
+    conds: List = list(base)   # hidden-folder filter applies to restricted users too
     if cfg.get("visible_from"):
         conds.append(Photo.taken_at >= cfg["visible_from"])
     if cfg.get("visible_until"):

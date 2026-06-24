@@ -34,6 +34,13 @@ async def update_settings(data: Dict[str, Any], db: AsyncSession = Depends(get_d
         else:
             db.add(Setting(key=key, value=str(value) if value is not None else None, is_secret=is_secret))
     await db.commit()
+    # Re-sync hidden-folder flags whenever the list is saved.
+    if "display.hidden_folders" in data:
+        try:
+            from app.worker.tasks import apply_hidden_folders_task
+            apply_hidden_folders_task.delay()
+        except Exception:
+            pass
     return {"ok": True}
 
 

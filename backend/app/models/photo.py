@@ -121,6 +121,10 @@ class Photo(Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_trashed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     trashed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # for retention auto-purge
+    # Folder hidden from ALL display (gallery/search/people/highlights/map) via
+    # display.hidden_folders. Face recognition still runs (workers ignore this flag),
+    # so the person clustering benefits — the photos just never show. See access.py.
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # File no longer present on disk (detected during scan)
     is_missing: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     missing_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

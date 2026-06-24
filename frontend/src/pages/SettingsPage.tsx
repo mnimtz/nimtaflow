@@ -436,6 +436,29 @@ function SourcesSection() {
   )
 }
 
+function HiddenFoldersField() {
+  const { t } = useT()
+  const qc = useQueryClient()
+  const [val, setVal] = useState('')
+  const [saved, setSaved] = useState(false)
+  const { data } = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings), staleTime: 30_000 })
+  useEffect(() => { if (data) setVal(data['display.hidden_folders'] || '') }, [data])
+  const save = useMutation({
+    mutationFn: () => api.put('/settings', { 'display.hidden_folders': val }),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  return (
+    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-5">
+      <Label>{t('settings.hiddenFolders')}</Label>
+      <textarea value={val} onChange={e => setVal(e.target.value)} rows={3}
+        placeholder={'/photos/Privat\n/photos/Sortieren'}
+        className="w-full px-3 py-2 text-sm font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hiddenFoldersHint')}</p>
+      <div className="mt-2"><SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate()} /></div>
+    </div>
+  )
+}
+
 function GallerySection() {
   const { t } = useT()
   const [rowHeight, setRowHeight] = useState(200)
@@ -483,6 +506,8 @@ function GallerySection() {
             <Toggle value={faceBoxes} onChange={setFaceBoxes} />
           </label>
         </div>
+
+        <HiddenFoldersField />
 
         <SaveButton pending={false} saved={saved} onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000) }} />
       </div>

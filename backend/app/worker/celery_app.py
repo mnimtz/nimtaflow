@@ -78,6 +78,7 @@ celery_app.conf.update(
         "generate_weekly_highlight": {"queue": "cpu"},  # light: creates a Highlight + dispatches render
         "reap_stuck_highlights": {"queue": "cpu"},  # self-heal jobs killed mid-render
         "reap_stuck_photos":  {"queue": "cpu"},   # self-heal photos stuck in 'processing'
+        "apply_hidden_folders": {"queue": "cpu"}, # sync Photo.is_hidden to the setting
     },
 )
 

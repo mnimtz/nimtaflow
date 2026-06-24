@@ -72,6 +72,8 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS person_id INTEGER",
     # ── photo_sources: Upload-Phase 3 — per-user owned sources ────────────────
     "ALTER TABLE photo_sources ADD COLUMN IF NOT EXISTS owner_user_id INTEGER",
+    # ── photos: folder hidden from display (face recognition still runs) ───────
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE",
     # ── photos: updated_at + trigger (drives iOS incremental sync) ────────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
     "CREATE OR REPLACE FUNCTION pf_touch_updated_at() RETURNS trigger AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql",

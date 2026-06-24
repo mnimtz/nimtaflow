@@ -68,6 +68,12 @@ def scan_source_task(self, source_id: int):
                 if not source:
                     return {"error": "Source not found"}
                 stats = await scan_source(source, db, settings.cache_path)
+                # Flag any newly-added photos that fall under a hidden folder.
+                if stats and (stats.get("added") or stats.get("new") or stats.get("indexed")):
+                    try:
+                        apply_hidden_folders_task.delay()
+                    except Exception:
+                        pass
                 return stats
         finally:
             if r is not None:
@@ -418,6 +424,40 @@ def reap_stuck_photos_task(self):
             if n:
                 flog("scanner", "INFO", f"Reaper: {n} hängende 'processing'-Foto(s) → done")
             return {"reaped": n}
+    return _run(_main())
+
+
+@celery_app.task(bind=True, name="apply_hidden_folders")
+def apply_hidden_folders_task(self):
+    """Sync Photo.is_hidden to the display.hidden_folders setting: photos under a
+    listed folder are hidden from ALL display (face recognition still runs). Idempotent
+    — only flips rows that disagree. Triggered on settings save + after a scan."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.settings_loader import load_settings
+        from app.core.access import _esc
+        from app.services.feature_log import log as flog
+        from sqlalchemy import update, or_
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            raw = (s.get("display.hidden_folders") or "").strip()
+            folders = [p.strip().rstrip("/") for p in raw.replace("\n", ",").split(",") if p.strip()]
+            if folders:
+                cond = or_(*[Photo.path.like(f"{_esc(p)}/%", escape="\\") for p in folders])
+                r1 = await db.execute(update(Photo).where(cond, Photo.is_hidden == False).values(is_hidden=True))  # noqa: E712
+                r2 = await db.execute(update(Photo).where(~cond, Photo.is_hidden == True).values(is_hidden=False))  # noqa: E712
+            else:
+                r1 = await db.execute(update(Photo).where(Photo.is_hidden == True).values(is_hidden=False))  # noqa: E712
+                r2 = None
+            await db.commit()
+            n_hidden = (r1.rowcount or 0)
+            n_shown = (r2.rowcount or 0) if r2 is not None else (r1.rowcount or 0)
+            if n_hidden or n_shown:
+                flog("scanner", "INFO", f"Versteckte Ordner angewandt: {len(folders)} Ordner, "
+                                        f"{n_hidden} versteckt / {n_shown} wieder sichtbar")
+            return {"folders": len(folders)}
     return _run(_main())
 
 

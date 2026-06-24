@@ -92,6 +92,8 @@ export const settings = {
 
     // ── Gallery ──
     'settings.galTitle': 'Galerie',
+    'settings.hiddenFolders': 'Versteckte Ordner',
+    'settings.hiddenFoldersHint': 'Ein Ordnerpfad pro Zeile. Fotos darunter werden NIRGENDS angezeigt (Galerie, Suche, Personen, Highlights, Karte) — die Gesichtserkennung läuft aber weiter, sodass Personen weiter erkannt/zugeordnet werden.',
     'settings.galDesc': 'Anzeige, Thumbnails und Video-Verhalten anpassen.',
     'settings.galDefaultView': 'Standard-Ansicht',
     'settings.galViewGrid': 'Raster (Justified Grid)',
@@ -609,6 +611,8 @@ export const settings = {
 
     // ── Gallery ──
     'settings.galTitle': 'Gallery',
+    'settings.hiddenFolders': 'Hidden folders',
+    'settings.hiddenFoldersHint': 'One folder path per line. Photos below it are shown NOWHERE (gallery, search, people, highlights, map) — but face recognition keeps running, so people are still detected/clustered.',
     'settings.galDesc': 'Adjust display, thumbnails and video behavior.',
     'settings.galDefaultView': 'Default view',
     'settings.galViewGrid': 'Grid (Justified Grid)',
