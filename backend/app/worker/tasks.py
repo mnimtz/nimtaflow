@@ -2297,8 +2297,20 @@ def generate_weekly_highlight_task(self):
             if recent:
                 return {"skipped": "already created this week"}
             kw = datetime.now(timezone.utc).isocalendar().week
-            h = Highlight(title=f"Highlight der Woche (KW {kw})", motto="week_review",
-                          duration_sec=60.0, params={"duration_sec": 60.0},
+            # Configurable: which persons + which window (7=Woche / 30=Monat / 365=Jahr).
+            pids = [int(p) for p in (s.get("highlights.weekly_person_ids") or "").split(",") if p.strip().isdigit()]
+            try:
+                win = int(s.get("highlights.weekly_window_days") or 0)
+            except (TypeError, ValueError):
+                win = 0
+            params = {"duration_sec": 60.0}
+            if pids:
+                params["person_ids"] = pids
+            if win:
+                params["window_days"] = win
+            label = {30: "Highlight des Monats", 365: "Jahresrückblick"}.get(win, f"Highlight der Woche (KW {kw})")
+            h = Highlight(title=label, motto="week_review",
+                          duration_sec=60.0, params=params,
                           status=HighlightStatus.pending)
             db.add(h)
             await db.commit()

@@ -1353,9 +1353,13 @@ function HighlightsAISettings() {
   const [budget, setBudget] = useState('300')
   const [falKey, setFalKey] = useState('')
   const [falModel, setFalModel] = useState('fal-ai/minimax/hailuo-02/standard/image-to-video')
+  const [windowDays, setWindowDays] = useState('7')
+  const [weeklyPersons, setWeeklyPersons] = useState('')
   useEffect(() => {
     if (!settings) return
     setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
+    setWindowDays(String(settings['highlights.weekly_window_days'] ?? '7'))
+    setWeeklyPersons(String(settings['highlights.weekly_person_ids'] ?? ''))
     setEnabled((settings['highlights.ai_enabled'] ?? 'false') === 'true')
     setProvider(String(settings['highlights.ai_provider'] ?? 'veo'))
     setSeconds(String(settings['highlights.ai_clip_seconds'] ?? '4'))
@@ -1367,6 +1371,8 @@ function HighlightsAISettings() {
   const save = useMutation({
     mutationFn: () => api.put('/settings', {
       'highlights.weekly_enabled': weekly ? 'true' : 'false',
+      'highlights.weekly_window_days': windowDays,
+      'highlights.weekly_person_ids': weeklyPersons,
       'highlights.ai_enabled': enabled ? 'true' : 'false',
       'highlights.ai_provider': provider,
       'highlights.ai_clip_seconds': seconds,
@@ -1388,6 +1394,27 @@ function HighlightsAISettings() {
           </div>
           <Toggle value={weekly} onChange={setWeekly} />
         </div>
+
+        {weekly && (
+          <div className="space-y-3 pl-1">
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+              {t('settings.hlWeeklyKind')}
+              <select value={windowDays} onChange={e => setWindowDays(e.target.value)}
+                className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="7">{t('settings.hlWeeklyWeek')}</option>
+                <option value="30">{t('settings.hlWeeklyMonth')}</option>
+                <option value="365">{t('settings.hlWeeklyYear')}</option>
+              </select>
+            </label>
+            <div>
+              <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlWeeklyPersons')}</label>
+              <input value={weeklyPersons} onChange={e => setWeeklyPersons(e.target.value)}
+                placeholder={t('settings.hlWeeklyPersonsPh')}
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlWeeklyPersonsHint')}</p>
+            </div>
+          </div>
+        )}
 
         <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800" />
         <div className="flex items-center justify-between">

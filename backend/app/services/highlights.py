@@ -477,10 +477,17 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
     if motto == "week_review":
         from datetime import datetime, timezone, timedelta
         now = datetime.now(timezone.utc)
-        for days in (7, 30):
+        # Optional config (from the weekly settings): restrict to selected persons
+        # and/or use a custom window (7=week, 30=month, 365=year).
+        pids = _opt(opts, "person_ids") or ([_opt(opts, "person_id")] if _opt(opts, "person_id") else [])
+        pids = [int(p) for p in (pids or []) if str(p).strip().isdigit() or isinstance(p, int)]
+        person_cond = ([Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(pids)))] if pids else [])
+        win = _opt(opts, "window_days")
+        windows = [int(win)] if win else [7, 30]
+        for days in windows:
             since = now - timedelta(days=days)
             photos = (await db.execute(
-                select(Photo).where(*base, Photo.taken_at >= since)
+                select(Photo).where(*base, *person_cond, Photo.taken_at >= since)
                 .order_by(
                     Photo.is_favorite.desc(),
                     Photo.user_rating.desc().nullslast(),
