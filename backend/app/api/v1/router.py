@@ -1097,4 +1097,23 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
             .order_by(_f.random()).limit(12))).scalars().all()
     out["highlights"] = [_to_v1(p, request).model_dump() for p in hi]
 
+    # 8) latest rendered recap video ("Highlight der Woche" & co.) for the start page.
+    # Only for unrestricted users (highlights aren't per-folder scoped); excludes the
+    # single-photo photo_animate clips.
+    out["weekly_highlight"] = None
+    if not acl:  # unrestricted / admin only
+        from app.models.highlight import Highlight, HighlightStatus
+        wh = (await db.execute(select(Highlight).where(
+            Highlight.status == HighlightStatus.done, Highlight.file_path.isnot(None),
+            Highlight.motto != "photo_animate")
+            .order_by(Highlight.created_at.desc()).limit(1))).scalars().first()
+        if wh:
+            out["weekly_highlight"] = {
+                "id": wh.id, "title": wh.title, "motto": wh.motto,
+                "duration_sec": wh.duration_sec,
+                "video_url": f"/api/highlights/{wh.id}/video",
+                "cover_url": (f"/api/photos/{wh.cover_photo_id}/thumbnail?size=large"
+                              if wh.cover_photo_id else None),
+            }
+
     return out

@@ -9,6 +9,7 @@ type Ph = { id: number; thumb_url: string; thumb_medium_url: string; is_video: b
 type Person = { id: number; name: string; face_count: number; avatar_url: string; items?: Ph[] }
 type Album = { id: number; name: string; photo_count: number; cover_url: string | null }
 type Memory = { years_ago: number; date: string; items: Ph[] }
+type WeeklyHighlight = { id: number; title: string | null; motto: string; duration_sec: number | null; video_url: string; cover_url: string | null }
 type Dash = {
   stats: any
   on_this_day: Memory[]
@@ -17,6 +18,7 @@ type Dash = {
   featured_albums: Album[]
   recent: Ph[]
   highlights: Ph[]
+  weekly_highlight: WeeklyHighlight | null
 }
 
 export default function DashboardPage() {
@@ -75,6 +77,19 @@ export default function DashboardPage() {
         <StatTile icon={Sparkles} label={t('dashboard.statDescribed')} value={data.stats?.described} color="violet" onClick={() => nav('/search')} />
         <StatTile icon={MapPin} label={t('dashboard.statGps')} value={data.stats?.with_gps} color="emerald" onClick={() => nav('/map')} />
       </div>
+
+      {/* Highlight der Woche — rendered recap video */}
+      {data.weekly_highlight && (
+        <Section icon={Sparkles} title={data.weekly_highlight.title || t('dashboard.weeklyHighlight')}
+          sub={t('dashboard.weeklyHighlightSub')} onMore={() => nav('/highlights')}>
+          <div className="rounded-2xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 max-w-2xl">
+            <video controls playsInline
+              poster={data.weekly_highlight.cover_url || undefined}
+              src={`/api${data.weekly_highlight.video_url.replace(/^\/api/, '')}?access_token=${localStorage.getItem('access_token')}`}
+              className="w-full aspect-video bg-black" />
+          </div>
+        </Section>
+      )}
 
       {/* On this day */}
       {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
