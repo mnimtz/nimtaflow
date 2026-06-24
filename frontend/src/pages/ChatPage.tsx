@@ -21,6 +21,20 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false)
   const [provider, setProvider] = useState('')   // '' = Server-Standard
   const [lightbox, setLightbox] = useState<{ photos: Photo[]; index: number } | null>(null)
+  const [photoSort, setPhotoSort] = useState<'newest' | 'oldest' | 'relevant'>('newest')
+  // Sort an answer's photos. 'relevant' keeps the model's order (most relevant first);
+  // newest/oldest sort by capture date (undated sink to the end).
+  const sortPhotos = (arr: ChatPhoto[]): ChatPhoto[] => {
+    if (photoSort === 'relevant') return arr
+    const k = (p: ChatPhoto) => p.datum || ''
+    return [...arr].sort((a, b) => {
+      const ka = k(a), kb = k(b)
+      if (!ka && !kb) return 0
+      if (!ka) return 1
+      if (!kb) return -1
+      return photoSort === 'newest' ? kb.localeCompare(ka) : ka.localeCompare(kb)
+    })
+  }
   const bottomRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
@@ -106,12 +120,26 @@ export default function ChatPage() {
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
             <div className={`${m.photos && m.photos.length ? 'w-full max-w-full' : 'max-w-[85%]'} ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100'} rounded-2xl px-4 py-2.5`}>
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
-              {m.photos && m.photos.length > 0 ? (
+              {m.photos && m.photos.length > 0 ? (() => {
+                const ordered = sortPhotos(m.photos).slice(0, 12)
+                return (
+                <>
+                {m.photos.length > 1 && (
+                  <div className="flex items-center gap-1.5 mt-3 text-[11px] text-zinc-400">
+                    <span>Sortierung:</span>
+                    <select value={photoSort} onChange={e => setPhotoSort(e.target.value as any)}
+                      className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-1.5 py-0.5">
+                      <option value="newest">Neueste zuerst</option>
+                      <option value="oldest">Älteste zuerst</option>
+                      <option value="relevant">Relevanz</option>
+                    </select>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
-                  {m.photos.slice(0, 12).map((ph, idx) => {
+                  {ordered.map((ph, idx) => {
                     const cap = (ph.titel || ph.beschreibung || '').trim()
                     return (
-                      <button key={ph.id} onClick={() => openLightbox(m.photos!.slice(0, 12).map(x => x.id), idx)} className="text-left group">
+                      <button key={ph.id} onClick={() => openLightbox(ordered.map(x => x.id), idx)} className="text-left group">
                         <div className="relative aspect-square rounded-lg overflow-hidden border border-black/10 group-hover:ring-2 group-hover:ring-indigo-400 transition">
                           <img src={thumbUrl({ id: ph.id }, 'medium')} className="w-full h-full object-cover" loading="lazy" />
                           {ph.ist_video && <span className="absolute bottom-1 right-1 text-white text-[10px] bg-black/55 rounded px-1">▶</span>}
@@ -121,7 +149,9 @@ export default function ChatPage() {
                     )
                   })}
                 </div>
-              ) : m.photo_ids && m.photo_ids.length > 0 ? (
+                </>
+                )
+              })() : m.photo_ids && m.photo_ids.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 mt-2.5">
                   {m.photo_ids.slice(0, 12).map((id, idx) => (
                     <button key={id} onClick={() => openLightbox(m.photo_ids!.slice(0, 12), idx)}

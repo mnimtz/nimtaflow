@@ -51,6 +51,11 @@ SYSTEM = (
     "Zu 'WANN …'-Fragen (z. B. 'wann lernte Lea laufen'): suche mit person + passendem "
     "suchbegriff ('erste Schritte laufen lernen krabbeln'), schau dir die DATEN der "
     "Treffer an und nenne das früheste passende Datum als Antwort (Monat/Jahr). "
+    "Für 'wann habe ich X das erste Mal getroffen/gesehen', 'seit wann kenne ich X', "
+    "'wann zuletzt …' nutze IMMER das Werkzeug zeitliche_eckdaten (person=X) — es liefert "
+    "das wirklich früheste/späteste Foto-Datum (datumssortiert). Geht es um GEMEINSAME "
+    "Fotos mit dir, setze zusätzlich person2=<dein eigener Name aus der Identität>. "
+    "Nenne dann erstes_datum bzw. letztes_datum als Antwort und das zugehörige Foto per #id. "
     "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
     "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
     "Bestätige danach kurz, was du getan hast (Albumname + Anzahl)."
@@ -206,6 +211,35 @@ async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[
             "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person}
 
 
+async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Optional[str] = None,
+                           medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
+                           jahr_bis: Optional[int] = None, acl: Optional[list] = None) -> dict:
+    """Earliest & latest DATED photo of a person (optionally two people TOGETHER on
+    one photo). Answers 'wann zum ersten/letzten Mal …' precisely — unlike semantic
+    search this is sorted by DATE, so the true first/last is never missed."""
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [
+        Photo.is_trashed == False, Photo.taken_at.isnot(None)] + list(acl or [])  # noqa: E712
+
+    def _has(name: str):
+        return Photo.id.in_(
+            select(Face.photo_id).join(Person, Person.id == Face.person_id)
+            .where(Person.name.ilike(f"%{name.strip()}%")))
+
+    if person and person.strip():
+        conds.append(_has(person))
+    if person2 and person2.strip():
+        conds.append(_has(person2))
+    rows = (await db.execute(
+        select(Photo.id, Photo.taken_at).where(*conds).order_by(Photo.taken_at.asc())
+    )).all()
+    if not rows:
+        return {"treffer": 0}
+    first, last = rows[0], rows[-1]
+    return {"treffer": len(rows),
+            "erstes_datum": str(first[1])[:10], "erstes_foto_id": first[0],
+            "letztes_datum": str(last[1])[:10], "letztes_foto_id": last[0]}
+
+
 async def _image_parts(db: AsyncSession, ids: List[int], max_n: int) -> list:
     """Gemini inline_data parts for the top-N hits' thumbnails (SSD, JPEG) so the
     multimodal model can SEE the photos — answers details no description captured.
@@ -344,6 +378,18 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             }},
         },
         {
+            "name": "zeitliche_eckdaten",
+            "description": "Liefert das FRÜHESTE und SPÄTESTE Foto-Datum für eine Person (optional zwei "
+                           "Personen GEMEINSAM auf einem Foto). Nutze das für 'wann habe ich X das erste "
+                           "Mal getroffen/gesehen', 'seit wann kenne ich X', 'wann zuletzt …' — die normale "
+                           "Suche ist nach Relevanz sortiert und verpasst das wirklich früheste/späteste Foto.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "Name der Person (Pflicht), z. B. 'Anja'"},
+                "person2": {"type": "string", "description": "Optional: zweite Person, die GEMEINSAM mit 'person' auf demselben Foto sein muss — z. B. der Nutzer selbst bei 'wann habe ICH X getroffen'."},
+                "medientyp": _filter_props["medientyp"], "jahr_von": _filter_props["jahr_von"], "jahr_bis": _filter_props["jahr_bis"],
+            }, "required": ["person"]},
+        },
+        {
             "name": "album_erstellen",
             "description": "Erstellt ein NEUES Album aus den passenden Fotos. Nutze das, wenn der Nutzer "
                            "ein Album anlegen/erstellen möchte (z. B. 'mach ein Album mit allen Strandfotos "
@@ -415,6 +461,18 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     if c.get("name") == "zaehle_fotos":
                         resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
                                             args.get("jahr_bis"), args.get("person"), acl=acl)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "zeitliche_eckdaten":
+                        resp = await _temporal_bounds(db, args.get("person"), args.get("person2"),
+                                                      args.get("medientyp"), args.get("jahr_von"),
+                                                      args.get("jahr_bis"), acl=acl)
+                        eids = [resp[k] for k in ("erstes_foto_id", "letztes_foto_id") if resp.get(k)]
+                        seen_ids.extend(eids)
+                        if eids:
+                            photos = (await db.execute(select(Photo).where(Photo.id.in_(eids)))).scalars().all()
+                            for rrec in await _fused_records(db, photos):
+                                seen_recs.setdefault(rrec["id"], rrec)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):

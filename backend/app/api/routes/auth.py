@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,4 +102,24 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 
 @router.get("/me", response_model=UserDetail)
 async def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+class SelfPersonIn(BaseModel):
+    person_id: Optional[int] = None      # null = unlink
+
+
+@router.put("/me/person", response_model=UserDetail)
+async def set_my_person(body: SelfPersonIn,
+                        current_user: User = Depends(get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    """Link the logged-in account to a Person ('das bin ich'). Powers 'meine Frau',
+    'wann habe ich X getroffen' etc. in chat. null unlinks."""
+    if body.person_id is not None:
+        from app.models.person import Person
+        if not await db.get(Person, body.person_id):
+            raise HTTPException(404, "Person nicht gefunden")
+    current_user.person_id = body.person_id
+    await db.commit()
+    await db.refresh(current_user)
     return current_user

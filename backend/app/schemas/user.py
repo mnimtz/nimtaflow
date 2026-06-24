@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     avatar_path: Optional[str] = None
     last_login: Optional[datetime]
     created_at: datetime
+    person_id: Optional[int] = None      # "this is me" → linked Person
 
     model_config = {"from_attributes": True}
 
