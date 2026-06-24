@@ -3,8 +3,8 @@ import os
 from typing import Optional, Any, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -207,15 +207,53 @@ async def get_highlight(highlight_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/{highlight_id}/video")
-async def get_highlight_video(highlight_id: int, db: AsyncSession = Depends(get_db),
+async def get_highlight_video(highlight_id: int, request: Request,
+                              range: Optional[str] = Header(None),
+                              db: AsyncSession = Depends(get_db),
                               user: Optional[User] = Depends(current_user_optional)):
+    """HTTP Range-aware stream — iOS AVPlayer needs 206/Accept-Ranges to play an MP4
+    (a plain 200 FileResponse just hangs/does nothing). Same pattern as /v1 stream."""
     h = await db.get(Highlight, highlight_id)
     if not h or not _can_access(h, user):
         raise HTTPException(404, "Highlight nicht gefunden")
     if h.status != HighlightStatus.done or not h.file_path or not os.path.exists(h.file_path):
         raise HTTPException(404, "Video noch nicht fertig")
-    fname = f"{(h.title or h.motto).replace('/', '-')}.mp4"
-    return FileResponse(h.file_path, media_type="video/mp4", filename=fname)
+    path = h.file_path
+    file_size = os.path.getsize(path)
+    if range:
+        try:
+            br = range.replace("bytes=", "")
+            s_str, e_str = br.split("-")
+            start = int(s_str) if s_str else 0
+            end = int(e_str) if e_str else file_size - 1
+        except Exception:
+            raise HTTPException(416)
+        end = min(end, file_size - 1)
+        chunk = end - start + 1
+
+        def iter_range():
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = chunk
+                while remaining > 0:
+                    data = f.read(min(65536, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+        return StreamingResponse(iter_range(), status_code=206, media_type="video/mp4",
+                                 headers={"Content-Range": f"bytes {start}-{end}/{file_size}",
+                                          "Accept-Ranges": "bytes", "Content-Length": str(chunk)})
+
+    def iter_full():
+        with open(path, "rb") as f:
+            while True:
+                data = f.read(65536)
+                if not data:
+                    break
+                yield data
+    return StreamingResponse(iter_full(), media_type="video/mp4",
+                             headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)})
 
 
 @router.delete("/{highlight_id}", status_code=204)
