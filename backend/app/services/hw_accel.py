@@ -8,6 +8,10 @@ from typing import List, Optional
 from functools import lru_cache
 
 _FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+# Cap encoder threads so a SOFTWARE (libx264) transcode can't grab every core and
+# starve the interactive backend (the cause of "Galerie/Personen laden ewig" while a
+# video backlog drains). Hardware encoders ignore it. Tune via FFMPEG_THREADS.
+_FF_THREADS = os.environ.get("FFMPEG_THREADS", "3")
 _FFPROBE = shutil.which("ffprobe") or "ffprobe"
 
 
@@ -281,7 +285,8 @@ def build_transcode_cmd(
             cmd += ["-vf", f"scale_{'npp' if 'nvenc' in vcodec else vcodec.split('_')[1]}={'-2'}:{resolution}"]
         else:
             cmd += ["-vf", scale]
-        cmd += ["-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+        cmd += ["-threads", _FF_THREADS,
+                "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
                 "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path]
 
     else:  # vp9 / webm
@@ -290,6 +295,7 @@ def build_transcode_cmd(
             "-c:v", vcodec,
             "-vf", scale,
             "-crf", "33", "-b:v", "0",
+            "-threads", _FF_THREADS,
             "-c:a", "libopus", "-b:a", "128k",
             output_path,
         ]

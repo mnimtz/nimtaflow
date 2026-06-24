@@ -1435,7 +1435,10 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 _long = int(resolution * 16 / 9)
                 sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
                             ":force_original_aspect_ratio=decrease:force_divisible_by=2")
+                import os as _os
+                _ff_threads = _os.environ.get("FFMPEG_THREADS", "3")
                 sw = ["ffmpeg", "-y", "-i", src_path, "-c:v", "libx264",
+                      "-threads", _ff_threads,  # cap cores so the UI stays responsive
                       "-vf", sw_scale, "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
                       "-c:a", "aac", "-b:a", "128k",
                       "-movflags", "+faststart", str(tmp_path)]
