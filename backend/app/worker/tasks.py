@@ -1650,7 +1650,14 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                              f"{vw or '?'}×{vh or '?'}, Hover-Vorschau {'ja' if preview_ok else 'nein'}, "
                              f"in {_vt.time() - _v0:.1f}s")
                     else:
-                        flog("video", "ERROR", f"Kein Frame extrahierbar (ffmpeg) — Video wird übersprungen: {photo.filename}")
+                        # Count the attempt so retry_missing_thumbnails (cap = thumb_attempts<5)
+                        # stops re-queueing a genuinely undecodable clip (VOB/MKV/corrupt) — it
+                        # used to retry forever, spamming this line dozens of times per day.
+                        # WARNING (not ERROR): a broken/unsupported file isn't a system fault.
+                        photo.thumb_attempts = (photo.thumb_attempts or 0) + 1
+                        flog("video", "WARNING",
+                             f"Kein Frame extrahierbar (ffmpeg, Versuch {photo.thumb_attempts}/5) — "
+                             f"übersprungen: {photo.filename}")
                 else:
                     for size in ("small", "medium", "large"):
                         thumb = generate_thumbnail(photo.path, settings.cache_path, size, force=redo_thumbs)
