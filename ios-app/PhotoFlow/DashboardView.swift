@@ -10,6 +10,7 @@ struct DashboardView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var selected: PhotoV1?
+    @State private var playWeekly: DashboardWeeklyHighlight?
     @State private var userName = ""
 
     private var greeting: String {
@@ -27,11 +28,15 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let error { Text(error).foregroundStyle(.secondary).padding() }
+                // Only surface the error when there's nothing to show. A failed
+                // pull-to-refresh while data is already on screen shouldn't slap a
+                // scary "konnte nicht geladen werden" over a fully-populated page.
+                if let error, data == nil { Text(error).foregroundStyle(.secondary).padding() }
                 if let d = data {
                     VStack(alignment: .leading, spacing: 24) {
                         header
                         statTiles(d.stats)
+                        if let wh = d.weekly_highlight { weeklyHighlightCard(wh) }
                         ForEach(d.on_this_day) { day in
                             photoStrip(title: day.years_ago == 1 ? "Heute vor 1 Jahr"
                                                                   : "Heute vor \(day.years_ago) Jahren",
@@ -59,6 +64,17 @@ struct DashboardView: View {
             .task { if data == nil { await load() } }
             .fullScreenCover(item: $selected) { p in
                 PhotoPager(photos: pagerPool, start: p)
+            }
+            .fullScreenCover(item: $playWeekly) { wh in
+                ZStack(alignment: .topTrailing) {
+                    Color.black.ignoresSafeArea()
+                    VideoPlayerView(url: api.url("api/highlights/\(wh.id)/video?access_token=\(api.token)"))
+                        .ignoresSafeArea()
+                    Button { playWeekly = nil } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title).foregroundStyle(.white.opacity(0.85)).padding()
+                    }
+                }
             }
         }
     }
@@ -123,6 +139,27 @@ struct DashboardView: View {
                     .padding(.horizontal)
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func weeklyHighlightCard(_ wh: DashboardWeeklyHighlight) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(wh.title ?? "Highlight der Woche").font(.headline).padding(.horizontal)
+            Button { playWeekly = wh } label: {
+                ZStack {
+                    Thumb(url: wh.cover_url.flatMap { api.url($0) })
+                        .aspectRatio(16/9, contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200)
+                        .clipped()
+                        .background(Color.black)
+                    Circle().fill(.black.opacity(0.45)).frame(width: 60, height: 60)
+                        .overlay(Image(systemName: "play.fill").font(.title2).foregroundStyle(.white))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal)
+            }
+            .buttonStyle(.plain)
         }
     }
 

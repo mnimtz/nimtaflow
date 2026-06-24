@@ -320,6 +320,15 @@ struct DashboardAlbum: Codable, Identifiable, Hashable {
     let cover_url: String?
 }
 
+struct DashboardWeeklyHighlight: Codable, Identifiable {
+    let id: Int
+    let title: String?
+    let motto: String
+    let duration_sec: Double?
+    let video_url: String
+    let cover_url: String?
+}
+
 struct DashboardV1: Codable {
     let stats: DashboardStats
     let on_this_day: [DashboardOnThisDay]
@@ -328,6 +337,7 @@ struct DashboardV1: Codable {
     let featured_albums: [DashboardAlbum]
     let recent: [PhotoV1]
     let highlights: [PhotoV1]
+    let weekly_highlight: DashboardWeeklyHighlight?
 }
 
 // MARK: - Chat
