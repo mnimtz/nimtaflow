@@ -167,6 +167,10 @@ async def generate_pro_keys(body: GenKeysIn,
                             admin: User = Depends(require_admin),
                             db: AsyncSession = Depends(get_db)):
     """Admin: generate redeemable Pro keys (zum Verschenken / Familie)."""
+    # require_admin lets anyone through when auth.enforce is off (open mode) and may
+    # return None — but minting Pro keys must ALWAYS require a real admin.
+    if admin is None or admin.role != UserRole.admin:
+        raise HTTPException(403, "Adminrechte erforderlich")
     import secrets
     from app.models.pro_key import ProKey
     n = max(1, min(int(body.count or 1), 100))
