@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, hash_password, create_access_token, create_refresh_token, decode_token
 from app.models.user import User, UserRole
 from app.schemas.user import UserOut, UserDetail, TokenResponse
+from app.core.auth_guard import require_admin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -123,3 +124,57 @@ async def set_my_person(body: SelfPersonIn,
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+# ── NimtaFlow Pro: Schlüssel einlösen / generieren ──────────────────────────────
+
+class RedeemIn(BaseModel):
+    code: str
+
+
+@router.post("/me/redeem", response_model=UserDetail)
+async def redeem_pro_key(body: RedeemIn,
+                         current_user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    """Redeem a NimtaFlow Pro license key → unlock Pro for this account."""
+    from app.models.pro_key import ProKey
+    from datetime import timezone
+    code = (body.code or "").strip().upper()
+    if not code:
+        raise HTTPException(400, "Kein Schlüssel angegeben")
+    key = (await db.execute(select(ProKey).where(ProKey.code == code))).scalar_one_or_none()
+    if not key:
+        raise HTTPException(404, "Ungültiger Schlüssel")
+    if key.used_by_user_id and key.used_by_user_id != current_user.id:
+        raise HTTPException(409, "Schlüssel wurde bereits eingelöst")
+    key.used_by_user_id = current_user.id
+    key.used_at = datetime.now(timezone.utc)
+    current_user.is_pro = True
+    if current_user.pro_source != "iap":
+        current_user.pro_source = "key"
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+class GenKeysIn(BaseModel):
+    count: int = 1
+    note: Optional[str] = None
+
+
+@router.post("/pro/keys")
+async def generate_pro_keys(body: GenKeysIn,
+                            admin: User = Depends(require_admin),
+                            db: AsyncSession = Depends(get_db)):
+    """Admin: generate redeemable Pro keys (zum Verschenken / Familie)."""
+    import secrets
+    from app.models.pro_key import ProKey
+    n = max(1, min(int(body.count or 1), 100))
+    codes = []
+    for _ in range(n):
+        raw = secrets.token_hex(8).upper()                      # 16 hex chars
+        code = f"NF-{raw[:4]}-{raw[4:8]}-{raw[8:12]}-{raw[12:16]}"
+        db.add(ProKey(code=code, note=(body.note or None)))
+        codes.append(code)
+    await db.commit()
+    return {"keys": codes}

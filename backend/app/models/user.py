@@ -27,6 +27,11 @@ class User(Base):
     avatar_path: Mapped[Optional[str]] = mapped_column(String(512))
     person_id: Mapped[Optional[int]] = mapped_column(Integer)       # "this is me" → Person link
 
+    # NimtaFlow Pro (Server-Entitlement: per Schlüssel eingelöst oder Admin gesetzt).
+    # App-Store-Käufe schalten Pro zusätzlich on-device via StoreKit frei.
+    is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
+    pro_source: Mapped[Optional[str]] = mapped_column(String(32))   # "key" | "admin" | "iap"
+
     # 2FA
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

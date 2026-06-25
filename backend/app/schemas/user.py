@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     last_login: Optional[datetime]
     created_at: datetime
     person_id: Optional[int] = None      # "this is me" → linked Person
+    is_pro: bool = False                  # NimtaFlow Pro freigeschaltet (Server-Entitlement)
 
     model_config = {"from_attributes": True}
 

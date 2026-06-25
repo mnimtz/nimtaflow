@@ -114,6 +114,8 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
     # ── users: defensive (in case the table predates these columns) ───────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_pro BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_source VARCHAR(32)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ",

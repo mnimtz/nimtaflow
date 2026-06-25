@@ -10,8 +10,10 @@ from .source import PhotoSource
 from .relationship import PersonRelationship
 from .share import Share, ShareType
 from .highlight import Highlight, HighlightStatus
+from .pro_key import ProKey
 
 __all__ = [
+    "ProKey",
     "Highlight", "HighlightStatus",
     "Share", "ShareType",
     "PersonRelationship",
