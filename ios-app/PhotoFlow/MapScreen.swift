@@ -1,5 +1,30 @@
 import SwiftUI
 import MapKit
+import CoreLocation
+
+/// Live device location for the map: requests "when in use" permission and
+/// publishes the current position so the map can show a blue "you are here" dot
+/// and recenter on demand.
+final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let mgr = CLLocationManager()
+    @Published var coordinate: CLLocationCoordinate2D?
+    @Published var authorized = false
+
+    override init() {
+        super.init()
+        mgr.delegate = self
+        mgr.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+    func request() { mgr.requestWhenInUseAuthorization() }
+    func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        authorized = m.authorizationStatus == .authorizedWhenInUse || m.authorizationStatus == .authorizedAlways
+        if authorized { m.startUpdatingLocation() }
+    }
+    func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
+        if let c = locs.last?.coordinate { coordinate = c }
+    }
+    func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {}
+}
 
 /// Photo map with SERVER-SIDE clustering. Instead of pulling 27k points, it asks
 /// the server for grid-clustered bundles of the visible region and refetches
@@ -17,6 +42,7 @@ struct MapScreen: View {
     @State private var mapError: String?
     @State private var clusterPhotos: [PhotoV1] = []
     @State private var showClusterSheet = false
+    @StateObject private var loc = LocationProvider()
     private let gridCols = [GridItem(.adaptive(minimum: 100), spacing: 2)]
 
     var body: some View {
@@ -42,6 +68,7 @@ struct MapScreen: View {
                         }
                     }
                 }
+                UserAnnotation()   // blauer "Hier bin ich"-Punkt (Live-Standort)
             }
             .mapStyle(globe ? .imagery(elevation: .realistic) : .standard(elevation: .flat))
             .onMapCameraChange(frequency: .onEnd) { ctx in
@@ -64,7 +91,20 @@ struct MapScreen: View {
                         Label(globe ? "Karte" : "Globus", systemImage: globe ? "map" : "globe.europe.africa.fill")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        loc.request()
+                        if let c = loc.coordinate {
+                            globe = false
+                            withAnimation(.easeInOut(duration: 0.6)) {
+                                camera = .region(MKCoordinateRegion(center: c,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
+                            }
+                        }
+                    } label: { Label("Mein Standort", systemImage: "location.fill") }
+                }
             }
+            .onAppear { loc.request() }
             .overlay(alignment: .bottom) {
                 if loading || mapError != nil {
                     Text(loading ? "lädt…" : (mapError ?? "")).font(.caption).padding(8)

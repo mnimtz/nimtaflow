@@ -35,6 +35,8 @@
 	<string>NimtaFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>NimtaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>NimtaFlow zeigt deinen aktuellen Standort auf der Foto-Karte an.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
