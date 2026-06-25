@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsScreen: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var store: Store
     @State private var serverDraft = ""
     @State private var user = ""
     @State private var pass = ""
@@ -32,7 +33,8 @@ struct SettingsScreen: View {
                     Text("Login ist nur nötig, wenn am Server ‚Login erzwingen‘ aktiv ist.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if api.loggedIn { AutoUploadSection() }
+                ProSection()
+                if api.loggedIn && store.isPro { AutoUploadSection() }
                 CacheSection()
                 if api.loggedIn { HighlightsAISection() }
                 Section {
@@ -44,6 +46,61 @@ struct SettingsScreen: View {
             .navigationTitle("Einstellungen")
             .onAppear { serverDraft = api.serverURL }
             .alert("Anmeldung fehlgeschlagen", isPresented: $loginError) { Button("OK") {} }
+        }
+    }
+}
+
+/// NimtaFlow Pro: Status, Kauf, Wiederherstellen, Schlüssel einlösen.
+private struct ProSection: View {
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var api: APIClient
+    @State private var code = ""
+    @State private var redeeming = false
+    @State private var redeemMsg: String?
+
+    private var promoText: String {
+        let f = DateFormatter(); f.dateFormat = "dd.MM.yyyy"
+        return f.string(from: Store.promoEnd)
+    }
+
+    var body: some View {
+        Section("NimtaFlow Pro") {
+            if store.isPro {
+                HStack {
+                    Image(systemName: "crown.fill").foregroundStyle(.yellow)
+                    if store.purchasedPro { Text("Pro aktiv — gekauft ✓") }
+                    else if store.serverPro { Text("Pro aktiv — über deinen Server ✓") }
+                    else { Text("Pro aktiv — Einführungsangebot bis \(promoText) 🎉") }
+                }.font(.subheadline)
+            } else {
+                Button {
+                    Task { await store.purchase() }
+                } label: {
+                    HStack {
+                        if store.purchasing { ProgressView().controlSize(.small) }
+                        Text("Pro freischalten — \(store.priceText)")
+                    }
+                }.disabled(store.purchasing || store.proProduct == nil)
+                Button("Käufe wiederherstellen") { Task { await store.restore() } }
+                    .font(.subheadline)
+            }
+            // Schlüssel einlösen (Server-Entitlement, z. B. für Familie)
+            HStack {
+                TextField("Schlüssel (NF-…)", text: $code)
+                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                Button("Einlösen") {
+                    Task {
+                        redeeming = true; defer { redeeming = false }
+                        do {
+                            _ = try await api.action("api/auth/me/redeem", method: "POST", json: ["code": code])
+                            await store.syncServer(api)
+                            redeemMsg = store.serverPro ? "Schlüssel eingelöst — Pro aktiv ✓" : "Schlüssel nicht gültig."
+                            code = ""
+                        } catch { redeemMsg = "Schlüssel ungültig oder bereits benutzt." }
+                    }
+                }.disabled(redeeming || code.isEmpty)
+            }
+            if let m = redeemMsg { Text(m).font(.caption).foregroundStyle(.secondary) }
         }
     }
 }

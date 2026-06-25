@@ -3,10 +3,11 @@ import SwiftUI
 @main
 struct PhotoFlowApp: App {
     @StateObject private var api = APIClient.shared
+    @StateObject private var store = Store()
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(api).preferredColorScheme(.dark)
+            RootView().environmentObject(api).environmentObject(store).preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -18,6 +19,7 @@ struct PhotoFlowApp: App {
 
 struct RootView: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var store: Store
     var body: some View {
         if !api.loggedIn {
             LoginView()
@@ -26,10 +28,12 @@ struct RootView: View {
             DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
             GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
             AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
-            ChatView().tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
+            ProGate(feature: "KI-Chat") { ChatView() }
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
             MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
         }
         .tint(.indigo)
+        .task { await store.syncServer(api) }
         }
     }
 }
@@ -66,11 +70,11 @@ struct MoreView: View {
         .sheet(item: $dest) { d in
             Group {
                 switch d {
-                case .search: SearchView()
+                case .search: ProGate(feature: "Intelligente Suche") { SearchView() }
                 case .library: LibraryStatsView()
                 case .people: PeopleView()
                 case .memories: MemoriesView()
-                case .highlights: HighlightsView()
+                case .highlights: ProGate(feature: "Highlights") { HighlightsView() }
                 case .trips: TripsView()
                 case .map: MapScreen()
                 case .relationships: RelationshipsView()
