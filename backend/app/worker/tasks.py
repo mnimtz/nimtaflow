@@ -1429,7 +1429,11 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
             out_dir = pathlib.Path(settings.cache_path) / "videos"
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{photo_id}_{resolution}.mp4"
-            tmp_path = out_dir / f"{photo_id}_{resolution}.mp4.part"
+            # Temp name ends in .mp4 (NOT .mp4.part): ffmpeg infers the container from
+            # the extension, and ".part" made the muxer fail with "Invalid argument" on
+            # EVERY transcode → the whole 1080p backlog silently errored. Atomic rename
+            # to out_path still applies.
+            tmp_path = out_dir / f"{photo_id}_{resolution}.part.mp4"
 
             def _probe_ok(p):
                 """A transcode is only usable if ffprobe reads a positive duration —
