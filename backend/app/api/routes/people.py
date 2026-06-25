@@ -403,18 +403,22 @@ async def person_photos(
 
     # nullslast so undated photos don't pile up at the very top of "newest".
     order = Photo.taken_at.asc().nullslast() if sort == "oldest" else Photo.taken_at.desc().nullslast()
+    # Subquery (NOT a join): a person can have several faces in ONE photo (639 such for
+    # Lea) — a join would return that photo 2-3× → duplicate rows. Duplicates yield
+    # duplicate React keys client-side, which scrambles the grid order on re-render
+    # ("Sortierung total gemischt"). Match by photo id once instead.
+    photo_ids = select(Face.photo_id).where(Face.person_id == person_id)
     q = (
         select(Photo)
-        .join(Face, Face.photo_id == Photo.id)
-        .where(Face.person_id == person_id, Photo.is_trashed == False, *photo_conditions(_acc_user))
-        .order_by(order)
+        .where(Photo.id.in_(photo_ids), Photo.is_trashed == False, *photo_conditions(_acc_user))
+        .order_by(order, Photo.id.desc())
         .offset((page - 1) * limit).limit(limit)
     )
     photos = (await db.execute(q)).scalars().all()
     total = await db.scalar(
-        select(func.count(func.distinct(Photo.id)))
-        .join(Face, Face.photo_id == Photo.id)
-        .where(Face.person_id == person_id, Photo.is_trashed == False, *photo_conditions(_acc_user))
+        select(func.count())
+        .select_from(Photo)
+        .where(Photo.id.in_(photo_ids), Photo.is_trashed == False, *photo_conditions(_acc_user))
     )
     items = [PhotoBase.model_validate(p, from_attributes=True) for p in photos]
     return {"total": total or 0, "page": page, "limit": limit, "items": items}

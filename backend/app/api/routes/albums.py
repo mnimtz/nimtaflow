@@ -187,11 +187,14 @@ async def album_photos(
         "oldest": Photo.taken_at.asc().nullsfirst(),
         "name": Photo.filename.asc(),
     }.get(sort)
+    # Stable tiebreaker (Photo.id) so photos sharing a timestamp keep a fixed order
+    # across pages — without it offset pagination can re-shuffle equal-date photos.
+    order_cols = [_order, Photo.id.desc()] if _order is not None else [AlbumPhoto.sort_order, AlbumPhoto.added_at]
     q = (
         select(Photo)
         .join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id)
         .where(AlbumPhoto.album_id == album_id, *acl)
-        .order_by(_order if _order is not None else AlbumPhoto.sort_order, AlbumPhoto.added_at)
+        .order_by(*order_cols)
         .offset((page - 1) * limit).limit(limit)
     )
     photos = (await db.execute(q)).scalars().all()

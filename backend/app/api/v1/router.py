@@ -169,7 +169,9 @@ async def list_photos_v1(
         elif media_type == "raw":
             q = q.where(Photo.mime_type.like("image/raw%"))
         if person_id:
-            q = q.join(Face, Face.photo_id == Photo.id).where(Face.person_id == person_id)
+            # Subquery, not a join: a person with several faces in one photo would
+            # otherwise yield duplicate rows → duplicate client keys → scrambled order.
+            q = q.where(Photo.id.in_(select(Face.photo_id).where(Face.person_id == person_id)))
         return q
 
     acl = photo_conditions(user)
@@ -649,6 +651,7 @@ async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSes
 @router.get("/people/{person_id}/photos", response_model=PhotoPageV1)
 async def person_photos_v1(person_id: int, request: Request,
                            cursor: Optional[int] = Query(None), limit: int = Query(50, ge=1, le=200),
+                           sort: str = Query("newest", description="newest | oldest"),
                            db: AsyncSession = Depends(get_db),
                            user: Optional[User] = Depends(current_user_optional)):
     from app.models.face import Face
@@ -656,15 +659,22 @@ async def person_photos_v1(person_id: int, request: Request,
     acl = photo_conditions(user)
     sub = select(Face.photo_id).where(Face.person_id == person_id)
     q = select(Photo).where(Photo.id.in_(sub), Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
-    if cursor:
-        q = q.where(Photo.id < cursor)
-    rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
+    # Sort by CAPTURE DATE, not Photo.id. id-order = IMPORT order: an old photo
+    # imported recently has a high id and wrongly floated to the top of "newest"
+    # ("Sortierung total gemischt"). Offset-cursor so date sorting paginates cleanly;
+    # Photo.id is only the stable tiebreaker for equal timestamps.
+    if sort == "oldest":
+        q = q.order_by(Photo.taken_at.asc().nullsfirst(), Photo.id.asc())
+    else:
+        q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+    offset = max(0, cursor or 0)
+    rows = (await db.execute(q.offset(offset).limit(limit + 1))).scalars().all()
     has_more = len(rows) > limit
     items = rows[:limit]
     total = await db.scalar(select(_f.count()).select_from(
         select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl).subquery()))  # noqa: E712
     return PhotoPageV1(items=[_to_v1(p, request) for p in items],
-                       next_cursor=(items[-1].id if has_more and items else None),
+                       next_cursor=(offset + limit) if has_more else None,
                        total=total or 0, has_more=has_more)
 
 
@@ -728,6 +738,7 @@ async def albums_v1(request: Request, db: AsyncSession = Depends(get_db),
 @router.get("/albums/{album_id}/photos", response_model=PhotoPageV1)
 async def album_photos_v1(album_id: int, request: Request,
                           cursor: Optional[int] = Query(None), limit: int = Query(60, ge=1, le=200),
+                          sort: str = Query("newest", description="newest | oldest | order | name"),
                           db: AsyncSession = Depends(get_db),
                           user: Optional[User] = Depends(current_user_optional)):
     from app.models.album import Album, AlbumPhoto
@@ -737,15 +748,25 @@ async def album_photos_v1(album_id: int, request: Request,
     acl = photo_conditions(user)
     sub = select(AlbumPhoto.photo_id).where(AlbumPhoto.album_id == album_id)
     q = select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl)  # noqa: E712
-    if cursor:
-        q = q.where(Photo.id < cursor)
-    rows = (await db.execute(q.order_by(Photo.id.desc()).limit(limit + 1))).scalars().all()
+    # Sort by CAPTURE DATE by default, not Photo.id (= import order, which mixed old
+    # photos imported recently to the top). Offset-cursor so date sorting paginates.
+    if sort == "oldest":
+        q = q.order_by(Photo.taken_at.asc().nullsfirst(), Photo.id.asc())
+    elif sort == "name":
+        q = q.order_by(Photo.filename.asc(), Photo.id.asc())
+    elif sort == "order":
+        q = q.join(AlbumPhoto, AlbumPhoto.photo_id == Photo.id).where(AlbumPhoto.album_id == album_id)\
+             .order_by(AlbumPhoto.sort_order, AlbumPhoto.added_at)
+    else:  # newest
+        q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+    offset = max(0, cursor or 0)
+    rows = (await db.execute(q.offset(offset).limit(limit + 1))).scalars().all()
     has_more = len(rows) > limit
     items = rows[:limit]
     total = await db.scalar(select(_f.count()).select_from(
         select(Photo.id).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl).subquery()))  # noqa: E712
     return PhotoPageV1(items=[_to_v1(p, request) for p in items],
-                       next_cursor=(items[-1].id if has_more and items else None),
+                       next_cursor=(offset + limit) if has_more else None,
                        total=total or 0, has_more=has_more)
 
 
