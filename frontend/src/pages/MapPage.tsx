@@ -20,17 +20,16 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-// Photo markers as little THUMBNAILS, not the default blue location-pin — otherwise
-// every photo looks like a duplicate "you are here" pin on the map.
-const photoIcon = (photo: { id: number; latitude?: number | null; longitude?: number | null; filename?: string }) =>
-  L.divIcon({
-    className: 'pf-photo-marker',
-    html: `<div style="width:38px;height:38px;border-radius:9px;overflow:hidden;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);background:#222">`
-        + `<img src="${thumbUrl(photo as any, 'small')}" loading="lazy" style="width:100%;height:100%;object-fit:cover" /></div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
-    popupAnchor: [0, -19],
-  })
+// Photo markers as simple round dots (like the cluster bubbles) — NOT the default
+// Leaflet teardrop pin, which made isolated photos look like random "you are here"
+// GPS markers.
+const dotIcon = L.divIcon({
+  className: 'pf-dot',
+  html: `<div style="width:14px;height:14px;border-radius:50%;background:#4f46e5;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+  popupAnchor: [0, -7],
+})
 
 // Single, distinct "my location" marker (browser geolocation) — a pulsing blue dot,
 // clearly different from photo markers.
@@ -298,7 +297,7 @@ export default function MapPage() {
             })}
             <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
             {withGps.map((photo) => (
-              <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]} icon={photoIcon(photo)}>
+              <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]} icon={dotIcon}>
                 <Popup>
                   <div className="text-center">
                     <img
