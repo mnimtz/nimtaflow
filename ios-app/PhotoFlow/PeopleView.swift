@@ -381,10 +381,10 @@ struct FaceCropThumb: View {
     var onReject: () -> Void
     var body: some View {
         VStack(spacing: 4) {
-            AsyncImage(url: url) { img in
-                img.resizable().scaledToFill()
-            } placeholder: { Color.gray.opacity(0.2) }
-            .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
+            // Authenticated loader — plain AsyncImage sends no Bearer header → 401 →
+            // all suggestion crops were blank.
+            Thumb(url: url)
+                .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
             HStack(spacing: 14) {
                 Button(action: onConfirm) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
                 Button(action: onReject) { Image(systemName: "xmark.circle.fill").foregroundStyle(.red) }

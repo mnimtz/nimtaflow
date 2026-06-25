@@ -45,6 +45,13 @@ SYSTEM = (
     "suchbegriff nur für den Inhalt (z. B. 'Lea traurig' → person='Lea', "
     "suchbegriff='traurig weinen weint'; 'Lea am Strand' → person='Lea', "
     "suchbegriff='Strand'). "
+    "Bei ZWEI Personen gemeinsam ('X mit Y', 'ich und meine Tochter', 'Lea und Anja "
+    "zusammen') setze person UND person2 (beide müssen auf dem Foto sein). 'ich/mich/mir' "
+    "= dein eigener Name aus der Identität. "
+    "Bei ORTSANGABEN ('in der Türkei', 'in Köln', 'am Gardasee') setze IMMER den Parameter "
+    "ort (Land, Stadt ODER Region; für Länder den deutschen Namen, z. B. ort='Türkei') und "
+    "lass den suchbegriff dann leer oder knapp — der Ortsfilter findet ALLE Treffer dort, "
+    "nicht nur die textlich ähnlichsten. "
     "Zu DATUM/EREIGNISSEN: Für konkrete Anlässe rechne den Zeitraum selbst aus und "
     "nutze datum_von/datum_bis (YYYY-MM-DD), z. B. 'Lea an Ostern 2022' → person='Lea', "
     "datum_von='2022-04-15', datum_bis='2022-04-18'. "
@@ -153,7 +160,8 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
 
 def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_bis: Optional[int],
                        person: Optional[str] = None, datum_von: Optional[str] = None,
-                       datum_bis: Optional[str] = None):
+                       datum_bis: Optional[str] = None, person2: Optional[str] = None,
+                       ort: Optional[str] = None):
     """SQLAlchemy conditions for the structured filters the chat tools expose.
     (No is_trashed here — search_photos adds its own; _count adds it explicitly.)"""
     from datetime import datetime as _dt, timedelta as _td
@@ -176,10 +184,23 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
     # Restrict to photos that CONTAIN a named, recognised person (subquery, so no
     # join needed on the caller) — this is what makes "Lea traurig", "Lea an Ostern"
     # actually search within Lea's photos instead of for the word "Lea".
-    if person and person.strip():
-        conds.append(Photo.id.in_(
+    def _person_cond(name: str):
+        return Photo.id.in_(
             select(Face.photo_id).join(Person, Person.id == Face.person_id)
-            .where(Person.name.ilike(f"%{person.strip()}%"))))
+            .where(Person.name.ilike(f"%{name.strip()}%")))
+    if person and person.strip():
+        conds.append(_person_cond(person))
+    # person2 = a SECOND named person who must ALSO be on the photo (co-occurrence) →
+    # "ich mit meiner Tochter", "Lea und Anja zusammen". Each adds its own subquery, so
+    # the photo must contain BOTH.
+    if person2 and person2.strip():
+        conds.append(_person_cond(person2))
+    # ort = place filter across city / region / country (all ILIKE) so "in der Türkei",
+    # "in Antalya", "in Köln" all work even though one photo may only have city OR country.
+    if ort and ort.strip():
+        o = f"%{ort.strip()}%"
+        from sqlalchemy import or_ as _or
+        conds.append(_or(Photo.city.ilike(o), Photo.country.ilike(o), Photo.location_name.ilike(o)))
     return conds
 
 
@@ -187,10 +208,17 @@ async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 2
                     medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
                     jahr_bis: Optional[int] = None, person: Optional[str] = None,
                     datum_von: Optional[str] = None, datum_bis: Optional[str] = None,
-                    acl: Optional[list] = None) -> List[dict]:
+                    acl: Optional[list] = None, person2: Optional[str] = None,
+                    ort: Optional[str] = None) -> List[dict]:
     # acl = photo_conditions(user): a restricted account only ever searches within the
     # photos it may see (else chat would surface the whole library).
-    extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis) + list(acl or [])
+    extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
+                               datum_bis, person2, ort) + list(acl or [])
+    # With strong structural filters (person/place/date) the semantic top-K is the wrong
+    # tool — "alle Fotos von Lea in der Türkei" wants the WHOLE set, not 20 best matches.
+    # So when filters are present and the free-text query is weak/empty, widen the net.
+    if (person or person2 or ort or datum_von or jahr_von) and len((query or "").strip()) < 12:
+        limit = max(limit, 60)
     photos = await search_photos(db, query or "", settings, limit=limit,
                                  extra_conditions=extra or None)
     return await _fused_records(db, photos)
@@ -350,6 +378,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     base = "https://generativelanguage.googleapis.com/v1beta"
     _filter_props = {
         "person": {"type": "string", "description": "Name einer ERKANNTEN Person — schränkt auf Fotos MIT dieser Person ein. Nutze das IMMER, wenn die Frage einen Namen enthält (z. B. 'Lea traurig' → person='Lea', suchbegriff='traurig weinen')."},
+        "person2": {"type": "string", "description": "ZWEITE Person, die GEMEINSAM mit 'person' auf dem Foto sein muss. Für 'X mit Y', 'ich und meine Tochter', 'Lea und Anja zusammen'. Bei 'ich/mir/mich' setze hier deinen eigenen Namen aus der Identität."},
+        "ort": {"type": "string", "description": "Ortsfilter (Stadt, Region ODER Land), z. B. ort='Türkei', ort='Antalya', ort='Köln'. Nutze das IMMER bei Ortsangaben ('in der Türkei', 'in Köln'). Für Länder den deutschen Landesnamen verwenden."},
         "medientyp": {"type": "string", "enum": ["bild", "video", "beide"],
                       "description": "Nur Bilder, nur Videos, oder beide. WICHTIG: fragt der Nutzer nach Videos → 'video', nach Bildern/Fotos → 'bild'."},
         "jahr_von": {"type": "integer", "description": "frühestes Jahr (inkl.), z. B. 2018"},
@@ -489,7 +519,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         recs = await _retrieve(db, args.get("suchbegriff", ""), settings,
                                                medientyp=args.get("medientyp"),
                                                jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"),
-                                               person=args.get("person"),
+                                               person=args.get("person"), person2=args.get("person2"),
+                                               ort=args.get("ort"),
                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
                                                acl=acl)
                         seen_ids.extend([rrec["id"] for rrec in recs])

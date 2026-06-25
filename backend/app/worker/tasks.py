@@ -1164,7 +1164,9 @@ def backfill_geo_task(self, limit: int = 60000):
         async for db in get_db():
             rows = (await db.execute(select(Photo.id, Photo.latitude, Photo.longitude).where(
                 Photo.latitude.isnot(None), Photo.longitude.isnot(None),
-                or_(Photo.city.is_(None), Photo.city == ""),
+                # missing city OR missing country (so already-geocoded photos still get
+                # their country backfilled from the country code).
+                or_(Photo.city.is_(None), Photo.city == "", Photo.country.is_(None), Photo.country == ""),
                 Photo.is_trashed == False,  # noqa: E712
             ).limit(limit))).all()
             break
@@ -1177,22 +1179,26 @@ def backfill_geo_task(self, limit: int = 60000):
             return {"skipped": "no reverse_geocoder"}
         flog("scanner", "INFO", f"Reverse-Geocoding (offline): {len(rows)} Foto(s)")
         # mode=1 = single-threaded; mode=2 (multiprocessing) can hang in containers.
+        from app.services.geo_names import country_name, fix_city
         results = rg.search([(float(r[1]), float(r[2])) for r in rows], mode=1)
         updates = []
         for r, res in zip(rows, results):
-            city = (res.get("name") or "").strip()
+            city = fix_city((res.get("name") or "").strip())   # ASCII → proper umlauts
             region = (res.get("admin1") or "").strip()
-            if city or region:
-                updates.append((r[0], city or None, region or None))
+            country = country_name(res.get("cc"))               # cc → German country name
+            if city or region or country:
+                updates.append((r[0], city or None, region or None, country))
         done = 0
         for i in range(0, len(updates), 500):
             async for db in get_db():
-                for pid, city, region in updates[i:i + 500]:
+                for pid, city, region, country in updates[i:i + 500]:
                     vals = {}
                     if city:
                         vals["city"] = city
                     if region:
                         vals["location_name"] = region
+                    if country:
+                        vals["country"] = country
                     if vals:
                         await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
                         done += 1

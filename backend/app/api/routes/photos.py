@@ -331,35 +331,42 @@ async def trips(db: AsyncSession = Depends(get_db),
     home_city = home[0][0] if home else None
     events, cur = [], None
     for pid, ta, city, is_video in rows:
-        if cur and (ta - cur["last"]) <= timedelta(hours=gap_hours):
-            cur["ids"].append(pid); cur["last"] = ta
-            if city:
-                cur["cities"][city] += 1
-            if not is_video and cur["cover"] is None:
-                cur["cover"] = pid
-        else:
+        if not (cur and (ta - cur["last"]) <= timedelta(hours=gap_hours)):
             if cur:
                 events.append(cur)
-            cur = {"ids": [pid], "first": ta, "last": ta, "cities": Counter(),
-                   "cover": (None if is_video else pid)}
-            if city:
-                cur["cities"][city] += 1
+            cur = {"ids": [], "first": ta, "last": ta, "cities": Counter(),
+                   "cover": None, "cover_by_city": {}}
+        cur["ids"].append(pid); cur["last"] = ta
+        if city:
+            cur["cities"][city] += 1
+            # remember the FIRST real photo per city so the cover can come from the
+            # trip's actual destination, not a home snapshot that bracketed the cluster.
+            if not is_video and city not in cur["cover_by_city"]:
+                cur["cover_by_city"][city] = pid
+        if not is_video and cur["cover"] is None:
+            cur["cover"] = pid
     if cur:
         events.append(cur)
+    from app.services.geo_names import fix_city
     out = []
     for ev in events:
         if len(ev["ids"]) < min_photos:
             continue
-        dom = ev["cities"].most_common(1)
-        city = dom[0][0] if dom else None
+        dom = ev["cities"].most_common()
+        # Title = the most-photographed city that ISN'T home (a day-trip's destination),
+        # falling back to the top city if the whole cluster is at home.
+        away = [(c, n) for c, n in dom if c and c != home_city]
+        city_raw = away[0][0] if away else (dom[0][0] if dom else None)
+        city = fix_city(city_raw)
+        cover = ev["cover_by_city"].get(city_raw) or ev["cover"] or ev["ids"][len(ev["ids"]) // 2]
         out.append({
             "count": len(ev["ids"]),
             "date_from": ev["first"].date().isoformat(),
             "date_to": ev["last"].date().isoformat(),
             "days": (ev["last"].date() - ev["first"].date()).days + 1,
             "city": city,
-            "is_trip": bool(city and city != home_city),
-            "cover_photo_id": ev["cover"] or ev["ids"][len(ev["ids"]) // 2],
+            "is_trip": bool(city and city != fix_city(home_city)),
+            "cover_photo_id": cover,
         })
     out.sort(key=lambda e: e["date_from"], reverse=True)
     return {"home_city": home_city, "events": out}

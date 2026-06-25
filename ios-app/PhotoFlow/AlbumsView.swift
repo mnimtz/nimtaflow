@@ -15,7 +15,9 @@ struct AlbumsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let error { Text(error).foregroundStyle(.secondary).padding() }
+                // Only when there's nothing to show — a failed refresh over loaded
+                // albums shouldn't slap an error over good data.
+                if let error, albums.isEmpty { Text(error).foregroundStyle(.secondary).padding() }
                 LazyVGrid(columns: cols, spacing: 14) {
                     ForEach(albums) { a in
                         NavigationLink(value: a) { AlbumCard(album: a) }

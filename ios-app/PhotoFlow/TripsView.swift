@@ -30,7 +30,9 @@ struct TripsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let error { Text(error).foregroundStyle(.secondary).padding() }
+                if let error, visibleEvents.isEmpty && storedTrips.isEmpty {
+                    Text(error).foregroundStyle(.secondary).padding()
+                }
                 if let h = homeCity {
                     Text("Zuhause: \(h)").font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top, 4)
