@@ -31,5 +31,5 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: email.nimtz.photoflow
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
