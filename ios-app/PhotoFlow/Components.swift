@@ -19,7 +19,7 @@ private let imageSession: URLSession = {
     cfg.requestCachePolicy = .returnCacheDataElseLoad
     cfg.httpMaximumConnectionsPerHost = 8
     cfg.timeoutIntervalForRequest = 20
-    return URLSession(configuration: cfg)
+    return URLSession(configuration: cfg, delegate: PFTrustDelegate(), delegateQueue: nil)
 }()
 
 /// Loads an image with the Bearer token (the server enforces login, so plain

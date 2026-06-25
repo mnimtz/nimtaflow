@@ -6,14 +6,18 @@ struct SettingsScreen: View {
     @State private var user = ""
     @State private var pass = ""
     @State private var loginError = false
+    @AppStorage("allow_self_signed") private var allowSelfSigned = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Server") {
-                    TextField("http://host:8090", text: $serverDraft)
+                    TextField("https://login.nimtaflow.com", text: $serverDraft)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     Button("Speichern") { api.serverURL = serverDraft }
+                    Toggle("Selbst-signierte Zertifikate akzeptieren", isOn: $allowSelfSigned)
+                    Text("Nur nötig, wenn dein Server ein eigenes/selbst-signiertes SSL-Zertifikat nutzt. Bei Cloudflare/Let's Encrypt aus lassen.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section(api.loggedIn ? "Angemeldet" : "Anmelden") {
                     if api.loggedIn {

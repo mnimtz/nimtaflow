@@ -1,6 +1,29 @@
 import Foundation
 import SwiftUI
 
+/// TLS trust handler: when the user enables "accept self-signed certificates"
+/// (Settings → Server), accept the server's certificate without system-chain
+/// validation. Default OFF → normal strict validation (Cloudflare/Let's Encrypt
+/// just work). Lets people run their own server with a self-signed cert.
+final class PFTrustDelegate: NSObject, URLSessionDelegate {
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil); return
+        }
+        if UserDefaults.standard.bool(forKey: "allow_self_signed") {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
+    }
+}
+
+/// API session that honours the self-signed-cert toggle.
+let pfSession: URLSession = URLSession(configuration: .default,
+                                       delegate: PFTrustDelegate(), delegateQueue: nil)
+
 /// Talks to the PhotoFlow server. Uses the iOS `/api/v1` feed endpoints plus the
 /// regular `/api` endpoints for management actions (rename, merge, relationships).
 @MainActor
@@ -55,7 +78,7 @@ final class APIClient: ObservableObject {
         var req = URLRequest(url: absoluteURL("api/auth/refresh?refresh_token=\(enc)"))
         req.httpMethod = "POST"
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await pfSession.data(for: req)
             guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return false }
             let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
             token = tok.access_token; refresh = tok.refresh_token
@@ -65,7 +88,7 @@ final class APIClient: ObservableObject {
 
     @discardableResult
     func send<T: Decodable>(_ request: URLRequest, as type: T.Type, allowRetry: Bool = true) async throws -> T {
-        let (data, resp) = try await URLSession.shared.data(for: request)
+        let (data, resp) = try await pfSession.data(for: request)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 {
             if allowRetry, await refreshToken() {
@@ -86,7 +109,7 @@ final class APIClient: ObservableObject {
 
     @discardableResult
     func action(_ path: String, method: String, json: Any? = nil, allowRetry: Bool = true) async throws -> Bool {
-        let (_, resp) = try await URLSession.shared.data(for: makeRequest(path, method: method, json: json))
+        let (_, resp) = try await pfSession.data(for: makeRequest(path, method: method, json: json))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 {
             if allowRetry, await refreshToken() {
@@ -295,7 +318,7 @@ final class APIClient: ObservableObject {
         add("Content-Type: \(mime)\r\n\r\n")
         body.append(data)
         add("\r\n--\(boundary)--\r\n")
-        let (respData, resp) = try await URLSession.shared.upload(for: req, from: body)
+        let (respData, resp) = try await pfSession.upload(for: req, from: body)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 { await logout(); throw APIError.status(401) }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
