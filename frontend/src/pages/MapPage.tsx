@@ -20,6 +20,27 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
+// Photo markers as little THUMBNAILS, not the default blue location-pin — otherwise
+// every photo looks like a duplicate "you are here" pin on the map.
+const photoIcon = (photo: { id: number; latitude?: number | null; longitude?: number | null; filename?: string }) =>
+  L.divIcon({
+    className: 'pf-photo-marker',
+    html: `<div style="width:38px;height:38px;border-radius:9px;overflow:hidden;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);background:#222">`
+        + `<img src="${thumbUrl(photo as any, 'small')}" loading="lazy" style="width:100%;height:100%;object-fit:cover" /></div>`,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+    popupAnchor: [0, -19],
+  })
+
+// Single, distinct "my location" marker (browser geolocation) — a pulsing blue dot,
+// clearly different from photo markers.
+const meIcon = L.divIcon({
+  className: 'pf-me-marker',
+  html: `<div style="width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 4px rgba(37,99,235,.35)"></div>`,
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+})
+
 // Key-free tile providers
 const LAYERS = {
   osm: {
@@ -99,6 +120,7 @@ export default function MapPage() {
   const [lbIndex, setLbIndex] = useState<number | null>(null)
   const [showRoutes, setShowRoutes] = useState(false)
   const [showPlaces, setShowPlaces] = useState(false)
+  const [me, setMe] = useState<[number, number] | null>(null)   // eigener Standort (Browser-Geolocation)
 
   const { data, isLoading } = useQuery({
     queryKey: ['photos-map'],
@@ -191,6 +213,18 @@ export default function MapPage() {
           >
             {view3d ? <><MapIcon size={14} /> {t('map.mapLabel')}</> : <><Globe2 size={14} /> {t('map.globeLabel')}</>}
           </button>
+          {!view3d && (
+            <button
+              onClick={() => navigator.geolocation?.getCurrentPosition(
+                p => { setMe([p.coords.latitude, p.coords.longitude]); setFlyTarget({ lat: p.coords.latitude, lng: p.coords.longitude, seq: Date.now() }) },
+                () => alert('Standort nicht verfügbar (Berechtigung?)'),
+                { enableHighAccuracy: true, timeout: 10000 })}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="Mein Standort"
+            >
+              <Navigation size={14} /> Mein Standort
+            </button>
+          )}
           {!view3d && trips.length > 0 && (
             <button
               onClick={() => setShowRoutes(v => !v)}
@@ -240,6 +274,11 @@ export default function MapPage() {
             <TileLayer key={layer} attribution={(layers[layer] ?? layers.osm).attribution} url={(layers[layer] ?? layers.osm).url} />
             <FitBounds points={points} />
             <FlyTo target={flyTarget} />
+            {me && (
+              <Marker position={me} icon={meIcon}>
+                <Popup>Dein Standort</Popup>
+              </Marker>
+            )}
             {showRoutes && trips.map((trip, ti) => {
               const color = ROUTE_COLORS[ti % ROUTE_COLORS.length]
               const line = trip.route.map(w => [w.lat, w.lng] as [number, number])
@@ -259,7 +298,7 @@ export default function MapPage() {
             })}
             <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
             {withGps.map((photo) => (
-              <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]}>
+              <Marker key={photo.id} position={[photo.latitude!, photo.longitude!]} icon={photoIcon(photo)}>
                 <Popup>
                   <div className="text-center">
                     <img
