@@ -256,6 +256,92 @@ async def video(photo_id: int, db: AsyncSession = Depends(get_db),
     return FileResponse(wp, media_type="video/mp4")
 
 
+# ── Remote 1080p transcoding (Asus NVENC) ───────────────────────────────────────
+# Offloads the web-MP4 backlog to a remote GPU worker. Coordinates with the local
+# QSV worker via the SAME per-photo Redis lock (transcode:lock:{id}, NX) so the two
+# never transcode the same file.
+
+@router.get("/transcode-jobs")
+async def transcode_jobs(limit: int = 2, db: AsyncSession = Depends(get_db),
+                         x_remote_token: Optional[str] = Header(None)):
+    """Lease up to `limit` videos that still lack a 1080p web transcode."""
+    await _require_token(db, x_remote_token)
+    n = max(1, min(limit, 4))
+    rows = (await db.execute(
+        select(Photo.id, Photo.path).where(
+            Photo.is_video == True, Photo.is_trashed == False, Photo.is_missing == False,  # noqa: E712
+            Photo.video_webm_path.is_(None), Photo.status != PhotoStatus.error,
+        ).order_by(Photo.id.desc()).limit(n * 6)
+    )).all()
+    jobs = []
+    try:
+        r = await _redis()
+        for pid, path in rows:
+            if not path or not os.path.exists(path):
+                continue
+            if await r.set(f"transcode:lock:{pid}", "remote", nx=True, ex=1800):
+                jobs.append({"photo_id": pid, "resolution": 1080})
+                if len(jobs) >= n:
+                    break
+        await r.aclose()
+    except Exception:
+        pass
+    return {"jobs": jobs}
+
+
+@router.get("/transcode-source/{photo_id}")
+async def transcode_source(photo_id: int, db: AsyncSession = Depends(get_db),
+                           x_remote_token: Optional[str] = Header(None)):
+    """Stream the ORIGINAL source video for the remote worker to transcode."""
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video or not photo.path or not os.path.exists(photo.path):
+        raise HTTPException(404)
+    return FileResponse(photo.path, media_type="video/mp4")
+
+
+@router.post("/transcode-result/{photo_id}")
+async def transcode_result(photo_id: int, resolution: int = 1080,
+                           file: UploadFile = File(...),
+                           db: AsyncSession = Depends(get_db),
+                           x_remote_token: Optional[str] = Header(None)):
+    """Store a remote-transcoded web MP4 (validated via ffprobe) + release the lock."""
+    await _require_token(db, x_remote_token)
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+    import subprocess, pathlib
+    from app.core.config import get_settings
+    out_dir = pathlib.Path(get_settings().cache_path) / "videos"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{photo_id}_{resolution}.mp4"
+    tmp_path = out_dir / f"{photo_id}_{resolution}.remote.part.mp4"
+    with open(tmp_path, "wb") as fh:
+        while chunk := await file.read(1 << 20):
+            fh.write(chunk)
+    ok = False
+    try:
+        pr = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                             "-of", "default=nw=1:nk=1", str(tmp_path)],
+                            capture_output=True, timeout=60)
+        d = pr.stdout.decode().strip()
+        ok = pr.returncode == 0 and d not in ("", "N/A") and float(d) > 0
+    except Exception:
+        ok = False
+    if not ok:
+        try: os.unlink(tmp_path)
+        except Exception: pass
+        raise HTTPException(400, "Ungültiges Transcode-Ergebnis")
+    os.replace(str(tmp_path), str(out_path))
+    photo.video_webm_path = str(out_path)
+    await db.commit()
+    try:
+        r = await _redis(); await r.delete(f"transcode:lock:{photo_id}"); await r.aclose()
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @router.post("/video-broken/{photo_id}")
 async def video_broken(photo_id: int, db: AsyncSession = Depends(get_db),
                        x_remote_token: Optional[str] = Header(None)):

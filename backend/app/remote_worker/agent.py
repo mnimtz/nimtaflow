@@ -202,14 +202,88 @@ async def _embed(client: httpx.AsyncClient, job: dict) -> str:
     return f"img={'✓' if iv else '–'} txt={'✓' if tv else '–'}"
 
 
-async def main():
-    if not TOKEN:
-        print("[agent] PHOTOFLOW_REMOTE_TOKEN not set — aborting.")
-        return
-    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE}, media={MEDIA}, backend={BACKEND})")
+def _nvenc_available() -> bool:
+    import shutil, subprocess
+    if not shutil.which("ffmpeg"):
+        return False
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+                             capture_output=True, timeout=15).stdout.decode("utf-8", "replace")
+        return "h264_nvenc" in out
+    except Exception:
+        return False
+
+
+async def _do_transcode(client: httpx.AsyncClient, job: dict, use_nvenc: bool):
+    """Download the source, transcode to 1080p web-MP4 (NVENC if available, else
+    libx264), upload the result. Temp files under /tmp, always cleaned up."""
+    import subprocess, tempfile, os as _os
+    pid = job["photo_id"]; res = int(job.get("resolution", 1080))
+    long = int(res * 16 / 9)
+    src = tempfile.NamedTemporaryFile(suffix=".src", delete=False).name
+    out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
+    try:
+        async with client.stream("GET", f"{SERVER}/api/remote/transcode-source/{pid}",
+                                 headers=HEAD, timeout=300) as r:
+            if r.status_code != 200:
+                return f"source HTTP {r.status_code}"
+            with open(src, "wb") as fh:
+                async for chunk in r.aiter_bytes(1 << 20):
+                    fh.write(chunk)
+        scale = (f"scale=w='min({long},iw)':h='min({long},ih)'"
+                 ":force_original_aspect_ratio=decrease:force_divisible_by=2")
+        if use_nvenc:
+            cmd = ["ffmpeg", "-nostdin", "-y", "-hwaccel", "cuda", "-i", src, "-vf", scale,
+                   "-c:v", "h264_nvenc", "-preset", "p4", "-b:v", "6M",
+                   "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+                   "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out]
+        else:
+            cmd = ["ffmpeg", "-nostdin", "-y", "-i", src, "-vf", scale,
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-threads", "4",
+                   "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
+                   "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out]
+        p = subprocess.run(cmd, capture_output=True, timeout=1800)
+        if p.returncode != 0 or not _os.path.exists(out) or _os.path.getsize(out) < 1000:
+            # NVENC hiccup (e.g. odd codec) → one software retry before giving up.
+            if use_nvenc:
+                return await _do_transcode(client, job, use_nvenc=False)
+            return f"ffmpeg rc={p.returncode}"
+        with open(out, "rb") as fh:
+            up = await client.post(f"{SERVER}/api/remote/transcode-result/{pid}",
+                                   params={"resolution": res}, headers=HEAD,
+                                   files={"file": (f"{pid}.mp4", fh, "video/mp4")}, timeout=300)
+        return "ok" if up.status_code == 200 else f"upload HTTP {up.status_code}"
+    finally:
+        for f in (src, out):
+            try: _os.unlink(f)
+            except Exception: pass
+
+
+async def _transcode_loop(client: httpx.AsyncClient):
+    """Parallel loop: drain the server's 1080p transcode backlog on this GPU box."""
+    use_nvenc = _nvenc_available()
+    print(f"[transcode] loop active (nvenc={use_nvenc})")
+    while True:
+        try:
+            r = await client.get(f"{SERVER}/api/remote/transcode-jobs",
+                                  params={"limit": 1}, headers=HEAD, timeout=30)
+            jobs = r.json().get("jobs", []) if r.status_code == 200 else []
+            if not jobs:
+                await asyncio.sleep(20); continue
+            for job in jobs:
+                t = time.time()
+                info = await _do_transcode(client, job, use_nvenc)
+                print(f"[transcode] #{job['photo_id']} {info} in {time.time()-t:.1f}s")
+        except (httpx.TransportError, OSError):
+            await asyncio.sleep(20)
+        except Exception as e:
+            print(f"[transcode] error: {type(e).__name__}: {e}")
+            await asyncio.sleep(20)
+
+
+async def _claim_loop(client: httpx.AsyncClient):
     fails = 0   # consecutive connection failures → back off, keep retrying until the server is back
-    async with httpx.AsyncClient() as client:
-        while True:
+    while True:
             try:
                 r = await client.post(f"{SERVER}/api/remote/claim",
                                       json={"worker": NAME, "mode": MODE, "media": MEDIA},
@@ -244,6 +318,22 @@ async def main():
                 # einzelner Job kaputt → überspringen, kurz weiter
                 print(f"[agent] Job übersprungen: {type(e).__name__}: {e}")
                 await asyncio.sleep(POLL)
+
+
+async def main():
+    if not TOKEN:
+        print("[agent] PHOTOFLOW_REMOTE_TOKEN not set — aborting.")
+        return
+    print(f"[agent] '{NAME}' → {SERVER} (poll {POLL}s, mode={MODE}, media={MEDIA}, backend={BACKEND})")
+    # Transcode help: ON by default where ffmpeg+NVENC exist (the Asus GPU box) and
+    # the AI jobs are winding down. REMOTE_TRANSCODE=0 disables; =1 forces (software).
+    flag = (os.getenv("REMOTE_TRANSCODE") or "").strip().lower()
+    do_transcode = flag in ("1", "true", "yes") or (flag not in ("0", "false", "no") and _nvenc_available())
+    async with httpx.AsyncClient() as client:
+        loops = [_claim_loop(client)]
+        if do_transcode:
+            loops.append(_transcode_loop(client))
+        await asyncio.gather(*loops)
 
 
 if __name__ == "__main__":
