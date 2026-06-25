@@ -48,11 +48,13 @@ celery_app.conf.update(
         "cluster_faces_full": {"queue": "cpu"},   # heavy manual 'Clustern' button → off the API process
         "detect_faces_local": {"queue": "cpu"},   # server-side insightface (CPU)
         "sweep_faces_local":  {"queue": "cpu"},
-        # Video face detection is SLOW (ffmpeg frame sampling) — keep it on the
-        # video queue (its own worker) so thousands of clips from the nightly sweep
-        # don't starve the fast cpu queue (image faces, crop warming, thumbnails).
-        # It needs the 1080p web MP4 anyway, which the video worker produces.
-        "detect_video_faces": {"queue": "video"},  # video faces from 1080p frames
+        # Video face detection is SLOW (ffmpeg frame sampling + insightface). It used
+        # to share the `video` queue with transcodes on the single (-c 1) video worker,
+        # so the nightly sweep's thousands of clips STARVED the 1080p transcode backlog
+        # for days (vid_1080 didn't move). Moved to the `gpu` worker (idle — local VLM
+        # disabled, AI is remote) so it runs in parallel, GPU-accelerated where present,
+        # and never blocks transcodes again.
+        "detect_video_faces": {"queue": "gpu"},  # video faces from 1080p frames (off the transcode worker)
         "sweep_video_faces":  {"queue": "cpu"},     # light enqueuer, stays on cpu
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)

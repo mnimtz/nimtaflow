@@ -208,7 +208,7 @@ services:
     build: ./backend
     image: photoflow-app:latest
     init: true
-    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-1}", "--max-tasks-per-child=50"]
+    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-2}", "--max-tasks-per-child=50"]
     restart: unless-stopped
     volumes:
       - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw

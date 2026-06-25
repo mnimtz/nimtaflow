@@ -218,7 +218,7 @@ struct AlbumDetailView: View {
     @State private var showEdit = false
     @State private var displayName: String?
     @State private var displayType: String?
-    @State private var sort: GridSort = .newest
+    @State private var sort: GridSort = .oldest   // Alben chronologisch: älteste zuerst → neu
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
 
