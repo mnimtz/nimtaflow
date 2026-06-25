@@ -30,3 +30,6 @@ start_m3_describe.sh
 
 # Lokales Arbeits-Briefing mit interner Infra — NICHT public
 CLAUDE.md
+
+# App Store Assets (enthält Demo-Creds/Reviewer-Notizen + Screenshots — nicht ins Repo)
+ios-app/appstore/
