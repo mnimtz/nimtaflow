@@ -19,18 +19,18 @@ final class Store: ObservableObject {
     @Published var purchasedPro = false      // StoreKit
     @Published var serverPro = false         // /auth/me.is_pro (eigener Server)
     @Published var purchasing = false
-
-    private var updatesTask: Task<Void, Never>?
+    @Published var ready = false             // erster Entitlement-Check abgeschlossen
 
     var promoActive: Bool { Date() < Store.promoEnd }
     var isPro: Bool { purchasedPro || serverPro || promoActive }
     var priceText: String { proProduct?.displayPrice ?? "4,99 €" }
 
     init() {
-        updatesTask = listenForTransactions()
-        Task { await loadProduct(); await refreshEntitlements() }
+        // Transaction-Listener läuft die ganze App-Laufzeit (Store ist ein @StateObject)
+        // → kein deinit-Cancel nötig (das vermied einen MainActor-Zugriff aus nonisolated deinit).
+        _ = listenForTransactions()
+        Task { await loadProduct(); await refreshEntitlements(); ready = true }
     }
-    deinit { updatesTask?.cancel() }
 
     func loadProduct() async {
         proProduct = try? await Product.products(for: [Store.proProductID]).first

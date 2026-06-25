@@ -6,7 +6,9 @@ struct ProGate<Content: View>: View {
     let feature: String
     @ViewBuilder let content: () -> Content
     var body: some View {
-        if store.isPro { content() } else { Paywall(feature: feature) }
+        if store.isPro { content() }
+        else if !store.ready { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }  // Entitlement-Check läuft noch
+        else { Paywall(feature: feature) }
     }
 }
 

@@ -40,7 +40,7 @@ struct SettingsScreen: View {
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
                     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-                    Text("NimtaFlow iOS · v\(v) (\(b))").font(.caption).foregroundStyle(.secondary)
+                    Text("NimtaFlow · v\(v) (\(b))").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Einstellungen")
@@ -72,13 +72,16 @@ private struct ProSection: View {
                     else if store.serverPro { Text("Pro aktiv — über deinen Server ✓") }
                     else { Text("Pro aktiv — Einführungsangebot bis \(promoText) 🎉") }
                 }.font(.subheadline)
-            } else {
+            }
+            // Kauf bleibt erreichbar, solange nicht gekauft — auch während der Promo
+            // (Apple-Reviewer kann den IAP testen; Unterstützer können früh kaufen).
+            if !store.purchasedPro {
                 Button {
                     Task { await store.purchase() }
                 } label: {
                     HStack {
                         if store.purchasing { ProgressView().controlSize(.small) }
-                        Text("Pro freischalten — \(store.priceText)")
+                        Text(store.isPro ? "NimtaFlow Pro unterstützen — \(store.priceText)" : "Pro freischalten — \(store.priceText)")
                     }
                 }.disabled(store.purchasing || store.proProduct == nil)
                 Button("Käufe wiederherstellen") { Task { await store.restore() } }
