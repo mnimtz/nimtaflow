@@ -9,22 +9,33 @@ struct PeopleView: View {
     @State private var showSuggestions = false
     @State private var error: String?
     @AppStorage("people_filter") private var filter = "named"
+    @AppStorage("people_sort") private var sortMode = "count"   // "count" (Default) | "name"
 
     let cols = [GridItem(.adaptive(minimum: 100), spacing: 16)]
 
     private func isNamed(_ p: PersonV1) -> Bool { !p.name.isEmpty && p.name != "Unbekannt" }
+    private func count(_ p: PersonV1) -> Int { p.photo_count > 0 ? p.photo_count : p.face_count }
     private var filtered: [PersonV1] {
+        let base: [PersonV1]
         switch filter {
-        case "named":   return people.filter { isNamed($0) }
-        case "unknown": return people.filter { !isNamed($0) && $0.face_count > 1 }
-        case "single":  return people.filter { $0.face_count == 1 }
-        default:        return people   // "all"
+        case "named":   base = people.filter { isNamed($0) }
+        case "unknown": base = people.filter { !isNamed($0) && $0.face_count > 1 }
+        case "single":  base = people.filter { $0.face_count == 1 }
+        default:        base = people   // "all"
         }
+        // Default: most pictures first (server already sorts so, but re-sort locally
+        // so the toggle is instant and stable). "name" = alphabetical.
+        if sortMode == "name" {
+            return base.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
+        return base.sorted { count($0) != count($1) ? count($0) > count($1)
+                             : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     private let filters: [(String, String)] = [
         ("named", "Erkannte Personen"), ("unknown", "Unbekannte Personen"),
         ("single", "Einzelgesichter"), ("all", "Alle"),
     ]
+    private let sorts: [(String, String)] = [("count", "Nach Anzahl"), ("name", "Nach Name")]
 
     var body: some View {
         NavigationStack {
@@ -58,6 +69,10 @@ struct PeopleView: View {
                     Menu {
                         Picker("Filter", selection: $filter) {
                             ForEach(filters, id: \.0) { Text($0.1).tag($0.0) }
+                        }
+                        Divider()
+                        Picker("Sortierung", selection: $sortMode) {
+                            ForEach(sorts, id: \.0) { Text($0.1).tag($0.0) }
                         }
                     } label: {
                         Label(filters.first { $0.0 == filter }?.1 ?? "Filter",
