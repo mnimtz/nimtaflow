@@ -43,7 +43,16 @@ struct MapScreen: View {
     @State private var clusterPhotos: [PhotoV1] = []
     @State private var showClusterSheet = false
     @StateObject private var loc = LocationProvider()
+    @State private var pendingRecenter = false   // recenter once the first GPS fix arrives
     private let gridCols = [GridItem(.adaptive(minimum: 100), spacing: 2)]
+
+    private func recenter(on c: CLLocationCoordinate2D) {
+        globe = false
+        withAnimation(.easeInOut(duration: 0.6)) {
+            camera = .region(MKCoordinateRegion(center: c,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -95,16 +104,19 @@ struct MapScreen: View {
                     Button {
                         loc.request()
                         if let c = loc.coordinate {
-                            globe = false
-                            withAnimation(.easeInOut(duration: 0.6)) {
-                                camera = .region(MKCoordinateRegion(center: c,
-                                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
-                            }
+                            recenter(on: c)
+                        } else {
+                            // No fix yet (first launch / just granted) — recenter as
+                            // soon as CoreLocation delivers one, instead of no-op'ing.
+                            pendingRecenter = true
                         }
                     } label: { Label("Mein Standort", systemImage: "location.fill") }
                 }
             }
             .onAppear { loc.request() }
+            .onReceive(loc.$coordinate.compactMap { $0 }) { c in
+                if pendingRecenter { pendingRecenter = false; recenter(on: c) }
+            }
             .overlay(alignment: .bottom) {
                 if loading || mapError != nil {
                     Text(loading ? "lädt…" : (mapError ?? "")).font(.caption).padding(8)

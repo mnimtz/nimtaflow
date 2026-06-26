@@ -38,7 +38,22 @@ struct PersonV1: Codable, Identifiable, Hashable {
     let id: Int
     let name: String
     let face_count: Int
+    var photo_count: Int = 0   // distinct photos the person appears in (server-sorted desc)
     let avatar_url: String
+
+    enum CodingKeys: String, CodingKey { case id, name, face_count, photo_count, avatar_url }
+    init(id: Int, name: String, face_count: Int, photo_count: Int = 0, avatar_url: String) {
+        self.id = id; self.name = name; self.face_count = face_count
+        self.photo_count = photo_count; self.avatar_url = avatar_url
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        face_count = try c.decode(Int.self, forKey: .face_count)
+        photo_count = (try? c.decode(Int.self, forKey: .photo_count)) ?? 0
+        avatar_url = try c.decode(String.self, forKey: .avatar_url)
+    }
 }
 
 // /api/people (management) — richer person record

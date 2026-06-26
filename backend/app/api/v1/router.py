@@ -616,6 +616,7 @@ class PersonV1(BaseModel):
     id: int
     name: str
     face_count: int
+    photo_count: int = 0
     avatar_url: str
 
 
@@ -635,16 +636,27 @@ async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSes
     persons = (await db.execute(pq)).scalars().all()
     acl = photo_conditions(user)
     cq = select(Face.person_id, _f.count()).where(Face.person_id.isnot(None))
+    # photo_count = DISTINCT photos a person appears in (several faces in one photo
+    # must not inflate it) — this is the metric the People tab sorts by.
+    pcq = select(Face.person_id, _f.count(_f.distinct(Face.photo_id))).where(Face.person_id.isnot(None))
     if acl:
-        cq = cq.where(Face.photo_id.in_(select(Photo.id).where(*acl)))
+        sub_ids = select(Photo.id).where(*acl)
+        cq = cq.where(Face.photo_id.in_(sub_ids))
+        pcq = pcq.where(Face.photo_id.in_(sub_ids))
     counts = dict((await db.execute(cq.group_by(Face.person_id))).all())
+    photo_counts = dict((await db.execute(pcq.group_by(Face.person_id))).all())
     out = []
     for p in persons:
         named = bool((p.name or "").strip())
         if not named and not include_unnamed:
             continue
         out.append(PersonV1(id=p.id, name=p.name or "Unbekannt", face_count=counts.get(p.id, 0),
+                            photo_count=photo_counts.get(p.id, 0),
                             avatar_url=f"/api/people/{p.id}/avatar"))
+    # Sort most photos → fewest (then name) so the People tab opens on the people
+    # the user has the most pictures of. iOS keeps server order, so this fixes the
+    # already-installed app without an app update.
+    out.sort(key=lambda r: (-r.photo_count, -r.face_count, r.name.lower()))
     return out
 
 
@@ -652,13 +664,22 @@ async def people_v1(request: Request, include_unnamed: bool = True, db: AsyncSes
 async def person_photos_v1(person_id: int, request: Request,
                            cursor: Optional[int] = Query(None), limit: int = Query(50, ge=1, le=200),
                            sort: str = Query("newest", description="newest | oldest"),
+                           media_type: Optional[str] = Query(None, description="photo | video"),
                            db: AsyncSession = Depends(get_db),
                            user: Optional[User] = Depends(current_user_optional)):
     from app.models.face import Face
     from sqlalchemy import func as _f
     acl = photo_conditions(user)
     sub = select(Face.photo_id).where(Face.person_id == person_id)
-    q = select(Photo).where(Photo.id.in_(sub), Photo.thumb_small.isnot(None), Photo.is_trashed == False, *acl)  # noqa: E712
+    # Media filter so the person-detail "Fotos/Videos" toggle actually works (the
+    # iOS GridMediaFilter sends "photo"/"video"). Applied to BOTH the page and the
+    # total count so the toggle is consistent.
+    mt = []
+    if media_type == "video":
+        mt = [Photo.is_video == True]   # noqa: E712
+    elif media_type == "photo":
+        mt = [Photo.is_video == False]  # noqa: E712
+    q = select(Photo).where(Photo.id.in_(sub), Photo.thumb_small.isnot(None), Photo.is_trashed == False, *mt, *acl)  # noqa: E712
     # Sort by CAPTURE DATE, not Photo.id. id-order = IMPORT order: an old photo
     # imported recently has a high id and wrongly floated to the top of "newest"
     # ("Sortierung total gemischt"). Offset-cursor so date sorting paginates cleanly;
@@ -672,7 +693,7 @@ async def person_photos_v1(person_id: int, request: Request,
     has_more = len(rows) > limit
     items = rows[:limit]
     total = await db.scalar(select(_f.count()).select_from(
-        select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *acl).subquery()))  # noqa: E712
+        select(Photo).where(Photo.id.in_(sub), Photo.is_trashed == False, *mt, *acl).subquery()))  # noqa: E712
     return PhotoPageV1(items=[_to_v1(p, request) for p in items],
                        next_cursor=(offset + limit) if has_more else None,
                        total=total or 0, has_more=has_more)

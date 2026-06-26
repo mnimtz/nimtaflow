@@ -158,8 +158,9 @@ enum GridMediaFilter: String, CaseIterable, Identifiable {
     case all, photos, videos
     var id: String { rawValue }
     var label: String { self == .all ? "Alle" : (self == .photos ? "Fotos" : "Videos") }
-    /// Backend `media_type` value; nil means "no filter".
-    var mediaType: String? { self == .photos ? "image" : (self == .videos ? "video" : nil) }
+    /// Backend `media_type` value; nil means "no filter". Must be "photo"/"video"
+    /// to match the API (it matches "photo", not "image" — "image" silently no-ops).
+    var mediaType: String? { self == .photos ? "photo" : (self == .videos ? "video" : nil) }
 }
 
 struct PhotoGridView: View {

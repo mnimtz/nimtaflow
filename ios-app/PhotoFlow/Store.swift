@@ -52,7 +52,9 @@ final class Store: ObservableObject {
         guard let result = try? await p.purchase() else { return }
         if case .success(let verification) = result, case .verified(let t) = verification {
             await t.finish()
-            purchasedPro = true
+            // Re-derive from the actual entitlement set (single source of truth) so a
+            // pending / Ask-to-Buy / deferred result doesn't leave the UI out of sync.
+            await refreshEntitlements()
         }
     }
 

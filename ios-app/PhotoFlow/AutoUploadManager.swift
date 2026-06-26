@@ -67,11 +67,15 @@ final class AutoUploadManager: ObservableObject {
             do {
                 let (data, name, mime) = try await exportOriginal(asset)
                 let r = try await api.uploadFile(data: data, filename: name, mime: mime)
+                // Server status is "accepted" | "duplicate" | "error". Only mark a
+                // local asset as uploaded when the server actually took it — an
+                // "error" (or any unexpected status) must NOT be recorded as done,
+                // otherwise the photo is silently dropped from backup forever.
                 switch r.status {
-                case "duplicate": dup += 1
-                default: ok += 1
+                case "accepted": ok += 1; markUploaded(asset.localIdentifier)
+                case "duplicate": dup += 1; markUploaded(asset.localIdentifier)
+                default: fail += 1   // "error" / unknown → retry next run, don't mark
                 }
-                markUploaded(asset.localIdentifier)
             } catch {
                 fail += 1
             }

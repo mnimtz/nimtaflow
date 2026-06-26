@@ -39,7 +39,8 @@ struct PeopleView: View {
                                     }
                                 }
                             Text(p.name).font(.caption).lineLimit(1)
-                            Text("\(p.face_count)").font(.caption2).foregroundStyle(.secondary)
+                            Text("\(p.photo_count > 0 ? p.photo_count : p.face_count) Fotos")
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         if mergeMode {
                             cell.contentShape(Rectangle()).onTapGesture { toggle(p.id) }
