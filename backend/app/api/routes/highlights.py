@@ -89,6 +89,28 @@ async def list_mottos():
     return {"mottos": MOTTOS}
 
 
+@router.get("/music-library")
+async def music_library_status(user: Optional[User] = Depends(current_user_optional)):
+    """How many CC0/generated soundtrack tracks are in the library (for the UI)."""
+    import glob
+    from app.core.config import get_settings
+    from app.services.highlights import library_dir
+    d = library_dir(get_settings().cache_path)
+    files = [os.path.basename(f) for f in glob.glob(os.path.join(d, "*")) if os.path.isfile(f)] if os.path.isdir(d) else []
+    return {"count": len(files), "tracks": sorted(files)}
+
+
+@router.post("/music-library/generate")
+async def music_library_generate(user: Optional[User] = Depends(current_user_optional)):
+    """Admin: (re)generate the CC0 soundtrack library with the configured model.
+    Runs in the background (one track per mood) and costs generation budget."""
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Nur Admins dürfen die Musik-Bibliothek erzeugen.")
+    from app.worker.tasks import generate_music_library_task
+    r = generate_music_library_task.delay()
+    return {"queued": True, "task_id": str(r.id)}
+
+
 @router.get("", response_model=List[HighlightOut])
 async def list_highlights(db: AsyncSession = Depends(get_db),
                           user: Optional[User] = Depends(current_user_optional)):

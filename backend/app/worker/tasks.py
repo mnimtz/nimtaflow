@@ -2199,7 +2199,59 @@ def render_highlight_task(self, highlight_id: int):
                     vol = max(0.0, min(2.0, float(s_hl.get("highlights.music_volume", "80") or 80) / 100.0))
                 except Exception:
                     vol = 0.8
-                music_eff = music if music_on else None
+
+                # ── Music source: file (P1) · library (P2, CC0) · generate (P3, KI) ──
+                music_eff = None
+                if music_on:
+                    import time as _time
+                    source = str(s_hl.get("highlights.music_source", "file")).lower()
+                    mkey = hl.mood_key(h.motto, opts)
+                    if source == "library":
+                        music_eff = hl.library_pick(cache_path, mkey) or music
+                    elif source == "generate":
+                        gen_dir = _os.path.join(cache_path, "highlights", "music")
+                        _os.makedirs(gen_dir, exist_ok=True)
+                        cached = _os.path.join(gen_dir, f"{highlight_id}.mp3")
+                        if _os.path.exists(cached) and _os.path.getsize(cached) > 2000:
+                            music_eff = cached            # reuse a track already made for this highlight
+                        else:
+                            model = str(s_hl.get("highlights.music_model", "fal_open"))
+                            ym = _time.strftime("%Y%m"); ckey = f"highlights.music_count_{ym}"
+                            budget = int(float(s_hl.get("highlights.music_budget_month", "50") or 50))
+                            cur = int(float(s_hl.get(ckey, "0") or 0))
+                            if budget > 0 and cur >= budget:
+                                flog("highlights", "WARNING", f"Highlight {highlight_id}: Musik-Budget erschöpft → Bibliothek/Datei")
+                                music_eff = hl.library_pick(cache_path, mkey) or music
+                            else:
+                                try:
+                                    from app.services.ai import music_gen as mg
+                                    prompt = hl.mood_prompt(h.motto, opts)
+                                    if model.startswith("local"):
+                                        data = await asyncio.to_thread(
+                                            mg.local_generate, prompt, min(47.0, duration),
+                                            "quality" if model == "local_quality" else "fast")
+                                    else:
+                                        data = await mg.fal_generate(
+                                            s_hl.get("highlights.fal_api_key") or "", prompt,
+                                            min(47.0, duration), model_key=model)
+                                    with open(cached, "wb") as fh:
+                                        fh.write(data)
+                                    music_eff = cached
+                                    # bump monthly counter
+                                    from app.models.settings import Setting
+                                    from sqlalchemy import select as _sel
+                                    row = (await db.execute(_sel(Setting).where(Setting.key == ckey))).scalar_one_or_none()
+                                    if row:
+                                        row.value = str(cur + 1)
+                                    else:
+                                        db.add(Setting(key=ckey, value=str(cur + 1)))
+                                    await db.commit()
+                                    flog("highlights", "INFO", f"Highlight {highlight_id}: Musik generiert ({model})")
+                                except Exception as me:
+                                    flog("highlights", "WARNING", f"Highlight {highlight_id}: Musik-Generierung übersprungen: {str(me)[:160]}")
+                                    music_eff = hl.library_pick(cache_path, mkey) or music
+                    else:  # "file"
+                        music_eff = music
 
                 # End the read txn and run the BLOCKING ffmpeg OFF the event loop
                 # (holding asyncpg across the subprocess starved it → ConnectionDoesNotExist).
@@ -2258,6 +2310,53 @@ def render_highlight_task(self, highlight_id: int):
                 return {"error": str(e)[:200]}
 
     return _run(_run_render())
+
+
+@celery_app.task(bind=True, name="generate_music_library")
+def generate_music_library_task(self):
+    """Phase 2: populate the CC0 soundtrack library by generating one instrumental
+    track per mood with the configured (license-clean) model. Saved as
+    <cache>/music/library/<mood>_1.mp3 → reused for free by source='library'."""
+    async def _go():
+        import os as _os, asyncio
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.services.settings_loader import load_settings
+        from app.services import highlights as hl
+        from app.services.ai import music_gen as mg
+        from app.services.feature_log import log as flog
+        init_db()
+        d = hl.library_dir(get_settings().cache_path)
+        _os.makedirs(d, exist_ok=True)
+        async for db in get_db():
+            s = await load_settings(db)
+            break
+        model = str(s.get("highlights.music_model", "fal_open"))
+        key = s.get("highlights.fal_api_key") or ""
+        moods = {
+            "bright": "uplifting, warm, gently upbeat",
+            "happy": "joyful, light, feel-good",
+            "nostalgic": "nostalgic, cinematic, heartfelt",
+            "cozy": "cozy, warm, festive",
+            "tender": "tender, emotional piano",
+            "warm": "warm, gentle cinematic",
+        }
+        made = []
+        for mood, style in moods.items():
+            prompt = f"{style}, instrumental, no vocals, soft dynamics, background soundtrack for a family photo slideshow"
+            try:
+                if model.startswith("local"):
+                    data = await asyncio.to_thread(mg.local_generate, prompt, 40.0, "quality")
+                else:
+                    data = await mg.fal_generate(key, prompt, 40.0, model_key=model)
+                with open(_os.path.join(d, f"{mood}_1.mp3"), "wb") as fh:
+                    fh.write(data)
+                made.append(mood)
+            except Exception as e:
+                flog("highlights", "WARNING", f"Musik-Bibliothek {mood}: {str(e)[:140]}")
+        flog("highlights", "INFO", f"Musik-Bibliothek erzeugt: {made}")
+        return {"generated": made}
+    return _run(_go())
 
 
 @celery_app.task(bind=True, name="animate_photo")

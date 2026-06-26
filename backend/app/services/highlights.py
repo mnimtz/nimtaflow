@@ -585,6 +585,58 @@ def _audio_filter(music_idx: int, total: float, volume: float) -> str:
             f"afade=t=out:st={fo:.2f}:d=1.5[outa]")
 
 
+# ── Mood + CC0 library for soundtracks (Phase 2/3) ────────────────────────────
+
+# motto → (mood key, style words for the generation prompt)
+_MOODS = {
+    "week_review":      ("bright", "uplifting, warm, gently upbeat"),
+    "newest_50":        ("bright", "uplifting, warm, gently upbeat"),
+    "year_review":      ("nostalgic", "nostalgic, cinematic, heartfelt"),
+    "through_the_years":("nostalgic", "nostalgic, reflective, cinematic"),
+    "album_highlight":  ("happy", "joyful, light, feel-good"),
+    "season":           ("cozy", "cozy, warm, festive"),
+    "parent_child":     ("tender", "tender, warm, emotional piano"),
+}
+_DEFAULT_MOOD = ("warm", "warm, gentle cinematic")
+
+
+def mood_key(motto: str, opts: Optional[dict] = None) -> str:
+    """A short mood label used to pick a library track."""
+    if opts and isinstance(opts.get("mood"), str) and opts["mood"] not in ("", "auto"):
+        return opts["mood"]
+    return _MOODS.get(motto, _DEFAULT_MOOD)[0]
+
+
+def mood_prompt(motto: str, opts: Optional[dict] = None) -> str:
+    """Build a text prompt for music generation from the highlight's motto/season.
+    Only this short text ever leaves the machine for cloud generation — no photos."""
+    if opts and isinstance(opts.get("mood"), str) and opts["mood"] not in ("", "auto"):
+        style = opts["mood"]
+    else:
+        style = _MOODS.get(motto, _DEFAULT_MOOD)[1]
+    return (f"{style}, instrumental, no vocals, soft dynamics, "
+            f"suitable as a background soundtrack for a family photo slideshow")
+
+
+def library_dir(cache_path: str) -> str:
+    return os.path.join(cache_path, "music", "library")
+
+
+def library_pick(cache_path: str, mood: str) -> Optional[str]:
+    """Pick a track from the CC0/generated library: prefer the mood (filename
+    prefix `mood_…`), else any track. Returns None if the library is empty."""
+    import glob
+    import random
+    d = library_dir(cache_path)
+    if not os.path.isdir(d):
+        return None
+    files = [f for f in glob.glob(os.path.join(d, "*")) if os.path.isfile(f)]
+    if not files:
+        return None
+    matched = [f for f in files if os.path.basename(f).lower().startswith(mood.lower() + "_")]
+    return random.choice(matched or files)
+
+
 def render_slideshow(image_paths: List[str], out_path: str, seconds_per: float,
                      width: int = 1920, height: int = 1080,
                      music_path: Optional[str] = None, beat_sync: bool = False,

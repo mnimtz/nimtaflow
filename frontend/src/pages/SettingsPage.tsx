@@ -1457,12 +1457,20 @@ function HighlightsAISettings() {
   const [beatSync, setBeatSync] = useState(true)
   const [musicVolume, setMusicVolume] = useState('80')
   const [musicPath, setMusicPath] = useState('')
+  const [musicSource, setMusicSource] = useState('file')
+  const [musicModel, setMusicModel] = useState('fal_open')
+  const [musicBudget, setMusicBudget] = useState('50')
+  const lib = useQuery<{ count: number; tracks: string[] }>({ queryKey: ['music-library'], queryFn: () => api.get('/highlights/music-library').then(r => r.data), staleTime: 30_000 })
+  const genLib = useMutation({ mutationFn: () => api.post('/highlights/music-library/generate'), onSuccess: () => setTimeout(() => lib.refetch(), 1000) })
   useEffect(() => {
     if (!settings) return
     setMusicEnabled((settings['highlights.music_enabled'] ?? 'true') !== 'false')
     setBeatSync((settings['highlights.beat_sync'] ?? 'true') !== 'false')
     setMusicVolume(String(settings['highlights.music_volume'] ?? '80'))
     setMusicPath(String(settings['highlights.music_path'] ?? ''))
+    setMusicSource(String(settings['highlights.music_source'] ?? 'file'))
+    setMusicModel(String(settings['highlights.music_model'] ?? 'fal_open'))
+    setMusicBudget(String(settings['highlights.music_budget_month'] ?? '50'))
     setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
     setWindowDays(String(settings['highlights.weekly_window_days'] ?? '7'))
     setWeeklyPersons(String(settings['highlights.weekly_person_ids'] ?? ''))
@@ -1493,6 +1501,9 @@ function HighlightsAISettings() {
       'highlights.beat_sync': beatSync ? 'true' : 'false',
       'highlights.music_volume': musicVolume,
       'highlights.music_path': musicPath,
+      'highlights.music_source': musicSource,
+      'highlights.music_model': musicModel,
+      'highlights.music_budget_month': musicBudget,
     }),
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
   })
@@ -1567,11 +1578,58 @@ function HighlightsAISettings() {
                 className="ml-2 w-20 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </label>
             <label className="block text-sm text-zinc-700 dark:text-zinc-300">
-              {t('settings.hlMusicPath')}
-              <input value={musicPath} onChange={e => setMusicPath(e.target.value)} placeholder="/cache/music/track.mp3"
-                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlMusicPathHint')}</p>
+              {t('settings.hlMusicSource')}
+              <select value={musicSource} onChange={e => setMusicSource(e.target.value)}
+                className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="file">{t('settings.hlMusicSrcFile')}</option>
+                <option value="library">{t('settings.hlMusicSrcLibrary')}</option>
+                <option value="generate">{t('settings.hlMusicSrcGenerate')}</option>
+              </select>
             </label>
+
+            {musicSource === 'file' && (
+              <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+                {t('settings.hlMusicPath')}
+                <input value={musicPath} onChange={e => setMusicPath(e.target.value)} placeholder="/cache/music/track.mp3"
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlMusicPathHint')}</p>
+              </label>
+            )}
+
+            {(musicSource === 'generate' || musicSource === 'library') && (
+              <div className="space-y-3">
+                <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+                  {t('settings.hlMusicModel')}
+                  <select value={musicModel} onChange={e => setMusicModel(e.target.value)}
+                    className="ml-2 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="local_fast">{t('settings.hlMusicModelLocalFast')}</option>
+                    <option value="local_quality">{t('settings.hlMusicModelLocalQ')}</option>
+                    <option value="fal_open">{t('settings.hlMusicModelFalOpen')}</option>
+                    <option value="fal_25">{t('settings.hlMusicModelFal25')}</option>
+                  </select>
+                </label>
+                {musicSource === 'generate' && (
+                  <>
+                    <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+                      {t('settings.hlMusicBudget')}
+                      <input type="number" min={0} max={9999} value={musicBudget} onChange={e => setMusicBudget(e.target.value)}
+                        className="ml-2 w-24 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </label>
+                    <p className="text-[11px] text-zinc-400">{t('settings.hlMusicGenNote')}</p>
+                  </>
+                )}
+                {musicSource === 'library' && (
+                  <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 space-y-2">
+                    <div className="text-xs text-zinc-500">{t('settings.hlMusicLibCount', { n: lib.data?.count ?? 0 })}</div>
+                    <button type="button" onClick={() => genLib.mutate()} disabled={genLib.isPending}
+                      className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                      {genLib.isPending ? '…' : t('settings.hlMusicLibGen')}
+                    </button>
+                    <p className="text-[11px] text-zinc-400">{t('settings.hlMusicLibNote')}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

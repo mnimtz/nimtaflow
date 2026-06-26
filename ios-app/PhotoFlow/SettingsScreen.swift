@@ -184,6 +184,10 @@ private struct HighlightsMusicSection: View {
     @State private var beatSync = true
     @State private var volume = "80"
     @State private var path = ""
+    @State private var source = "file"      // file | library | generate
+    @State private var model = "fal_open"   // local_fast | local_quality | fal_open | fal_25
+    @State private var budget = "50"
+    @State private var libGen = false
     @State private var loaded = false
     @State private var saved = false
 
@@ -198,21 +202,53 @@ private struct HighlightsMusicSection: View {
                     TextField("80", text: $volume).keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing).frame(width: 60)
                 }
-                TextField("Musikdatei-Pfad (/cache/music/track.mp3)", text: $path)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Picker("Musikquelle", selection: $source) {
+                    Text("Eigene Datei").tag("file")
+                    Text("CC0-Bibliothek").tag("library")
+                    Text("KI erzeugen").tag("generate")
+                }
+                if source == "file" {
+                    TextField("Musikdatei-Pfad (/cache/music/track.mp3)", text: $path)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                if source == "generate" || source == "library" {
+                    Picker("KI-Modell", selection: $model) {
+                        Text("Lokal: Stable Audio (schnell)").tag("local_fast")
+                        Text("Lokal: Stable Audio (Qualität)").tag("local_quality")
+                        Text("Cloud: fal Stable Audio").tag("fal_open")
+                        Text("Cloud: fal Stable Audio 2.5").tag("fal_25")
+                    }
+                }
+                if source == "generate" {
+                    HStack {
+                        Text("KI-Budget (Tracks/Monat)")
+                        Spacer()
+                        TextField("50", text: $budget).keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing).frame(width: 60)
+                    }
+                }
+                if source == "library" {
+                    Button(libGen ? "Erzeuge…" : "Bibliothek erzeugen") {
+                        Task { libGen = true; defer { libGen = false }
+                            try? await api.action("api/highlights/music-library/generate", method: "POST") }
+                    }.disabled(libGen)
+                }
             }
             Button(saved ? "✓ Gespeichert" : "Speichern") {
                 Task {
                     let kv = ["highlights.music_enabled": enabled ? "true" : "false",
                               "highlights.beat_sync": beatSync ? "true" : "false",
                               "highlights.music_volume": volume,
-                              "highlights.music_path": path]
+                              "highlights.music_path": path,
+                              "highlights.music_source": source,
+                              "highlights.music_model": model,
+                              "highlights.music_budget_month": budget]
                     try? await api.saveSettings(kv)
                     saved = true
                     try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
                 }
             }
-            Text("Legt einen Soundtrack unter die Slideshow; Beat-Sync setzt die Übergänge auf den Takt. Bald: KI-Soundtrack & CC0-Bibliothek.")
+            Text("Legt einen Soundtrack unter die Slideshow; Beat-Sync setzt die Übergänge auf den Takt. „KI erzeugen“ macht pro Video einen lizenzfreien Track (nur ein Stimmungs-Text geht in die Cloud, nie deine Fotos).")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task {
@@ -222,6 +258,9 @@ private struct HighlightsMusicSection: View {
                 beatSync = (s["highlights.beat_sync"] ?? "true") != "false"
                 volume = s["highlights.music_volume"] ?? "80"
                 path = s["highlights.music_path"] ?? ""
+                source = s["highlights.music_source"] ?? "file"
+                model = s["highlights.music_model"] ?? "fal_open"
+                budget = s["highlights.music_budget_month"] ?? "50"
             }
         }
     }
