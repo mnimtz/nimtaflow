@@ -207,6 +207,9 @@ class PublicPhoto(BaseModel):
     is_video: bool
     width: Optional[int]
     height: Optional[int]
+    filename: Optional[str] = None
+    taken_at: Optional[str] = None   # ISO date (so the guest view can show date + details)
+    place: Optional[str] = None      # "Stadt, Land" (or location_name) when known
 
 
 class PublicShare(BaseModel):
@@ -227,16 +230,26 @@ async def public_meta(token: str, db: AsyncSession = Depends(get_db),
                            requires_password=True, allow_download=share.allow_download, items=[])
     sub = await _photo_ids_query(share)
     rows = (await db.execute(
-        select(Photo.id, Photo.is_video, Photo.width, Photo.height)
+        select(Photo.id, Photo.is_video, Photo.width, Photo.height,
+               Photo.filename, Photo.taken_at, Photo.city, Photo.country, Photo.location_name)
         .where(Photo.id.in_(sub), Photo.is_trashed == False)  # noqa: E712
         .order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
     )).all()
     share.view_count = (share.view_count or 0) + 1
     await db.commit()
+
+    def _place(city, country, loc):
+        parts = [p for p in (city, country) if p]
+        return ", ".join(parts) if parts else (loc or None)
+
     return PublicShare(
         type=share.share_type.value, title=share.title, requires_password=False,
         allow_download=share.allow_download,
-        items=[PublicPhoto(id=r[0], is_video=r[1], width=r[2], height=r[3]) for r in rows],
+        items=[PublicPhoto(
+            id=r[0], is_video=r[1], width=r[2], height=r[3], filename=r[4],
+            taken_at=r[5].isoformat() if r[5] else None,
+            place=_place(r[6], r[7], r[8]),
+        ) for r in rows],
     )
 
 
