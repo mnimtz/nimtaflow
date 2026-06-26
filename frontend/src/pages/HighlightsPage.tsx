@@ -97,6 +97,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const [albumId, setAlbumId] = useState<number | ''>('')
   const [season, setSeason] = useState('weihnachten')
   const [aiClips, setAiClips] = useState(false)
+  const [music, setMusic] = useState(true)
 
   const { data: mottos = [] } = useQuery<Motto[]>({ queryKey: ['highlight-mottos'], queryFn: () => api.get('/highlights/mottos').then(r => r.data.mottos) })
   const { data: people = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data) })
@@ -121,6 +122,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       ...(needs('album') && albumId ? { album_id: albumId } : {}),
       ...(needs('season') ? { season } : {}),
       ...(aiAvailable && aiClips && aiEnabled ? { ai_clips: true } : {}),
+      music,
     }),
     onSuccess: () => { toast(t('highlights.toastCreated'), 'success'); onCreated() },
     onError: (e: any) => toast(e?.response?.data?.detail || t('highlights.toastError'), 'error'),
@@ -196,6 +198,14 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
             </label>
           </div>
         )}
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={music} onChange={e => setMusic(e.target.checked)} className="mt-0.5 accent-indigo-600" />
+          <span className="text-sm">
+            <span className="font-medium text-zinc-800 dark:text-zinc-100">🎵 {t('highlights.music')}</span>
+            <span className="block text-[11px] text-zinc-500 mt-0.5">{t('highlights.musicDesc')}</span>
+          </span>
+        </label>
 
         <div>
           <label className="block text-xs text-zinc-500 mb-1">{t('highlights.titleOptional')}</label>

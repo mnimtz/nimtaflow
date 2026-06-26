@@ -36,6 +36,7 @@ struct SettingsScreen: View {
                 ProSection()
                 if api.loggedIn && store.isPro { AutoUploadSection() }
                 CacheSection()
+                if api.loggedIn { HighlightsMusicSection() }
                 if api.loggedIn { HighlightsAISection() }
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -172,6 +173,57 @@ private struct CacheSection: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { sizeMB = imageCacheSizeMB(); cleared = false }
+    }
+}
+
+/// Music + beat-sync for highlights — global default on/off, beat-sync, volume,
+/// and the server-side music file path. Per-video override lives in the create flow.
+private struct HighlightsMusicSection: View {
+    @EnvironmentObject var api: APIClient
+    @State private var enabled = true
+    @State private var beatSync = true
+    @State private var volume = "80"
+    @State private var path = ""
+    @State private var loaded = false
+    @State private var saved = false
+
+    var body: some View {
+        Section("Musik & Beat-Sync (Highlights)") {
+            Toggle("Musik unter Highlights", isOn: $enabled)
+            if enabled {
+                Toggle("Beat-Sync", isOn: $beatSync)
+                HStack {
+                    Text("Lautstärke (%)")
+                    Spacer()
+                    TextField("80", text: $volume).keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing).frame(width: 60)
+                }
+                TextField("Musikdatei-Pfad (/cache/music/track.mp3)", text: $path)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            Button(saved ? "✓ Gespeichert" : "Speichern") {
+                Task {
+                    let kv = ["highlights.music_enabled": enabled ? "true" : "false",
+                              "highlights.beat_sync": beatSync ? "true" : "false",
+                              "highlights.music_volume": volume,
+                              "highlights.music_path": path]
+                    try? await api.saveSettings(kv)
+                    saved = true
+                    try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
+                }
+            }
+            Text("Legt einen Soundtrack unter die Slideshow; Beat-Sync setzt die Übergänge auf den Takt. Bald: KI-Soundtrack & CC0-Bibliothek.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .task {
+            if loaded { return }; loaded = true
+            if let s = try? await api.appSettings() {
+                enabled = (s["highlights.music_enabled"] ?? "true") != "false"
+                beatSync = (s["highlights.beat_sync"] ?? "true") != "false"
+                volume = s["highlights.music_volume"] ?? "80"
+                path = s["highlights.music_path"] ?? ""
+            }
+        }
     }
 }
 

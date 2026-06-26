@@ -2189,6 +2189,18 @@ def render_highlight_task(self, highlight_id: int):
                 seconds_per = max(0.8, duration / max(1, len(image_paths)))
                 music = (s_hl.get("highlights.music_path") or "").strip() or None
 
+                # ── Music + beat-sync (Phase 1) ──────────────────────────────
+                # Global default on/off, overridable per highlight via params["music"].
+                music_on_global = str(s_hl.get("highlights.music_enabled", "true")).lower() != "false"
+                pv = opts.get("music")
+                music_on = pv if isinstance(pv, bool) else music_on_global
+                beat_sync = str(s_hl.get("highlights.beat_sync", "true")).lower() != "false"
+                try:
+                    vol = max(0.0, min(2.0, float(s_hl.get("highlights.music_volume", "80") or 80) / 100.0))
+                except Exception:
+                    vol = 0.8
+                music_eff = music if music_on else None
+
                 # End the read txn and run the BLOCKING ffmpeg OFF the event loop
                 # (holding asyncpg across the subprocess starved it → ConnectionDoesNotExist).
                 # After minutes of AI work this connection may already be dead — that's fine,
@@ -2202,10 +2214,17 @@ def render_highlight_task(self, highlight_id: int):
                     slide = out_path
                     if clip_files:
                         slide = out_path + ".slide.mp4"
-                    if image_paths and not hl.render_slideshow(image_paths, slide, seconds_per):
+                    # In the hybrid path the slideshow is an intermediate (video only);
+                    # render_hybrid adds the music. In the pure-slideshow path the
+                    # slideshow IS the final → it carries music + beat-sync itself.
+                    smusic = None if clip_files else music_eff
+                    sbeat = bool(beat_sync) and not clip_files
+                    if image_paths and not hl.render_slideshow(
+                            image_paths, slide, seconds_per,
+                            music_path=smusic, beat_sync=sbeat, music_volume=vol):
                         return (False, None)
                     if clip_files:
-                        if not hl.render_hybrid(clip_files, slide if image_paths else None, out_path, music_path=music):
+                        if not hl.render_hybrid(clip_files, slide if image_paths else None, out_path, music_path=music_eff):
                             return (False, None)
                         try: _os.remove(slide)
                         except Exception: pass

@@ -210,6 +210,7 @@ private struct CreateHighlightSheet: View {
     @State private var year = ""
     @State private var albumId: Int?
     @State private var season = "christmas"
+    @State private var music = true
     @State private var submitting = false
     @State private var error: String?
 
@@ -292,6 +293,7 @@ private struct CreateHighlightSheet: View {
                             Text("Dauer: \(Int(duration))s")
                             Slider(value: $duration, in: 15...180, step: 5)
                         }
+                        Toggle("🎵 Musik", isOn: $music)
                         TextField("Titel (optional)", text: $title)
                     }
 
@@ -357,7 +359,8 @@ private struct CreateHighlightSheet: View {
                 personIds: needs("people") ? personIds : nil,
                 year: needs("year") ? Int(year) : nil,
                 albumId: needs("album") ? albumId : nil,
-                season: needs("season") ? season : nil
+                season: needs("season") ? season : nil,
+                music: music
             )
             await onCreated()
             dismiss()

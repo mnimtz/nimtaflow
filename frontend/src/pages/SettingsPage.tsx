@@ -1453,8 +1453,16 @@ function HighlightsAISettings() {
   const [weeklyPersons, setWeeklyPersons] = useState('')
   const [aiClips, setAiClips] = useState(false)
   const [aiClipCount, setAiClipCount] = useState('2')
+  const [musicEnabled, setMusicEnabled] = useState(true)
+  const [beatSync, setBeatSync] = useState(true)
+  const [musicVolume, setMusicVolume] = useState('80')
+  const [musicPath, setMusicPath] = useState('')
   useEffect(() => {
     if (!settings) return
+    setMusicEnabled((settings['highlights.music_enabled'] ?? 'true') !== 'false')
+    setBeatSync((settings['highlights.beat_sync'] ?? 'true') !== 'false')
+    setMusicVolume(String(settings['highlights.music_volume'] ?? '80'))
+    setMusicPath(String(settings['highlights.music_path'] ?? ''))
     setWeekly((settings['highlights.weekly_enabled'] ?? 'false') === 'true')
     setWindowDays(String(settings['highlights.weekly_window_days'] ?? '7'))
     setWeeklyPersons(String(settings['highlights.weekly_person_ids'] ?? ''))
@@ -1481,6 +1489,10 @@ function HighlightsAISettings() {
       'highlights.ai_budget_seconds_month': budget,
       'highlights.fal_api_key': falKey,
       'highlights.fal_model': falModel,
+      'highlights.music_enabled': musicEnabled ? 'true' : 'false',
+      'highlights.beat_sync': beatSync ? 'true' : 'false',
+      'highlights.music_volume': musicVolume,
+      'highlights.music_path': musicPath,
     }),
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
   })
@@ -1528,6 +1540,38 @@ function HighlightsAISettings() {
                 <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlWeeklyAiClipsBudget')}</p>
               </label>
             )}
+          </div>
+        )}
+
+        <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800" />
+        <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t('settings.hlMusicTitle')}</div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.hlMusicEnabled')}</div>
+            <div className="text-xs text-zinc-500">{t('settings.hlMusicEnabledDesc')}</div>
+          </div>
+          <Toggle value={musicEnabled} onChange={setMusicEnabled} />
+        </div>
+        {musicEnabled && (
+          <div className="space-y-3 pl-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.hlBeatSync')}</div>
+                <div className="text-xs text-zinc-500">{t('settings.hlBeatSyncDesc')}</div>
+              </div>
+              <Toggle value={beatSync} onChange={setBeatSync} />
+            </div>
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+              {t('settings.hlMusicVolume')}
+              <input type="number" min={0} max={150} value={musicVolume} onChange={e => setMusicVolume(e.target.value)}
+                className="ml-2 w-20 px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="block text-sm text-zinc-700 dark:text-zinc-300">
+              {t('settings.hlMusicPath')}
+              <input value={musicPath} onChange={e => setMusicPath(e.target.value)} placeholder="/cache/music/track.mp3"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlMusicPathHint')}</p>
+            </label>
           </div>
         )}
 

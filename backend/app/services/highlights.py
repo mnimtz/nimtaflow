@@ -537,13 +537,64 @@ def _fill_vf(w: int, h: int) -> str:
     )
 
 
+# ── Beat detection (optional librosa) — drives "beat-sync" slideshows ──────────
+
+def detect_beats(audio_path: str) -> List[float]:
+    """Beat onset times (seconds) of a music track via librosa. Returns [] if
+    librosa is unavailable or analysis fails — callers then fall back to uniform
+    timing, so beat-sync degrades gracefully and NEVER breaks a render."""
+    if not audio_path or not os.path.exists(audio_path):
+        return []
+    try:
+        import librosa  # lazy: heavy import, optional dependency
+        y, sr = librosa.load(audio_path, mono=True)
+        _, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
+        beats = librosa.frames_to_time(beat_frames, sr=sr)
+        return [float(b) for b in beats if b > 0.05]
+    except Exception:
+        return []
+
+
+def beat_durations(beats: List[float], n: int, target_per: float) -> Optional[List[float]]:
+    """Pick a subset of `beats` so each of `n` images lasts ~target_per seconds
+    and every transition lands on a beat. Returns per-image durations, or None
+    if the beats are too sparse to be useful (→ caller uses uniform timing)."""
+    if n <= 0 or len(beats) < 4:
+        return None
+    period = (beats[-1] - beats[0]) / max(1, len(beats) - 1)
+    if period <= 0:
+        return None
+    step = max(1, round(target_per / period))         # beats per image
+    picks = beats[::step]
+    if len(picks) < 2:
+        return None
+    durs = [picks[i + 1] - picks[i] for i in range(len(picks) - 1)]
+    durs = [max(0.5, d) for d in durs]
+    # Stretch / trim the beat grid to exactly n images.
+    if len(durs) < n:
+        avg = sum(durs) / len(durs)
+        durs += [avg] * (n - len(durs))
+    return durs[:n]
+
+
+def _audio_filter(music_idx: int, total: float, volume: float) -> str:
+    """Filtergraph snippet that takes the looped music input, sets volume and a
+    1.5s fade-out at the end, producing [outa]."""
+    fo = max(0.0, total - 1.5)
+    return (f"[{music_idx}:a]volume={max(0.0, min(2.0, volume)):.2f},"
+            f"afade=t=out:st={fo:.2f}:d=1.5[outa]")
+
+
 def render_slideshow(image_paths: List[str], out_path: str, seconds_per: float,
-                     width: int = 1920, height: int = 1080) -> bool:
+                     width: int = 1920, height: int = 1080,
+                     music_path: Optional[str] = None, beat_sync: bool = False,
+                     music_volume: float = 0.8) -> bool:
     """Render a slideshow MP4 from `image_paths` (cached large thumbnails).
 
-    Tries an xfade crossfade chain first; on any failure falls back to a plain
-    concat slideshow so a file is ALWAYS produced. Output: H.264 + yuv420p +
-    faststart. Returns True if an MP4 was written, else False.
+    Optionally lays a music track under it, and — when `beat_sync` is on and the
+    track yields usable beats — varies the per-image durations so transitions
+    land on the beat. Tries xfade first, falls back to concat. Output: H.264 +
+    yuv420p + AAC + faststart. Returns True if an MP4 was written.
     """
     images = [p for p in image_paths if p and os.path.exists(p)]
     if not images:
@@ -554,54 +605,57 @@ def render_slideshow(image_paths: List[str], out_path: str, seconds_per: float,
         os.makedirs(out_dir, exist_ok=True)
 
     seconds_per = max(0.8, float(seconds_per or 2.5))
+    music = music_path if (music_path and os.path.exists(music_path)) else None
 
-    # Try the nicer crossfade version first; fall back to concat on any problem.
-    if len(images) >= 2 and _render_xfade(images, out_path, seconds_per, width, height):
+    # Per-image durations: beat-synced when possible, else uniform.
+    durations = [seconds_per] * len(images)
+    if music and beat_sync:
+        bd = beat_durations(detect_beats(music), len(images), seconds_per)
+        if bd:
+            durations = bd
+
+    if len(images) >= 2 and _render_xfade(images, out_path, durations, width, height, music, music_volume):
         return True
-    if _render_concat(images, out_path, seconds_per, width, height):
+    if _render_concat(images, out_path, durations, width, height, music, music_volume):
         return True
-    # Last resort: xfade for the single-image / edge case (concat handles 1 img too)
     return os.path.exists(out_path) and os.path.getsize(out_path) > 1000
 
 
-def _render_xfade(images: List[str], out_path: str, seconds_per: float,
-                  width: int, height: int) -> bool:
-    """Crossfade chain. Each still shows for `seconds_per`, with a short fade
-    between consecutive stills. Kept modest in size to avoid a huge filtergraph."""
-    # A very long filtergraph (hundreds of inputs) is fragile/slow; cap xfade use.
+def _render_xfade(images: List[str], out_path: str, durations: List[float],
+                  width: int, height: int,
+                  music: Optional[str] = None, volume: float = 0.8) -> bool:
+    """Crossfade chain with per-image `durations` (beat-synced or uniform) and
+    an optional looped music bed. Kept modest in size to avoid a huge graph."""
     if len(images) > 80:
         return False
-    fade = min(0.6, seconds_per * 0.4)
-    hold = seconds_per                      # full-visibility time per still
-    clip = hold + fade                      # each input loops this long
+    n = len(images)
+    fade = min(0.6, min(durations) * 0.4)
+    total = sum(durations)
 
     cmd = [_FFMPEG, "-y", "-hide_banner", "-loglevel", "error"]
-    for img in images:
-        cmd += ["-loop", "1", "-t", f"{clip:.3f}", "-i", img]
+    for img, dur in zip(images, durations):
+        cmd += ["-loop", "1", "-t", f"{dur + fade:.3f}", "-i", img]
+    if music:
+        cmd += ["-stream_loop", "-1", "-i", music]   # loop music to cover the video
 
-    filt = []
-    for i in range(len(images)):
-        filt.append(_fill_graph(f"{i}:v", f"v{i}", width, height))
-
-    # Chain xfades: offset accumulates by `hold` each step.
-    last = "v0"
-    offset = hold
-    for i in range(1, len(images)):
-        out_lbl = "outv" if i == len(images) - 1 else f"x{i}"
-        filt.append(
-            f"[{last}][v{i}]xfade=transition=fade:duration={fade:.3f}:"
-            f"offset={offset:.3f}[{out_lbl}]"
-        )
+    filt = [_fill_graph(f"{i}:v", f"v{i}", width, height) for i in range(n)]
+    last, cum = "v0", durations[0]
+    for i in range(1, n):
+        out_lbl = "outv" if i == n - 1 else f"x{i}"
+        filt.append(f"[{last}][v{i}]xfade=transition=fade:duration={fade:.3f}:"
+                    f"offset={cum:.3f}[{out_lbl}]")
         last = out_lbl
-        offset += hold
+        cum += durations[i]
+    if n == 1:
+        filt.append(f"[v0]null[outv]")
+    if music:
+        filt.append(_audio_filter(n, total, volume))
 
-    cmd += [
-        "-filter_complex", ";".join(filt),
-        "-map", "[outv]",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-        out_path,
-    ]
+    cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]"]
+    if music:
+        cmd += ["-map", "[outa]", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
         return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
@@ -609,30 +663,35 @@ def _render_xfade(images: List[str], out_path: str, seconds_per: float,
         return False
 
 
-def _render_concat(images: List[str], out_path: str, seconds_per: float,
-                   width: int, height: int) -> bool:
-    """Plain concat slideshow — robust, no transitions. Each image held
-    `seconds_per` seconds. This is the always-works fallback."""
+def _render_concat(images: List[str], out_path: str, durations: List[float],
+                   width: int, height: int,
+                   music: Optional[str] = None, volume: float = 0.8) -> bool:
+    """Plain concat slideshow (no transitions) with per-image `durations` and an
+    optional looped music bed. The always-works fallback."""
     tmp = tempfile.mkdtemp(prefix="pfhl_")
     list_file = os.path.join(tmp, "list.txt")
     try:
         lines = []
-        for img in images:
+        for img, dur in zip(images, durations):
             lines.append(f"file '{img}'")
-            lines.append(f"duration {seconds_per:.3f}")
-        # concat demuxer drops the last image's duration → repeat it once.
-        lines.append(f"file '{images[-1]}'")
+            lines.append(f"duration {dur:.3f}")
+        lines.append(f"file '{images[-1]}'")   # concat drops last duration → repeat
         with open(list_file, "w") as f:
             f.write("\n".join(lines) + "\n")
 
-        cmd = [
-            _FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "concat", "-safe", "0", "-i", list_file,
-            "-vf", _fill_vf(width, height),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            out_path,
-        ]
+        total = sum(durations)
+        cmd = [_FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+               "-f", "concat", "-safe", "0", "-i", list_file]
+        if music:
+            cmd += ["-stream_loop", "-1", "-i", music]
+            # video chain via -filter_complex (so we can also map audio)
+            filt = f"[0:v]{_fill_vf(width, height)}[outv];" + _audio_filter(1, total, volume)
+            cmd += ["-filter_complex", filt, "-map", "[outv]", "-map", "[outa]",
+                    "-c:a", "aac", "-b:a", "192k", "-shortest"]
+        else:
+            cmd += ["-vf", _fill_vf(width, height)]
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
         r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
         return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
     except Exception:
