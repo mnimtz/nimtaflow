@@ -2100,6 +2100,49 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
     _run(_run_ai())
 
 
+async def _remote_music_bytes(prompt: str, seconds: float, timeout_s: int = 200):
+    """Enqueue a music job for a remote worker (e.g. the M3 with stable-audio-open)
+    and wait (bounded) for the result. Returns audio bytes, or None if no worker is
+    alive or it times out → the caller falls back to fal/local. Polls with FRESH
+    sessions so the worker's commit becomes visible."""
+    import asyncio
+    import os as _os
+    from app.core.database import get_db
+    from app.models.music_job import MusicJob, MusicJobStatus
+    from app.api.routes.remote import music_worker_alive
+    try:
+        if await music_worker_alive() <= 0:
+            return None
+    except Exception:
+        return None
+    jid = None
+    async for db in get_db():
+        job = MusicJob(prompt=prompt, seconds=int(seconds), status=MusicJobStatus.pending)
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        jid = job.id
+        break
+    if not jid:
+        return None
+    waited = 0
+    while waited < timeout_s:
+        await asyncio.sleep(5)
+        waited += 5
+        st = rp = None
+        async for db in get_db():
+            j = await db.get(MusicJob, jid)
+            st = j.status if j else None
+            rp = j.result_path if j else None
+            break
+        if st == MusicJobStatus.done and rp and _os.path.exists(rp):
+            with open(rp, "rb") as fh:
+                return fh.read()
+        if st == MusicJobStatus.error:
+            return None
+    return None
+
+
 @celery_app.task(bind=True, name="render_highlight")
 def render_highlight_task(self, highlight_id: int):
     """Render a highlight slideshow MP4: select photos for the motto, build the
@@ -2249,15 +2292,26 @@ def render_highlight_task(self, highlight_id: int):
                             else:
                                 try:
                                     from app.services.ai import music_gen as mg
-                                    prompt = hl.mood_prompt(h.motto, opts)
-                                    if model.startswith("local"):
+                                    prompt = hl.compose_music_prompt(h.motto, opts, s_hl)
+                                    secs = min(47.0, duration)
+                                    if model == "remote":
+                                        # Offload to a remote music worker (e.g. M3 with
+                                        # stable-audio-open). Falls back to local/fal if no
+                                        # worker delivers in time.
+                                        data = await _remote_music_bytes(prompt, secs)
+                                        if not data:
+                                            flog("highlights", "WARNING", f"Highlight {highlight_id}: kein Remote-Musik-Worker → fal/lokal")
+                                            data = await mg.fal_generate(
+                                                (s_hl.get("highlights.music_fal_key") or s_hl.get("highlights.fal_api_key") or ""),
+                                                prompt, secs, model_key="fal_open")
+                                    elif model.startswith("local"):
                                         data = await asyncio.to_thread(
-                                            mg.local_generate, prompt, min(47.0, duration),
+                                            mg.local_generate, prompt, secs,
                                             "quality" if model == "local_quality" else "fast")
                                     else:
                                         data = await mg.fal_generate(
                                             (s_hl.get("highlights.music_fal_key") or s_hl.get("highlights.fal_api_key") or ""),
-                                            prompt, min(47.0, duration), model_key=model)
+                                            prompt, secs, model_key=model)
                                     with open(cached, "wb") as fh:
                                         fh.write(data)
                                     music_eff = cached

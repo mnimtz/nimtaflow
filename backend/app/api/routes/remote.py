@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import FileResponse
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func, delete as sql_delete
+from sqlalchemy import select, or_, and_, func, delete as sql_delete
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -63,6 +63,86 @@ class ClaimReq(BaseModel):
     # Restrict a worker to one media type so machines can specialise: a Mac on
     # images ("images"), the M5 on video ("videos"), or "both" (default).
     media: str = "both"
+
+
+# ── Remote MUSIC worker (e.g. M3 running stable-audio-open) ───────────────────
+async def music_worker_alive() -> int:
+    """How many music workers checked in within HEARTBEAT_TTL."""
+    try:
+        r = await _redis()
+        keys = await r.keys("remote:musicworker:*")
+        await r.aclose()
+        return len(keys)
+    except Exception:
+        return 0
+
+
+@router.post("/music-claim")
+async def music_claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
+                      x_remote_token: Optional[str] = Header(None)):
+    """Heartbeat + lease the oldest pending music job (prompt → audio)."""
+    await _require_token(db, x_remote_token)
+    try:
+        r = await _redis()
+        await r.set(f"remote:musicworker:{body.worker}", str(int(time.time())), ex=HEARTBEAT_TTL)
+        await r.aclose()
+    except Exception:
+        pass
+    from app.models.music_job import MusicJob, MusicJobStatus
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TTL)
+    job = (await db.execute(
+        select(MusicJob).where(or_(
+            MusicJob.status == MusicJobStatus.pending,
+            and_(MusicJob.status == MusicJobStatus.claimed, MusicJob.claimed_at < cutoff),
+        )).order_by(MusicJob.id).limit(1).with_for_update(skip_locked=True)
+    )).scalars().first()
+    if not job:
+        return {"job_id": None}
+    job.status = MusicJobStatus.claimed
+    job.claimed_at = datetime.now(timezone.utc)
+    job.worker = (body.worker or "worker")[:80]
+    await db.commit()
+    return {"job_id": job.id, "prompt": job.prompt, "seconds": job.seconds}
+
+
+@router.post("/music-result/{job_id}")
+async def music_result(job_id: int, file: Optional[UploadFile] = File(None),
+                       x_music_error: Optional[str] = Header(None),
+                       db: AsyncSession = Depends(get_db),
+                       x_remote_token: Optional[str] = Header(None)):
+    """Store the generated track (or record an error) for a claimed music job."""
+    await _require_token(db, x_remote_token)
+    from app.models.music_job import MusicJob, MusicJobStatus
+    from app.services.feature_log import log as flog
+    job = await db.get(MusicJob, job_id)
+    if not job:
+        raise HTTPException(404)
+    if x_music_error and not file:
+        job.status = MusicJobStatus.error
+        job.error = x_music_error[:500]
+        job.done_at = datetime.now(timezone.utc)
+        await db.commit()
+        flog("highlights", "WARNING", f"Remote-Musik #{job_id} fehlgeschlagen: {x_music_error[:160]}")
+        return {"ok": True, "stored": "error"}
+    if not file:
+        raise HTTPException(400, "Keine Audiodatei")
+    data = await file.read()
+    from app.core.config import get_settings
+    d = os.path.join(get_settings().cache_path, "music", "remote")
+    os.makedirs(d, exist_ok=True)
+    ext = ".wav"
+    fn = (file.filename or "").lower()
+    if fn.endswith(".mp3"):
+        ext = ".mp3"
+    path = os.path.join(d, f"{job_id}{ext}")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    job.status = MusicJobStatus.done
+    job.result_path = path
+    job.done_at = datetime.now(timezone.utc)
+    await db.commit()
+    flog("highlights", "INFO", f"Remote-Musik #{job_id} fertig ({len(data)//1024} KB, {job.worker})")
+    return {"ok": True, "stored": "done"}
 
 
 @router.post("/claim")

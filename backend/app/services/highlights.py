@@ -638,6 +638,40 @@ def mood_prompt(motto: str, opts: Optional[dict] = None) -> str:
             f"suitable as a background soundtrack for a family photo slideshow")
 
 
+_TEMPO = {"slow": "slow tempo", "medium": "medium tempo", "fast": "upbeat, fast tempo"}
+_ENERGY = {"calm": "calm and gentle", "balanced": "balanced dynamics", "energetic": "energetic, driving"}
+
+
+def compose_music_prompt(motto: str, opts: Optional[dict] = None,
+                         settings: Optional[dict] = None) -> str:
+    """Build the music-generation prompt. A user-supplied free prompt (per highlight
+    via opts['music_prompt'], else the global highlights.music_prompt) takes over the
+    base; optional tempo/energy/genre presets refine it. Falls back to the motto mood.
+    Only this short text ever leaves the machine for cloud generation — never photos."""
+    opts = opts or {}
+    settings = settings or {}
+    user = (str(opts.get("music_prompt") or settings.get("highlights.music_prompt") or "")).strip()
+    if user:
+        base = user
+    elif isinstance(opts.get("mood"), str) and opts["mood"] not in ("", "auto"):
+        base = opts["mood"]
+    else:
+        base = _MOODS.get(motto, _DEFAULT_MOOD)[1]
+    parts = [base]
+    genre = str(settings.get("highlights.music_genre") or "").strip()
+    tempo = str(settings.get("highlights.music_tempo") or "").strip()
+    energy = str(settings.get("highlights.music_energy") or "").strip()
+    if genre:
+        parts.append(genre)
+    if tempo in _TEMPO:
+        parts.append(_TEMPO[tempo])
+    if energy in _ENERGY:
+        parts.append(_ENERGY[energy])
+    parts.append("instrumental, no vocals, soft dynamics, "
+                 "suitable as a background soundtrack for a family photo slideshow")
+    return ", ".join(p for p in parts if p)
+
+
 def library_dir(cache_path: str) -> str:
     return os.path.join(cache_path, "music", "library")
 

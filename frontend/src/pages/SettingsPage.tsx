@@ -1450,6 +1450,10 @@ function MusicSettings() {
   const [budget, setBudget] = useState('50')
   const [path, setPath] = useState('')
   const [falKey, setFalKey] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [tempo, setTempo] = useState('')
+  const [energy, setEnergy] = useState('')
+  const [genre, setGenre] = useState('')
   const [saved, setSaved] = useState(false)
   const lib = useQuery<{ count: number; tracks: string[] }>({ queryKey: ['music-library'], queryFn: () => api.get('/highlights/music-library').then(r => r.data), staleTime: 30_000 })
   const genLib = useMutation({ mutationFn: () => api.post('/highlights/music-library/generate'), onSuccess: () => setTimeout(() => lib.refetch(), 1500) })
@@ -1463,6 +1467,10 @@ function MusicSettings() {
     setBudget(String(settings['highlights.music_budget_month'] ?? '50'))
     setPath(String(settings['highlights.music_path'] ?? ''))
     setFalKey(String(settings['highlights.music_fal_key'] ?? ''))
+    setPrompt(String(settings['highlights.music_prompt'] ?? ''))
+    setTempo(String(settings['highlights.music_tempo'] ?? ''))
+    setEnergy(String(settings['highlights.music_energy'] ?? ''))
+    setGenre(String(settings['highlights.music_genre'] ?? ''))
   }, [settings])
   const save = useMutation({
     mutationFn: () => api.put('/settings', {
@@ -1474,11 +1482,16 @@ function MusicSettings() {
       'highlights.music_budget_month': budget,
       'highlights.music_path': path,
       'highlights.music_fal_key': falKey,
+      'highlights.music_prompt': prompt,
+      'highlights.music_tempo': tempo,
+      'highlights.music_energy': energy,
+      'highlights.music_genre': genre,
     }),
     onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); qc.invalidateQueries({ queryKey: ['settings'] }) },
   })
   const inp = 'px-2 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
   const cloud = model.startsWith('fal')
+  const isRemote = model === 'remote'
   return (
     <div>
       <SectionHeader title={t('settings.musicTitle')} desc={t('settings.musicDesc')} />
@@ -1523,6 +1536,7 @@ function MusicSettings() {
               <select value={model} onChange={e => setModel(e.target.value)} className={`ml-2 ${inp}`}>
                 <option value="local_fast">{t('settings.hlMusicModelLocalFast')}</option>
                 <option value="local_quality">{t('settings.hlMusicModelLocalQ')}</option>
+                <option value="remote">{t('settings.hlMusicModelRemote')}</option>
                 <option value="fal_open">{t('settings.hlMusicModelFalOpen')}</option>
                 <option value="fal_25">{t('settings.hlMusicModelFal25')}</option>
               </select>
@@ -1533,13 +1547,40 @@ function MusicSettings() {
                 <p className="text-[11px] text-zinc-400 mt-1">{t('settings.musicFalKeyHint')}</p>
               </label>
             )}
-            {!cloud && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t('settings.musicLocalNote')}</p>}
-            {source === 'generate' && (
+            {isRemote && <p className="text-[11px] text-indigo-500 dark:text-indigo-400">{t('settings.hlMusicRemoteNote')}</p>}
+            {!cloud && !isRemote && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t('settings.musicLocalNote')}</p>}
+            {source === 'generate' && <>
+              <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlMusicPrompt')}
+                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
+                  placeholder={t('settings.hlMusicPromptPh')} className={`mt-1 w-full ${inp}`} />
+                <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlMusicPromptHint')}</p>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlMusicTempo')}
+                  <select value={tempo} onChange={e => setTempo(e.target.value)} className={`mt-1 w-full ${inp}`}>
+                    <option value="">{t('settings.hlMusicAuto')}</option>
+                    <option value="slow">{t('settings.hlMusicTempoSlow')}</option>
+                    <option value="medium">{t('settings.hlMusicTempoMed')}</option>
+                    <option value="fast">{t('settings.hlMusicTempoFast')}</option>
+                  </select>
+                </label>
+                <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlMusicEnergy')}
+                  <select value={energy} onChange={e => setEnergy(e.target.value)} className={`mt-1 w-full ${inp}`}>
+                    <option value="">{t('settings.hlMusicAuto')}</option>
+                    <option value="calm">{t('settings.hlMusicEnergyCalm')}</option>
+                    <option value="balanced">{t('settings.hlMusicEnergyBal')}</option>
+                    <option value="energetic">{t('settings.hlMusicEnergyHigh')}</option>
+                  </select>
+                </label>
+                <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlMusicGenre')}
+                  <input value={genre} onChange={e => setGenre(e.target.value)} placeholder={t('settings.hlMusicGenrePh')} className={`mt-1 w-full ${inp}`} />
+                </label>
+              </div>
               <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.hlMusicBudget')}
                 <input type="number" min={0} max={9999} value={budget} onChange={e => setBudget(e.target.value)} className={`ml-2 w-24 ${inp}`} />
                 <p className="text-[11px] text-zinc-400 mt-1">{t('settings.hlMusicGenNote')}</p>
               </label>
-            )}
+            </>}
             {source === 'library' && (
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 space-y-2">
                 <div className="text-xs text-zinc-500">{t('settings.hlMusicLibCount', { n: lib.data?.count ?? 0 })}{lib.data?.tracks?.length ? ` — ${lib.data.tracks.join(', ')}` : ''}</div>
