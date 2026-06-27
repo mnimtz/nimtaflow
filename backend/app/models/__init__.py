@@ -11,8 +11,10 @@ from .relationship import PersonRelationship
 from .share import Share, ShareType
 from .highlight import Highlight, HighlightStatus
 from .pro_key import ProKey
+from .music_job import MusicJob, MusicJobStatus
 
 __all__ = [
+    "MusicJob", "MusicJobStatus",
     "ProKey",
     "Highlight", "HighlightStatus",
     "Share", "ShareType",
