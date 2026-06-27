@@ -942,7 +942,16 @@ def detect_video_faces_task(self, photo_id: int):
                 "min_px": float(s.get("face.min_size_px", "40") or 0),
                 "sim": float(s.get("video.face_dedup_sim", "0.45") or 0.45),
             }
-            break
+            # NB: do NOT `break` here. `break` would suspend the get_db() async
+            # generator at its `yield`, leaving THIS session checked out (and its
+            # read transaction open) across the entire phase-2 frame work below —
+            # which runs ffmpeg+insightface over up to 30 frames (often >120s).
+            # Postgres then reaps the idle-in-transaction connection, and the later
+            # session.close() during shutdown_asyncgens hits a dead connection
+            # ("another operation in progress" / GC "non-checked-in connection").
+            # Letting the loop end naturally runs get_db()'s `finally: close()`, so
+            # the session is released BEFORE the slow work — matching the
+            # "gather → release → work → reopen" intent documented above.
         if not params:
             return
 
