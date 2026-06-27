@@ -132,11 +132,11 @@ def make_postcard(image_path: str, place: Optional[str], taken_at: Optional[date
     if os.path.exists(logo_path):
         try:
             logo = Image.open(logo_path).convert("RGBA")
-            lw = int(inner_w * 0.26)
+            lw = int(inner_w * 0.15)
             lh = max(1, int(lw * logo.height / logo.width))
             logo = logo.resize((lw, lh), Image.LANCZOS)
-            lx = fx + inner_w - frame - lw - 26
-            ly = fy + frame + 22
+            lx = fx + inner_w - frame - lw - 12
+            ly = fy + frame + 10
             # soft drop shadow from the logo's own alpha silhouette
             alpha = logo.split()[3]
             sil = Image.new("RGBA", logo.size, (0, 0, 0, 0))
