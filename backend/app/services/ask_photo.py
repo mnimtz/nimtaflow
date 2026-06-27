@@ -68,7 +68,7 @@ async def ask_photo(db: AsyncSession, photo_id: int, question: str,
         # Be honest + actionable instead of an empty reply. Never silently switch a
         # "local" request to the cloud (privacy) — tell the user how to enable it.
         hint = ("Lokales Modell lieferte keine Antwort. Konfiguriere unter "
-                "Einstellungen ein lokales Vision-Modell (Ollama) — oder wähle „Cloud".")
+                "Einstellungen ein lokales Vision-Modell (Ollama) - oder waehle Cloud.")
         if label.startswith(("gemini", "ollama")):
             hint = "Das Modell konnte dazu nichts sagen. Formuliere die Frage anders."
         return {"answer": "", "provider": label, "error": hint}
