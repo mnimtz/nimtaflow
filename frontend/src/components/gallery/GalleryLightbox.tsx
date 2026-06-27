@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import Lightbox from 'yet-another-react-lightbox'
@@ -38,6 +38,69 @@ const ANIM_PRESETS: { labelKey: string; promptKey: string | null }[] = [
   { labelKey: 'gallery.animClouds', promptKey: 'gallery.animCloudsPrompt' },
   { labelKey: 'gallery.animCyberpunk', promptKey: 'gallery.animCyberpunkPrompt' },
 ]
+
+function VoiceNoteSection({ photoId, hasNote }: { photoId: number; hasNote: boolean }) {
+  const { t } = useT()
+  const toast = useToast()
+  const qc = useQueryClient()
+  const [rec, setRec] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [ver, setVer] = useState(0)
+  const mr = useRef<MediaRecorder | null>(null)
+  const chunks = useRef<Blob[]>([])
+
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const m = new MediaRecorder(stream)
+      chunks.current = []
+      m.ondataavailable = e => { if (e.data.size) chunks.current.push(e.data) }
+      m.onstop = async () => {
+        stream.getTracks().forEach(tr => tr.stop())
+        const blob = new Blob(chunks.current, { type: m.mimeType || 'audio/webm' })
+        setBusy(true)
+        try {
+          const fd = new FormData(); fd.append('file', blob, 'memo.webm')
+          await api.post(`/photos/${photoId}/voice-note`, fd)
+          qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); setVer(v => v + 1)
+          toast(t('gallery.vnSaved'), 'success')
+        } catch { toast(t('gallery.vnFailed'), 'error') } finally { setBusy(false) }
+      }
+      m.start(); mr.current = m; setRec(true)
+    } catch { toast(t('gallery.vnNoMic'), 'error') }
+  }
+  const stop = () => { mr.current?.stop(); setRec(false) }
+  const del = async () => {
+    setBusy(true)
+    try { await api.delete(`/photos/${photoId}/voice-note`); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }) }
+    catch { toast(t('gallery.vnFailed'), 'error') } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-zinc-700 p-2.5">
+      <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1.5">🎤 {t('gallery.vnTitle')}</div>
+      {hasNote && (
+        <audio controls src={`/api/photos/${photoId}/voice-note?v=${ver}`} className="w-full h-9 mb-2" />
+      )}
+      <div className="flex items-center gap-2">
+        {!rec ? (
+          <button onClick={start} disabled={busy}
+            className="px-3 py-1.5 text-sm rounded bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50">
+            {hasNote ? t('gallery.vnReRecord') : t('gallery.vnRecord')}
+          </button>
+        ) : (
+          <button onClick={stop}
+            className="px-3 py-1.5 text-sm rounded bg-red-600 hover:bg-red-500 text-white inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> {t('gallery.vnStop')}
+          </button>
+        )}
+        {hasNote && !rec && (
+          <button onClick={del} disabled={busy} className="px-3 py-1.5 text-sm rounded text-red-400 hover:bg-zinc-800">{t('gallery.vnDelete')}</button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void }) {
   // staleTime:0 + refetchOnMount so a photo opened before AI finished shows its
@@ -162,6 +225,8 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
             {askAnswer && <div className="mt-2 text-sm text-zinc-100 whitespace-pre-wrap bg-zinc-800/60 rounded p-2">{askAnswer}</div>}
           </div>
         )}
+
+        <VoiceNoteSection photoId={photoId} hasNote={!!p.voice_note_path} />
 
         {p.description && (
           <div>

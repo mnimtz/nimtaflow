@@ -130,6 +130,8 @@ class Photo(Base):
     missing_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     user_rating: Mapped[Optional[int]] = mapped_column(Integer)
     user_description: Mapped[Optional[str]] = mapped_column(Text)
+    # Optional voice memo recorded by the user for this photo (cached audio file).
+    voice_note_path: Mapped[Optional[str]] = mapped_column(String(512))
     # Person names read from the file's XMP:PersonInImage on import (comma-joined).
     # Lets a re-imported photo stay searchable by person + seeds face auto-assign.
     imported_person_names: Mapped[Optional[str]] = mapped_column(Text)

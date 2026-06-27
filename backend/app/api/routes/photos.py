@@ -1,5 +1,5 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -398,6 +398,63 @@ async def photo_postcard(photo_id: int, lang: str = "de",
                                   (text or None), (subtitle or None), theme, (text_color or None))
     return Response(content=png, media_type="image/png",
                     headers={"Content-Disposition": 'inline; filename="nimtaflow-postkarte.png"'})
+
+
+@router.post("/{photo_id}/voice-note")
+async def set_voice_note(photo_id: int, file: UploadFile = File(...),
+                         db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    """Attach a voice memo (recorded audio) to a photo. Stored in the cache."""
+    photo = await db.scalar(select(Photo).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not photo:
+        raise HTTPException(404)
+    from app.core.config import get_settings
+    data = await file.read()
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Sprach-Memo zu groß")
+    d = os.path.join(get_settings().cache_path, "voice_notes")
+    os.makedirs(d, exist_ok=True)
+    ext = ".webm"
+    fn = (file.filename or "").lower()
+    if fn.endswith(".m4a") or "mp4" in (file.content_type or ""):
+        ext = ".m4a"
+    elif fn.endswith(".mp3"):
+        ext = ".mp3"
+    path = os.path.join(d, f"{photo_id}{ext}")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    photo.voice_note_path = path
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/{photo_id}/voice-note")
+async def get_voice_note(photo_id: int, db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    photo = await db.scalar(select(Photo).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not photo or not photo.voice_note_path or not os.path.exists(photo.voice_note_path):
+        raise HTTPException(404)
+    ext = os.path.splitext(photo.voice_note_path)[1].lower()
+    mt = {".m4a": "audio/mp4", ".mp3": "audio/mpeg"}.get(ext, "audio/webm")
+    from fastapi.responses import FileResponse
+    return FileResponse(photo.voice_note_path, media_type=mt)
+
+
+@router.delete("/{photo_id}/voice-note")
+async def delete_voice_note(photo_id: int, db: AsyncSession = Depends(get_db),
+                            user: Optional[User] = Depends(current_user_optional)):
+    photo = await db.scalar(select(Photo).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not photo:
+        raise HTTPException(404)
+    if photo.voice_note_path:
+        try:
+            if os.path.exists(photo.voice_note_path):
+                os.remove(photo.voice_note_path)
+        except Exception:
+            pass
+        photo.voice_note_path = None
+        await db.commit()
+    return {"ok": True}
 
 
 @router.get("/trips")
