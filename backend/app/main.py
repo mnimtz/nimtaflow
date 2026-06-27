@@ -142,6 +142,15 @@ async def lifespan(app: FastAPI):
         for stmt in _COLUMN_MIGRATIONS:
             await conn.execute(text(stmt))
 
+    # Enum value additions — a new column doesn't extend an existing PG enum type.
+    # Each in its own transaction + non-fatal so one failure never blocks startup.
+    for _stmt in ("ALTER TYPE sharetype ADD VALUE IF NOT EXISTS 'highlight'",):
+        try:
+            async with _engine.begin() as conn:
+                await conn.execute(text(_stmt))
+        except Exception:
+            pass
+
     # Seed an initial admin if there are no users yet (idempotent, non-fatal).
     try:
         from app.core.database import get_db
