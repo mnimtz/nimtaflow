@@ -702,7 +702,7 @@ async def person_photos_v1(person_id: int, request: Request,
 @router.get("/photos/{photo_id}/postcard")
 async def photo_postcard_v1(photo_id: int, lang: str = "de",
                             text: Optional[str] = None, subtitle: Optional[str] = None,
-                            theme: str = "warm",
+                            theme: str = "classic", text_color: Optional[str] = None,
                             db: AsyncSession = Depends(get_db),
                             user: Optional[User] = Depends(current_user_optional)):
     """Shareable postcard PNG (iOS share sheet). Auth via ?access_token=.
@@ -720,7 +720,7 @@ async def photo_postcard_v1(photo_id: int, lang: str = "de",
     import asyncio as _a
     from app.services.postcard import make_postcard
     png = await _a.to_thread(make_postcard, path, place, photo.taken_at, lang,
-                             (text or None), (subtitle or None), theme)
+                             (text or None), (subtitle or None), theme, (text_color or None))
     return Response(content=png, media_type="image/png")
 
 

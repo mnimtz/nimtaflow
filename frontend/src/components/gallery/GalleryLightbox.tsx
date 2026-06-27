@@ -255,11 +255,13 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
 }
 
 const POSTCARD_THEMES = [
-  { key: 'warm', labelKey: 'gallery.pcThemeWarm' },
-  { key: 'gold', labelKey: 'gallery.pcThemeGold' },
-  { key: 'dark', labelKey: 'gallery.pcThemeDark' },
-  { key: 'film', labelKey: 'gallery.pcThemeFilm' },
+  { key: 'classic', labelKey: 'gallery.pcLayoutClassic' },
+  { key: 'modern', labelKey: 'gallery.pcLayoutModern' },
+  { key: 'polaroid', labelKey: 'gallery.pcLayoutPolaroid' },
+  { key: 'film', labelKey: 'gallery.pcLayoutFilm' },
+  { key: 'vintage', labelKey: 'gallery.pcLayoutVintage' },
 ]
+const POSTCARD_COLORS = ['', '#ffffff', '#1c1a18', '#e8b54a', '#f6d488', '#b03a3a', '#2f5d8a']
 
 function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => void }) {
   const { t, lang } = useT()
@@ -275,7 +277,8 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
     : (place ? `Grüße aus ${place}` : 'Liebe Grüße')
   const [greet, setGreet] = useState('')
   const [msg, setMsg] = useState('')
-  const [theme, setTheme] = useState('warm')
+  const [theme, setTheme] = useState('classic')
+  const [textColor, setTextColor] = useState('')
   const [touched, setTouched] = useState(false)
   const [linkShare, setLinkShare] = useState(false)
   // Prefill the greeting from the place once the detail loads (unless the user typed).
@@ -285,7 +288,7 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
   useEffect(() => { const id = setTimeout(() => setDeb({ g: greet, m: msg }), 350); return () => clearTimeout(id) }, [greet, msg])
   const [busy, setBusy] = useState(false)
 
-  const qs = `lang=${lang}&theme=${theme}&text=${encodeURIComponent(deb.g)}&subtitle=${encodeURIComponent(deb.m)}`
+  const qs = `lang=${lang}&theme=${theme}&text=${encodeURIComponent(deb.g)}&subtitle=${encodeURIComponent(deb.m)}&text_color=${encodeURIComponent(textColor)}`
   const apiPath = `/photos/${photoId}/postcard?${qs}`
   const imgSrc = `/api${apiPath}`
 
@@ -339,7 +342,7 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
             <input value={msg} onChange={e => setMsg(e.target.value)} placeholder={t('gallery.pcMessagePh')} className={inp} maxLength={80} />
           </div>
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcTheme')}</label>
+            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcLayout')}</label>
             <div className="flex flex-wrap gap-1.5">
               {POSTCARD_THEMES.map(th => (
                 <button key={th.key} type="button" onClick={() => setTheme(th.key)}
@@ -347,6 +350,23 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
                   {t(th.labelKey)}
                 </button>
               ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcTextColor')}</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {POSTCARD_COLORS.map(c => (
+                <button key={c || 'default'} type="button" onClick={() => setTextColor(c)} title={c || t('gallery.pcColorDefault')}
+                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-[10px] ${textColor === c ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-zinc-300 dark:border-zinc-600'}`}
+                  style={c ? { backgroundColor: c } : { backgroundImage: 'linear-gradient(135deg,#fff 0 50%,#1c1a18 50% 100%)' }}>
+                  {c === '' ? 'A' : ''}
+                </button>
+              ))}
+              <label className="ml-1 inline-flex items-center gap-1 text-xs text-zinc-500 cursor-pointer">
+                <input type="color" value={textColor || '#ffffff'} onChange={e => setTextColor(e.target.value)}
+                  className="w-8 h-8 rounded cursor-pointer border border-zinc-300 dark:border-zinc-600 bg-transparent p-0" />
+                {t('gallery.pcColorCustom')}
+              </label>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -358,7 +378,7 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
       </div>
       {linkShare && <ShareDialog
         target={{ kind: 'postcard', photoId, title: greet || defaultGreet,
-                  params: { text: greet || defaultGreet, subtitle: msg, theme, lang } }}
+                  params: { text: greet || defaultGreet, subtitle: msg, theme, lang, text_color: textColor } }}
         onClose={() => setLinkShare(false)} />}
     </div>
   )

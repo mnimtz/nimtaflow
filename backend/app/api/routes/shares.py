@@ -353,7 +353,8 @@ async def public_postcard(token: str, pw: Optional[str] = Query(None),
     from app.services.postcard import make_postcard
     png = await _a.to_thread(make_postcard, path, place, photo.taken_at,
                              pr.get("lang", "de"), pr.get("text") or None,
-                             pr.get("subtitle") or None, pr.get("theme", "warm"))
+                             pr.get("subtitle") or None, pr.get("theme", "classic"),
+                             pr.get("text_color") or None)
     return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
