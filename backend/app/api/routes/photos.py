@@ -224,8 +224,11 @@ async def get_stats(db: AsyncSession = Depends(get_db),
     # "Metadata still pending": indexed photos whose date hasn't been extracted yet —
     # a reliable signal that per-photo processing (date/GPS/thumbnail) isn't finished,
     # even when the folder scan reports done. Drives the Leitstand indicator + button.
+    # Exclude photos that are already DONE but simply have no date in their metadata
+    # (no EXIF date → taken_at stays NULL forever). Counting those made the Leitstand
+    # indicator hang at thousands "for days" even though processing was finished.
     metadata_pending = await db.scalar(select(func.count()).where(
-        *live, Photo.taken_at.is_(None)))
+        *live, Photo.taken_at.is_(None), Photo.status != PhotoStatus.done))
 
     return {
         "total": total or 0,
