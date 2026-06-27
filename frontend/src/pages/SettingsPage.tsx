@@ -1529,7 +1529,7 @@ function MusicSettings() {
             </label>
             {cloud && (
               <label className="block text-sm text-zinc-700 dark:text-zinc-300">{t('settings.musicFalKey')}
-                <input type="password" value={falKey} onChange={e => setFalKey(e.target.value)} placeholder="fal_… (leer = Video-fal-Key)" className={`mt-1 w-full ${inp}`} />
+                <input type="password" value={falKey} onChange={e => setFalKey(e.target.value)} placeholder="fal_… (leer = wie bei KI-Video)" className={`mt-1 w-full ${inp}`} />
                 <p className="text-[11px] text-zinc-400 mt-1">{t('settings.musicFalKeyHint')}</p>
               </label>
             )}
