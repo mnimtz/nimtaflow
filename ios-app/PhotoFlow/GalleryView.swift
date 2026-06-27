@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 import AVKit
+import AVFoundation
 
 struct GalleryView: View {
     @EnvironmentObject var api: APIClient
@@ -618,8 +619,18 @@ struct VideoPlayerView: View {
         Group {
             if let player {
                 VideoPlayer(player: player)
-                    .onAppear { player.play() }
-                    .onDisappear { player.pause() }
+                    .onAppear {
+                        // Play audio even when the ring/silent switch is on — without
+                        // this AVPlayer uses the default (soloAmbient) session and stays
+                        // muted on silent, so highlight music + video sound were silent.
+                        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+                        try? AVAudioSession.sharedInstance().setActive(true)
+                        player.play()
+                    }
+                    .onDisappear {
+                        player.pause()
+                        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    }
             } else {
                 Color.black.overlay(ProgressView().tint(.white))
             }
