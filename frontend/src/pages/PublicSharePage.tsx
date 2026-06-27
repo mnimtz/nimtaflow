@@ -107,6 +107,35 @@ export default function PublicSharePage() {
     )
   }
 
+  if (meta.type === 'postcard') {
+    const purl = `/api/public/${token}/postcard${pw ? `?pw=${encodeURIComponent(pw)}` : ''}`
+    return (
+      <div className="min-h-screen text-white"
+        style={{ background: 'radial-gradient(900px 480px at 80% -8%, rgba(232,181,74,.10), transparent 60%), #0a0a0d' }}>
+        <header className="px-5 py-4 border-b border-white/10 sticky top-0 bg-[#0a0a0d]/85 backdrop-blur z-10">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+            <h1 className="text-lg font-semibold truncate">{meta.title || t('share.pub.defaultTitle')}</h1>
+            <span className="shrink-0 text-base font-extrabold tracking-tight bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">NimtaFlow</span>
+          </div>
+        </header>
+        <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10">
+          <img src={purl} alt={meta.title || 'Postkarte'} className="w-full rounded-2xl shadow-2xl" />
+          <div className="mt-5 flex justify-center">
+            <a href={purl} download="nimtaflow-postkarte.png" className="inline-flex items-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-5 py-2.5 text-sm">
+              {t('share.pub.download')}
+            </a>
+          </div>
+        </div>
+        <footer className="border-t border-white/10 mt-6 py-6 text-center">
+          <a href="https://www.nimtaflow.com" target="_blank" rel="noopener"
+            className="text-sm font-bold bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
+            {t('share.pub.sharedVia')} NimtaFlow
+          </a>
+        </footer>
+      </div>
+    )
+  }
+
   const items = meta.items
   const single = items.length === 1 ? items[0] : null
   const countLabel = items.length === 1

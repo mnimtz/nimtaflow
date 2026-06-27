@@ -16,6 +16,7 @@ from app.api.v1 import router as v1_router
 _COLUMN_MIGRATIONS = [
     # ── shares: highlight sharing ─────────────────────────────────────────────
     "ALTER TABLE shares ADD COLUMN IF NOT EXISTS highlight_id INTEGER",
+    "ALTER TABLE shares ADD COLUMN IF NOT EXISTS params JSONB",
     # ── photos: full v2 metadata set ──────────────────────────────────────────
     """ALTER TABLE photos
         ADD COLUMN IF NOT EXISTS taken_at_original    VARCHAR(32),
@@ -144,7 +145,8 @@ async def lifespan(app: FastAPI):
 
     # Enum value additions — a new column doesn't extend an existing PG enum type.
     # Each in its own transaction + non-fatal so one failure never blocks startup.
-    for _stmt in ("ALTER TYPE sharetype ADD VALUE IF NOT EXISTS 'highlight'",):
+    for _stmt in ("ALTER TYPE sharetype ADD VALUE IF NOT EXISTS 'highlight'",
+                  "ALTER TYPE sharetype ADD VALUE IF NOT EXISTS 'postcard'"):
         try:
             async with _engine.begin() as conn:
                 await conn.execute(text(_stmt))

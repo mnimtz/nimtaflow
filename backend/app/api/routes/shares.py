@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ class ShareCreate(BaseModel):
     password: Optional[str] = None
     expires_days: Optional[int] = None
     allow_download: bool = True
+    params: Optional[dict] = None   # postcard: {text, subtitle, theme, lang}
 
 
 class ShareOut(BaseModel):
@@ -100,6 +101,10 @@ async def create_share(body: ShareCreate, request: Request,
         if not h:
             raise HTTPException(400, "Highlight nicht gefunden")
         title = body.title or h.title or "Highlight"
+    elif body.share_type == ShareType.postcard:
+        if not body.photo_id or not await db.get(Photo, body.photo_id):
+            raise HTTPException(400, "Foto nicht gefunden")
+        title = body.title or (body.params or {}).get("text") or "Postkarte"
     else:
         raise HTTPException(400, "Unbekannter Typ")
 
@@ -111,10 +116,11 @@ async def create_share(body: ShareCreate, request: Request,
         token=secrets.token_urlsafe(24),
         share_type=body.share_type,
         album_id=body.album_id if body.share_type == ShareType.album else None,
-        photo_id=body.photo_id if body.share_type == ShareType.photo else None,
+        photo_id=body.photo_id if body.share_type in (ShareType.photo, ShareType.postcard) else None,
         trip_from=body.trip_from if body.share_type == ShareType.trip else None,
         trip_to=body.trip_to if body.share_type == ShareType.trip else None,
         highlight_id=body.highlight_id if body.share_type == ShareType.highlight else None,
+        params=body.params if body.share_type == ShareType.postcard else None,
         title=title,
         password_hash=hash_password(body.password) if body.password else None,
         expires_at=expires_at,
@@ -243,6 +249,13 @@ async def public_meta(token: str, db: AsyncSession = Depends(get_db),
         await db.commit()
         return PublicShare(type="highlight", title=share.title, requires_password=False,
                            allow_download=share.allow_download, items=[])
+    # Postcard share = a single rendered image → the guest page shows it via
+    # /public/{token}/postcard. No photo items / no original download.
+    if share.share_type == ShareType.postcard:
+        share.view_count = (share.view_count or 0) + 1
+        await db.commit()
+        return PublicShare(type="postcard", title=share.title, requires_password=False,
+                           allow_download=False, items=[])
     sub = await _photo_ids_query(share)
     rows = (await db.execute(
         select(Photo.id, Photo.is_video, Photo.width, Photo.height,
@@ -318,6 +331,31 @@ async def public_video(token: str, photo_id: int,
         return FileResponse(web, media_type=mt, headers={"Cache-Control": "public, max-age=86400"})
     mime = photo.mime_type or "video/mp4"
     return FileResponse(photo.path, media_type=mime)
+
+
+@public_router.get("/{token}/postcard")
+async def public_postcard(token: str, pw: Optional[str] = Query(None),
+                          db: AsyncSession = Depends(get_db)):
+    """Render the shared postcard PNG from its stored photo + text/theme params."""
+    share = await _load_valid(token, db)
+    _check_pw(share, pw)
+    if share.share_type != ShareType.postcard or not share.photo_id:
+        raise HTTPException(404)
+    photo = await db.get(Photo, share.photo_id)
+    if not photo:
+        raise HTTPException(404)
+    path = photo.thumb_large or photo.thumb_medium or photo.path
+    if not path or not os.path.exists(path):
+        raise HTTPException(404, "Kein Bild")
+    pr = share.params or {}
+    place = ", ".join([p for p in (photo.city, photo.country) if p]) or photo.location_name or None
+    import asyncio as _a
+    from app.services.postcard import make_postcard
+    png = await _a.to_thread(make_postcard, path, place, photo.taken_at,
+                             pr.get("lang", "de"), pr.get("text") or None,
+                             pr.get("subtitle") or None, pr.get("theme", "warm"))
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @public_router.get("/{token}/highlight-video")

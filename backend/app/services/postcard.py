@@ -126,22 +126,35 @@ def make_postcard(image_path: str, place: Optional[str], taken_at: Optional[date
         d_f = _font("DejaVuSans.ttf", 30)
         draw.text((cap_x, y), date_txt, font=d_f, fill=subink)
 
-    # ── NimtaFlow signature (bottom-right of the band — a clean lockup, not a
-    # floating box over the photo). Gold rounded 'N' tile + wordmark to its left.
-    tile = 70
-    tx = W - pad - tile
-    ty = H - pad - tile - 6
-    draw.rounded_rectangle([tx, ty, tx + tile, ty + tile], radius=14, fill=gold)
-    nf = _font("DejaVuSans-Bold.ttf", 46)
-    draw.text((tx + tile / 2, ty + tile / 2), "N", font=nf, fill=paper if theme != "dark" else (24, 24, 30), anchor="mm")
-    wm = _font("DejaVuSans-Bold.ttf", 30)
-    wm_txt = "NimtaFlow"
-    wm_w = draw.textlength(wm_txt, font=wm)
-    draw.text((tx - 16 - wm_w, ty + tile / 2 - 18), wm_txt, font=wm, fill=ink, anchor="lm")
-    tag = _font("DejaVuSans.ttf", 20)
-    tag_txt = "deine eigene Foto-Cloud" if lang != "en" else "your own photo cloud"
-    tag_w = draw.textlength(tag_txt, font=tag)
-    draw.text((tx - 16 - tag_w, ty + tile / 2 + 14), tag_txt, font=tag, fill=subink, anchor="lm")
+    # ── NimtaFlow logo (the real transparent wordmark) — top-right ON the photo,
+    # with a soft shadow so it stays legible on bright or busy backgrounds.
+    logo_path = os.path.join(os.path.dirname(__file__), "..", "assets", "nimtaflow_logo.png")
+    if os.path.exists(logo_path):
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            lw = int(inner_w * 0.26)
+            lh = max(1, int(lw * logo.height / logo.width))
+            logo = logo.resize((lw, lh), Image.LANCZOS)
+            lx = fx + inner_w - frame - lw - 26
+            ly = fy + frame + 22
+            # soft drop shadow from the logo's own alpha silhouette
+            alpha = logo.split()[3]
+            sil = Image.new("RGBA", logo.size, (0, 0, 0, 0))
+            sil = Image.composite(Image.new("RGBA", logo.size, (0, 0, 0, 150)), sil, alpha)
+            sil = sil.filter(ImageFilter.GaussianBlur(7))
+            card = card.convert("RGBA")
+            card.alpha_composite(sil, (lx + 3, ly + 5))
+            card.alpha_composite(logo, (lx, ly))
+            card = card.convert("RGB")
+            draw = ImageDraw.Draw(card)
+        except Exception:
+            pass
+
+    # subtle marketing URL bottom-right of the caption band
+    url_f = _font("DejaVuSans.ttf", 24)
+    url_txt = "nimtaflow.com"
+    url_w = draw.textlength(url_txt, font=url_f)
+    draw.text((W - pad - url_w - 2, H - pad - 34), url_txt, font=url_f, fill=subink)
 
     out = io.BytesIO()
     card.save(out, format="PNG")

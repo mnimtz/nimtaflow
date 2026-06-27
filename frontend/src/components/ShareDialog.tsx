@@ -8,6 +8,7 @@ export type ShareTarget =
   | { kind: 'photo'; photoId: number; title?: string }
   | { kind: 'trip'; tripFrom: string; tripTo: string; title?: string }
   | { kind: 'highlight'; highlightId: number; title?: string }
+  | { kind: 'postcard'; photoId: number; params?: Record<string, unknown>; title?: string }
 
 /** Create a public share link for an album, photo or trip — with optional
  *  password, expiry and download toggle. Shows the resulting link to copy. */
@@ -23,7 +24,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const label = target.kind === 'album' ? t('share.dlg.labelAlbum') : target.kind === 'photo' ? t('share.dlg.labelPhoto') : target.kind === 'highlight' ? t('share.dlg.labelHighlight') : t('share.dlg.labelTrip')
+  const label = target.kind === 'album' ? t('share.dlg.labelAlbum') : target.kind === 'photo' ? t('share.dlg.labelPhoto') : target.kind === 'highlight' ? t('share.dlg.labelHighlight') : target.kind === 'postcard' ? t('share.dlg.labelPostcard') : t('share.dlg.labelTrip')
 
   async function create() {
     setCreating(true); setError(null)
@@ -39,6 +40,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
       if (target.kind === 'photo') body.photo_id = target.photoId
       if (target.kind === 'trip') { body.trip_from = target.tripFrom; body.trip_to = target.tripTo }
       if (target.kind === 'highlight') body.highlight_id = target.highlightId
+      if (target.kind === 'postcard') { body.photo_id = target.photoId; body.params = target.params }
       const res = await api.post('/shares', body)
       setUrl(res.data.url as string)
     } catch {
@@ -52,7 +54,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100050] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-5 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2"><LinkIcon size={18} /> {t('share.dlg.shareTitle', { label })}</h3>

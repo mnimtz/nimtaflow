@@ -277,6 +277,7 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
   const [msg, setMsg] = useState('')
   const [theme, setTheme] = useState('warm')
   const [touched, setTouched] = useState(false)
+  const [linkShare, setLinkShare] = useState(false)
   // Prefill the greeting from the place once the detail loads (unless the user typed).
   useEffect(() => { if (!touched && p) setGreet(defaultGreet) }, [p, defaultGreet, touched])
   // Debounce text → preview URL so typing doesn't fire a request per keystroke.
@@ -348,12 +349,17 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
               ))}
             </div>
           </div>
-          <div className="flex items-center justify-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             <button onClick={download} disabled={busy} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">⬇ {t('gallery.pcDownload')}</button>
+            <button onClick={() => setLinkShare(true)} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 inline-flex items-center gap-1.5">🔗 {t('gallery.pcShareLink')}</button>
             <button onClick={share} disabled={busy} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50 inline-flex items-center gap-1.5"><Share2 size={15} /> {t('gallery.shareTooltip')}</button>
           </div>
         </div>
       </div>
+      {linkShare && <ShareDialog
+        target={{ kind: 'postcard', photoId, title: greet || defaultGreet,
+                  params: { text: greet || defaultGreet, subtitle: msg, theme, lang } }}
+        onClose={() => setLinkShare(false)} />}
     </div>
   )
 }

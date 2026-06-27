@@ -12,7 +12,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Integer, DateTime, Boolean, ForeignKey, Enum
+from sqlalchemy import String, Integer, DateTime, Boolean, ForeignKey, Enum, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -24,6 +24,7 @@ class ShareType(str, enum.Enum):
     photo = "photo"
     trip = "trip"
     highlight = "highlight"
+    postcard = "postcard"
 
 
 class Share(Base):
@@ -40,6 +41,9 @@ class Share(Base):
     # trip = an auto-detected event → stored as a date range + a title
     trip_from: Mapped[Optional[str]] = mapped_column(String(10))   # ISO date
     trip_to: Mapped[Optional[str]] = mapped_column(String(10))     # ISO date
+
+    # postcard = a single photo rendered into a card → carries text/subtitle/theme/lang
+    params: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     title: Mapped[Optional[str]] = mapped_column(String(256))
     password_hash: Mapped[Optional[str]] = mapped_column(String(256))
