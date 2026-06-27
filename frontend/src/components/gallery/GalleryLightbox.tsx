@@ -16,7 +16,7 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles, Share2 } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles, Share2, Image as ImgIcon } from 'lucide-react'
 import ShareDialog from '../ShareDialog'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
@@ -50,11 +50,23 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
   const { t } = useT()
   const toast = useToast()
   const qc = useQueryClient()
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
+  })
+  // Default the Ask-the-photo provider to whatever is actually set up: if a Gemini
+  // key is configured (or Gemini is the chosen AI provider) default to Cloud,
+  // otherwise Local. In-process local needs a GPU the backend doesn't have, so on
+  // most setups Cloud is the one that actually answers.
+  const cloudConfigured = !!(settings && (settings['ai.gemini.api_key'] || settings['chat.gemini.api_key'] || settings['ai.provider'] === 'gemini' || settings['chat.provider'] === 'gemini'))
   const [scanning, setScanning] = useState(false)
   const [askQ, setAskQ] = useState('')
   const [askAnswer, setAskAnswer] = useState('')
   const [askBusy, setAskBusy] = useState(false)
   const [askProvider, setAskProvider] = useState<'local' | 'gemini'>('local')
+  const [askTouched, setAskTouched] = useState(false)
+  useEffect(() => {
+    if (!askTouched && settings) setAskProvider(cloudConfigured ? 'gemini' : 'local')
+  }, [settings, cloudConfigured, askTouched])
   const ask = async () => {
     if (!askQ.trim()) return
     setAskBusy(true); setAskAnswer('')
@@ -159,8 +171,8 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
               </button>
             </div>
             <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
-              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'local'} onChange={() => setAskProvider('local')} /> {t('gallery.askLocal')}</label>
-              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'gemini'} onChange={() => setAskProvider('gemini')} /> {t('gallery.askCloud')}</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'local'} onChange={() => { setAskTouched(true); setAskProvider('local') }} /> {t('gallery.askLocal')}</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'gemini'} onChange={() => { setAskTouched(true); setAskProvider('gemini') }} /> {t('gallery.askCloud')}</label>
             </div>
             {askAnswer && <div className="mt-2 text-sm text-zinc-100 whitespace-pre-wrap bg-zinc-800/60 rounded p-2">{askAnswer}</div>}
           </div>
@@ -321,6 +333,23 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
       <Share2 className="yarl__icon" />
     </button>
   )
+  const openPostcard = async () => {
+    const p = photos[cur]
+    if (!p || p.is_video) return
+    try {
+      const r = await api.get(`/photos/${p.id}/postcard`, { responseType: 'blob' })
+      const url = URL.createObjectURL(r.data as Blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e: any) {
+      toast(e?.response?.data?.detail || t('gallery.postcardFailed'), 'error')
+    }
+  }
+  const postcardBtn = (photos[cur] && !photos[cur].is_video) ? (
+    <button key="postcard" type="button" className="yarl__button" onClick={openPostcard} title={t('gallery.postcardTooltip')}>
+      <ImgIcon className="yarl__icon" />
+    </button>
+  ) : null
   const favBtn = onFavorite ? (
     <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && toggleFav(photos[cur])} title={t('gallery.favoriteTooltip')}>
       <Heart className="yarl__icon" fill={isFav(photos[cur]) ? 'currentColor' : 'none'} color={isFav(photos[cur]) ? '#f87171' : undefined} />
@@ -338,7 +367,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
         } }}
         plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
-        toolbar={{ buttons: [animBtn, shareBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
+        toolbar={{ buttons: [animBtn, postcardBtn, shareBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
@@ -347,8 +376,8 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         styles={{ container: { backgroundColor: 'rgba(0,0,0,0.94)' } }}
         animation={{ fade: 250, swipe: 300 }}
       />
-      {info && photos[cur] && <InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />}
-      {shareOpen && photos[cur] && <ShareDialog target={{ kind: 'photo', photoId: photos[cur].id, title: photos[cur].filename }} onClose={() => setShareOpen(false)} />}
+      {info && photos[cur] && createPortal(<InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />, document.body)}
+      {shareOpen && photos[cur] && createPortal(<ShareDialog target={{ kind: 'photo', photoId: photos[cur].id, title: photos[cur].filename }} onClose={() => setShareOpen(false)} />, document.body)}
       {animOpen && photos[cur] && createPortal(
         <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
