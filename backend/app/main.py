@@ -17,6 +17,7 @@ _COLUMN_MIGRATIONS = [
     # ── shares: highlight sharing ─────────────────────────────────────────────
     "ALTER TABLE shares ADD COLUMN IF NOT EXISTS highlight_id INTEGER",
     "ALTER TABLE shares ADD COLUMN IF NOT EXISTS params JSONB",
+    "ALTER TABLE shares ADD COLUMN IF NOT EXISTS allow_upload BOOLEAN DEFAULT false",
     # ── photos: full v2 metadata set ──────────────────────────────────────────
     """ALTER TABLE photos
         ADD COLUMN IF NOT EXISTS taken_at_original    VARCHAR(32),

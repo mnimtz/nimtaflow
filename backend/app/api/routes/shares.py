@@ -10,7 +10,7 @@ import mimetypes
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -20,7 +20,7 @@ from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
 from app.core.security import hash_password, verify_password
 from app.models.user import User
-from app.models.photo import Photo
+from app.models.photo import Photo, PhotoStatus
 from app.models.album import Album, AlbumPhoto
 from app.models.share import Share, ShareType
 
@@ -41,6 +41,7 @@ class ShareCreate(BaseModel):
     password: Optional[str] = None
     expires_days: Optional[int] = None
     allow_download: bool = True
+    allow_upload: bool = False      # album shares: let guests upload into the album
     params: Optional[dict] = None   # postcard: {text, subtitle, theme, lang}
 
 
@@ -53,6 +54,7 @@ class ShareOut(BaseModel):
     has_password: bool
     expires_at: Optional[datetime]
     allow_download: bool
+    allow_upload: bool = False
     view_count: int
     created_at: datetime
 
@@ -71,8 +73,8 @@ def _out(share: Share, base: str) -> ShareOut:
         id=share.id, token=share.token, url=f"{base}/s/{share.token}",
         share_type=share.share_type.value, title=share.title,
         has_password=share.has_password, expires_at=share.expires_at,
-        allow_download=share.allow_download, view_count=share.view_count,
-        created_at=share.created_at,
+        allow_download=share.allow_download, allow_upload=bool(getattr(share, "allow_upload", False)),
+        view_count=share.view_count, created_at=share.created_at,
     )
 
 
@@ -125,6 +127,7 @@ async def create_share(body: ShareCreate, request: Request,
         password_hash=hash_password(body.password) if body.password else None,
         expires_at=expires_at,
         allow_download=body.allow_download,
+        allow_upload=body.allow_upload if body.share_type == ShareType.album else False,
         created_by=user.id if user else None,
     )
     db.add(share)
@@ -231,6 +234,7 @@ class PublicShare(BaseModel):
     title: Optional[str]
     requires_password: bool
     allow_download: bool
+    allow_upload: bool = False
     items: List[PublicPhoto] = []
 
 
@@ -273,6 +277,7 @@ async def public_meta(token: str, db: AsyncSession = Depends(get_db),
     return PublicShare(
         type=share.share_type.value, title=share.title, requires_password=False,
         allow_download=share.allow_download,
+        allow_upload=bool(getattr(share, "allow_upload", False)) and share.share_type == ShareType.album,
         items=[PublicPhoto(
             id=r[0], is_video=r[1], width=r[2], height=r[3], filename=r[4],
             taken_at=r[5].isoformat() if r[5] else None,
@@ -331,6 +336,82 @@ async def public_video(token: str, photo_id: int,
         return FileResponse(web, media_type=mt, headers={"Cache-Control": "public, max-age=86400"})
     mime = photo.mime_type or "video/mp4"
     return FileResponse(photo.path, media_type=mime)
+
+
+@public_router.post("/{token}/upload")
+async def public_upload(token: str, files: List[UploadFile] = File(...),
+                        pw: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
+    """Guest upload into a shared album. Only when the owner enabled it. Files land
+    in the OWNER's Upload tree, are deduplicated, added to the album and enter the
+    normal pipeline. Capped to images/videos under 300 MB each."""
+    import hashlib
+    from pathlib import Path
+    from app.core.access import upload_base_dir
+    from app.core.config import get_settings
+    from app.models.source import PhotoSource
+    share = await _load_valid(token, db)
+    _check_pw(share, pw)
+    if share.share_type != ShareType.album or not getattr(share, "allow_upload", False) or not share.album_id:
+        raise HTTPException(403, "Upload für diesen Link nicht erlaubt")
+    owner = await db.get(User, share.created_by) if share.created_by else None
+
+    from app.services.settings_loader import load_settings
+    s = await load_settings(db)
+    default_dir = s.get("upload.default_dir")
+    if not default_dir:
+        roots = (await db.execute(select(PhotoSource.path).where(PhotoSource.enabled == True))).scalars().all()  # noqa: E712
+        default_dir = min(roots, key=len) if roots else None
+    default_dir = default_dir or get_settings().photos_path
+    base = upload_base_dir(owner, default_dir)
+    now = datetime.now(timezone.utc)
+    dest_dir = Path(base) / "Upload" / now.strftime("%Y") / now.strftime("%Y-%m")
+    MAX = 300 * 1024 * 1024
+
+    results = []
+    new_ids = []
+    for up in files:
+        try:
+            content = await up.read()
+            if len(content) > MAX:
+                results.append({"filename": up.filename, "status": "too_large"}); continue
+            mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "application/octet-stream"
+            if not (mime.startswith("image/") or mime.startswith("video/")):
+                results.append({"filename": up.filename, "status": "rejected"}); continue
+            h = hashlib.sha256(content).hexdigest()
+            existing = await db.scalar(select(Photo.id).where(Photo.file_hash == h))
+            if existing:
+                pid = existing
+                status = "duplicate"
+            else:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                raw = up.filename or h
+                dest = dest_dir / raw
+                stem, suf, n = Path(raw).stem, Path(raw).suffix, 1
+                while dest.exists():
+                    dest = dest_dir / f"{stem}_{n}{suf}"; n += 1
+                tmp = dest.with_suffix(dest.suffix + ".part")
+                tmp.write_bytes(content); os.replace(tmp, dest)
+                photo = Photo(path=str(dest), filename=dest.name, file_hash=h, file_size=len(content),
+                              mime_type=mime, is_video=mime.startswith("video/"), status=PhotoStatus.pending)
+                db.add(photo); await db.flush(); pid = photo.id
+                new_ids.append(pid)
+                status = "accepted"
+            in_album = await db.scalar(select(AlbumPhoto.id).where(
+                AlbumPhoto.album_id == share.album_id, AlbumPhoto.photo_id == pid))
+            if not in_album:
+                db.add(AlbumPhoto(album_id=share.album_id, photo_id=pid))
+            results.append({"filename": up.filename, "status": status})
+        except Exception:
+            results.append({"filename": getattr(up, "filename", "?"), "status": "error"})
+    await db.commit()
+    try:
+        from app.worker.tasks import process_photo_task
+        for pid in new_ids:
+            process_photo_task.delay(pid)
+    except Exception:
+        pass
+    ok = sum(1 for r in results if r["status"] in ("accepted", "duplicate"))
+    return {"uploaded": ok, "results": results}
 
 
 @public_router.get("/{token}/postcard")

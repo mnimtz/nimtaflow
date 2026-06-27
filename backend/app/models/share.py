@@ -49,6 +49,8 @@ class Share(Base):
     password_hash: Mapped[Optional[str]] = mapped_column(String(256))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     allow_download: Mapped[bool] = mapped_column(Boolean, default=True)
+    # album shares only: let guests UPLOAD into the album (shared album / guest upload)
+    allow_upload: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

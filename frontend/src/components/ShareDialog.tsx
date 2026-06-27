@@ -19,6 +19,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
   const [useExpiry, setUseExpiry] = useState(false)
   const [expiresDays, setExpiresDays] = useState(7)
   const [allowDownload, setAllowDownload] = useState(true)
+  const [allowUpload, setAllowUpload] = useState(false)
   const [creating, setCreating] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +34,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
         share_type: target.kind,
         title: target.title,
         allow_download: allowDownload,
+        allow_upload: target.kind === 'album' ? allowUpload : undefined,
         password: usePassword && password ? password : undefined,
         expires_days: useExpiry ? expiresDays : undefined,
       }
@@ -88,6 +90,12 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
               <input type="checkbox" checked={allowDownload} onChange={e => setAllowDownload(e.target.checked)} />
               {t('share.dlg.allowDownload')}
             </label>
+            {target.kind === 'album' && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={allowUpload} onChange={e => setAllowUpload(e.target.checked)} />
+                {t('share.dlg.allowUpload')}
+              </label>
+            )}
             {error && <p className="text-sm text-red-500">{error}</p>}
             <button onClick={create} disabled={creating}
               className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">

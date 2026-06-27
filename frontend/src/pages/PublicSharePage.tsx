@@ -7,7 +7,41 @@ type Item = {
   id: number; is_video: boolean; width?: number; height?: number
   filename?: string | null; taken_at?: string | null; place?: string | null
 }
-type Meta = { type: string; title?: string; requires_password: boolean; allow_download: boolean; items: Item[] }
+type Meta = { type: string; title?: string; requires_password: boolean; allow_download: boolean; allow_upload?: boolean; items: Item[] }
+
+/** Guest upload zone for a shared album (only when the owner enabled it). */
+function GuestUpload({ token, pw, onDone }: { token: string; pw: string; onDone: () => void }) {
+  const { t } = useT()
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setBusy(true); setMsg(null)
+    try {
+      const fd = new FormData()
+      files.forEach(f => fd.append('files', f))
+      const q = pw ? `?pw=${encodeURIComponent(pw)}` : ''
+      const r = await fetch(`/api/public/${token}/upload${q}`, { method: 'POST', body: fd })
+      if (!r.ok) throw new Error()
+      const d = await r.json()
+      setMsg(t('share.pub.uploadDone', { n: d.uploaded ?? files.length }))
+      setTimeout(onDone, 1500)
+    } catch { setMsg(t('share.pub.uploadFailed')) }
+    finally { setBusy(false); e.target.value = '' }
+  }
+  return (
+    <div className="mb-5 rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4 text-center">
+      <p className="text-sm text-white/80 mb-2">{t('share.pub.uploadTitle')}</p>
+      <label className="inline-flex items-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-5 py-2.5 text-sm cursor-pointer">
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+        {busy ? t('share.pub.uploading') : t('share.pub.uploadBtn')}
+        <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={pick} disabled={busy} />
+      </label>
+      {msg && <p className="text-xs text-amber-300 mt-2">{msg}</p>}
+    </div>
+  )
+}
 
 /** Login-free guest view for a shared album / photo / trip. */
 export default function PublicSharePage() {
@@ -179,6 +213,12 @@ export default function PublicSharePage() {
           </span>
         </div>
       </header>
+
+      {meta.type === 'album' && meta.allow_upload && (
+        <div className="max-w-6xl mx-auto px-1.5 pt-4">
+          <GuestUpload token={token} pw={pw} onDone={() => load(pw)} />
+        </div>
+      )}
 
       {/* Single item → hero, multiple → grid */}
       {single ? (
