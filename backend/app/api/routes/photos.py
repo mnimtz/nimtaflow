@@ -351,9 +351,12 @@ async def ask_about_photo(photo_id: int, body: AskPhotoBody,
 
 @router.get("/{photo_id}/postcard")
 async def photo_postcard(photo_id: int, lang: str = "de",
+                         text: Optional[str] = None, subtitle: Optional[str] = None,
+                         theme: str = "warm",
                          db: AsyncSession = Depends(get_db),
                          user: Optional[User] = Depends(current_user_optional)):
-    """A shareable 'Grüße aus …' postcard PNG generated from the photo."""
+    """A shareable postcard PNG generated from the photo. Greeting (text), personal
+    message (subtitle) and theme are caller-supplied → drives the live editor."""
     photo = await db.scalar(select(Photo).where(Photo.id == photo_id, *photo_conditions(user)))
     if not photo:
         raise HTTPException(404)
@@ -362,7 +365,8 @@ async def photo_postcard(photo_id: int, lang: str = "de",
         raise HTTPException(404, "Kein Bild")
     place = ", ".join([p for p in (photo.city, photo.country) if p]) or photo.location_name or None
     from app.services.postcard import make_postcard
-    png = await asyncio.to_thread(make_postcard, path, place, photo.taken_at, lang)
+    png = await asyncio.to_thread(make_postcard, path, place, photo.taken_at, lang,
+                                  (text or None), (subtitle or None), theme)
     return Response(content=png, media_type="image/png",
                     headers={"Content-Disposition": 'inline; filename="nimtaflow-postkarte.png"'})
 

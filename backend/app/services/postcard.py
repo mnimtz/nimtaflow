@@ -1,8 +1,10 @@
 """Generate a shareable 'postcard' image from a photo — the picture in a clean
-card with a 'Grüße aus <place>' line, the date and a little NimtaFlow stamp.
+card with a greeting line, an optional personal message, the date and a tasteful
+NimtaFlow signature.
 
 Pure Pillow (no AI, no external deps) → fast and reliable. Used by the
-/photos/{id}/postcard endpoints (web + iOS share)."""
+/photos/{id}/postcard endpoints (web dialog + iOS share). Greeting, message and
+theme are caller-supplied so the web/iOS dialogs can offer a live editor."""
 import io
 import os
 from datetime import datetime
@@ -14,6 +16,14 @@ _FONT_DIRS = [
     "/usr/local/lib/python3.12/site-packages/matplotlib/mpl-data/fonts/ttf",
     "/usr/share/fonts/truetype/dejavu",
 ]
+
+# theme → (frame paper, title ink, sub ink, accent gold, bg darken, bg tint add)
+_THEMES = {
+    "warm":  ((252, 250, 245), (38, 34, 28),  (120, 110, 95), (232, 181, 74), 0.45, 18),
+    "dark":  ((24, 24, 30),    (244, 241, 234), (179, 174, 164), (232, 181, 74), 0.30, 6),
+    "gold":  ((252, 248, 238), (60, 45, 16),  (150, 120, 60),  (198, 150, 50),  0.42, 22),
+    "film":  ((250, 249, 246), (30, 30, 34),  (110, 110, 118), (232, 181, 74), 0.38, 14),
+}
 
 
 def _font(name: str, size: int):
@@ -30,6 +40,18 @@ def _font(name: str, size: int):
         return ImageFont.load_default()
 
 
+def _fit_font(draw, text, bold, max_w, start, min_size=30):
+    """Largest font (DejaVu) at which `text` fits into max_w, down to min_size."""
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    size = start
+    while size > min_size:
+        f = _font(name, size)
+        if draw.textlength(text, font=f) <= max_w:
+            return f
+        size -= 3
+    return _font(name, min_size)
+
+
 def _fmt_date(dt: Optional[datetime], lang: str = "de") -> str:
     if not dt:
         return ""
@@ -41,61 +63,85 @@ def _fmt_date(dt: Optional[datetime], lang: str = "de") -> str:
     return f"{dt.day}. {m} {dt.year}" if lang != "en" else f"{m} {dt.day}, {dt.year}"
 
 
+def default_greeting(place: Optional[str], lang: str = "de") -> str:
+    if lang == "en":
+        return f"Greetings from {place}" if place else "Warm wishes"
+    return f"Grüße aus {place}" if place else "Liebe Grüße"
+
+
 def make_postcard(image_path: str, place: Optional[str], taken_at: Optional[datetime],
-                  lang: str = "de") -> bytes:
-    """Compose the postcard PNG. `place` like 'Lissabon, Portugal' (may be None)."""
-    GOLD = (232, 181, 74)
-    INK = (38, 34, 28)
+                  lang: str = "de", text: Optional[str] = None,
+                  subtitle: Optional[str] = None, theme: str = "warm") -> bytes:
+    """Compose the postcard PNG.
+
+    text     — greeting line (defaults to 'Grüße aus <place>' / 'Liebe Grüße').
+    subtitle — optional personal message shown under the greeting.
+    theme    — warm | dark | gold | film.
+    """
+    paper, ink, subink, gold, darken, tint = _THEMES.get(theme, _THEMES["warm"])
     photo = Image.open(image_path).convert("RGB")
 
-    # Landscape card. The photo sits in a white frame; a caption band sits below.
+    # Landscape card. The photo sits in a frame; a caption band sits below.
     W, H = 1600, 1120
-    band = 200                      # caption band height
+    band = 230                      # caption band height
     pad = 70                        # outer padding
-    frame = 18                      # white frame around the photo
+    frame = 18                      # frame around the photo
     inner_w = W - 2 * pad
     inner_h = H - 2 * pad - band
-    # cover-fit the photo into the inner frame
     fitted = ImageOps.fit(photo, (inner_w - 2 * frame, inner_h - 2 * frame), Image.LANCZOS)
 
-    # Warm paper background with a soft vignette from a blurred, darkened copy.
+    # Background: blurred, darkened copy of the photo (soft, themed vignette).
     bg = ImageOps.fit(photo, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
-    bg = Image.eval(bg, lambda v: int(v * 0.45 + 18))
+    bg = Image.eval(bg, lambda v: int(v * darken + tint))
     card = bg.convert("RGB")
-    draw = ImageDraw.Draw(card)
 
-    # White photo frame + drop shadow
-    fx, fy = pad, pad
+    # Drop shadow + frame around the photo.
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
-    sd.rounded_rectangle([fx + 8, fy + 12, fx + inner_w + 8, fy + inner_h + 12], radius=14, fill=(0, 0, 0, 110))
-    card.paste(Image.alpha_composite(card.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(16))).convert("RGB"), (0, 0))
+    fx, fy = pad, pad
+    sd.rounded_rectangle([fx + 8, fy + 12, fx + inner_w + 8, fy + inner_h + 12], radius=14, fill=(0, 0, 0, 120))
+    card = Image.alpha_composite(card.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(16))).convert("RGB")
     draw = ImageDraw.Draw(card)
-    draw.rounded_rectangle([fx, fy, fx + inner_w, fy + inner_h], radius=12, fill=(252, 250, 245))
+    draw.rounded_rectangle([fx, fy, fx + inner_w, fy + inner_h], radius=12, fill=paper)
     card.paste(fitted, (fx + frame, fy + frame))
 
-    # Caption band
-    by = H - band - pad + 24
-    title_f = _font("DejaVuSans-Bold.ttf", 64)
-    sub_f = _font("DejaVuSans.ttf", 38)
-    place_txt = place or ("Schöne Erinnerung" if lang != "en" else "A lovely memory")
-    greet = (f"Grüße aus {place}" if place else "Liebe Grüße") if lang != "en" else (f"Greetings from {place}" if place else "Warm wishes")
-    draw.text((pad + 6, by), greet, font=title_f, fill=INK)
+    # ── Caption band ──────────────────────────────────────────────
+    cap_x = pad + 6
+    cap_w = W - 2 * pad - 230        # leave room for the signature on the right
+    by = H - band - pad + 34
+
+    greet = (text or "").strip() or default_greeting(place, lang)
+    title_f = _fit_font(draw, greet, True, cap_w, 66, 34)
+    draw.text((cap_x, by), greet, font=title_f, fill=ink)
+    y = by + title_f.size + 14
+
+    msg = (subtitle or "").strip()
+    if msg:
+        msg_f = _fit_font(draw, msg, False, cap_w, 36, 24)
+        draw.text((cap_x, y), msg, font=msg_f, fill=subink)
+        y += msg_f.size + 10
+
     date_txt = _fmt_date(taken_at, lang)
     if date_txt:
-        draw.text((pad + 8, by + 84), date_txt, font=sub_f, fill=(120, 110, 95))
+        d_f = _font("DejaVuSans.ttf", 30)
+        draw.text((cap_x, y), date_txt, font=d_f, fill=subink)
 
-    # NimtaFlow 'stamp' top-right corner of the card
-    sw, sh = 150, 180
-    sx, sy = W - pad - sw + 6, pad - 6
-    stamp = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
-    st = ImageDraw.Draw(stamp)
-    st.rounded_rectangle([0, 0, sw - 1, sh - 1], radius=10, fill=(255, 255, 255, 235), outline=GOLD + (255,), width=4)
-    nf = _font("DejaVuSans-Bold.ttf", 80)
-    st.text((sw / 2, sh / 2 - 18), "N", font=nf, fill=GOLD, anchor="mm")
-    sm = _font("DejaVuSans.ttf", 20)
-    st.text((sw / 2, sh - 28), "NimtaFlow", font=sm, fill=INK, anchor="mm")
-    card.paste(stamp, (sx, sy), stamp)
+    # ── NimtaFlow signature (bottom-right of the band — a clean lockup, not a
+    # floating box over the photo). Gold rounded 'N' tile + wordmark to its left.
+    tile = 70
+    tx = W - pad - tile
+    ty = H - pad - tile - 6
+    draw.rounded_rectangle([tx, ty, tx + tile, ty + tile], radius=14, fill=gold)
+    nf = _font("DejaVuSans-Bold.ttf", 46)
+    draw.text((tx + tile / 2, ty + tile / 2), "N", font=nf, fill=paper if theme != "dark" else (24, 24, 30), anchor="mm")
+    wm = _font("DejaVuSans-Bold.ttf", 30)
+    wm_txt = "NimtaFlow"
+    wm_w = draw.textlength(wm_txt, font=wm)
+    draw.text((tx - 16 - wm_w, ty + tile / 2 - 18), wm_txt, font=wm, fill=ink, anchor="lm")
+    tag = _font("DejaVuSans.ttf", 20)
+    tag_txt = "deine eigene Foto-Cloud" if lang != "en" else "your own photo cloud"
+    tag_w = draw.textlength(tag_txt, font=tag)
+    draw.text((tx - 16 - tag_w, ty + tile / 2 + 14), tag_txt, font=tag, fill=subink, anchor="lm")
 
     out = io.BytesIO()
     card.save(out, format="PNG")

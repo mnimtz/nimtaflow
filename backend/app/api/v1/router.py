@@ -701,9 +701,12 @@ async def person_photos_v1(person_id: int, request: Request,
 
 @router.get("/photos/{photo_id}/postcard")
 async def photo_postcard_v1(photo_id: int, lang: str = "de",
+                            text: Optional[str] = None, subtitle: Optional[str] = None,
+                            theme: str = "warm",
                             db: AsyncSession = Depends(get_db),
                             user: Optional[User] = Depends(current_user_optional)):
-    """Shareable postcard PNG (iOS share sheet). Auth via ?access_token=."""
+    """Shareable postcard PNG (iOS share sheet). Auth via ?access_token=.
+    Greeting (text), message (subtitle) and theme are caller-supplied."""
     from fastapi import HTTPException
     from fastapi.responses import Response
     import os as _os
@@ -716,7 +719,8 @@ async def photo_postcard_v1(photo_id: int, lang: str = "de",
     place = ", ".join([p for p in (photo.city, photo.country) if p]) or photo.location_name or None
     import asyncio as _a
     from app.services.postcard import make_postcard
-    png = await _a.to_thread(make_postcard, path, place, photo.taken_at, lang)
+    png = await _a.to_thread(make_postcard, path, place, photo.taken_at, lang,
+                             (text or None), (subtitle or None), theme)
     return Response(content=png, media_type="image/png")
 
 

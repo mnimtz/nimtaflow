@@ -75,14 +75,6 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
       setAskAnswer(r.data?.answer || (r.data?.error ? `(${r.data.error})` : 'Keine Antwort.'))
     } catch { setAskAnswer('Fehler bei der Anfrage.') } finally { setAskBusy(false) }
   }
-  const postcard = async () => {
-    try {
-      const r = await api.get(`/photos/${photoId}/postcard`, { responseType: 'blob' })
-      const url = URL.createObjectURL(r.data as Blob)
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    } catch { toast(t('gallery.postcardFailed'), 'error') }
-  }
   const reprocess = async () => {
     setScanning(true)
     try {
@@ -150,13 +142,6 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
           title={t('gallery.reprocessTitle')}>
           <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? t('gallery.scanning') : t('gallery.reprocess')}
         </button>
-
-        {!p.is_video && (
-          <button onClick={postcard}
-            className="ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white font-medium">
-            🖼️ {t('gallery.postcard')}
-          </button>
-        )}
 
         {!p.is_video && (
           <div className="mt-3 rounded-lg border border-zinc-700 p-2.5">
@@ -269,6 +254,110 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
   )
 }
 
+const POSTCARD_THEMES = [
+  { key: 'warm', labelKey: 'gallery.pcThemeWarm' },
+  { key: 'gold', labelKey: 'gallery.pcThemeGold' },
+  { key: 'dark', labelKey: 'gallery.pcThemeDark' },
+  { key: 'film', labelKey: 'gallery.pcThemeFilm' },
+]
+
+function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => void }) {
+  const { t, lang } = useT()
+  const toast = useToast()
+  const { data: p } = useQuery<any>({
+    queryKey: ['photo-detail', photoId],
+    queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data),
+    staleTime: 60_000,
+  })
+  const place = p ? ([p.city, p.country].filter(Boolean).join(', ') || p.location_name || '') : ''
+  const defaultGreet = lang === 'en'
+    ? (place ? `Greetings from ${place}` : 'Warm wishes')
+    : (place ? `Grüße aus ${place}` : 'Liebe Grüße')
+  const [greet, setGreet] = useState('')
+  const [msg, setMsg] = useState('')
+  const [theme, setTheme] = useState('warm')
+  const [touched, setTouched] = useState(false)
+  // Prefill the greeting from the place once the detail loads (unless the user typed).
+  useEffect(() => { if (!touched && p) setGreet(defaultGreet) }, [p, defaultGreet, touched])
+  // Debounce text → preview URL so typing doesn't fire a request per keystroke.
+  const [deb, setDeb] = useState({ g: '', m: '' })
+  useEffect(() => { const id = setTimeout(() => setDeb({ g: greet, m: msg }), 350); return () => clearTimeout(id) }, [greet, msg])
+  const [busy, setBusy] = useState(false)
+
+  const qs = `lang=${lang}&theme=${theme}&text=${encodeURIComponent(deb.g)}&subtitle=${encodeURIComponent(deb.m)}`
+  const apiPath = `/photos/${photoId}/postcard?${qs}`
+  const imgSrc = `/api${apiPath}`
+
+  const fetchBlob = async () => (await api.get(apiPath, { responseType: 'blob' })).data as Blob
+  const download = async () => {
+    setBusy(true)
+    try {
+      const blob = await fetchBlob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = 'nimtaflow-postkarte.png'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    } catch { toast(t('gallery.postcardFailed'), 'error') } finally { setBusy(false) }
+  }
+  const share = async () => {
+    setBusy(true)
+    try {
+      const blob = await fetchBlob()
+      const file = new File([blob], 'nimtaflow-postkarte.png', { type: 'image/png' })
+      const nav: any = navigator
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({ files: [file], title: 'NimtaFlow', text: greet || defaultGreet })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a'); a.href = url; a.download = 'nimtaflow-postkarte.png'; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 30_000)
+        toast(t('gallery.pcShareFallback'), 'info')
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') toast(t('gallery.postcardFailed'), 'error')
+    } finally { setBusy(false) }
+  }
+
+  const inp = 'w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  return (
+    <div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur">
+          <h3 className="font-semibold text-zinc-900 dark:text-white flex items-center gap-2">🖼️ {t('gallery.postcard')}</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm">{t('gallery.close')}</button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950">
+            <img src={imgSrc} alt="Postkarte" className="block w-full" />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcGreeting')}</label>
+            <input value={greet} onChange={e => { setTouched(true); setGreet(e.target.value) }} placeholder={defaultGreet} className={inp} maxLength={60} />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcMessage')}</label>
+            <input value={msg} onChange={e => setMsg(e.target.value)} placeholder={t('gallery.pcMessagePh')} className={inp} maxLength={80} />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcTheme')}</label>
+            <div className="flex flex-wrap gap-1.5">
+              {POSTCARD_THEMES.map(th => (
+                <button key={th.key} type="button" onClick={() => setTheme(th.key)}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${theme === th.key ? 'bg-indigo-600 text-white border-indigo-600' : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-indigo-400'}`}>
+                  {t(th.labelKey)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button onClick={download} disabled={busy} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">⬇ {t('gallery.pcDownload')}</button>
+            <button onClick={share} disabled={busy} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50 inline-flex items-center gap-1.5"><Share2 size={15} /> {t('gallery.shareTooltip')}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function GalleryLightbox({ photos, index, onClose, onFavorite, hasMore, onLoadMore }: {
   photos: Photo[]; index: number; onClose: () => void; onFavorite?: (photo: Photo) => void
   hasMore?: boolean; onLoadMore?: () => void
@@ -277,6 +366,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   const [cur, setCur] = useState(index)
   const [info, setInfo] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [postcardOpen, setPostcardOpen] = useState(false)
   // Track favorite state locally so the heart updates immediately (the `photos`
   // array is a snapshot frozen when the lightbox opened).
   const [favs, setFavs] = useState<Set<number>>(() => new Set(photos.filter(p => p.is_favorite).map(p => p.id)))
@@ -333,20 +423,8 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
       <Share2 className="yarl__icon" />
     </button>
   )
-  const openPostcard = async () => {
-    const p = photos[cur]
-    if (!p || p.is_video) return
-    try {
-      const r = await api.get(`/photos/${p.id}/postcard`, { responseType: 'blob' })
-      const url = URL.createObjectURL(r.data as Blob)
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } catch (e: any) {
-      toast(e?.response?.data?.detail || t('gallery.postcardFailed'), 'error')
-    }
-  }
   const postcardBtn = (photos[cur] && !photos[cur].is_video) ? (
-    <button key="postcard" type="button" className="yarl__button" onClick={openPostcard} title={t('gallery.postcardTooltip')}>
+    <button key="postcard" type="button" className="yarl__button" onClick={() => setPostcardOpen(true)} title={t('gallery.postcardTooltip')}>
       <ImgIcon className="yarl__icon" />
     </button>
   ) : null
@@ -378,6 +456,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
       />
       {info && photos[cur] && createPortal(<InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />, document.body)}
       {shareOpen && photos[cur] && createPortal(<ShareDialog target={{ kind: 'photo', photoId: photos[cur].id, title: photos[cur].filename }} onClose={() => setShareOpen(false)} />, document.body)}
+      {postcardOpen && photos[cur] && createPortal(<PostcardDialog photoId={photos[cur].id} onClose={() => setPostcardOpen(false)} />, document.body)}
       {animOpen && photos[cur] && createPortal(
         <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>
