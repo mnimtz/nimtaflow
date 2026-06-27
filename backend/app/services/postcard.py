@@ -151,9 +151,11 @@ def _classic(photo, place, taken_at, lang, text, subtitle, tcol):
     rx = dx + 34
     rw = W - 46 - rx
     greet = (text or "").strip() or default_greeting(place, lang)
-    gf = _fit_font(draw, greet, "DejaVuSerif-Bold.ttf", rw, 60, 30)
+    # keep the greeting clear of the stamp box in the top-right corner
+    gw = (W - 46 - 150) - rx - 16
+    gf = _fit_font(draw, greet, "DejaVuSerif-Bold.ttf", gw, 52, 28)
     y = m + 18
-    for line in _wrap(draw, greet, gf, rw)[:2]:
+    for line in _wrap(draw, greet, gf, gw)[:3]:
         draw.text((rx, y), line, font=gf, fill=col); y += gf.size + 8
     y += 14
     msg = (subtitle or "").strip()
