@@ -19,6 +19,7 @@ struct PhotoFlowApp: App {
             switch phase {
             case .active:
                 Task { await AutoUploadManager.shared.runIfEnabled(api: api) }
+                MemoryReminders.shared.sync()
             case .background:
                 // Queue an opportunistic background upload (iOS picks the moment —
                 // typically at night while charging on Wi-Fi).

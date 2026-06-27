@@ -35,6 +35,7 @@ struct SettingsScreen: View {
                 }
                 ProSection()
                 if api.loggedIn && store.isPro { AutoUploadSection() }
+                if api.loggedIn { RemindersSection() }
                 CacheSection()
                 if api.loggedIn { HighlightsMusicSection() }
                 if api.loggedIn { HighlightsAISection() }
@@ -168,6 +169,33 @@ private struct AutoUploadSection: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { if mgr.fromDateTS > 0 { fromDate = mgr.fromDate } }
+    }
+}
+
+/// Daily memories reminder (local notification).
+private struct RemindersSection: View {
+    @ObservedObject private var mgr = MemoryReminders.shared
+    @State private var time = Date()
+
+    var body: some View {
+        Section("Erinnerungen") {
+            Toggle("Tägliche Erinnerung", isOn: Binding(
+                get: { mgr.enabled },
+                set: { mgr.setEnabled($0) }))
+            if mgr.enabled {
+                DatePicker("Uhrzeit", selection: $time, displayedComponents: .hourAndMinute)
+                    .onChange(of: time) { _, d in
+                        let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+                        mgr.hour = c.hour ?? 10; mgr.minute = c.minute ?? 0
+                        mgr.reschedule()
+                    }
+                Text("Eine tägliche Notiz erinnert dich an deine „Vor X Jahren\"-Erinnerungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear {
+            time = Calendar.current.date(bySettingHour: mgr.hour, minute: mgr.minute, second: 0, of: Date()) ?? Date()
+        }
     }
 }
 
