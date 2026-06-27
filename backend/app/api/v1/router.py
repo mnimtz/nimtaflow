@@ -699,6 +699,25 @@ async def person_photos_v1(person_id: int, request: Request,
                        total=total or 0, has_more=has_more)
 
 
+class AskPhotoV1(BaseModel):
+    question: str
+    provider: Optional[str] = None
+
+
+@router.post("/photos/{photo_id}/ask")
+async def ask_photo_v1(photo_id: int, body: AskPhotoV1, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """Frag-das-Foto (iOS): free-text question about one photo via a VLM."""
+    from fastapi import HTTPException
+    ok = await db.scalar(select(Photo.id).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not ok:
+        raise HTTPException(404)
+    from app.services.settings_loader import load_settings
+    from app.services.ask_photo import ask_photo
+    s = await load_settings(db)
+    return await ask_photo(db, photo_id, body.question, s, body.provider)
+
+
 # ── Relationships (iOS app) ───────────────────────────────────────────────────
 
 @router.get("/relationships")

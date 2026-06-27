@@ -289,16 +289,58 @@ async def get_memories(db: AsyncSession = Depends(get_db),
             target = today.replace(year=today.year - years_ago, day=28)
         start = target - timedelta(days=1)
         end = target + timedelta(days=1)
-        photos = (await db.execute(
+        photos = list((await db.execute(
             select(Photo)
             .where(Photo.taken_at.between(start, end), Photo.is_trashed == False,  # noqa: E712
                    Photo.status == PhotoStatus.done, *person_cond, *photo_conditions(user))
             .order_by(Photo.taken_at)
-            .limit(30)
-        )).scalars().all()
+            .limit(60)
+        )).scalars().all())
         if photos:
-            memories.append({"years_ago": years_ago, "date": target.date().isoformat(), "photos": photos})
+            # Smart pick: surface the BEST shot of the day first (cover) instead of
+            # whatever happened to be earliest — favorites, rated, with people and
+            # higher resolution rank up. Faces = a strong "memorable" signal.
+            from app.models.face import Face
+            ids = [p.id for p in photos]
+            fcounts = dict((await db.execute(
+                select(Face.photo_id, func.count()).where(Face.photo_id.in_(ids)).group_by(Face.photo_id)
+            )).all()) if ids else {}
+
+            def _score(p: Photo) -> float:
+                s = 0.0
+                if p.is_favorite:
+                    s += 5.0
+                if p.user_rating:
+                    s += float(p.user_rating)
+                s += min(fcounts.get(p.id, 0), 4) * 0.6
+                if p.width and p.height:
+                    s += min((p.width * p.height) / 1_000_000.0, 4.0) * 0.25
+                return s
+
+            photos.sort(key=lambda p: (-_score(p), p.taken_at or start))
+            memories.append({"years_ago": years_ago, "date": target.date().isoformat(),
+                             "photos": photos[:15]})
     return memories
+
+
+class AskPhotoBody(BaseModel):
+    question: str
+    provider: Optional[str] = None   # auto | local | gemini (None = configured default)
+
+
+@router.post("/{photo_id}/ask")
+async def ask_about_photo(photo_id: int, body: AskPhotoBody,
+                          db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    """Frag-das-Foto: free-text question about one photo, answered by a VLM
+    (local default; cloud opt-in sends the photo to that provider)."""
+    ok = await db.scalar(select(Photo.id).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not ok:
+        raise HTTPException(404)
+    from app.services.settings_loader import load_settings
+    from app.services.ask_photo import ask_photo
+    s = await load_settings(db)
+    return await ask_photo(db, photo_id, body.question, s, body.provider)
 
 
 @router.get("/trips")

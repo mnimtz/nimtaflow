@@ -638,6 +638,19 @@ struct PhotoInfoView: View {
     @EnvironmentObject var api: APIClient
     @Environment(\.dismiss) var dismiss
     @State private var detail: PhotoDetailV1?
+    @State private var askQ = ""
+    @State private var askAnswer = ""
+    @State private var askBusy = false
+    @State private var askProvider = "local"
+
+    private func runAsk() async {
+        askBusy = true; defer { askBusy = false }
+        askAnswer = ""
+        do {
+            let r = try await api.askPhoto(photo.id, question: askQ, provider: askProvider)
+            askAnswer = r.answer.isEmpty ? (r.error.map { "(\($0))" } ?? "Keine Antwort.") : r.answer
+        } catch { askAnswer = "Fehler bei der Anfrage." }
+    }
 
     private var dateStr: String {
         guard let t = photo.taken_at else { return "—" }
@@ -683,6 +696,25 @@ struct PhotoInfoView: View {
                 }
                 if let tags = detail?.tags, !tags.isEmpty {
                     Section("Tags") { Text(tags.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary) }
+                }
+                if !photo.is_video {
+                    Section("💬 Frag-das-Foto") {
+                        TextField("z. B. Wo wurde das aufgenommen?", text: $askQ)
+                            .autocorrectionDisabled()
+                        Picker("Modell", selection: $askProvider) {
+                            Text("Lokal (privat)").tag("local")
+                            Text("Cloud (Foto wird gesendet)").tag("gemini")
+                        }
+                        Button {
+                            Task { await runAsk() }
+                        } label: {
+                            HStack {
+                                if askBusy { ProgressView().controlSize(.small) }
+                                Text("Fragen")
+                            }
+                        }.disabled(askBusy || askQ.trimmingCharacters(in: .whitespaces).isEmpty)
+                        if !askAnswer.isEmpty { Text(askAnswer).font(.callout) }
+                    }
                 }
                 Section("Ort & Aufnahme") {
                     if let p = placeStr { row("Ort", p) }

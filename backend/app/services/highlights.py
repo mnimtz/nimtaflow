@@ -38,6 +38,9 @@ MOTTOS: List[dict] = [
     {"motto": "person_years",      "label": "Eine Person im Laufe der Jahre",
      "params": ["person"],
      "description": "Ein Mensch, quer durch alle Jahre — chronologisch."},
+    {"motto": "person_year",       "label": "Personen-Jahresrückblick (ein Jahr)",
+     "params": ["person", "year"],
+     "description": "Ein Mensch durch EIN Jahr — die schönsten Momente, über die Monate verteilt."},
     {"motto": "person_happy",      "label": "Die schönsten Lächeln einer Person",
      "params": ["person"],
      "description": "Fröhliche Momente, Lachen und glückliche Gesichter."},
@@ -342,6 +345,22 @@ async def select_photos_for_motto(db: AsyncSession, motto: str, opts: Any,
         # → real year-in-review, not a clump of near-identical shots from one day.
         return _spread_even(photos, cap, lambda p: p.taken_at.month if p.taken_at else 0)
 
+    # ── one person through a single year ─────────────────────────────────────
+    if motto == "person_year":
+        pid = _opt(opts, "person_id")
+        year = _opt(opts, "year")
+        if not pid or not year:
+            return []
+        photo_ids = await _person_photo_ids(db, int(pid))
+        if not photo_ids:
+            return []
+        photos = list((await db.execute(
+            select(Photo).where(*base, Photo.id.in_(photo_ids),
+                                extract("year", Photo.taken_at) == int(year))
+        )).scalars().all())
+        # spread across the months of that year (best-first, bursts collapsed)
+        return _spread_even(photos, cap, lambda p: p.taken_at.month if p.taken_at else 0)
+
     # ── one representative per year, whole library ───────────────────────────
     if motto == "through_the_years":
         photos = (await db.execute(
@@ -592,6 +611,7 @@ _MOODS = {
     "week_review":      ("bright", "uplifting, warm, gently upbeat"),
     "newest_50":        ("bright", "uplifting, warm, gently upbeat"),
     "year_review":      ("nostalgic", "nostalgic, cinematic, heartfelt"),
+    "person_year":      ("nostalgic", "nostalgic, warm, heartfelt"),
     "through_the_years":("nostalgic", "nostalgic, reflective, cinematic"),
     "album_highlight":  ("happy", "joyful, light, feel-good"),
     "season":           ("cozy", "cozy, warm, festive"),

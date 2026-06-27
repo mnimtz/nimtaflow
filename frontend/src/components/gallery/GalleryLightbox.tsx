@@ -50,6 +50,18 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
   const toast = useToast()
   const qc = useQueryClient()
   const [scanning, setScanning] = useState(false)
+  const [askQ, setAskQ] = useState('')
+  const [askAnswer, setAskAnswer] = useState('')
+  const [askBusy, setAskBusy] = useState(false)
+  const [askProvider, setAskProvider] = useState<'local' | 'gemini'>('local')
+  const ask = async () => {
+    if (!askQ.trim()) return
+    setAskBusy(true); setAskAnswer('')
+    try {
+      const r = await api.post(`/photos/${photoId}/ask`, { question: askQ, provider: askProvider })
+      setAskAnswer(r.data?.answer || (r.data?.error ? `(${r.data.error})` : 'Keine Antwort.'))
+    } catch { setAskAnswer('Fehler bei der Anfrage.') } finally { setAskBusy(false) }
+  }
   const reprocess = async () => {
     setScanning(true)
     try {
@@ -117,6 +129,26 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
           title={t('gallery.reprocessTitle')}>
           <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? t('gallery.scanning') : t('gallery.reprocess')}
         </button>
+
+        {!p.is_video && (
+          <div className="mt-3 rounded-lg border border-zinc-700 p-2.5">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">💬 {t('gallery.askTitle')}</div>
+            <div className="flex gap-1.5">
+              <input value={askQ} onChange={e => setAskQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask() }}
+                placeholder={t('gallery.askPlaceholder')}
+                className="flex-1 px-2 py-1.5 text-sm rounded bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              <button onClick={ask} disabled={askBusy || !askQ.trim()}
+                className="px-3 py-1.5 text-sm rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                {askBusy ? '…' : t('gallery.askBtn')}
+              </button>
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-400">
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'local'} onChange={() => setAskProvider('local')} /> {t('gallery.askLocal')}</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={askProvider === 'gemini'} onChange={() => setAskProvider('gemini')} /> {t('gallery.askCloud')}</label>
+            </div>
+            {askAnswer && <div className="mt-2 text-sm text-zinc-100 whitespace-pre-wrap bg-zinc-800/60 rounded p-2">{askAnswer}</div>}
+          </div>
+        )}
 
         {p.description && (
           <div>

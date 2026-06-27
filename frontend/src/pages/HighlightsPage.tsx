@@ -107,7 +107,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const m = mottos.find(x => x.motto === motto)
   const needs = (p: string) => m?.params?.includes(p)
   // KI-Clips only make sense for recap-style mottos (must match the worker's allow-list).
-  const AI_MOTTOS = ['week_review', 'year_review', 'album_highlight', 'season', 'through_the_years', 'newest_50']
+  const AI_MOTTOS = ['week_review', 'year_review', 'album_highlight', 'season', 'through_the_years', 'newest_50', 'person_year']
   const aiAvailable = AI_MOTTOS.includes(motto)
   const aiEnabled = (settings['highlights.ai_enabled'] ?? 'false') === 'true'
 

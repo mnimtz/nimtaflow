@@ -202,6 +202,11 @@ final class APIClient: ObservableObject {
     func trashPhoto(_ id: Int) async throws { try await action("api/photos/\(id)/trash", method: "PATCH") }
     func deletePhoto(_ id: Int) async throws { try await action("api/v1/photos/\(id)", method: "DELETE") }
     func photoDetail(_ id: Int) async throws -> PhotoDetailV1 { try await get("api/v1/photos/\(id)/detail", as: PhotoDetailV1.self) }
+    struct AskAnswer: Codable { let answer: String; let provider: String?; let error: String? }
+    func askPhoto(_ id: Int, question: String, provider: String) async throws -> AskAnswer {
+        try await send(makeRequest("api/v1/photos/\(id)/ask", method: "POST",
+                                   json: ["question": question, "provider": provider]), as: AskAnswer.self)
+    }
     func batch(_ action: String, ids: [Int]) async throws {
         try await self.action("api/photos/batch", method: "POST", json: ["action": action, "ids": ids])
     }

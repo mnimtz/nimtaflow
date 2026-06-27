@@ -2145,7 +2145,8 @@ def render_highlight_task(self, highlight_id: int):
                     ai_on = (want_ai
                              and str(s_hl.get("highlights.ai_enabled", "false")).lower() == "true"
                              and h.motto in ("week_review", "year_review", "album_highlight",
-                                             "season", "through_the_years", "newest_50"))
+                                             "season", "through_the_years", "newest_50",
+                                             "person_year"))
                     if ai_on:
                         from app.services.ai.video_gen import veo, fal
                         provider = str(s_hl.get("highlights.ai_provider", "veo")).lower()
