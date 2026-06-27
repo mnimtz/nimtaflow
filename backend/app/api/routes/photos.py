@@ -124,6 +124,35 @@ async def list_photos(
     return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
 
 
+# Pet keywords the AI tagger emits (DE + EN). Exact (lower-cased) match keeps it
+# precise — clean single-word tags like "Hund"/"Katze", no "hundert" false hits.
+_PET_TAGS = {
+    "hund", "hunde", "hündin", "welpe", "welpen", "katze", "katzen", "kätzchen",
+    "kater", "haustier", "haustiere", "vierbeiner",
+    "dog", "dogs", "puppy", "puppies", "cat", "cats", "kitten", "kittens", "pet", "pets",
+}
+
+
+@router.get("/pets", response_model=PhotoListResponse)
+async def list_pets(page: int = Query(1, ge=1), limit: int = Query(60, ge=1, le=500),
+                    db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(current_user_optional)):
+    """Photos that show pets — surfaced from the AI tags (Hund/Katze/…). No extra
+    model needed: reuses the descriptions/tags already computed for every photo."""
+    from app.models.tag import Tag, PhotoTag
+    q = (select(Photo).distinct()
+         .join(PhotoTag, PhotoTag.photo_id == Photo.id)
+         .join(Tag, Tag.id == PhotoTag.tag_id)
+         .where(func.lower(Tag.name).in_(_PET_TAGS), Photo.is_trashed == False))  # noqa: E712
+    for c in photo_conditions(user):
+        q = q.where(c)
+    total = await db.scalar(select(func.count()).select_from(q.subquery()))
+    q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+    q = q.offset((page - 1) * limit).limit(limit)
+    photos = (await db.execute(q)).scalars().all()
+    return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
+
+
 @router.get("/search/semantic", response_model=PhotoListResponse)
 async def semantic_search(q: str, limit: int = Query(60, ge=1, le=200), db: AsyncSession = Depends(get_db),
                           user: Optional[User] = Depends(current_user_optional)):

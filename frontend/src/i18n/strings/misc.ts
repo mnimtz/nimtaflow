@@ -1,5 +1,9 @@
 export const misc = {
   de: {
+    'pets.subtitle': 'Automatisch aus deinen Fotos erkannt — Hunde, Katzen & Co.',
+    'pets.loading': 'Suche Haustiere …',
+    'pets.empty': 'Noch keine Haustier-Fotos erkannt. Sobald die KI Fotos beschrieben hat, tauchen sie hier auf.',
+    'pets.count': '{n} Fotos mit Haustieren',
     'misc.folderSelect': 'Ordner auswählen',
     'misc.loading': 'Lade...',
     'misc.accessDenied': 'Zugriff verweigert oder Verzeichnis nicht gefunden.',
@@ -8,6 +12,10 @@ export const misc = {
     'misc.chooseThis': 'Diesen wählen',
   } as Record<string, string>,
   en: {
+    'pets.subtitle': 'Automatically found in your photos — dogs, cats & co.',
+    'pets.loading': 'Looking for pets …',
+    'pets.empty': 'No pet photos detected yet. They appear here once the AI has described photos.',
+    'pets.count': '{n} photos with pets',
     'misc.folderSelect': 'Select folder',
     'misc.loading': 'Loading...',
     'misc.accessDenied': 'Access denied or directory not found.',

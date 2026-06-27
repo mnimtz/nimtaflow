@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2, Pencil, Plus, Check } from 'lucide-react'
+import { Plane, MapPin, Images, Sparkles, ArrowLeft, X, Loader2, Trash2, Share2, Pencil, Plus, Check, Play, Pause } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import ShareDialog from '../components/ShareDialog'
@@ -26,6 +26,13 @@ function fmtRange(a?: string, b?: string) {
 function FitAll({ pts }: { pts: [number, number][] }) {
   const map = useMap()
   useMemo(() => { if (pts.length) setTimeout(() => map.fitBounds(pts as any, { padding: [40, 40], maxZoom: 12 }), 0) }, [pts.length])
+  return null
+}
+
+// Pan the map to follow the moving marker while a route plays.
+function RouteFollow({ at }: { at: [number, number] | null }) {
+  const map = useMap()
+  useEffect(() => { if (at) map.panTo(at, { animate: true, duration: 0.7 }) }, [at?.[0], at?.[1]])
   return null
 }
 
@@ -118,11 +125,27 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
   const existingIds = useMemo(() => new Set(photos.map(p => p.id)), [photos])
   const route: Waypoint[] = album.smart_criteria?.route || []
   // actual travelled path = photos with GPS, in chronological order
-  const gpsLine = useMemo(() => photos
+  const gpsPhotos = useMemo(() => photos
     .filter(p => p.latitude != null && p.longitude != null)
-    .sort((a, b) => (a.taken_at || '').localeCompare(b.taken_at || ''))
-    .map(p => [p.latitude!, p.longitude!] as [number, number]), [photos])
+    .sort((a, b) => (a.taken_at || '').localeCompare(b.taken_at || '')), [photos])
+  const gpsLine = useMemo(() => gpsPhotos.map(p => [p.latitude!, p.longitude!] as [number, number]), [gpsPhotos])
   const allPts = useMemo(() => [...gpsLine, ...route.map(w => [w.lat, w.lng] as [number, number])], [gpsLine, route])
+
+  // ── Animated route playback ──────────────────────────────────────────────
+  const [playing, setPlaying] = useState(false)
+  const [playIdx, setPlayIdx] = useState(0)
+  useEffect(() => {
+    if (!playing) return
+    if (playIdx >= gpsLine.length - 1) { setPlaying(false); return }
+    const id = setTimeout(() => setPlayIdx(i => Math.min(i + 1, gpsLine.length - 1)), 900)
+    return () => clearTimeout(id)
+  }, [playing, playIdx, gpsLine.length])
+  const togglePlay = () => {
+    if (playing) { setPlaying(false); return }
+    if (playIdx >= gpsLine.length - 1) setPlayIdx(0)   // restart from the beginning
+    setPlaying(true)
+  }
+  const curPhoto = playing || playIdx > 0 ? gpsPhotos[playIdx] : null
 
   const remove = useMutation({
     mutationFn: (pid: number) => api.delete(`/albums/${album.id}/photos/${pid}`),
@@ -162,11 +185,21 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       <p className="text-sm text-zinc-500 mb-4">{route.length ? t('trips.photosStations', { photos: photos.length, stations: route.length }) : t('trips.photosOnly', { photos: photos.length })}</p>
 
       {allPts.length > 0 && (
-        <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 h-72 mb-6">
+        <div className="relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 h-72 mb-6">
           <MapContainer center={allPts[0]} zoom={6} className="h-full w-full" scrollWheelZoom>
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="&copy; CARTO &copy; OpenStreetMap contributors" />
-            <FitAll pts={allPts} />
-            {gpsLine.length > 1 && <Polyline positions={gpsLine} pathOptions={{ color: '#818cf8', weight: 3, opacity: 0.7 }} />}
+            {!playing && playIdx === 0 && <FitAll pts={allPts} />}
+            {/* Full route, dimmed while a playback is in progress */}
+            {gpsLine.length > 1 && <Polyline positions={gpsLine} pathOptions={{ color: '#818cf8', weight: 3, opacity: curPhoto ? 0.25 : 0.7 }} />}
+            {/* Travelled-so-far highlight + moving marker during playback */}
+            {curPhoto && playIdx > 0 && <Polyline positions={gpsLine.slice(0, playIdx + 1)} pathOptions={{ color: '#f6d488', weight: 4, opacity: 0.95 }} />}
+            {curPhoto && (
+              <>
+                <Marker position={gpsLine[playIdx]}
+                  icon={L.divIcon({ className: '', html: `<div style="background:#e8b54a;border:3px solid #fff;border-radius:9999px;width:18px;height:18px;box-shadow:0 0 0 6px rgba(232,181,74,.35)"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] })} />
+                <RouteFollow at={gpsLine[playIdx]} />
+              </>
+            )}
             {route.length > 1 && <Polyline positions={route.map(w => [w.lat, w.lng] as [number, number])} pathOptions={{ color: '#f59e0b', weight: 2, dashArray: '6 6', opacity: 0.8 }} />}
             {route.map((w, i) => (
               <Marker key={i} position={[w.lat, w.lng]}
@@ -175,6 +208,24 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
               </Marker>
             ))}
           </MapContainer>
+
+          {gpsLine.length > 1 && (
+            <button onClick={togglePlay}
+              className="absolute top-2 left-2 z-[500] flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/85 text-white text-sm font-medium backdrop-blur">
+              {playing ? <Pause size={15} /> : <Play size={15} />}
+              {playing ? t('trips.routePause') : t('trips.routePlay')}
+            </button>
+          )}
+          {curPhoto && (
+            <div className="absolute bottom-2 left-2 right-2 z-[500] flex items-center gap-3 px-3 py-2 rounded-xl bg-black/70 text-white backdrop-blur">
+              <img src={thumbUrl(curPhoto as any, 'small')} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{[(curPhoto as any).city, (curPhoto as any).country].filter(Boolean).join(', ') || t('trips.routeStop')}</div>
+                <div className="text-xs text-white/70">{curPhoto.taken_at ? new Date(curPhoto.taken_at).toLocaleDateString('de', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div>
+              </div>
+              <div className="text-xs text-white/70 shrink-0">{playIdx + 1}/{gpsLine.length}</div>
+            </div>
+          )}
         </div>
       )}
 
