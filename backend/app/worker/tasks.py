@@ -414,16 +414,30 @@ def reap_stuck_photos_task(self):
         init_db()
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30)
         async for db in get_db():
+            # (a) Has a thumbnail and went quiet → it's effectively finished → done.
             res = await db.execute(update(Photo).where(
                 Photo.status == PhotoStatus.processing,
                 Photo.thumb_small.isnot(None),
                 Photo.updated_at < cutoff,
             ).values(status=PhotoStatus.done))
+            # (b) NO thumbnail after the retry cap (thumb_attempts ≥ 5) and quiet →
+            # genuinely undecodable (corrupt / unsupported codec). It will never get a
+            # thumbnail, so leave it stuck in 'processing' forever inflates the Leitstand
+            # "offen"-counters. Mark it error so the bars reach 100% and it drops out of
+            # both the thumbnail AND metadata pending counts (which exclude error).
+            res2 = await db.execute(update(Photo).where(
+                Photo.status == PhotoStatus.processing,
+                Photo.thumb_small.is_(None),
+                Photo.thumb_attempts >= 5,
+                Photo.updated_at < cutoff,
+            ).values(status=PhotoStatus.error,
+                     error_message="Thumbnail/Decode nach 5 Versuchen fehlgeschlagen"))
             await db.commit()
             n = res.rowcount or 0
-            if n:
-                flog("scanner", "INFO", f"Reaper: {n} hängende 'processing'-Foto(s) → done")
-            return {"reaped": n}
+            n2 = res2.rowcount or 0
+            if n or n2:
+                flog("scanner", "INFO", f"Reaper: {n} hängende 'processing' → done, {n2} undekodierbar → error")
+            return {"reaped": n, "errored": n2}
     return _run(_main())
 
 

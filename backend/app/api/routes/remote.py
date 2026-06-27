@@ -472,6 +472,12 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
 
     if body.error and not body.description:
         photo.ai_error = True
+        # Count the attempt so retry_failed_ai's cap (ai_attempts < 20) eventually
+        # stops re-serving a video the model can't describe (e.g. surveillance clips
+        # that always degenerate into '!!!!'). Without this the retry queue re-queued
+        # the SAME broken clips every 15 min forever → the remote M3 worker burned
+        # 60–90s/clip on hopeless jobs and looked "busy/idle" while never draining.
+        photo.ai_attempts = (photo.ai_attempts or 0) + 1
         photo.ai_claimed_at = None
         photo.processed_at = datetime.now(timezone.utc)
         await db.commit()

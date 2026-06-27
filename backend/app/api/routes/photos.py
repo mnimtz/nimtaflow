@@ -227,8 +227,11 @@ async def get_stats(db: AsyncSession = Depends(get_db),
     # Exclude photos that are already DONE but simply have no date in their metadata
     # (no EXIF date → taken_at stays NULL forever). Counting those made the Leitstand
     # indicator hang at thousands "for days" even though processing was finished.
+    # Also exclude status=error: an undecodable/corrupt file will never get a date,
+    # so counting it would hang the indicator forever (same reason as 'done' above).
     metadata_pending = await db.scalar(select(func.count()).where(
-        *live, Photo.taken_at.is_(None), Photo.status != PhotoStatus.done))
+        *live, Photo.taken_at.is_(None),
+        Photo.status.notin_([PhotoStatus.done, PhotoStatus.error])))
 
     return {
         "total": total or 0,
