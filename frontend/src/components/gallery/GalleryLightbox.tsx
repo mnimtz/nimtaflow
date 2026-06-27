@@ -16,7 +16,8 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles, Share2 } from 'lucide-react'
+import ShareDialog from '../ShareDialog'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
 import { useT } from '../../i18n'
@@ -263,6 +264,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   const { t } = useT()
   const [cur, setCur] = useState(index)
   const [info, setInfo] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // Track favorite state locally so the heart updates immediately (the `photos`
   // array is a snapshot frozen when the lightbox opened).
   const [favs, setFavs] = useState<Set<number>>(() => new Set(photos.filter(p => p.is_favorite).map(p => p.id)))
@@ -314,6 +316,11 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
       <Info className="yarl__icon" />
     </button>
   )
+  const shareBtn = (
+    <button key="share" type="button" className="yarl__button" onClick={() => setShareOpen(true)} title={t('gallery.shareTooltip')}>
+      <Share2 className="yarl__icon" />
+    </button>
+  )
   const favBtn = onFavorite ? (
     <button key="fav" type="button" className="yarl__button" onClick={() => photos[cur] && toggleFav(photos[cur])} title={t('gallery.favoriteTooltip')}>
       <Heart className="yarl__icon" fill={isFav(photos[cur]) ? 'currentColor' : 'none'} color={isFav(photos[cur]) ? '#f87171' : undefined} />
@@ -331,7 +338,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
         } }}
         plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
-        toolbar={{ buttons: [animBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
+        toolbar={{ buttons: [animBtn, shareBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
@@ -341,6 +348,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         animation={{ fade: 250, swipe: 300 }}
       />
       {info && photos[cur] && <InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />}
+      {shareOpen && photos[cur] && <ShareDialog target={{ kind: 'photo', photoId: photos[cur].id, title: photos[cur].filename }} onClose={() => setShareOpen(false)} />}
       {animOpen && photos[cur] && createPortal(
         <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/70 p-4" onClick={() => setAnimOpen(false)}>
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 space-y-3" onClick={e => e.stopPropagation()}>

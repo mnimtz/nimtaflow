@@ -7,6 +7,7 @@ export type ShareTarget =
   | { kind: 'album'; albumId: number; title?: string }
   | { kind: 'photo'; photoId: number; title?: string }
   | { kind: 'trip'; tripFrom: string; tripTo: string; title?: string }
+  | { kind: 'highlight'; highlightId: number; title?: string }
 
 /** Create a public share link for an album, photo or trip — with optional
  *  password, expiry and download toggle. Shows the resulting link to copy. */
@@ -22,7 +23,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const label = target.kind === 'album' ? t('share.dlg.labelAlbum') : target.kind === 'photo' ? t('share.dlg.labelPhoto') : t('share.dlg.labelTrip')
+  const label = target.kind === 'album' ? t('share.dlg.labelAlbum') : target.kind === 'photo' ? t('share.dlg.labelPhoto') : target.kind === 'highlight' ? t('share.dlg.labelHighlight') : t('share.dlg.labelTrip')
 
   async function create() {
     setCreating(true); setError(null)
@@ -37,6 +38,7 @@ export default function ShareDialog({ target, onClose }: { target: ShareTarget; 
       if (target.kind === 'album') body.album_id = target.albumId
       if (target.kind === 'photo') body.photo_id = target.photoId
       if (target.kind === 'trip') { body.trip_from = target.tripFrom; body.trip_to = target.tripTo }
+      if (target.kind === 'highlight') body.highlight_id = target.highlightId
       const res = await api.post('/shares', body)
       setUrl(res.data.url as string)
     } catch {

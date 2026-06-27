@@ -14,6 +14,8 @@ from app.api.v1 import router as v1_router
 # so any column added to a model after its table first existed must be added here.
 # Each entry must be a single SQL statement (DO $$..$$ blocks count as one).
 _COLUMN_MIGRATIONS = [
+    # ── shares: highlight sharing ─────────────────────────────────────────────
+    "ALTER TABLE shares ADD COLUMN IF NOT EXISTS highlight_id INTEGER",
     # ── photos: full v2 metadata set ──────────────────────────────────────────
     """ALTER TABLE photos
         ADD COLUMN IF NOT EXISTS taken_at_original    VARCHAR(32),

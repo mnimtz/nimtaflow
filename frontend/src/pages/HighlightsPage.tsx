@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useToast } from '../components/ui/dialogs'
-import { Sparkles, Film, Trash2, Plus, X, Clock } from 'lucide-react'
+import { Sparkles, Film, Trash2, Plus, X, Clock, Share2 } from 'lucide-react'
 import { useT } from '../i18n'
+import ShareDialog from '../components/ShareDialog'
 
 type Motto = { motto: string; label: string; params: string[]; description?: string }
 type Highlight = {
@@ -17,6 +18,7 @@ export default function HighlightsPage() {
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [play, setPlay] = useState<Highlight | null>(null)
+  const [shareHl, setShareHl] = useState<Highlight | null>(null)
 
   const { data: list = [] } = useQuery<Highlight[]>({
     queryKey: ['highlights'],
@@ -66,6 +68,9 @@ export default function HighlightsPage() {
                 <p className="text-xs text-zinc-500">{t('highlights.photosDuration', { count: h.photo_count, sec: Math.round(h.duration_sec) })}</p>
                 {h.error_message && <p className="text-xs text-red-500 mt-0.5 line-clamp-2">{h.error_message}</p>}
               </div>
+              {h.status === 'done' && (
+                <button onClick={() => setShareHl(h)} title={t('highlights.share')} className="text-zinc-400 hover:text-indigo-500 shrink-0"><Share2 size={15} /></button>
+              )}
               <button onClick={() => del.mutate(h.id)} className="text-zinc-400 hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
             </div>
           </div>
@@ -73,6 +78,8 @@ export default function HighlightsPage() {
       </div>
 
       {showCreate && <CreateHighlight onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); qc.invalidateQueries({ queryKey: ['highlights'] }) }} />}
+
+      {shareHl && <ShareDialog target={{ kind: 'highlight', highlightId: shareHl.id, title: shareHl.title }} onClose={() => setShareHl(null)} />}
 
       {play && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setPlay(null)}>

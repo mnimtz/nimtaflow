@@ -23,6 +23,7 @@ class ShareType(str, enum.Enum):
     album = "album"
     photo = "photo"
     trip = "trip"
+    highlight = "highlight"
 
 
 class Share(Base):
@@ -35,6 +36,7 @@ class Share(Base):
     # exactly one of these is set, depending on share_type
     album_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("albums.id", ondelete="CASCADE"))
     photo_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("photos.id", ondelete="CASCADE"))
+    highlight_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("highlights.id", ondelete="CASCADE"))
     # trip = an auto-detected event → stored as a date range + a title
     trip_from: Mapped[Optional[str]] = mapped_column(String(10))   # ISO date
     trip_to: Mapped[Optional[str]] = mapped_column(String(10))     # ISO date

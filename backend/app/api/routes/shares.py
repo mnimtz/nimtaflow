@@ -34,6 +34,7 @@ class ShareCreate(BaseModel):
     share_type: ShareType
     album_id: Optional[int] = None
     photo_id: Optional[int] = None
+    highlight_id: Optional[int] = None
     trip_from: Optional[str] = None
     trip_to: Optional[str] = None
     title: Optional[str] = None
@@ -93,6 +94,12 @@ async def create_share(body: ShareCreate, request: Request,
         if not (body.trip_from and body.trip_to):
             raise HTTPException(400, "Reise braucht trip_from und trip_to")
         title = body.title or "Reise"
+    elif body.share_type == ShareType.highlight:
+        from app.models.highlight import Highlight
+        h = await db.get(Highlight, body.highlight_id) if body.highlight_id else None
+        if not h:
+            raise HTTPException(400, "Highlight nicht gefunden")
+        title = body.title or h.title or "Highlight"
     else:
         raise HTTPException(400, "Unbekannter Typ")
 
@@ -107,6 +114,7 @@ async def create_share(body: ShareCreate, request: Request,
         photo_id=body.photo_id if body.share_type == ShareType.photo else None,
         trip_from=body.trip_from if body.share_type == ShareType.trip else None,
         trip_to=body.trip_to if body.share_type == ShareType.trip else None,
+        highlight_id=body.highlight_id if body.share_type == ShareType.highlight else None,
         title=title,
         password_hash=hash_password(body.password) if body.password else None,
         expires_at=expires_at,
@@ -228,6 +236,13 @@ async def public_meta(token: str, db: AsyncSession = Depends(get_db),
     if share.has_password and not (pw and verify_password(pw, share.password_hash)):
         return PublicShare(type=share.share_type.value, title=share.title,
                            requires_password=True, allow_download=share.allow_download, items=[])
+    # Highlight share = a single rendered video → no photo items; the guest page
+    # plays it via /public/{token}/highlight-video.
+    if share.share_type == ShareType.highlight:
+        share.view_count = (share.view_count or 0) + 1
+        await db.commit()
+        return PublicShare(type="highlight", title=share.title, requires_password=False,
+                           allow_download=share.allow_download, items=[])
     sub = await _photo_ids_query(share)
     rows = (await db.execute(
         select(Photo.id, Photo.is_video, Photo.width, Photo.height,
@@ -303,3 +318,19 @@ async def public_video(token: str, photo_id: int,
         return FileResponse(web, media_type=mt, headers={"Cache-Control": "public, max-age=86400"})
     mime = photo.mime_type or "video/mp4"
     return FileResponse(photo.path, media_type=mime)
+
+
+@public_router.get("/{token}/highlight-video")
+async def public_highlight_video(token: str, pw: Optional[str] = Query(None),
+                                 db: AsyncSession = Depends(get_db)):
+    """Stream the shared highlight's rendered MP4 (FileResponse handles Range)."""
+    share = await _load_valid(token, db)
+    _check_pw(share, pw)
+    if share.share_type != ShareType.highlight or not share.highlight_id:
+        raise HTTPException(404)
+    from app.models.highlight import Highlight
+    h = await db.get(Highlight, share.highlight_id)
+    if not h or not h.file_path or not os.path.exists(h.file_path):
+        raise HTTPException(404, "Highlight-Video nicht verfügbar")
+    return FileResponse(h.file_path, media_type="video/mp4",
+                        headers={"Cache-Control": "public, max-age=3600"})
