@@ -62,6 +62,14 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
       setAskAnswer(r.data?.answer || (r.data?.error ? `(${r.data.error})` : 'Keine Antwort.'))
     } catch { setAskAnswer('Fehler bei der Anfrage.') } finally { setAskBusy(false) }
   }
+  const postcard = async () => {
+    try {
+      const r = await api.get(`/photos/${photoId}/postcard`, { responseType: 'blob' })
+      const url = URL.createObjectURL(r.data as Blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch { toast(t('gallery.postcardFailed'), 'error') }
+  }
   const reprocess = async () => {
     setScanning(true)
     try {
@@ -129,6 +137,13 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
           title={t('gallery.reprocessTitle')}>
           <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} /> {scanning ? t('gallery.scanning') : t('gallery.reprocess')}
         </button>
+
+        {!p.is_video && (
+          <button onClick={postcard}
+            className="ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white font-medium">
+            🖼️ {t('gallery.postcard')}
+          </button>
+        )}
 
         {!p.is_video && (
           <div className="mt-3 rounded-lg border border-zinc-700 p-2.5">

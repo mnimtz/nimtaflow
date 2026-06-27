@@ -653,6 +653,16 @@ struct PhotoInfoView: View {
     @State private var askAnswer = ""
     @State private var askBusy = false
     @State private var askProvider = "local"
+    @State private var postcardURL: URL?
+    @State private var pcBusy = false
+
+    private func makePostcard() async {
+        pcBusy = true; defer { pcBusy = false }
+        if let data = try? await api.getData("api/v1/photos/\(photo.id)/postcard") {
+            let u = FileManager.default.temporaryDirectory.appendingPathComponent("nimtaflow-postkarte-\(photo.id).png")
+            try? data.write(to: u); postcardURL = u
+        }
+    }
 
     private func runAsk() async {
         askBusy = true; defer { askBusy = false }
@@ -709,6 +719,19 @@ struct PhotoInfoView: View {
                     Section("Tags") { Text(tags.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary) }
                 }
                 if !photo.is_video {
+                    Section("🖼️ Postkarte") {
+                        Button {
+                            Task { await makePostcard() }
+                        } label: {
+                            HStack {
+                                if pcBusy { ProgressView().controlSize(.small) }
+                                Text("Postkarte erstellen")
+                            }
+                        }.disabled(pcBusy)
+                        if let u = postcardURL {
+                            ShareLink(item: u) { Label("Postkarte teilen", systemImage: "square.and.arrow.up") }
+                        }
+                    }
                     Section("💬 Frag-das-Foto") {
                         TextField("z. B. Wo wurde das aufgenommen?", text: $askQ)
                             .autocorrectionDisabled()

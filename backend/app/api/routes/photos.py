@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, distinct, extract, text
 from datetime import date, datetime, timezone
-import os, subprocess, pathlib, mimetypes
+import os, subprocess, pathlib, mimetypes, asyncio
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional, require_pipeline
@@ -344,6 +344,24 @@ async def ask_about_photo(photo_id: int, body: AskPhotoBody,
     from app.services.ask_photo import ask_photo
     s = await load_settings(db)
     return await ask_photo(db, photo_id, body.question, s, body.provider)
+
+
+@router.get("/{photo_id}/postcard")
+async def photo_postcard(photo_id: int, lang: str = "de",
+                         db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    """A shareable 'Grüße aus …' postcard PNG generated from the photo."""
+    photo = await db.scalar(select(Photo).where(Photo.id == photo_id, *photo_conditions(user)))
+    if not photo:
+        raise HTTPException(404)
+    path = photo.thumb_large or photo.thumb_medium or photo.path
+    if not path or not os.path.exists(path):
+        raise HTTPException(404, "Kein Bild")
+    place = ", ".join([p for p in (photo.city, photo.country) if p]) or photo.location_name or None
+    from app.services.postcard import make_postcard
+    png = await asyncio.to_thread(make_postcard, path, place, photo.taken_at, lang)
+    return Response(content=png, media_type="image/png",
+                    headers={"Content-Disposition": 'inline; filename="nimtaflow-postkarte.png"'})
 
 
 @router.get("/trips")
