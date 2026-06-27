@@ -187,6 +187,7 @@ private struct HighlightsMusicSection: View {
     @State private var source = "file"      // file | library | generate
     @State private var model = "fal_open"   // local_fast | local_quality | fal_open | fal_25
     @State private var budget = "50"
+    @State private var falKey = ""
     @State private var libGen = false
     @State private var loaded = false
     @State private var saved = false
@@ -218,6 +219,10 @@ private struct HighlightsMusicSection: View {
                         Text("Cloud: fal Stable Audio").tag("fal_open")
                         Text("Cloud: fal Stable Audio 2.5").tag("fal_25")
                     }
+                    if model.hasPrefix("fal") {
+                        SecureField("fal API-Key (Musik) — leer = Video-Key", text: $falKey)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                 }
                 if source == "generate" {
                     HStack {
@@ -242,7 +247,8 @@ private struct HighlightsMusicSection: View {
                               "highlights.music_path": path,
                               "highlights.music_source": source,
                               "highlights.music_model": model,
-                              "highlights.music_budget_month": budget]
+                              "highlights.music_budget_month": budget,
+                              "highlights.music_fal_key": falKey]
                     try? await api.saveSettings(kv)
                     saved = true
                     try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
@@ -261,6 +267,7 @@ private struct HighlightsMusicSection: View {
                 source = s["highlights.music_source"] ?? "file"
                 model = s["highlights.music_model"] ?? "fal_open"
                 budget = s["highlights.music_budget_month"] ?? "50"
+                falKey = s["highlights.music_fal_key"] ?? ""
             }
         }
     }

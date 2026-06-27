@@ -2242,8 +2242,8 @@ def render_highlight_task(self, highlight_id: int):
                                             "quality" if model == "local_quality" else "fast")
                                     else:
                                         data = await mg.fal_generate(
-                                            s_hl.get("highlights.fal_api_key") or "", prompt,
-                                            min(47.0, duration), model_key=model)
+                                            (s_hl.get("highlights.music_fal_key") or s_hl.get("highlights.fal_api_key") or ""),
+                                            prompt, min(47.0, duration), model_key=model)
                                     with open(cached, "wb") as fh:
                                         fh.write(data)
                                     music_eff = cached
@@ -2342,7 +2342,7 @@ def generate_music_library_task(self):
             s = await load_settings(db)
             break
         model = str(s.get("highlights.music_model", "fal_open"))
-        key = s.get("highlights.fal_api_key") or ""
+        key = s.get("highlights.music_fal_key") or s.get("highlights.fal_api_key") or ""
         moods = {
             "bright": "uplifting, warm, gently upbeat",
             "happy": "joyful, light, feel-good",
