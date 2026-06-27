@@ -230,9 +230,13 @@ private struct HighlightsMusicSection: View {
     @State private var volume = "80"
     @State private var path = ""
     @State private var source = "file"      // file | library | generate
-    @State private var model = "fal_open"   // local_fast | local_quality | fal_open | fal_25
+    @State private var model = "fal_open"   // local_fast | local_quality | remote | fal_open | fal_25
     @State private var budget = "50"
     @State private var falKey = ""
+    @State private var prompt = ""
+    @State private var tempo = ""
+    @State private var energy = ""
+    @State private var genre = ""
     @State private var libGen = false
     @State private var loaded = false
     @State private var saved = false
@@ -261,6 +265,7 @@ private struct HighlightsMusicSection: View {
                     Picker("KI-Modell", selection: $model) {
                         Text("Lokal: Stable Audio (schnell)").tag("local_fast")
                         Text("Lokal: Stable Audio (Qualität)").tag("local_quality")
+                        Text("Lokal auf M3 (Remote-Worker)").tag("remote")
                         Text("Cloud: fal Stable Audio").tag("fal_open")
                         Text("Cloud: fal Stable Audio 2.5").tag("fal_25")
                     }
@@ -270,6 +275,18 @@ private struct HighlightsMusicSection: View {
                     }
                 }
                 if source == "generate" {
+                    TextField("Eigener Musik-Prompt (optional)", text: $prompt, axis: .vertical)
+                        .lineLimit(1...3)
+                    Picker("Tempo", selection: $tempo) {
+                        Text("Automatisch").tag(""); Text("Langsam").tag("slow")
+                        Text("Mittel").tag("medium"); Text("Schnell").tag("fast")
+                    }
+                    Picker("Energie", selection: $energy) {
+                        Text("Automatisch").tag(""); Text("Ruhig").tag("calm")
+                        Text("Ausgewogen").tag("balanced"); Text("Energiegeladen").tag("energetic")
+                    }
+                    TextField("Genre/Stil (z. B. Piano, Ambient)", text: $genre)
+                        .textInputAutocapitalization(.never)
                     HStack {
                         Text("KI-Budget (Tracks/Monat)")
                         Spacer()
@@ -293,7 +310,11 @@ private struct HighlightsMusicSection: View {
                               "highlights.music_source": source,
                               "highlights.music_model": model,
                               "highlights.music_budget_month": budget,
-                              "highlights.music_fal_key": falKey]
+                              "highlights.music_fal_key": falKey,
+                              "highlights.music_prompt": prompt,
+                              "highlights.music_tempo": tempo,
+                              "highlights.music_energy": energy,
+                              "highlights.music_genre": genre]
                     try? await api.saveSettings(kv)
                     saved = true
                     try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
@@ -313,6 +334,10 @@ private struct HighlightsMusicSection: View {
                 model = s["highlights.music_model"] ?? "fal_open"
                 budget = s["highlights.music_budget_month"] ?? "50"
                 falKey = s["highlights.music_fal_key"] ?? ""
+                prompt = s["highlights.music_prompt"] ?? ""
+                tempo = s["highlights.music_tempo"] ?? ""
+                energy = s["highlights.music_energy"] ?? ""
+                genre = s["highlights.music_genre"] ?? ""
             }
         }
     }

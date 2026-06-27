@@ -655,10 +655,16 @@ struct PhotoInfoView: View {
     @State private var askProvider = "local"
     @State private var postcardURL: URL?
     @State private var pcBusy = false
+    @State private var pcTheme = "classic"
+    @State private var pcColor = ""   // "" = Standard, sonst #rrggbb
 
     private func makePostcard() async {
         pcBusy = true; defer { pcBusy = false }
-        if let data = try? await api.getData("api/v1/photos/\(photo.id)/postcard") {
+        var path = "api/v1/photos/\(photo.id)/postcard?theme=\(pcTheme)"
+        if !pcColor.isEmpty {
+            path += "&text_color=" + (pcColor.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
+        }
+        if let data = try? await api.getData(path) {
             let u = FileManager.default.temporaryDirectory.appendingPathComponent("nimtaflow-postkarte-\(photo.id).png")
             try? data.write(to: u); postcardURL = u
         }
@@ -720,6 +726,15 @@ struct PhotoInfoView: View {
                 }
                 if !photo.is_video {
                     Section("🖼️ Postkarte") {
+                        Picker("Layout", selection: $pcTheme) {
+                            Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
+                            Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
+                            Text("Vintage").tag("vintage")
+                        }
+                        Picker("Schriftfarbe", selection: $pcColor) {
+                            Text("Standard").tag(""); Text("Weiß").tag("#ffffff")
+                            Text("Schwarz").tag("#1c1a18"); Text("Gold").tag("#e8b54a")
+                        }
                         Button {
                             Task { await makePostcard() }
                         } label: {

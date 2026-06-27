@@ -23,6 +23,7 @@ struct ShareSheetView: View {
     @State private var useExpiry = false
     @State private var expiresDays = 7
     @State private var allowDownload = true
+    @State private var allowUpload = false
     @State private var creating = false
     @State private var result: ShareOut?
     @State private var error: String?
@@ -61,6 +62,9 @@ struct ShareSheetView: View {
                     }
                     Section("Zugriff") {
                         Toggle("Download der Originale erlauben", isOn: $allowDownload)
+                        if case .album = target {
+                            Toggle("Gäste dürfen Fotos hinzufügen (Upload)", isOn: $allowUpload)
+                        }
                     }
                     if let error { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
                     Section {
@@ -83,7 +87,7 @@ struct ShareSheetView: View {
         if usePassword && !password.isEmpty { body["password"] = password }
         if useExpiry { body["expires_days"] = expiresDays }
         switch target {
-        case .album(let id, _): body["album_id"] = id
+        case .album(let id, _): body["album_id"] = id; body["allow_upload"] = allowUpload
         case .photo(let id, _): body["photo_id"] = id
         case .trip(let from, let to, _): body["trip_from"] = from; body["trip_to"] = to
         }
