@@ -5,13 +5,25 @@ struct PhotoFlowApp: App {
     @StateObject private var api = APIClient.shared
     @StateObject private var store = Store()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Must register the background-upload handler before launch finishes.
+        AutoUploadManager.registerBackgroundTask()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(api).environmentObject(store).preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            switch phase {
+            case .active:
                 Task { await AutoUploadManager.shared.runIfEnabled(api: api) }
+            case .background:
+                // Queue an opportunistic background upload (iOS picks the moment —
+                // typically at night while charging on Wi-Fi).
+                AutoUploadManager.scheduleBackground()
+            default: break
             }
         }
     }

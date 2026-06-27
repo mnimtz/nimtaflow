@@ -1,5 +1,8 @@
 import SwiftUI
 import Photos
+import Network
+import UIKit
+import BackgroundTasks
 
 /// Automatic camera-roll upload. Scans the photo library for assets taken on/after
 /// a configurable date and uploads the ones not yet sent (tracked by localIdentifier),
@@ -13,6 +16,18 @@ final class AutoUploadManager: ObservableObject {
     @AppStorage("autoUpload.enabled") var enabled = false
     /// Only auto-upload assets taken on/after this date. 0 = no lower bound (all).
     @AppStorage("autoUpload.fromDate") var fromDateTS: Double = 0
+    /// Conditions for AUTOMATIC runs (the manual "Jetzt hochladen" button ignores them).
+    @AppStorage("autoUpload.wifiOnly") var wifiOnly = true
+    @AppStorage("autoUpload.requireCharging") var requireCharging = false
+    /// Run opportunistically in the background (BGProcessingTask). iOS decides the
+    /// exact time — typically at night while charging on Wi-Fi, which matches the
+    /// conditions below.
+    @AppStorage("autoUpload.background") var background = true
+    /// Prefer a nightly window: schedule the background task for ~this hour.
+    @AppStorage("autoUpload.nightOnly") var nightOnly = false
+    @AppStorage("autoUpload.nightHour") var nightHour = 2
+
+    static let bgTaskID = "com.photoflow.upload"
 
     @Published var running = false
     @Published var done = 0
@@ -31,13 +46,54 @@ final class AutoUploadManager: ObservableObject {
     }
 
     /// Entry point — call on app foreground. No-op unless enabled and authorized.
+    /// Honors the WLAN/charging conditions (automatic run).
     func runIfEnabled(api: APIClient) async {
         guard enabled, api.loggedIn, !running else { return }
-        await run(api: api)
+        await run(api: api, enforceConditions: true)
     }
 
-    func run(api: APIClient) async {
+    // ── Conditions (WLAN / charging) ──────────────────────────────────────────
+    func conditionsMet() async -> Bool {
+        if requireCharging && !Self.isCharging() { return false }
+        if wifiOnly {
+            let wifi = await Self.onWifi()
+            if !wifi { return false }
+        }
+        return true
+    }
+
+    static func isCharging() -> Bool {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let s = UIDevice.current.batteryState
+        return s == .charging || s == .full
+    }
+
+    /// True only on (non-expensive) Wi-Fi — excludes cellular and personal hotspots.
+    static func onWifi() async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let m = NWPathMonitor()
+            let q = DispatchQueue(label: "pf.path.monitor")
+            var resumed = false
+            m.pathUpdateHandler = { path in
+                guard !resumed else { return }
+                resumed = true
+                let wifi = path.status == .satisfied && !path.isExpensive
+                    && path.usesInterfaceType(.wifi)
+                m.cancel()
+                cont.resume(returning: wifi)
+            }
+            m.start(queue: q)
+        }
+    }
+
+    func run(api: APIClient, enforceConditions: Bool = false) async {
         guard !running else { return }
+        if enforceConditions {
+            guard await conditionsMet() else {
+                lastResult = "Wartet auf Bedingungen (WLAN/Strom)"
+                return
+            }
+        }
         let status = await requestAuth()
         guard status == .authorized || status == .limited else {
             lastResult = "Kein Fotozugriff erlaubt"; return
@@ -64,6 +120,8 @@ final class AutoUploadManager: ObservableObject {
 
         var ok = 0, dup = 0, fail = 0
         for asset in pending {
+            // Stop cleanly if the background task's time runs out (or conditions drop).
+            if Task.isCancelled { lastResult = "Pausiert (Hintergrund)"; return }
             do {
                 let (data, name, mime) = try await exportOriginal(asset)
                 let r = try await api.uploadFile(data: data, filename: name, mime: mime)
@@ -86,6 +144,48 @@ final class AutoUploadManager: ObservableObject {
 
     private func markUploaded(_ id: String) {
         var s = uploadedIDs; s.insert(id); uploadedIDs = s
+    }
+
+    // ── Background task (BGProcessingTask) ────────────────────────────────────
+    /// Register the handler once, at app launch (before launch finishes).
+    nonisolated static func registerBackgroundTask() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: bgTaskID, using: nil) { task in
+            guard let task = task as? BGProcessingTask else { return }
+            scheduleBackground()                         // queue the next opportunistic run
+            let box = _BGCompletion(task)
+            let work = Task { @MainActor in
+                await AutoUploadManager.shared.run(api: APIClient.shared, enforceConditions: true)
+                box.complete(true)
+            }
+            task.expirationHandler = { work.cancel(); box.complete(false) }
+        }
+    }
+
+    /// Ask iOS to run the upload opportunistically. With nightOnly it targets ~the
+    /// chosen hour; otherwise as soon as the conditions (network/power) are met.
+    nonisolated static func scheduleBackground() {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: "autoUpload.enabled") else { return }
+        guard (d.object(forKey: "autoUpload.background") as? Bool) ?? true else { return }
+        let req = BGProcessingTaskRequest(identifier: bgTaskID)
+        req.requiresNetworkConnectivity = true
+        req.requiresExternalPower = d.bool(forKey: "autoUpload.requireCharging")
+        if d.bool(forKey: "autoUpload.nightOnly") {
+            let hour = (d.object(forKey: "autoUpload.nightHour") as? Int) ?? 2
+            req.earliestBeginDate = nextNight(hour: hour)
+        } else {
+            req.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        }
+        try? BGTaskScheduler.shared.submit(req)
+    }
+
+    nonisolated static func nextNight(hour: Int) -> Date {
+        let cal = Calendar.current
+        let now = Date()
+        var c = cal.dateComponents([.year, .month, .day], from: now)
+        c.hour = max(0, min(23, hour)); c.minute = 0
+        let today = cal.date(from: c) ?? now
+        return today > now ? today : (cal.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400))
     }
 
     private func requestAuth() async -> PHAuthorizationStatus {
@@ -126,5 +226,19 @@ final class AutoUploadManager: ObservableObject {
         default: mime = asset.mediaType == .video ? "video/quicktime" : "image/jpeg"
         }
         return (buf, name, mime)
+    }
+}
+
+/// Guards a BGTask so setTaskCompleted is called exactly once (work-done vs. expiry).
+final class _BGCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    private let task: BGProcessingTask
+    init(_ t: BGProcessingTask) { task = t }
+    func complete(_ ok: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        if done { return }
+        done = true
+        task.setTaskCompleted(success: ok)
     }
 }

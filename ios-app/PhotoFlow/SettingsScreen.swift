@@ -128,11 +128,28 @@ private struct AutoUploadSection: View {
                         mgr.fromDate = today
                         fromDate = today
                     }
+                    AutoUploadManager.scheduleBackground()
                 }
             if mgr.enabled {
                 DatePicker("Nur ab Datum", selection: $fromDate, displayedComponents: .date)
                     .onChange(of: fromDate) { _, d in mgr.fromDate = d }
-                Text("Es werden nur Aufnahmen ab diesem Datum automatisch hochgeladen. Bereits hochgeladene werden übersprungen.")
+                Text("Originale werden unverändert hochgeladen. Bereits hochgeladene werden übersprungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                // ── Bedingungen ───────────────────────────────────────────
+                Toggle("Im Hintergrund (automatisch)", isOn: $mgr.background)
+                    .onChange(of: mgr.background) { _, _ in AutoUploadManager.scheduleBackground() }
+                Toggle("Nur über WLAN", isOn: $mgr.wifiOnly)
+                    .onChange(of: mgr.wifiOnly) { _, _ in AutoUploadManager.scheduleBackground() }
+                Toggle("Nur beim Laden", isOn: $mgr.requireCharging)
+                    .onChange(of: mgr.requireCharging) { _, _ in AutoUploadManager.scheduleBackground() }
+                Toggle("Bevorzugt nachts", isOn: $mgr.nightOnly)
+                    .onChange(of: mgr.nightOnly) { _, _ in AutoUploadManager.scheduleBackground() }
+                if mgr.nightOnly {
+                    Stepper("Ab ca. \(mgr.nightHour) Uhr", value: $mgr.nightHour, in: 0...23)
+                        .onChange(of: mgr.nightHour) { _, _ in AutoUploadManager.scheduleBackground() }
+                }
+                Text("Der Hintergrund-Upload läuft, wenn iOS es erlaubt — meist nachts beim Laden im WLAN. Den genauen Zeitpunkt bestimmt das System.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Button {
