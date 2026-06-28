@@ -667,8 +667,14 @@ def compose_music_prompt(motto: str, opts: Optional[dict] = None,
         parts.append(_TEMPO[tempo])
     if energy in _ENERGY:
         parts.append(_ENERGY[energy])
-    parts.append("instrumental, no vocals, soft dynamics, "
-                 "suitable as a background soundtrack for a family photo slideshow")
+    if user:
+        # A user-written prompt must DOMINATE — only add the bare instrumental guard.
+        # The old calm tail ("soft dynamics, family slideshow") dragged even an
+        # "epic / Star Wars"-style prompt back to gentle piano. Don't.
+        parts.append("instrumental, no vocals")
+    else:
+        parts.append("instrumental, no vocals, soft dynamics, "
+                     "suitable as a background soundtrack for a family photo slideshow")
     return ", ".join(p for p in parts if p)
 
 
