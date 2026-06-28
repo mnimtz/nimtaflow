@@ -201,6 +201,31 @@ async def list_photos_v1(
     )
 
 
+@router.get("/photos/pets", response_model=PhotoPageV1)
+async def list_pets_v1(request: Request, cursor: Optional[int] = Query(None),
+                       limit: int = Query(60, ge=1, le=200),
+                       db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """Photos showing pets (from the AI tags) — iOS Haustiere view."""
+    from app.models.tag import Tag, PhotoTag
+    from app.api.routes.photos import _PET_TAGS
+    from sqlalchemy import func as _f
+    acl = photo_conditions(user)
+    q = (select(Photo).distinct()
+         .join(PhotoTag, PhotoTag.photo_id == Photo.id)
+         .join(Tag, Tag.id == PhotoTag.tag_id)
+         .where(_f.lower(Tag.name).in_(_PET_TAGS), Photo.is_trashed == False,  # noqa: E712
+                Photo.thumb_small.isnot(None), *acl)
+         .order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc()))
+    offset = max(0, cursor or 0)
+    rows = (await db.execute(q.offset(offset).limit(limit + 1))).scalars().all()
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    return PhotoPageV1(items=[_to_v1(p, request) for p in items],
+                       next_cursor=(offset + limit) if has_more else None,
+                       total=0, has_more=has_more)
+
+
 # ── Single photo ──────────────────────────────────────────────────────────────
 
 @router.get("/photos/{photo_id}", response_model=PhotoV1)
@@ -243,6 +268,7 @@ async def photo_detail_v1(photo_id: int, request: Request, db: AsyncSession = De
         "iso": getattr(photo, "iso", None),
         "file_size": photo.file_size,
         "tags": tags, "people": people,
+        "has_voice_note": bool(getattr(photo, "voice_note_path", None)),
     })
     return base
 
@@ -722,6 +748,65 @@ async def photo_postcard_v1(photo_id: int, lang: str = "de",
     png = await _a.to_thread(make_postcard, path, place, photo.taken_at, lang,
                              (text or None), (subtitle or None), theme, (text_color or None))
     return Response(content=png, media_type="image/png")
+
+
+@router.post("/photos/{photo_id}/voice-note")
+async def set_voice_note_v1(photo_id: int, file: UploadFile = File(...),
+                            db: AsyncSession = Depends(get_db),
+                            user: Optional[User] = Depends(current_user_optional)):
+    """Attach a voice memo to a photo (iOS). Stored in the cache."""
+    from fastapi import HTTPException
+    import os as _os
+    from app.core.config import get_settings
+    photo = await db.get(Photo, photo_id)
+    if not photo or not can_see_photo(photo, user):
+        raise HTTPException(404)
+    data = await file.read()
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(413)
+    d = _os.path.join(get_settings().cache_path, "voice_notes")
+    _os.makedirs(d, exist_ok=True)
+    fn = (file.filename or "").lower()
+    ext = ".m4a" if (fn.endswith(".m4a") or "mp4" in (file.content_type or "")) else (".mp3" if fn.endswith(".mp3") else ".webm")
+    path = _os.path.join(d, f"{photo_id}{ext}")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    photo.voice_note_path = path
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/photos/{photo_id}/voice-note")
+async def get_voice_note_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                            user: Optional[User] = Depends(current_user_optional)):
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    import os as _os
+    photo = await db.get(Photo, photo_id)
+    if not photo or not can_see_photo(photo, user) or not getattr(photo, "voice_note_path", None) or not _os.path.exists(photo.voice_note_path):
+        raise HTTPException(404)
+    ext = _os.path.splitext(photo.voice_note_path)[1].lower()
+    mt = {".m4a": "audio/mp4", ".mp3": "audio/mpeg"}.get(ext, "audio/webm")
+    return FileResponse(photo.voice_note_path, media_type=mt)
+
+
+@router.delete("/photos/{photo_id}/voice-note")
+async def delete_voice_note_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                               user: Optional[User] = Depends(current_user_optional)):
+    from fastapi import HTTPException
+    import os as _os
+    photo = await db.get(Photo, photo_id)
+    if not photo or not can_see_photo(photo, user):
+        raise HTTPException(404)
+    if getattr(photo, "voice_note_path", None):
+        try:
+            if _os.path.exists(photo.voice_note_path):
+                _os.remove(photo.voice_note_path)
+        except Exception:
+            pass
+        photo.voice_note_path = None
+        await db.commit()
+    return {"ok": True}
 
 
 class AskPhotoV1(BaseModel):
