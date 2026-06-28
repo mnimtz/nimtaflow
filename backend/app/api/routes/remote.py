@@ -839,6 +839,12 @@ async def status(db: AsyncSession = Depends(get_db)):
     with_faces = await db.scalar(select(func.count(func.distinct(Face.photo_id))))
     named_persons = await db.scalar(select(func.count()).where(
         Person.name.isnot(None), func.length(func.trim(Person.name)) > 0))
+    # The number that actually answers "how far is face RECOGNITION": faces assigned
+    # to a person vs. all (non-ignored) detected faces. (with_faces above is only the
+    # share of PHOTOS that contain any face — not a progress metric.)
+    faces_total = await db.scalar(select(func.count()).where(Face.is_ignored == False)) or 0  # noqa: E712
+    faces_assigned = await db.scalar(select(func.count()).where(
+        Face.person_id.isnot(None), Face.is_ignored == False)) or 0  # noqa: E712
 
     # PER-ROLE stats + ETA — each pipeline gets its own backlog, its own workers'
     # mean time, and its own honest projection. Mixing them made ETA meaningless.
@@ -888,6 +894,9 @@ async def status(db: AsyncSession = Depends(get_db)):
             "images": max(0, (photos_total or 0) - (vid_total or 0)),
             "described": (img_described or 0) + (vid_described or 0),
             "with_faces": with_faces or 0,
+            "faces_total": faces_total,
+            "faces_assigned": faces_assigned,
+            "faces_unassigned": max(0, faces_total - faces_assigned),
             "named_persons": named_persons or 0,
             "embeddings": embed_done or 0,
             "thumbnails": thumb_done or 0,

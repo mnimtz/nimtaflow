@@ -16,6 +16,7 @@ type Worker = {
 type Lib = {
   photos: number; videos: number; images: number; described: number
   with_faces: number; named_persons: number; embeddings: number; thumbnails: number
+  faces_total?: number; faces_assigned?: number; faces_unassigned?: number
 }
 type Status = { enabled: boolean; roles: Role[]; workers: Worker[]; library?: Lib }
 
@@ -64,11 +65,14 @@ export default function LeitstandPage() {
   const totalEta = Math.max(0, ...roles.map(r => r.eta_seconds ?? 0))
   const activeWorkers = workers.filter(w => (w.idle_s ?? 999) < 30).length
 
-  const libCards = lib ? [
+  const facesPct = lib?.faces_total ? Math.round(100 * (lib.faces_assigned ?? 0) / lib.faces_total) : 0
+  const libCards: { icon: any; label: string; val: number; sub?: string }[] = lib ? [
     { icon: ImageIcon, label: t('leitstand.libPhotos'), val: lib.images },
     { icon: Film, label: t('leitstand.libVideos'), val: lib.videos },
     { icon: FileText, label: t('leitstand.libDescribed'), val: lib.described },
     { icon: Users, label: t('leitstand.libWithFaces'), val: lib.with_faces },
+    { icon: Users, label: t('leitstand.libFacesAssigned'), val: lib.faces_assigned ?? 0, sub: `${facesPct}% · ${de(lib.faces_total ?? 0)}` },
+    { icon: Users, label: t('leitstand.libFacesFree'), val: lib.faces_unassigned ?? 0 },
     { icon: Users, label: t('leitstand.libNamedPersons'), val: lib.named_persons },
     { icon: Sparkles, label: t('leitstand.libEmbeddings'), val: lib.embeddings },
     { icon: Layers, label: t('leitstand.libThumbnails'), val: lib.thumbnails },
@@ -204,11 +208,12 @@ export default function LeitstandPage() {
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
         <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{t('leitstand.library')}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          {libCards.map(({ icon: Icon, label, val }) => (
+          {libCards.map(({ icon: Icon, label, val, sub }) => (
             <div key={label} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-3 text-center">
               <Icon className="w-4 h-4 mx-auto text-zinc-400" />
               <div className="mt-1 text-xl font-bold tabular-nums text-zinc-900 dark:text-white">{de(val)}</div>
               <div className="text-[11px] text-zinc-400 leading-tight">{label}</div>
+              {sub && <div className="text-[10px] text-indigo-500 dark:text-indigo-400 leading-tight mt-0.5">{sub}</div>}
             </div>
           ))}
           {!lib && <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.loadingMetrics')}</p>}

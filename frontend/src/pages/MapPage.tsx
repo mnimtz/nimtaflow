@@ -303,7 +303,9 @@ export default function MapPage() {
                     <img
                       src={thumbUrl(photo, 'small')}
                       alt={photo.filename}
-                      className="w-36 h-36 object-cover rounded mb-1.5"
+                      onClick={() => { const i = withGps.findIndex(p => p.id === photo.id); if (i >= 0) setLbIndex(i) }}
+                      title={t('map.openInGallery')}
+                      className="w-36 h-36 object-cover rounded mb-1.5 cursor-pointer hover:opacity-90"
                     />
                     <p className="text-xs text-gray-600 truncate max-w-[9rem]">{photo.filename}</p>
                     {streetView && (
