@@ -825,8 +825,10 @@ def render_hybrid(clip_paths: List[str], slideshow_path: Optional[str], out_path
     if music_path and os.path.exists(music_path):
         cmd += ["-i", music_path]
         music_idx = len(segments)
-    sp = _scale_pad(width, height)
-    filt = [f"[{i}:v]{sp},fps=30,setsar=1,format=yuv420p[v{i}]" for i in range(len(segments))]
+    # Use the SAME blur-fill as the slideshow so every segment (AI clips of varied
+    # sizes + the slideshow) fills the frame uniformly — no black-bar "tiny cutout"
+    # look and one consistent format/SAR across the whole reel.
+    filt = [_fill_graph(f"{i}:v", f"v{i}", width, height) for i in range(len(segments))]
     filt.append("".join(f"[v{i}]" for i in range(len(segments))) + f"concat=n={len(segments)}:v=1:a=0[outv]")
     cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]"]
     if music_idx is not None:

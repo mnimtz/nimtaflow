@@ -536,8 +536,21 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                 img_budget -= sum(1 for p in imgs if "inline_data" in p)
                 continue
             text = " ".join(p["text"] for p in parts if "text" in p).strip()
-            # de-dupe preserving order
-            uniq = list(dict.fromkeys(seen_ids))
+            # Show the photos the answer ACTUALLY CITES (#id), not every photo the
+            # agent skimmed while reasoning — otherwise a "wann/wo …" answer about one
+            # photo would display loosely-related semantic hits years off. Only fall
+            # back to the full seen set when the model cited nothing (e.g. "zeig mir …").
+            import re as _re
+            cited = list(dict.fromkeys(int(m) for m in _re.findall(r"#(\d+)", text)))
+            if cited:
+                missing = [i for i in cited if i not in seen_recs]
+                if missing:
+                    ph = (await db.execute(select(Photo).where(Photo.id.in_(missing)))).scalars().all()
+                    for rrec in await _fused_records(db, ph):
+                        seen_recs.setdefault(rrec["id"], rrec)
+                uniq = [i for i in cited if i in seen_recs]
+            else:
+                uniq = list(dict.fromkeys(seen_ids))
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
                     "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
     _u = list(dict.fromkeys(seen_ids))
