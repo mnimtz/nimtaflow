@@ -328,7 +328,7 @@ async def _populate_smart(album: Album, db: AsyncSession):
         q = q.where(Photo.id.in_(sub))
 
     # No artificial 500 cap — a person's album should hold ALL their photos.
-    photos = (await db.execute(q.order_by(Photo.taken_at.desc()).limit(20000))).scalars().all()
+    photos = (await db.execute(q.order_by(Photo.taken_at.desc().nullslast()).limit(20000))).scalars().all()
 
     # Clear old entries
     await db.execute(delete(AlbumPhoto).where(AlbumPhoto.album_id == album.id))

@@ -284,7 +284,7 @@ services:
       # sind gültige NimtaFlow-JWTs. MCP_PUBLIC_URL = die extern erreichbare Basis-URL
       # des MCP-Servers (für OAuth-Discovery/Redirects; z. B. https://mcp.nimtaflow.com).
       SECRET_KEY: ${SECRET_KEY}
-      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8091}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-https://login.nimtaflow.com}
       TZ: ${TZ:-Europe/Berlin}
     ports:
       - "${MCP_PORT:-8091}:8000"
