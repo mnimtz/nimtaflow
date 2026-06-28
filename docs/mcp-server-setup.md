@@ -50,10 +50,23 @@ Der statische Bearer-Token funktioniert **überall, wo man HTTP-Header setzen ka
 - **ChatGPT (API / Responses)** — MCP-Tool mit `headers: { "Authorization": "Bearer DEIN-TOKEN" }`.
 - **MCP Inspector** — URL eintragen, im Header-Feld den Bearer-Token setzen (gut zum Testen).
 
-> **Ehrlicher Hinweis:** Die gehosteten „Custom-Connector"-Dialoge von claude.ai bzw.
-> ChatGPT erwarten in der Regel **OAuth** und nicht einfach einen statischen
-> Bearer-Token. Ein OAuth-Layer ist **geplant**, aber noch nicht da. Bis dahin nutze
-> einen Client, bei dem du den `Authorization`-Header selbst setzen kannst (s. o.).
+## OAuth-Connector (Ein-Klick in Claude/ChatGPT)
+
+Der MCP-Server ist zugleich ein **OAuth-2.1-Authorization-Server** (Dynamic Client
+Registration + PKCE). Die gehosteten „Custom-Connector"-Dialoge von claude.ai bzw.
+ChatGPT funktionieren damit **ohne manuelles Token-Kopieren**: Du trägst nur die
+Connector-URL ein, klickst „Verbinden/Autorisieren", **meldest dich einmal mit deinem
+NimtaFlow-Konto an** (Consent-Seite), und der Client bekommt automatisch ein Token.
+
+Voraussetzungen dafür:
+- Der MCP-Server muss **öffentlich per HTTPS** erreichbar sein (z. B. `https://mcp.deinedomain.de`
+  über denselben Cloudflare-Tunnel/Reverse-Proxy wie die App). OAuth-Clients verlangen HTTPS.
+- Env **`MCP_PUBLIC_URL`** auf genau diese externe Basis-URL setzen (für Discovery/Redirects).
+- Env **`SECRET_KEY`** = dasselbe Secret wie das Backend (ist im Compose bereits gesetzt) —
+  dadurch ist der ausgestellte OAuth-Token ein gültiges NimtaFlow-JWT.
+
+Ist `MCP_PUBLIC_URL` nicht gesetzt, läuft OAuth nur lokal (`http://localhost:8091`); der
+**statische Token-Weg oben funktioniert unabhängig davon immer weiter**.
 
 ## Die 14 Tools
 

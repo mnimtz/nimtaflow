@@ -11,9 +11,12 @@ Tools (Detail, Alben, Teilen-Link, Schreiben) folgen laut docs/mcp-server-konzep
 Transport: Streamable HTTP unter /mcp. Connector-URL: http://<host>:<MCP_PORT>/mcp
 """
 import os
+import time
+import html
 import base64
 import asyncio
 import math
+import secrets as _secrets
 from datetime import date
 
 import httpx
@@ -26,7 +29,141 @@ MAX_THUMBS = int(os.environ.get("MCP_MAX_THUMBS", "6"))
 HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 PORT = int(os.environ.get("MCP_PORT", "8000"))
 
-mcp = FastMCP("NimtaFlow", host=HOST, port=PORT)
+# ── OAuth 2.1 (optional) ─────────────────────────────────────────────────────────
+# Aktiv, sobald SECRET_KEY gesetzt ist (= dasselbe Secret wie das Backend). Dann ist
+# der MCP-Server ein vollwertiger OAuth-Authorization-Server: Claude/ChatGPT können
+# ihn als Ein-Klick-Connector einbinden (DCR + PKCE + Login-Consent). Der ausgestellte
+# Access-Token IST ein langlebiges NimtaFlow-JWT → die Tools reichen ihn an /api durch
+# (erbt ACL) und der STATISCHE Token (Settings → MCP) bleibt parallel gültig.
+SECRET = os.environ.get("SECRET_KEY", "")
+ALG = os.environ.get("ALGORITHM", "HS256")
+PUBLIC_URL = os.environ.get("MCP_PUBLIC_URL", f"http://localhost:{PORT}").rstrip("/")
+OAUTH = bool(SECRET)
+
+if OAUTH:
+    from jose import jwt, JWTError
+    from starlette.routing import Route
+    from starlette.responses import HTMLResponse, RedirectResponse
+    from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+    from mcp.server.auth.provider import (
+        OAuthAuthorizationServerProvider, AuthorizationParams, AuthorizationCode,
+        AccessToken, RefreshToken, construct_redirect_uri,
+    )
+    from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+    _TEN_YEARS = 3650 * 24 * 3600
+
+    def _mint(sub: str) -> str:
+        return jwt.encode({"sub": str(sub), "exp": int(time.time()) + _TEN_YEARS}, SECRET, algorithm=ALG)
+
+    class NimtaProvider(OAuthAuthorizationServerProvider):
+        """In-memory OAuth AS. Authentifizierung = NimtaFlow-Login (Consent-Seite)."""
+        def __init__(self):
+            self.clients: dict = {}
+            self.codes: dict = {}
+            self.pending: dict = {}   # rid -> (client_id, AuthorizationParams)
+
+        async def get_client(self, client_id):
+            return self.clients.get(client_id)
+
+        async def register_client(self, client_info):
+            self.clients[client_info.client_id] = client_info
+
+        async def authorize(self, client, params):
+            rid = _secrets.token_urlsafe(16)
+            self.pending[rid] = (client.client_id, params)
+            return f"{PUBLIC_URL}/oauth/consent?rid={rid}"
+
+        async def load_authorization_code(self, client, authorization_code):
+            c = self.codes.get(authorization_code)
+            return c if (c and c.client_id == client.client_id) else None
+
+        async def exchange_authorization_code(self, client, authorization_code):
+            self.codes.pop(authorization_code.code, None)
+            access = _mint(authorization_code.subject)
+            return OAuthToken(access_token=access, token_type="Bearer",
+                              expires_in=_TEN_YEARS, scope="nimtaflow")
+
+        async def load_access_token(self, token):
+            try:
+                payload = jwt.decode(token, SECRET, algorithms=[ALG])
+            except JWTError:
+                return None
+            return AccessToken(token=token, client_id="nimtaflow", scopes=["nimtaflow"],
+                               expires_at=payload.get("exp"), subject=str(payload.get("sub", "")))
+
+        async def load_refresh_token(self, client, refresh_token):
+            return None
+
+        async def exchange_refresh_token(self, client, refresh_token, scopes):
+            raise NotImplementedError("refresh not supported (tokens are long-lived)")
+
+        async def revoke_token(self, token):
+            return None
+
+    _provider = NimtaProvider()
+
+    async def _oauth_consent(request):
+        """GET: Login-Formular. POST: NimtaFlow-Login prüfen → Auth-Code → Redirect."""
+        if request.method == "GET":
+            rid = request.query_params.get("rid", "")
+            err = request.query_params.get("err", "")
+            msg = "<p style='color:#c0392b'>Login fehlgeschlagen.</p>" if err else ""
+            body = f"""<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+            <title>NimtaFlow – Zugriff erlauben</title>
+            <body style="font-family:system-ui;max-width:380px;margin:8vh auto;padding:0 20px;background:#1b1a18;color:#eee">
+            <h2 style="color:#e8b54a">NimtaFlow verbinden</h2>
+            <p style="color:#aaa;font-size:14px">Melde dich mit deinem NimtaFlow-Konto an, um dem KI-Assistenten Zugriff auf deine Mediathek zu erlauben.</p>{msg}
+            <form method="post" action="/oauth/consent">
+              <input type="hidden" name="rid" value="{html.escape(rid)}">
+              <input name="email" type="email" placeholder="E-Mail" required style="width:100%;padding:10px;margin:6px 0;border-radius:8px;border:1px solid #444;background:#2a2826;color:#eee">
+              <input name="password" type="password" placeholder="Passwort" required style="width:100%;padding:10px;margin:6px 0;border-radius:8px;border:1px solid #444;background:#2a2826;color:#eee">
+              <button type="submit" style="width:100%;padding:11px;margin-top:10px;border:0;border-radius:8px;background:#e8b54a;color:#1b1a18;font-weight:600;cursor:pointer">Zugriff erlauben</button>
+            </form></body>"""
+            return HTMLResponse(body)
+
+        form = await request.form()
+        rid = form.get("rid", "")
+        entry = _provider.pending.pop(rid, None)
+        if not entry:
+            return HTMLResponse("<p>Sitzung abgelaufen – bitte neu starten.</p>", status_code=400)
+        client_id, params = entry
+        # NimtaFlow-Login prüfen
+        try:
+            async with httpx.AsyncClient(base_url=API, timeout=20) as c:
+                r = await c.post("/api/auth/login",
+                                 data={"username": form.get("email", ""), "password": form.get("password", "")})
+            if r.status_code != 200:
+                raise ValueError("login failed")
+            sub = jwt.get_unverified_claims(r.json()["access_token"]).get("sub")
+        except Exception:
+            self_rid = html.escape(rid)
+            return RedirectResponse(f"/oauth/consent?rid={self_rid}&err=1", status_code=303)
+        # Auth-Code ausstellen
+        code = _secrets.token_urlsafe(24)
+        self_code = AuthorizationCode(
+            code=code, scopes=params.scopes or ["nimtaflow"], expires_at=int(time.time()) + 300,
+            client_id=client_id, code_challenge=params.code_challenge,
+            redirect_uri=params.redirect_uri,
+            redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+            resource=params.resource, subject=str(sub),
+        )
+        _provider.codes[code] = self_code
+        return RedirectResponse(
+            construct_redirect_uri(str(params.redirect_uri), code=code, state=params.state),
+            status_code=303)
+
+    _auth_settings = AuthSettings(
+        issuer_url=PUBLIC_URL,
+        resource_server_url=PUBLIC_URL,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True, valid_scopes=["nimtaflow"], default_scopes=["nimtaflow"]),
+        required_scopes=[],
+    )
+    mcp = FastMCP("NimtaFlow", host=HOST, port=PORT,
+                  auth_server_provider=_provider, auth=_auth_settings)
+else:
+    mcp = FastMCP("NimtaFlow", host=HOST, port=PORT)
 
 
 def _token_from_ctx(ctx: Context | None) -> str | None:
@@ -499,4 +636,10 @@ async def vorschlaege_bestaetigen(person_id: int, ctx: Context = None):
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    if OAUTH:
+        import uvicorn
+        app = mcp.streamable_http_app()
+        app.router.routes.append(Route("/oauth/consent", _oauth_consent, methods=["GET", "POST"]))
+        uvicorn.run(app, host=HOST, port=PORT)
+    else:
+        mcp.run(transport="streamable-http")
