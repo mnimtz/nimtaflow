@@ -2201,6 +2201,7 @@ def render_highlight_task(self, highlight_id: int):
                 # ai_enabled), budget-capped per render, falls back to slideshow on any
                 # hiccup. Only for recap-style mottos.
                 clip_files: list = []
+                animated_ids: list = []
                 s_hl: dict = {}
                 try:
                     s_hl = await load_settings(db)
@@ -2224,7 +2225,24 @@ def render_highlight_task(self, highlight_id: int):
                                      "recognizable; no morphing or distortion.")
                         clipdir = _os.path.join(cache_path, "highlights", "clips")
                         _os.makedirs(clipdir, exist_ok=True)
-                        for idx, p in enumerate(photos[:K]):
+                        # Prefer photos WITH people for the animated clips — animating a
+                        # photo of furniture/a wall looks odd. Reorder candidates faces-
+                        # first (keep the original quality order within each group).
+                        clip_pool = photos
+                        try:
+                            from sqlalchemy import select as _sel
+                            from app.models.face import Face as _Face
+                            cand = photos[:max(K * 5, 15)]
+                            cand_ids = [p.id for p in cand]
+                            if cand_ids:
+                                fids = set((await db.execute(
+                                    _sel(_Face.photo_id).where(_Face.photo_id.in_(cand_ids)))).scalars().all())
+                                withf = [p for p in photos if p.id in fids]
+                                without = [p for p in photos if p.id not in fids]
+                                clip_pool = (withf + without) if withf else photos
+                        except Exception:
+                            clip_pool = photos
+                        for idx, p in enumerate(clip_pool[:K]):
                             if not p.thumb_large or not _os.path.exists(p.thumb_large):
                                 continue
                             try:
@@ -2241,6 +2259,7 @@ def render_highlight_task(self, highlight_id: int):
                                 with open(cf, "wb") as fh:
                                     fh.write(vid)
                                 clip_files.append(cf)
+                                animated_ids.append(p.id)
                             except Exception as ce:
                                 flog("highlights", "WARNING",
                                      f"Highlight {highlight_id}: Keyframe {idx} nicht animiert: {str(ce)[:120]}")
@@ -2250,8 +2269,10 @@ def render_highlight_task(self, highlight_id: int):
                 except Exception as ae:
                     flog("highlights", "WARNING", f"Highlight {highlight_id}: KI-Clips übersprungen: {str(ae)[:120]}")
 
-                # Slideshow covers the photos NOT already animated (avoid duplicates).
-                rest = photos[len(clip_files):] if clip_files else photos
+                # Slideshow covers the photos NOT already animated (avoid duplicates) —
+                # by ID, since the clip selection reorders (faces-first).
+                _anim = set(animated_ids)
+                rest = [p for p in photos if p.id not in _anim] if clip_files else photos
                 image_paths = [p.thumb_large for p in rest if p.thumb_large]
                 seconds_per = max(0.8, duration / max(1, len(image_paths)))
                 music = (s_hl.get("highlights.music_path") or "").strip() or None
