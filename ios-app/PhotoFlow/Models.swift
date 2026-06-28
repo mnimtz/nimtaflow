@@ -253,6 +253,7 @@ struct PhotoDetailV1: Codable {
     let file_size: Int?
     let tags: [String]
     let people: [PhotoPersonV1]
+    var has_voice_note: Bool? = nil
 }
 
 // MARK: - Scan progress (GET /api/sources/scan-progress)

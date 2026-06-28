@@ -765,6 +765,9 @@ struct PhotoInfoView: View {
                         if !askAnswer.isEmpty { Text(askAnswer).font(.callout) }
                     }
                 }
+                if let d = detail {
+                    VoiceMemoSection(photoId: photo.id, hasNote: d.has_voice_note ?? false)
+                }
                 Section("Ort & Aufnahme") {
                     if let p = placeStr { row("Ort", p) }
                     if let lat = photo.latitude, let lng = photo.longitude {

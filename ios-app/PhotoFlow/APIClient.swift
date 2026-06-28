@@ -337,6 +337,33 @@ final class APIClient: ObservableObject {
         return first
     }
 
+    // MARK: Pets + voice notes
+    func pets(cursor: Int?) async throws -> PhotoPage {
+        var p = "api/v1/photos/pets?limit=80"
+        if let c = cursor { p += "&cursor=\(c)" }
+        return try await get(p, as: PhotoPage.self)
+    }
+    func voiceNoteData(_ id: Int) async throws -> Data { try await getData("api/v1/photos/\(id)/voice-note") }
+    func deleteVoiceNote(_ id: Int) async throws { try await action("api/v1/photos/\(id)/voice-note", method: "DELETE") }
+    func uploadVoiceNote(_ id: Int, data: Data) async throws {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var req = URLRequest(url: base.appendingPathComponent("api/v1/photos/\(id)/voice-note"))
+        req.httpMethod = "POST"
+        if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var body = Data()
+        func add(_ s: String) { body.append(s.data(using: .utf8)!) }
+        add("--\(boundary)\r\n")
+        add("Content-Disposition: form-data; name=\"file\"; filename=\"memo.m4a\"\r\n")
+        add("Content-Type: audio/mp4\r\n\r\n")
+        body.append(data)
+        add("\r\n--\(boundary)--\r\n")
+        let (_, resp) = try await pfSession.upload(for: req, from: body)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { await logout(); throw APIError.status(401) }
+        guard (200..<300).contains(code) else { throw APIError.status(code) }
+    }
+
     // MARK: Sharing
     func createShare(_ body: [String: Any]) async throws -> ShareOut {
         try await send(makeRequest("api/shares", method: "POST", json: body), as: ShareOut.self)

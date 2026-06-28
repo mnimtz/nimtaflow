@@ -46,6 +46,8 @@
 	<string>NimtaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>NimtaFlow zeigt deinen aktuellen Standort auf der Foto-Karte an.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>NimtaFlow nimmt auf Wunsch ein kurzes Sprach-Memo zu einem Foto auf.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

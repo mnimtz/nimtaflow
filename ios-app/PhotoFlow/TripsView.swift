@@ -241,10 +241,16 @@ struct TripDetailView: View {
     @State private var loading = false
     @State private var selected: PhotoV1?
     @State private var showShare = false
+    @State private var showRoute = false
     @AppStorage("trips_dismissed") private var dismissedRaw: String = ""
     @Environment(\.dismiss) private var dismiss
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
+
+    private var routePhotos: [PhotoV1] {
+        photos.filter { $0.latitude != nil && $0.longitude != nil }
+            .sorted { ($0.taken_at ?? "") < ($1.taken_at ?? "") }
+    }
 
     private func removeFromList() {
         var s = Set(dismissedRaw.split(separator: "\n").map(String.init))
@@ -259,6 +265,9 @@ struct TripDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if routePhotos.count > 1 {
+                        Button { showRoute = true } label: { Label("Route abspielen", systemImage: "play.circle") }
+                    }
                     Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
                     Button(role: .destructive) { removeFromList() } label: {
                         Label("Aus Liste entfernen", systemImage: "trash")
@@ -274,6 +283,9 @@ struct TripDetailView: View {
         .sheet(isPresented: $showShare) {
             ShareSheetView(target: .trip(from: event.date_from, to: event.date_to,
                                          title: event.city ?? "Reise")).presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showRoute) {
+            RoutePlayerView(photos: routePhotos)
         }
     }
 
