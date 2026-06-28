@@ -65,7 +65,9 @@ export default function HighlightsPage() {
             <div className="p-3 flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{h.title}</p>
-                <p className="text-xs text-zinc-500">{t('highlights.photosDuration', { count: h.photo_count, sec: Math.round(h.duration_sec) })}</p>
+                <p className="text-xs text-zinc-500">{h.motto === 'photo_animate'
+                  ? t('highlights.clipDuration', { sec: Math.round(h.duration_sec) })
+                  : t('highlights.photosDuration', { count: h.photo_count ?? 0, sec: Math.round(h.duration_sec) })}</p>
                 {h.error_message && <p className="text-xs text-red-500 mt-0.5 line-clamp-2">{h.error_message}</p>}
               </div>
               {h.status === 'done' && (
