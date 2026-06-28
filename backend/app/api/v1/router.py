@@ -252,8 +252,10 @@ async def photo_detail_v1(photo_id: int, request: Request, db: AsyncSession = De
         select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
         .where(PhotoTag.photo_id == photo_id))).all()]
     # Per-FACE (with face_id) so the app can remove/reassign a single recognised face.
-    people = [{"face_id": fid, "person_id": pid, "name": nm} for (fid, pid, nm) in (await db.execute(
-        select(Face.id, Face.person_id, Person.name).join(Person, Person.id == Face.person_id)
+    people = [{"face_id": fid, "person_id": pid, "name": nm,
+               "birthdate": bd.isoformat() if bd else None}
+              for (fid, pid, nm, bd) in (await db.execute(
+        select(Face.id, Face.person_id, Person.name, Person.birthdate).join(Person, Person.id == Face.person_id)
         .where(Face.photo_id == photo_id, Person.name.isnot(None)).order_by(Face.id))).all()]
     base = _to_v1(photo, request).model_dump()
     base.update({

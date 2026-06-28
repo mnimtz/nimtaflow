@@ -575,13 +575,13 @@ async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db),
 
     face_rows = (await db.execute(
         select(Face.id, Face.bbox_x, Face.bbox_y, Face.bbox_w, Face.bbox_h,
-               Face.confidence, Person.id, Person.name)
+               Face.confidence, Person.id, Person.name, Person.birthdate)
         .join(Person, Person.id == Face.person_id, isouter=True)
         .where(Face.photo_id == photo_id)
     )).all()
     data["people"] = [
         {"face_id": r[0], "bbox": [r[1], r[2], r[3], r[4]], "confidence": r[5],
-         "person_id": r[6], "name": r[7]}
+         "person_id": r[6], "name": r[7], "birthdate": r[8].isoformat() if r[8] else None}
         for r in face_rows
     ]
     return data

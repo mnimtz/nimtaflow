@@ -63,6 +63,12 @@ SYSTEM = (
     "das wirklich früheste/späteste Foto-Datum (datumssortiert). Geht es um GEMEINSAME "
     "Fotos mit dir, setze zusätzlich person2=<dein eigener Name aus der Identität>. "
     "Nenne dann erstes_datum bzw. letztes_datum als Antwort und das zugehörige Foto per #id. "
+    "Zu ALTER/GEBURTSTAG ('X. Geburtstag', 'wann wurde X 40', 'wie alt war X im Jahr Y', "
+    "'X als sie 5 war'): nutze IMMER das Werkzeug geburtstag_datum(person, alter) — es liest "
+    "das HINTERLEGTE Geburtsdatum und rechnet das exakte Datum aus (rate NIE selbst ein "
+    "Geburtsdatum/Alter aus Fotos). Hat die Person kein Geburtsdatum hinterlegt, sag das ehrlich "
+    "und schlage vor, es unter Personen einzutragen. Sonst suche danach mit person=X und den "
+    "gelieferten datum_von/datum_bis, um die Geburtstags-Fotos zu finden. "
     "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
     "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
     "Bestätige danach kurz, was du getan hast (Albumname + Anzahl)."
@@ -268,6 +274,37 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
             "letztes_datum": str(last[1])[:10], "letztes_foto_id": last[0]}
 
 
+async def _birthday_date(db: AsyncSession, person: Optional[str], alter=None) -> dict:
+    """Exact date a person reached a given age, from the STORED birthdate. Deterministic
+    (no guessing from photos) → answers 'X. Geburtstag', 'wie alt war X …'."""
+    from datetime import timedelta
+    if not person or not person.strip():
+        return {"hat_geburtsdatum": False, "hinweis": "Kein Personenname angegeben."}
+    p = (await db.execute(
+        select(Person).where(Person.name.ilike(f"%{person.strip()}%"),
+                             Person.birthdate.isnot(None)).limit(1)
+    )).scalar_one_or_none()
+    if not p or not p.birthdate:
+        return {"hat_geburtsdatum": False,
+                "hinweis": f"Für {person} ist kein Geburtsdatum hinterlegt. "
+                           f"Du kannst es unter Personen → {person} → Geburtsdatum eintragen."}
+    bd = p.birthdate
+    out: dict = {"hat_geburtsdatum": True, "name": p.name, "geburtsdatum": bd.isoformat()}
+    if alter is not None:
+        try:
+            try:
+                target = bd.replace(year=bd.year + int(alter))
+            except ValueError:        # 29. Feb → 28. Feb
+                target = bd.replace(year=bd.year + int(alter), day=28)
+            out["alter"] = int(alter)
+            out["datum"] = target.isoformat()
+            out["datum_von"] = (target - timedelta(days=10)).isoformat()
+            out["datum_bis"] = (target + timedelta(days=10)).isoformat()
+        except Exception:
+            pass
+    return out
+
+
 async def _image_parts(db: AsyncSession, ids: List[int], max_n: int) -> list:
     """Gemini inline_data parts for the top-N hits' thumbnails (SSD, JPEG) so the
     multimodal model can SEE the photos — answers details no description captured.
@@ -420,6 +457,18 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             }, "required": ["person"]},
         },
         {
+            "name": "geburtstag_datum",
+            "description": "Liefert das EXAKTE Datum, an dem eine Person ein Alter erreicht (aus dem "
+                           "hinterlegten Geburtsdatum: Geburtsdatum + Jahre) plus ein Suchfenster "
+                           "(datum_von/datum_bis). Nutze das für 'X. Geburtstag', 'wann wurde X N', "
+                           "'wie alt war X im Jahr Y'. NIE selbst ein Datum/Alter raten. Ist kein "
+                           "Geburtsdatum hinterlegt, kommt hat_geburtsdatum=false zurück — dann ehrlich sagen.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "Name der Person (Pflicht)"},
+                "alter": {"type": "integer", "description": "Das Alter bzw. der Geburtstag, z. B. 40 für '40. Geburtstag'"},
+            }, "required": ["person"]},
+        },
+        {
             "name": "album_erstellen",
             "description": "Erstellt ein NEUES Album aus den passenden Fotos. Nutze das, wenn der Nutzer "
                            "ein Album anlegen/erstellen möchte (z. B. 'mach ein Album mit allen Strandfotos "
@@ -503,6 +552,10 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                             photos = (await db.execute(select(Photo).where(Photo.id.in_(eids)))).scalars().all()
                             for rrec in await _fused_records(db, photos):
                                 seen_recs.setdefault(rrec["id"], rrec)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "geburtstag_datum":
+                        resp = await _birthday_date(db, args.get("person"), args.get("alter"))
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):

@@ -668,6 +668,17 @@ struct PhotoInfoView: View {
         detail = try? await api.photoDetail(photo.id)
     }
 
+    /// Alter der Person zum Aufnahmezeitpunkt, falls Geburtsdatum + Foto-Datum bekannt.
+    private func ageAtPhoto(_ birthdate: String?) -> Int? {
+        guard let bds = birthdate, let shot = detail?.taken_at ?? photo.taken_at else { return nil }
+        let iso = ISO8601DateFormatter()
+        let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd"; day.timeZone = TimeZone(identifier: "UTC")
+        guard let bd = day.date(from: String(bds.prefix(10))),
+              let sd = (iso.date(from: shot) ?? day.date(from: String(shot.prefix(10)))) else { return nil }
+        let yrs = Calendar.current.dateComponents([.year], from: bd, to: sd).year ?? -1
+        return (yrs >= 0 && yrs < 130) ? yrs : nil
+    }
+
     private func makePostcard() async {
         pcBusy = true; defer { pcBusy = false }
         var path = "api/v1/photos/\(photo.id)/postcard?theme=\(pcTheme)"
@@ -732,6 +743,9 @@ struct PhotoInfoView: View {
                             HStack {
                                 Image(systemName: "person.crop.circle").foregroundStyle(.indigo)
                                 Text(pp.name)
+                                if let age = ageAtPhoto(pp.birthdate) {
+                                    Text("· \(age) J.").font(.caption).foregroundStyle(.secondary)
+                                }
                                 Spacer()
                                 if let fid = pp.face_id {
                                     Menu {

@@ -188,6 +188,16 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     : (p.keywords ? String(p.keywords).split(',').map((k: string) => k.trim()).filter(Boolean) : [])
   const people: any[] = Array.isArray(p.people) ? p.people : []
   const namedPeople = people.filter(pp => pp.name)
+  const shotDate = p.taken_at || p.date_taken || p.created_at
+  const ageAt = (birthdate?: string | null): number | null => {
+    if (!birthdate || !shotDate) return null
+    const bd = new Date(birthdate), sd = new Date(shotDate)
+    if (isNaN(bd.getTime()) || isNaN(sd.getTime())) return null
+    let age = sd.getFullYear() - bd.getFullYear()
+    const m = sd.getMonth() - bd.getMonth()
+    if (m < 0 || (m === 0 && sd.getDate() < bd.getDate())) age--
+    return age >= 0 && age < 130 ? age : null
+  }
   const exposure = [
     p.focal_length && `${Math.round(p.focal_length)} mm`,
     p.focal_length_35mm && `(KB ${p.focal_length_35mm} mm)`,
@@ -283,6 +293,9 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
               {namedPeople.map(pp => (
                 <span key={pp.face_id} className="group flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">
                   {pp.name}
+                  {ageAt(pp.birthdate) != null && (
+                    <span className="text-indigo-300/60">· {t('gallery.yearsOld', { age: ageAt(pp.birthdate) })}</span>
+                  )}
                   {pp.person_id && pp.face_id && (
                     <button onClick={() => setCover(pp)} title={t('gallery.setCoverFor', { name: pp.name })}
                       className="text-indigo-300/70 hover:text-yellow-300 p-0.5"><Star size={11} /></button>
