@@ -1251,6 +1251,30 @@ function PipelineSection() {
           <div className="flex flex-wrap gap-2 mt-3">
             <ActBtn label={t('settings.pipReprocessAll')} busy={busy === 'failed'} onClick={() => run('failed', '/photos/reprocess-failed')} />
             <ActBtn label={t('settings.pipRetryAi')} busy={busy === 'ai'} onClick={() => run('ai', '/photos/reprocess-missing-ai')} />
+            {errCount > 0 && (
+              <button
+                onClick={async () => {
+                  try {
+                    const d = (await api.get('/photos/error-report')).data as { count: number; items: any[] }
+                    const lines = [`NimtaFlow — Fehler-Bericht`, `${d.count} Datei(en) mit Fehler`, `erstellt: ${new Date().toLocaleString('de')}`, '', '='.repeat(60), '']
+                    for (const it of d.items) {
+                      lines.push(`#${it.id}  ${it.is_video ? '🎬' : '🖼️'}  ${it.filename}`)
+                      lines.push(`   Grund:   ${it.reason}`)
+                      lines.push(`   Status:  ${it.status}${it.ai_error ? ' · ai_error' : ''}  (KI-Versuche ${it.ai_attempts ?? 0}, Thumb-Versuche ${it.thumb_attempts ?? 0})`)
+                      lines.push(`   Pfad:    ${it.path}`)
+                      if (it.error_message) lines.push(`   Meldung: ${it.error_message}`)
+                      lines.push('')
+                    }
+                    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a'); a.href = url; a.download = 'nimtaflow-fehler-bericht.txt'; a.click()
+                    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+                  } catch { /* ignore */ }
+                }}
+                className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                📋 {t('settings.pipErrorReport')}
+              </button>
+            )}
           </div>
         </div>
 
@@ -2460,10 +2484,16 @@ function SharingSection() {
         <div>
           <Label>{t('settings.shPublicBaseUrl')}</Label>
           <Input value={settings['share.public_base_url'] ?? ''} onChange={v => set('share.public_base_url', v.trim())}
-                 placeholder="https://fotos.example.com" />
+                 placeholder="https://login.nimtaflow.com" />
           <p className="text-xs text-zinc-400 mt-1">
             {t('settings.shPublicBaseUrlHintA')} <code>https://fotos.example.com/s/&lt;token&gt;</code>{t('settings.shPublicBaseUrlHintB')}
           </p>
+          <div className="mt-3">
+            <Label>{t('settings.shShareBaseUrl')}</Label>
+            <Input value={settings['share.share_base_url'] ?? ''} onChange={v => set('share.share_base_url', v.trim())}
+                   placeholder="https://share.nimtaflow.com" />
+            <p className="text-xs text-zinc-400 mt-1">{t('settings.shShareBaseUrlHint')}</p>
+          </div>
           <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
         </div>
 

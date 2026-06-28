@@ -64,7 +64,10 @@ async def _base_url(request: Request, db: AsyncSession) -> str:
     (share.public_base_url) if set, else the request's own origin."""
     from app.services.settings_loader import load_settings
     s = await load_settings(db)
-    base = (s.get("share.public_base_url") or "").strip().rstrip("/")
+    # Prefer a dedicated SHARE base URL (e.g. share.nimtaflow.com) over the general
+    # public/login base — so share links can look nicer than the login host.
+    base = ((s.get("share.share_base_url") or "").strip()
+            or (s.get("share.public_base_url") or "").strip()).rstrip("/")
     return base or str(request.base_url).rstrip("/")
 
 

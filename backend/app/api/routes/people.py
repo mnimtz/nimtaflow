@@ -115,15 +115,25 @@ async def warm_crops(db: AsyncSession = Depends(get_db)):
 
 @router.get("/crops-status")
 async def crops_status(db: AsyncSession = Depends(get_db)):
-    """Progress for the crop-cache warming: cached crop files vs. total faces."""
+    """Progress for the crop-cache warming: DISTINCT faces with a crop vs. total faces.
+    Crop files are named p{person}_f{face}_…; re-clustering writes a new file per new
+    person_id, leaving stale crops — so counting files overcounted (>100%). Count
+    distinct face_ids instead → a real, verifiable ≤100% number."""
     import os
+    import re
     from app.services.face_crop import _CACHE
     total = await db.scalar(select(func.count()).where(Face.is_ignored == False)) or 0  # noqa: E712
+    seen = set()
     try:
-        cached = sum(1 for e in os.scandir(_CACHE) if e.name.endswith(".jpg"))
+        for e in os.scandir(_CACHE):
+            if e.name.endswith(".jpg"):
+                m = re.search(r"_f(\d+)_", e.name)
+                if m:
+                    seen.add(m.group(1))
     except Exception:
-        cached = 0
-    return {"total_faces": int(total), "cached": int(cached)}
+        pass
+    cached = min(len(seen), int(total))
+    return {"total_faces": int(total), "cached": cached}
 
 
 @router.post("", response_model=PersonOut, status_code=201)

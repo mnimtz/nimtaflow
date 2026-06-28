@@ -782,6 +782,34 @@ async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db
     return {"album_id": album.id, "added": added, "name": album.name}
 
 
+@router.get("/error-report")
+async def error_report(db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """Full report of the error queue: which files failed and why (status=error =
+    processing aborted, or ai_error = the AI step failed). Drives the 'Bericht' button."""
+    rows = (await db.execute(
+        select(Photo.id, Photo.filename, Photo.path, Photo.status, Photo.is_video,
+               Photo.ai_error, Photo.ai_attempts, Photo.thumb_attempts, Photo.error_message)
+        .where(Photo.is_trashed == False,  # noqa: E712
+               or_(Photo.status == PhotoStatus.error, Photo.ai_error == True))  # noqa: E712
+        .order_by(Photo.id)
+    )).all()
+    items = []
+    for r in rows:
+        if r[3] == PhotoStatus.error:
+            reason = "Verarbeitung abgebrochen / Datei nicht dekodierbar"
+        elif r[5]:
+            reason = "KI-Beschreibung fehlgeschlagen"
+        else:
+            reason = "Fehler"
+        items.append({
+            "id": r[0], "filename": r[1], "path": r[2], "status": str(r[3].value if hasattr(r[3], 'value') else r[3]),
+            "is_video": r[4], "ai_error": r[5], "ai_attempts": r[6], "thumb_attempts": r[7],
+            "reason": reason, "error_message": r[8],
+        })
+    return {"count": len(items), "items": items}
+
+
 @router.post("/reprocess-failed", dependencies=[Depends(require_pipeline)])
 async def reprocess_failed(db: AsyncSession = Depends(get_db)):
     """Re-queue all photos that errored, never finished, or whose AI step failed

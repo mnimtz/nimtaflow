@@ -314,7 +314,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
           <div className="space-y-1.5">
             <div className="rounded-xl overflow-hidden border border-zinc-800 h-40">
               <MapContainer center={[p.latitude, p.longitude]} zoom={13} className="h-full w-full" zoomControl={false} dragging={false} scrollWheelZoom={false}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="&copy; CARTO &copy; OpenStreetMap contributors" />
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution="&copy; CARTO &copy; OpenStreetMap contributors" />
                 <CircleMarker center={[p.latitude, p.longitude]} radius={7} pathOptions={{ color: '#6366f1', fillColor: '#818cf8', fillOpacity: 0.9 }} />
               </MapContainer>
             </div>

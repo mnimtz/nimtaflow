@@ -187,7 +187,7 @@ function TripDetail({ album, onBack }: { album: Album; onBack: () => void }) {
       {allPts.length > 0 && (
         <div className="relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 h-72 mb-6">
           <MapContainer center={allPts[0]} zoom={6} className="h-full w-full" scrollWheelZoom>
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="&copy; CARTO &copy; OpenStreetMap contributors" />
+            <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution="&copy; CARTO &copy; OpenStreetMap contributors" />
             {!playing && playIdx === 0 && <FitAll pts={allPts} />}
             {/* Full route, dimmed while a playback is in progress */}
             {gpsLine.length > 1 && <Polyline positions={gpsLine} pathOptions={{ color: '#818cf8', weight: 3, opacity: curPhoto ? 0.25 : 0.7 }} />}
