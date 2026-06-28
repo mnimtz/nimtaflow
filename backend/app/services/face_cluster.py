@@ -103,7 +103,7 @@ async def consolidate_persons(db: AsyncSession, merge_eps: float) -> int:
     return merged
 
 
-async def cluster_unassigned(db: AsyncSession, grow_only: bool = False) -> dict:
+async def cluster_unassigned(db: AsyncSession, grow_only: bool = False, suggest: bool = False) -> dict:
     # grow_only=True does ONLY Stage 1 (assign loose faces to EXISTING named people)
     # and skips the heavy HDBSCAN that forms new clusters. The periodic auto-run uses
     # this so it stays light (no CPU spike that starves the API); the manual "Clustern"
@@ -212,9 +212,41 @@ async def cluster_unassigned(db: AsyncSession, grow_only: bool = False) -> dict:
     else:
         remaining_ids, remaining_idx = list(ids), list(range(len(ids)))
 
+    # ── Safe SUGGESTIONS (no assignment): for the loose faces just BELOW the confident
+    #    assign cutoff, record suggested_person_id so the user can confirm them under
+    #    "ähnliche Gesichter" → review. Never touches person_id, never merges people.
+    suggested = 0
+    if suggest and existing and remaining_idx:
+        from collections import defaultdict as _dd2
+        band = float(s.get("face.suggest_band", "0.13") or 0.13)  # how far below the cutoff still counts as "likely"
+
+        def _suggest_compute():
+            out = _dd2(list)  # person_id -> [face_id]
+            CH = 1000
+            for c0 in range(0, len(remaining_idx), CH):
+                idxs = remaining_idx[c0:c0 + CH]
+                Xc = X[idxs]
+                sims = Xc @ E.T
+                jbest = sims.argmax(axis=1)
+                sbest = sims[np.arange(len(Xc)), jbest]
+                for k in range(len(Xc)):
+                    d = 1.0 - float(sbest[k])
+                    if eps_existing <= d < eps_existing + band:   # just outside confident, still plausible
+                        out[int(Epids[jbest[k]])].append(ids[idxs[k]])
+            return out
+
+        sugg = await asyncio.to_thread(_suggest_compute)
+        for pid, fids in sugg.items():
+            # only on still-free faces; (re)set the suggestion
+            await db.execute(update(Face).where(
+                Face.id.in_(fids), Face.person_id == None  # noqa: E711
+            ).values(suggested_person_id=pid))
+            suggested += len(fids)
+        await db.commit()
+
     # Light auto-run: stop after growing existing people — skip the heavy HDBSCAN.
     if grow_only:
-        return {"assigned_to_existing": assigned, "clustered": 0,
+        return {"assigned_to_existing": assigned, "clustered": 0, "suggested": suggested,
                 "new_persons": 0, "merged_clusters": 0, "unclustered": len(remaining_ids)}
 
     # 2) Cluster the rest into new (unnamed) persons.
