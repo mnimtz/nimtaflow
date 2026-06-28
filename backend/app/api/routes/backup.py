@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from app.services.backup import (
     run_full_backup, list_backups, prune_backups, rclone_sync,
-    restore_database, restore_archive, verify_database_dump, BACKUP_DIR,
+    restore_database, restore_archive, verify_database_dump, delete_backup, BACKUP_DIR,
 )
 from app.services.hw_accel import detect_hw
 
@@ -79,9 +79,19 @@ async def restore_files(filename: str):
 
 
 @router.delete("/prune")
-async def prune(keep_days: int = 30):
-    deleted = prune_backups(keep_days)
-    return {"deleted": deleted, "keep_days": keep_days}
+async def prune(keep_days: int = 30, keep_count: int = 0):
+    deleted = prune_backups(keep_days, keep_count)
+    return {"deleted": deleted, "keep_days": keep_days, "keep_count": keep_count}
+
+
+@router.delete("/file/{filename}")
+async def delete_one(filename: str):
+    """Delete a single backup file (path-traversal-safe)."""
+    p = _safe_backup_file(filename)
+    ok = delete_backup(p.name)
+    if not ok:
+        raise HTTPException(404, "Backup nicht gefunden")
+    return {"deleted": ok, "name": p.name}
 
 
 @router.post("/rclone/test")

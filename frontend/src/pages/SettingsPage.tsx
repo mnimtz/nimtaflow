@@ -2178,12 +2178,17 @@ function BackupSection() {
   const { t } = useT()
   const [rcloneRemote, setRcloneRemote] = useState('')
   const [keepDays, setKeepDays] = useState(30)
+  const [keepCount, setKeepCount] = useState(0)
   const [inclThumbs, setInclThumbs] = useState(true)
   const qc = useQueryClient()
 
-  const { data: backups = [], refetch } = useQuery<BackupFile[]>({
+  const { data: backups = [], refetch, isFetching } = useQuery<BackupFile[]>({
     queryKey: ['backups'],
     queryFn: () => api.get('/backup/list').then(r => r.data),
+  })
+  const delBackup = useMutation({
+    mutationFn: (name: string) => api.delete(`/backup/file/${encodeURIComponent(name)}`),
+    onSuccess: () => refetch(),
   })
 
   const { data: hw } = useQuery<HWInfo>({
@@ -2198,7 +2203,7 @@ function BackupSection() {
   })
 
   const prune = useMutation({
-    mutationFn: () => api.delete('/backup/prune', { params: { keep_days: keepDays } }),
+    mutationFn: () => api.delete('/backup/prune', { params: { keep_days: keepDays, keep_count: keepCount } }),
     onSuccess: () => refetch(),
   })
 
@@ -2214,6 +2219,7 @@ function BackupSection() {
     if (!appSettings) return
     if (appSettings['backup.schedule']) setSched(appSettings['backup.schedule'])
     if (appSettings['backup.keep_days']) setKeepDays(Number(appSettings['backup.keep_days']))
+    if (appSettings['backup.keep_count'] !== undefined) setKeepCount(Number(appSettings['backup.keep_count']) || 0)
     if (appSettings['backup.include_thumbnails'] !== undefined) setInclThumbs(String(appSettings['backup.include_thumbnails']) !== 'false')
     if (appSettings['backup.mirror_remote']) setMirrorRemote(appSettings['backup.mirror_remote'])
     if (appSettings['backup.mirror_schedule']) setMirrorSched(appSettings['backup.mirror_schedule'])
@@ -2221,7 +2227,7 @@ function BackupSection() {
   }, [appSettings])
   const saveSchedule = useMutation({
     mutationFn: () => api.put('/settings', {
-      'backup.schedule': sched, 'backup.keep_days': String(keepDays),
+      'backup.schedule': sched, 'backup.keep_days': String(keepDays), 'backup.keep_count': String(keepCount),
       'backup.rclone_remote': rcloneRemote, 'backup.include_thumbnails': String(inclThumbs),
       'backup.mirror_remote': mirrorRemote, 'backup.mirror_schedule': mirrorSched,
       'backup.encrypt': String(encrypt), ...(passphrase ? { 'backup.passphrase': passphrase } : {}),
@@ -2281,8 +2287,8 @@ function BackupSection() {
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.bkSavedBackups')}</p>
-          <button onClick={() => refetch()} className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
-            <RefreshCw size={11} /> {t('settings.refresh')}
+          <button onClick={() => refetch()} disabled={isFetching} className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 disabled:opacity-50">
+            <RefreshCw size={11} className={isFetching ? 'animate-spin' : ''} /> {isFetching ? t('settings.loading') : t('settings.refresh')}
           </button>
         </div>
         {backups.length === 0 && (
@@ -2294,13 +2300,20 @@ function BackupSection() {
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${b.type === 'db' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
                 {b.type.toUpperCase()}
               </span>
-              <span className="flex-1 font-mono text-xs text-zinc-600 dark:text-zinc-400 truncate">{b.name}</span>
-              <span className="text-zinc-400 text-xs">{b.size_mb} MB</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  {b.created_at ? new Date(b.created_at).toLocaleString('de', { dateStyle: 'medium', timeStyle: 'short' }) : b.name}
+                </div>
+                <div className="font-mono text-[10px] text-zinc-400 truncate">{b.name}</div>
+              </div>
+              <span className="text-zinc-400 text-xs shrink-0">{b.size_mb} MB</span>
               {b.type === 'db' && <button onClick={() => verify.mutate(b.name)} className="text-zinc-400 hover:text-zinc-200 text-xs">{t('settings.bkVerify')}</button>}
               <button onClick={() => { if (confirm(t('settings.bkRestoreConfirm', { name: b.name, target: b.type === 'db' ? t('settings.bkDatabase') : t('settings.bkFiles') }))) restore.mutate(b) }}
                 className="text-amber-400 hover:text-amber-300 text-xs transition-colors">{t('settings.bkRestore')}</button>
               <a href={`/api/backup/download/${b.name}`} download
                 className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors">{t('settings.download')}</a>
+              <button onClick={() => { if (confirm(t('settings.bkDeleteConfirm', { name: b.name }))) delBackup.mutate(b.name) }}
+                className="text-red-400 hover:text-red-300 text-xs transition-colors">{t('settings.delete')}</button>
             </div>
           ))}
         </div>
@@ -2322,6 +2335,11 @@ function BackupSection() {
           <div>
             <Label>{t('settings.bkRetention')}</Label>
             <Input value={String(keepDays)} onChange={v => setKeepDays(Number(v) || 30)} placeholder="30" />
+          </div>
+          <div>
+            <Label>{t('settings.bkKeepCount')}</Label>
+            <Input value={String(keepCount)} onChange={v => setKeepCount(Number(v) || 0)} placeholder="0" />
+            <p className="text-[11px] text-zinc-400 mt-1">{t('settings.bkKeepCountHint')}</p>
           </div>
         </div>
         <label className="flex items-center gap-2 mt-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">

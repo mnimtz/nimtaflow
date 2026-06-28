@@ -407,21 +407,43 @@ def list_backups() -> list[Dict[str, Any]]:
     return files
 
 
-def prune_backups(keep_days: int = 30) -> int:
-    """Delete backups older than keep_days. Returns count deleted."""
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=keep_days)
-    deleted = 0
+def prune_backups(keep_days: int = 30, keep_count: int = 0) -> int:
+    """Delete old backups. If keep_count > 0: keep only the newest `keep_count` of
+    EACH type (db/config/cache) and delete the rest (count-based retention — caps
+    disk regardless of age). Otherwise delete everything older than keep_days."""
     seen = set()
+    files = []
     for pattern in ("*.gz", "*.gz.enc"):
         for f in BACKUP_DIR.glob(pattern):
             if f in seen:
                 continue
             seen.add(f)
-            mtime = datetime.datetime.fromtimestamp(f.stat().st_mtime)
-            if mtime < cutoff:
-                f.unlink()
-                deleted += 1
+            files.append(f)
+    deleted = 0
+    if keep_count and keep_count > 0:
+        by_type: dict = {}
+        for f in files:
+            t = "db" if f.name.startswith("db_") else ("cache" if f.name.startswith("cache_") else "config")
+            by_type.setdefault(t, []).append(f)
+        for group in by_type.values():
+            group.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            for f in group[keep_count:]:
+                f.unlink(); deleted += 1
+        return deleted
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=keep_days)
+    for f in files:
+        if datetime.datetime.fromtimestamp(f.stat().st_mtime) < cutoff:
+            f.unlink(); deleted += 1
     return deleted
+
+
+def delete_backup(filename: str) -> bool:
+    """Delete a single backup file by name (no path traversal — caller validates)."""
+    f = BACKUP_DIR / filename
+    if f.exists() and f.is_file():
+        f.unlink()
+        return True
+    return False
 
 
 # ── Full backup ───────────────────────────────────────────────────────────────

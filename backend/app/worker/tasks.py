@@ -217,13 +217,14 @@ def scheduled_backup_task(self):
                 except Exception:
                     pass
             keep = int(float(s.get("backup.keep_days", "30") or 30))
+            keep_count = int(float(s.get("backup.keep_count", "0") or 0))
             remote = (s.get("backup.rclone_remote") or "").strip() or None
             incl_thumbs = str(s.get("backup.include_thumbnails", "true")).lower() != "false"
             try:
                 res = await run_full_backup(os.getenv("DATABASE_URL"), os.getenv("CONFIG_PATH", "/config"),
                                             remote, os.getenv("CACHE_PATH", "/cache"),
                                             include_thumbnails=incl_thumbs, settings=s)
-                deleted = prune_backups(keep)
+                deleted = prune_backups(keep, keep_count)
                 ok = res["db"]["ok"] and res["config"]["ok"] and (res["cache"]["ok"] or res["cache"].get("skipped"))
                 flog("system", "INFO" if ok else "WARNING",
                      f"Geplantes Backup ({sched}): db={res['db']['ok']} thumbs={res['cache']['ok']} config={res['config']['ok']}, {deleted} alte entfernt")
