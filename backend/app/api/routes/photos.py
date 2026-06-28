@@ -564,8 +564,16 @@ async def get_photo(photo_id: int, db: AsyncSession = Depends(get_db),
     from app.models.face import Face
     from app.models.person import Person
 
-    # all scalar columns (except the heavy embedding vector)
-    data = {c.key: getattr(photo, c.key) for c in sa_inspect(photo).mapper.column_attrs}
+    # all scalar columns, EXCEPT pgvector embedding columns: those load as numpy
+    # ndarrays which FastAPI's jsonable_encoder can't serialize (it tries dict(obj)
+    # → 500 for the whole response). Skip every ndarray generically so a future
+    # vector column (e.g. embedding_text) can't reintroduce the bug.
+    data = {}
+    for c in sa_inspect(photo).mapper.column_attrs:
+        v = getattr(photo, c.key)
+        if type(v).__name__ == "ndarray":
+            continue
+        data[c.key] = v
     data.pop("embedding", None)
 
     tag_rows = await db.execute(
