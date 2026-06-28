@@ -86,7 +86,8 @@ async def suche_medien(query: str, limit: int = 12, ctx: Context = None):
 
         lines = [f"{len(items)} Treffer für „{query}“:"]
         for i, (it, d) in enumerate(zip(items, details), 1):
-            people = ", ".join(p["name"] for p in d.get("people", []) if p.get("name"))
+            # pro Person nur einmal (eine Collage hat mehrere Gesichter derselben Person)
+            people = ", ".join(dict.fromkeys(p["name"] for p in d.get("people", []) if p.get("name")))
             place = ", ".join(x for x in (d.get("city"), d.get("country")) if x)
             desc = (d.get("description") or d.get("ai_description") or "").strip().replace("\n", " ")
             date = (it.get("taken_at") or "")[:10]
