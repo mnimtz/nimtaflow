@@ -274,7 +274,7 @@ services:
   # (erbt ACL via durchgereichtem Bearer-Token). Connector-URL: http://<host>:8091/mcp
   mcp:
     build: ./mcp-server
-    image: photoflow-mcp:latest
+    image: nimtaflow-mcp:latest
     restart: unless-stopped
     depends_on:
       - backend
