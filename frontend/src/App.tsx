@@ -10,7 +10,6 @@ import SearchPage from './pages/SearchPage'
 import ChatPage from './pages/ChatPage'
 import AlbumsPage from './pages/AlbumsPage'
 import PeoplePage from './pages/PeoplePage'
-import PetsPage from './pages/PetsPage'
 import RelationshipsPage from './pages/RelationshipsPage'
 import MapPage from './pages/MapPage'
 import TripsPage from './pages/TripsPage'
@@ -60,7 +59,6 @@ export default function App() {
         <Route path="/albums" element={<AlbumsPage />} />
         <Route path="/highlights" element={<HighlightsPage />} />
         <Route path="/people" element={<PeoplePage />} />
-        <Route path="/pets" element={<PetsPage />} />
         <Route path="/relationships" element={<RelationshipsPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/trips" element={<TripsPage />} />

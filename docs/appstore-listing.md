@@ -23,37 +23,53 @@ DE: `Verbinde die App mit deinem eigenen NimtaFlow-Server: Fotos & Videos, Perso
 
 ## Beschreibung (DE) (≤4000)
 ```
-NimtaFlow ist die App zu deiner SELBST-GEHOSTETEN Foto- und Videoverwaltung.
+Deine Fotos. Dein Server. Deine Regeln.
 
-Du betreibst den NimtaFlow-Server auf deiner eigenen Hardware (Heimserver, NAS, Mini-PC)
-und verbindest diese App mit DEINER eigenen Server-Adresse. Es gibt keinen zentralen
-Dienst, kein Abo und kein Konto bei uns — deine Fotos, Videos und Daten bleiben auf
-deinem Server, unter deiner Kontrolle.
+NimtaFlow ist die App zu deiner SELBST-GEHOSTETEN Foto- und Videoverwaltung – eine
+private Alternative zur großen Foto-Cloud, ganz ohne Abo und ohne dass deine
+Erinnerungen bei einem fremden Konzern liegen. Du betreibst den NimtaFlow-Server auf
+deiner eigenen Hardware (Heimserver, NAS, Mini-PC) und verbindest diese App mit DEINER
+eigenen Server-Adresse. Kein zentraler Dienst, kein Konto bei uns – Fotos, Videos und
+Daten bleiben auf deinem Server, unter deiner Kontrolle.
 
-WICHTIG: NimtaFlow ist eine Client-App. Sie funktioniert nur zusammen mit einem laufenden
-NimtaFlow-Server. Beim ersten Start gibst du die Adresse deines Servers ein (z. B.
-https://fotos.meinedomain.de) und meldest dich an. Die App ist also bewusst nicht an eine
-feste, vorgegebene Server-URL gebunden.
+WICHTIG: NimtaFlow ist eine Client-App. Sie funktioniert nur zusammen mit einem
+laufenden NimtaFlow-Server. Beim ersten Start gibst du die Adresse deines Servers ein
+(z. B. https://fotos.meinedomain.de) und meldest dich an. Die App ist bewusst nicht an
+eine feste, vorgegebene Server-URL gebunden.
 
-FUNKTIONEN
-• Galerie für Fotos und Videos – schnell, mit Gruppierung nach Tag/Monat/Jahr
-• Personen – automatische Gesichtserkennung & Gruppierung
-• Alter im Foto – bei Personen mit hinterlegtem Geburtstag das Alter zum Aufnahmezeitpunkt
-• Karte – wo deine Aufnahmen entstanden sind
-• Alben & Reisen – inklusive Reiserouten
-• Erinnerungen – „Heute vor X Jahren" & Personen-Jahresrückblick
-• KI-Suche & „Frag das Foto" – Foto antippen und in natürlicher Sprache fragen (optional)
-• Highlights – automatische Rückblicks-Videos mit Musik & KI-Soundtrack (Beat-Sync, lizenzsaubere Musik)
-• „Foto animieren" – einzelne Bilder per KI zu kurzen Clips (optional)
-• MCP-Server – verbinde deinen NimtaFlow-Server mit Claude, ChatGPT & anderen KI-Assistenten (in der App unter Einstellungen → MCP ein-/ausschaltbar, Token erzeugen)
+HIGHLIGHTS
+• Intelligente Suche – finde Fotos in natürlicher Sprache: „Lea am Strand 2022",
+  „Sonnenuntergang", „Geburtstag mit Kuchen". Ganz ohne mühsames Durchscrollen.
+• Frag das Foto – tippe ein Bild an und stelle Fragen dazu in normaler Sprache
+  (lokal als Standard, Cloud-KI nur optional).
+• Rückblicke, die berühren – automatische Highlight-Videos mit Musik & KI-Soundtrack
+  (Beat-Sync zum Takt, lizenzsaubere Musik), „Heute vor X Jahren" und ein
+  Personen-Jahresrückblick, der einen Menschen durch ein ganzes Jahr begleitet.
+• Personen & Gesichter – automatische Gesichtserkennung gruppiert deine Liebsten;
+  bei hinterlegtem Geburtstag zeigt das Foto-Detail sogar das Alter zum Aufnahmezeitpunkt.
+
+ALLES FÜR DEINE MEDIATHEK
+• Schnelle Galerie für Fotos & Videos, gruppiert nach Tag/Monat/Jahr
+• Karte & Reisen – sieh, wo deine Aufnahmen entstanden, inklusive Reiserouten
+• Alben – manuell oder smart, einfach teilen
+• Teilen per Link – einzelne Fotos, Videos oder ganze Alben, mit Ablaufdatum
+• „Foto animieren" – verwandle einzelne Bilder per KI in kurze Clips (optional)
+• Foto- & Video-Upload in deinen eigenen Ordner – manuell oder automatisch (ab Datum,
+  im Hintergrund, nur per WLAN/beim Laden – du entscheidest)
+• Postkarten aus deinen Fotos gestalten und verschicken
+
+NEU: KI-ASSISTENTEN ANBINDEN
+Verbinde deinen NimtaFlow-Server als MCP-Server mit Claude, ChatGPT & anderen
+KI-Assistenten und durchsuche oder organisiere deine Mediathek im Gespräch – in der App
+unter Einstellungen → MCP ein-/ausschaltbar, inklusive sicherem Zugriffs-Token.
 
 DEINE DATEN, DEINE REGELN
 Standardmäßig verlässt nichts deinen Server. Optionale KI-Funktionen senden nur ein von
-dir ausgewähltes Bild an einen von dir konfigurierten KI-Anbieter — und nur, wenn du sie
+dir ausgewähltes Bild an einen von dir konfigurierten Anbieter – und nur, wenn du sie
 aktivierst. Kein Tracking, keine Werbung, kein Verkauf deiner Daten.
 
 OPEN SOURCE
-NimtaFlow ist quelloffen. Server & App findest du auf GitHub:
+NimtaFlow ist quelloffen. Server & App auf GitHub:
 https://github.com/mnimtz/nimtaflow
 
 Du brauchst zuerst den NimtaFlow-Server. Diese App ist die mobile Begleitung dazu.

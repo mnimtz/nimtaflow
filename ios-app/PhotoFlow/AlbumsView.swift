@@ -9,6 +9,7 @@ struct AlbumsView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var showCreate = false
+    @State private var petsBusy = false
 
     let cols = [GridItem(.adaptive(minimum: 150), spacing: 12)]
 
@@ -37,6 +38,14 @@ struct AlbumsView: View {
                 AlbumDetailView(album: a) { Task { await load() } }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { petsBusy = true; defer { petsBusy = false }
+                            try? await api.action("api/albums/enable-pets", method: "POST"); await load() }
+                    } label: {
+                        if petsBusy { ProgressView() } else { Image(systemName: "pawprint.fill") }
+                    }.disabled(petsBusy)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showCreate = true } label: { Image(systemName: "plus") }
                 }

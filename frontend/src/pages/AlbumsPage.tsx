@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2, Pencil } from 'lucide-react'
+import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2, Pencil, PawPrint } from 'lucide-react'
 import ShareDialog from '../components/ShareDialog'
 import { api, thumbUrl } from '../lib/api'
 import { format } from 'date-fns'
@@ -66,6 +66,11 @@ export default function AlbumsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['albums'] }),
   })
 
+  const petsMutation = useMutation({
+    mutationFn: () => api.post('/albums/enable-pets').then(r => r.data),
+    onSuccess: (a: any) => { qc.invalidateQueries({ queryKey: ['albums'] }); if (a) setSelectedAlbum(a) },
+  })
+
   if (selectedAlbum) {
     return <AlbumDetail album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />
   }
@@ -77,12 +82,22 @@ export default function AlbumsPage() {
           <h1 className="text-xl font-bold text-white">{t('albums.title')}</h1>
           <p className="text-sm text-zinc-400">{t('albums.count', { n: albums.length })}</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Plus size={16} /> {t('albums.new')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => petsMutation.mutate()}
+            disabled={petsMutation.isPending}
+            title={t('albums.petsHint')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-700 text-white text-sm font-medium hover:bg-zinc-600 transition-colors disabled:opacity-50"
+          >
+            <PawPrint size={16} /> {petsMutation.isPending ? t('albums.petsBusy') : t('albums.petsAlbum')}
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            <Plus size={16} /> {t('albums.new')}
+          </button>
+        </div>
       </div>
 
       {isLoading ? (

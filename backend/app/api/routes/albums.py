@@ -301,6 +301,15 @@ async def _populate_smart(album: Album, db: AsyncSession):
         q = q.where(Photo.latitude != None)
     if c.get("min_rating"):
         q = q.where(Photo.user_rating >= c["min_rating"])
+    if c.get("tags"):
+        # Tag-basiertes Smart-Album (z. B. „Haustiere" = Hund/Katze/…). Subquery, damit
+        # ein Foto mit mehreren passenden Tags nicht dupliziert wird.
+        from app.models.tag import Tag, PhotoTag
+        tnames = [str(t).lower() for t in c["tags"]]
+        tsub = (select(PhotoTag.photo_id)
+                .join(Tag, Tag.id == PhotoTag.tag_id)
+                .where(func.lower(Tag.name).in_(tnames)))
+        q = q.where(Photo.id.in_(tsub))
     if c.get("person_ids"):
         from app.models.face import Face
         pids = [int(p) for p in c["person_ids"]]
@@ -348,6 +357,30 @@ async def refresh_album(album_id: int, bg: BackgroundTasks, db: AsyncSession = D
         return {"ok": True, "type": "ai", "status": "queued"}
 
     raise HTTPException(400, "Only smart and AI albums can be refreshed")
+
+
+@router.post("/enable-pets")
+async def enable_pets_album(db: AsyncSession = Depends(get_db)):
+    """Ein-Klick: legt das Smart-Album „Haustiere" an (oder aktualisiert es) — sammelt
+    automatisch alle Fotos, die die KI als Tier (Hund/Katze/…) verschlagwortet hat.
+    Erbt damit die volle Album-UX (Sortierung, Titelbild, Detail, Teilen)."""
+    from app.api.routes.photos import _PET_TAGS
+    crit = {"tags": sorted(_PET_TAGS)}
+    album = await db.scalar(
+        select(Album).where(Album.name == "Haustiere", Album.album_type == AlbumType.smart)
+    )
+    if not album:
+        album = Album(name="Haustiere", description="Automatisch: alle Fotos mit Tieren",
+                      album_type=AlbumType.smart, smart_criteria=crit)
+        db.add(album)
+        await db.flush()
+    else:
+        album.smart_criteria = crit
+    await _populate_smart(album, db)
+    await db.commit()
+    await db.refresh(album)
+    count = await db.scalar(select(func.count()).select_from(AlbumPhoto).where(AlbumPhoto.album_id == album.id))
+    return _album_out(album, int(count or 0))
 
 
 # ── AI album background population ────────────────────────────────────────────
