@@ -1,10 +1,14 @@
-from typing import Dict, Any, List
+from datetime import timedelta
+from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.auth_guard import current_user_optional
+from app.core.security import create_access_token
 from app.models.settings import Setting
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -68,4 +72,48 @@ async def get_defaults():
         "face.clustering_threshold": "0.6",
         "face.min_confidence": "0.7",
         "face.min_size_px": "40",
+        # ── MCP-Server (NimtaFlow als MCP für Claude & Co.) ──────────────────────
+        "mcp.enabled": "false",
+        "mcp.mode": "read",            # read | read_write
+        "mcp.share_ttl_hours": "24",   # Lebensdauer der vom MCP erzeugten Share-Links
     }
+
+
+# ── MCP-Server ──────────────────────────────────────────────────────────────────
+
+async def _resolve_user(user: Optional[User], db: AsyncSession) -> Optional[User]:
+    """In offenem Single-User-Modus (kein Login erzwungen) ist `user` None → dann den
+    ersten Admin nehmen, damit der MCP-Token ein echtes Konto referenziert."""
+    if user:
+        return user
+    return await db.scalar(
+        select(User).where(User.is_active == True)  # noqa: E712
+        .order_by((User.role == UserRole.admin).desc(), User.id).limit(1)
+    )
+
+
+@router.get("/mcp-status")
+async def mcp_status(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    """Vom MCP-Server bei jedem Tool-Aufruf gelesen → respektiert den An/Aus-Schalter."""
+    rows = (await db.execute(select(Setting).where(
+        Setting.key.in_(["mcp.enabled", "mcp.mode", "mcp.share_ttl_hours"])
+    ))).scalars().all()
+    cur = {s.key: s.value for s in rows}
+    return {
+        "enabled": str(cur.get("mcp.enabled", "false")).lower() == "true",
+        "mode": (cur.get("mcp.mode") or "read").lower(),
+        "share_ttl_hours": int(cur.get("mcp.share_ttl_hours") or 24),
+    }
+
+
+@router.post("/mcp-token")
+async def mint_mcp_token(db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)) -> Dict[str, Any]:
+    """Erzeugt ein langlebiges JWT (10 Jahre) für den MCP-Client. Der MCP-Server reicht
+    es als Bearer an die normale /api durch → ACL/Sichtbarkeit gelten unverändert.
+    Wird einmalig im Klartext zurückgegeben (nicht gespeichert)."""
+    u = await _resolve_user(user, db)
+    if not u:
+        raise HTTPException(400, "Kein Benutzerkonto vorhanden.")
+    token = create_access_token(subject=str(u.id), expires_delta=timedelta(days=3650))
+    return {"token": token, "user": u.email, "expires_days": 3650}

@@ -270,6 +270,20 @@ services:
     environment:
       VITE_API_URL: /api
 
+  # MCP-Server: NimtaFlow als MCP für Claude & Co. Dünner Client auf das Backend
+  # (erbt ACL via durchgereichtem Bearer-Token). Connector-URL: http://<host>:8091/mcp
+  mcp:
+    build: ./mcp-server
+    image: photoflow-mcp:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NIMTAFLOW_API_URL: http://backend:8000
+      TZ: ${TZ:-Europe/Berlin}
+    ports:
+      - "${MCP_PORT:-8091}:8000"
+
 volumes:
   photoflow-db:
   photoflow-config:

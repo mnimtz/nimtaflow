@@ -5,7 +5,7 @@ import {
   Cpu, Layers, Cog, Map, HardDrive, Video, Terminal,
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
-  MessageCircle, Image as ImageIcon, Plane, Share2, Copy, Sparkles, Music,
+  MessageCircle, Image as ImageIcon, Plane, Share2, Copy, Sparkles, Music, Plug,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -42,6 +42,7 @@ const SECTIONS = [
   { id: 'music',     icon: Music,     navKey: 'nav.music' },
   { id: 'trips',     icon: Plane,     navKey: 'nav.trips' },
   { id: 'sharing',   icon: Share2,    navKey: 'nav.sharing' },
+  { id: 'mcp',       icon: Plug,      navKey: 'nav.mcp' },
   { id: 'pipeline',  icon: Cog,       navKey: 'nav.pipeline' },
   { id: 'remote',    icon: Network,   navKey: 'nav.remote' },
   { id: 'backup',    icon: HardDrive, navKey: 'nav.backup' },
@@ -1137,6 +1138,110 @@ function ChatSettingsSection() {
         </label>
 
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+      </div>
+    </div>
+  )
+}
+
+function McpSection() {
+  const { t } = useT()
+  const [settings, setSettings] = useState<Settings>({})
+  const [saved, setSaved] = useState(false)
+  const [token, setToken] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const qc = useQueryClient()
+  const settingsQuery = useQuery({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data as Settings),
+    staleTime: 30_000, refetchOnWindowFocus: false,
+  })
+  useEffect(() => { if (settingsQuery.data) setSettings(settingsQuery.data) }, [settingsQuery.data])
+  const save = useMutation({
+    mutationFn: (s: Settings) => api.put('/settings', s),
+    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2200); qc.invalidateQueries({ queryKey: ['settings'] }) },
+  })
+  const mint = useMutation({
+    mutationFn: () => api.post('/settings/mcp-token').then(r => r.data),
+    onSuccess: (d: any) => setToken(d.token),
+  })
+  const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
+  const enabled = (settings['mcp.enabled'] ?? 'false') === 'true'
+  const mode = (settings['mcp.mode'] || 'read')
+  const mcpUrl = `${location.protocol}//${location.hostname}:8091/mcp`
+  const copyTok = () => { if (token) { navigator.clipboard.writeText(token); setCopied(true); setTimeout(() => setCopied(false), 1500) } }
+
+  return (
+    <div>
+      <SectionHeader title={t('settings.mcpTitle')} desc={t('settings.mcpDesc')} />
+      <div className="space-y-6 max-w-xl">
+
+        {/* An/Aus */}
+        <label className="flex items-center justify-between cursor-pointer select-none">
+          <div>
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.mcpEnable')}</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{t('settings.mcpEnableHint')}</p>
+          </div>
+          <Toggle value={enabled} onChange={v => set('mcp.enabled', v ? 'true' : 'false')} />
+        </label>
+
+        {/* Modus lesend / lesend+schreibend */}
+        <div>
+          <Label>{t('settings.mcpMode')}</Label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {([
+              { id: 'read', label: t('settings.mcpModeRead'), sub: t('settings.mcpModeReadSub') },
+              { id: 'read_write', label: t('settings.mcpModeWrite'), sub: t('settings.mcpModeWriteSub') },
+            ] as const).map(o => (
+              <button key={o.id} onClick={() => set('mcp.mode', o.id)}
+                className={`text-left p-3 rounded-xl border transition ${
+                  mode === o.id
+                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40'
+                    : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{o.label}</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Share-Link-Lebensdauer */}
+        <div>
+          <Label>{t('settings.mcpTtl')}</Label>
+          <Input value={settings['mcp.share_ttl_hours'] ?? '24'}
+                 onChange={v => set('mcp.share_ttl_hours', v.replace(/[^0-9]/g, ''))} />
+          <p className="text-[11px] text-zinc-400 mt-1">{t('settings.mcpTtlHint')}</p>
+        </div>
+
+        <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
+
+        {/* Token */}
+        <div className="border-t border-zinc-200 dark:border-zinc-800 pt-5">
+          <Label>{t('settings.mcpToken')}</Label>
+          <p className="text-[11px] text-zinc-400 mb-2">{t('settings.mcpTokenHint')}</p>
+          <button onClick={() => mint.mutate()} disabled={mint.isPending}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50">
+            {mint.isPending ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+            {t('settings.mcpGenerate')}
+          </button>
+          {token && (
+            <div className="mt-3">
+              <textarea readOnly value={token} rows={3}
+                className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 break-all" />
+              <div className="flex items-center gap-2 mt-1.5">
+                <button onClick={copyTok} className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-400">
+                  {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? t('common.copied') : t('common.copy')}
+                </button>
+                <span className="text-[11px] text-amber-500">{t('settings.mcpTokenWarn')}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Connector-URL */}
+        <div>
+          <Label>{t('settings.mcpUrl')}</Label>
+          <code className="block px-3 py-2 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 break-all">{mcpUrl}</code>
+          <p className="text-[11px] text-zinc-400 mt-1">{t('settings.mcpUrlHint')}</p>
+        </div>
       </div>
     </div>
   )
@@ -3007,6 +3112,7 @@ export default function SettingsPage() {
         {section === 'music'    && <MusicSettings />}
         {section === 'trips'    && <TripsSection />}
         {section === 'sharing'  && <SharingSection />}
+        {section === 'mcp'      && <McpSection />}
         {section === 'pipeline' && <PipelineSection />}
         {section === 'remote'   && <RemoteWorkerSection />}
         {section === 'backup'   && <BackupSection />}
