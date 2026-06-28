@@ -657,6 +657,16 @@ struct PhotoInfoView: View {
     @State private var pcBusy = false
     @State private var pcTheme = "classic"
     @State private var pcColor = ""   // "" = Standard, sonst #rrggbb
+    @State private var allPeople: [PersonV1] = []
+
+    private func reassignFace(_ faceId: Int, to personId: Int) async {
+        try? await api.assignFace(faceId, to: personId)
+        detail = try? await api.photoDetail(photo.id)
+    }
+    private func removeFace(_ faceId: Int) async {
+        try? await api.unassignFace(faceId)
+        detail = try? await api.photoDetail(photo.id)
+    }
 
     private func makePostcard() async {
         pcBusy = true; defer { pcBusy = false }
@@ -718,7 +728,25 @@ struct PhotoInfoView: View {
                 }
                 if let people = detail?.people, !people.isEmpty {
                     Section("Personen") {
-                        Text(people.map { $0.name }.joined(separator: ", "))
+                        ForEach(people) { pp in
+                            HStack {
+                                Image(systemName: "person.crop.circle").foregroundStyle(.indigo)
+                                Text(pp.name)
+                                Spacer()
+                                if let fid = pp.face_id {
+                                    Menu {
+                                        Menu("Ändern zu …") {
+                                            ForEach(allPeople.filter { !$0.name.isEmpty && $0.id != pp.person_id }) { cand in
+                                                Button(cand.name) { Task { await reassignFace(fid, to: cand.id) } }
+                                            }
+                                        }
+                                        Button(role: .destructive) { Task { await removeFace(fid) } } label: {
+                                            Label("Entfernen", systemImage: "person.badge.minus")
+                                        }
+                                    } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                                }
+                            }
+                        }
                     }
                 }
                 if let tags = detail?.tags, !tags.isEmpty {
@@ -784,7 +812,10 @@ struct PhotoInfoView: View {
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { dismiss() } } }
-            .task { detail = try? await api.photoDetail(photo.id) }
+            .task {
+                detail = try? await api.photoDetail(photo.id)
+                if allPeople.isEmpty { allPeople = (try? await api.people()) ?? [] }
+            }
         }
     }
 

@@ -227,7 +227,8 @@ struct LibraryStats: Codable {
 struct PhotoPersonV1: Codable, Identifiable, Hashable {
     let person_id: Int
     let name: String
-    var id: Int { person_id }
+    var face_id: Int? = nil
+    var id: Int { face_id ?? person_id }
 }
 
 struct PhotoDetailV1: Codable {

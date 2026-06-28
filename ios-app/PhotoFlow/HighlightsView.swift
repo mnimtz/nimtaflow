@@ -211,6 +211,7 @@ private struct CreateHighlightSheet: View {
     @State private var albumId: Int?
     @State private var season = "christmas"
     @State private var music = true
+    @State private var musicPrompt = ""
     @State private var submitting = false
     @State private var error: String?
 
@@ -294,6 +295,10 @@ private struct CreateHighlightSheet: View {
                             Slider(value: $duration, in: 15...180, step: 5)
                         }
                         Toggle("🎵 Musik", isOn: $music)
+                        if music {
+                            TextField("Musik-Prompt für dieses Video (optional)", text: $musicPrompt, axis: .vertical)
+                                .lineLimit(1...3)
+                        }
                         TextField("Titel (optional)", text: $title)
                     }
 
@@ -360,7 +365,8 @@ private struct CreateHighlightSheet: View {
                 year: needs("year") ? Int(year) : nil,
                 albumId: needs("album") ? albumId : nil,
                 season: needs("season") ? season : nil,
-                music: music
+                music: music,
+                musicPrompt: music ? musicPrompt : nil
             )
             await onCreated()
             dismiss()
