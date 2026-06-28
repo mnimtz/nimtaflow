@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NimtaFlow — Deine eigene Foto-Cloud. Selbst gehostet.</title>
+<meta name="description" content="NimtaFlow: selbst-gehostete Foto- & Videoverwaltung mit KI-Suche, Personen, Karte, Erinnerungen, Highlights und nativer iOS-App. Deine Daten bleiben auf deinem Server." />
+<link rel="icon" href="icon.png" />
+<link rel="apple-touch-icon" href="icon.png" />
+<meta name="theme-color" content="#0a0a0d" />
+<meta property="og:title" content="NimtaFlow — Deine eigene Foto-Cloud" />
+<meta property="og:description" content="Selbst-gehostete Foto-/Videoverwaltung mit KI, Personen, Karte, Highlights & iOS-App. Deine Daten, deine Regeln." />
+<meta property="og:image" content="icon.png" />
+<meta property="og:type" content="website" />
+<style>
+  :root{
+    --bg:#0a0a0d; --bg2:#101017; --card:#15151d; --card2:#191922;
+    --line:rgba(232,181,74,.16); --line2:rgba(255,255,255,.07);
+    --gold:#e8b54a; --gold2:#f6d488; --goldd:#b6863a;
+    --txt:#f4f1ea; --mut:#b3aea4; --mut2:#7d786f;
+    --grad:linear-gradient(100deg,var(--goldd),var(--gold),var(--gold2));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:radial-gradient(900px 480px at 80% -8%,rgba(232,181,74,.10),transparent 60%),
+      radial-gradient(700px 420px at 8% 4%,rgba(232,181,74,.06),transparent 55%),var(--bg);
+    color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 1.3rem}
+  .gold{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* Nav */
+  .nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rgba(10,10,13,.74);border-bottom:1px solid var(--line2)}
+  .nav .row{display:flex;align-items:center;gap:.55rem;height:64px}
+  .nav .logo{height:54px}
+  .nav .links{margin-left:auto;display:flex;gap:.2rem;align-items:center;flex-wrap:wrap}
+  .tab{padding:.5rem .85rem;border-radius:10px;font-weight:600;font-size:.92rem;color:#d8d3c8;cursor:pointer;border:1px solid transparent;background:transparent}
+  .tab:hover{color:#fff;background:rgba(255,255,255,.05)}
+  .tab.active{color:#1a1407;background:var(--grad)}
+  .gh{padding:.5rem .85rem;border:1px solid var(--line);border-radius:10px;font-weight:700;font-size:.88rem;color:var(--gold2);background:transparent}
+  .gh:hover{border-color:var(--gold)}
+  .lang{display:flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;margin-left:.3rem}
+  .lang button{background:transparent;border:none;color:var(--mut);font-weight:700;font-size:.78rem;padding:.4rem .55rem;cursor:pointer}
+  .lang button.on{background:var(--grad);color:#1a1407}
+
+  .panel{display:none;animation:fade .4s ease}
+  .panel.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* Hero */
+  .hero{text-align:center;padding:4rem 0 3rem}
+  .hero .biglogo{width:min(440px,84vw);filter:drop-shadow(0 10px 40px rgba(232,181,74,.18))}
+  .hero h1{font-size:clamp(1.5rem,4.4vw,2.4rem);font-weight:800;margin:1.1rem 0 .3rem;letter-spacing:-.5px}
+  .hero p.sub{color:var(--mut);max-width:660px;margin:.3rem auto 0;font-size:clamp(1rem,2.4vw,1.12rem)}
+  .cta{display:flex;gap:.65rem;justify-content:center;flex-wrap:wrap;margin-top:1.9rem}
+  .btn{padding:.85rem 1.5rem;border-radius:12px;font-weight:700;font-size:1rem;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--txt);transition:.15s;display:inline-block}
+  .btn-gold{background:var(--grad);color:#1a1407}
+  .btn-gold:hover{filter:brightness(1.06)}
+  .btn-ghost{border-color:var(--line);background:rgba(255,255,255,.03);color:var(--txt)}
+  .btn-ghost:hover{border-color:var(--gold);color:var(--gold2)}
+  .hint{color:var(--mut2);font-size:.82rem;margin-top:.95rem}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-top:2.6rem}
+  .pill{background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:.9rem;text-align:center}
+  .pill .n{font-size:1.5rem}
+  .pill .l{font-size:.82rem;color:var(--mut);margin-top:.2rem}
+
+  section.block{padding:2.4rem 0;border-top:1px solid var(--line2)}
+  .eyebrow{display:inline-block;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:1px solid var(--line);border-radius:999px;padding:.28rem .8rem;margin-bottom:.9rem}
+  h2{font-size:clamp(1.4rem,3.4vw,1.9rem);font-weight:800;letter-spacing:-.4px;margin-bottom:.5rem}
+  .lead{color:var(--mut);max-width:700px;margin-bottom:1.6rem}
+
+  .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:1rem}
+  .fc{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line2);border-radius:18px;padding:1.4rem;transition:.18s}
+  .fc:hover{border-color:var(--line);transform:translateY(-3px);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+  .fc .ic{width:42px;height:42px;display:grid;place-items:center;border-radius:11px;font-size:1.3rem;background:rgba(232,181,74,.12);border:1px solid var(--line);margin-bottom:.7rem}
+  .fc h3{font-size:1.12rem;margin-bottom:.35rem}
+  .fc p{color:var(--mut);font-size:.95rem}
+  .fc ul{list-style:none;margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.4rem}
+  .fc ul li{font-size:.78rem;color:var(--gold2);background:rgba(232,181,74,.08);border:1px solid var(--line);border-radius:7px;padding:.15rem .5rem}
+
+  .two{display:grid;grid-template-columns:1.1fr .9fr;gap:1.4rem}
+  @media(max-width:760px){.two{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;padding:1.6rem}
+  ol.steps{list-style:none;counter-reset:s}
+  ol.steps li{counter-increment:s;position:relative;padding:.55rem 0 .55rem 2.4rem;color:var(--mut);border-bottom:1px solid var(--line2)}
+  ol.steps li:last-child{border-bottom:none}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:.5rem;width:1.7rem;height:1.7rem;display:grid;place-items:center;border-radius:8px;background:var(--grad);color:#1a1407;font-weight:800;font-size:.85rem}
+  ol.steps b{color:var(--txt)}
+  pre{background:#0c0c11;border:1px solid var(--line2);border-radius:12px;padding:.9rem 1rem;overflow:auto;margin-top:.7rem}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;color:var(--gold2)}
+  ul.checks{list-style:none;margin-top:.5rem}
+  ul.checks li{padding:.28rem 0 .28rem 1.6rem;position:relative;color:var(--mut)}
+  ul.checks li::before{content:"✓";position:absolute;left:0;color:var(--gold);font-weight:800}
+
+  /* Preview / screenshots */
+  .shots{display:flex;flex-direction:column;gap:2.2rem;margin-top:.4rem}
+  .shot{display:grid;grid-template-columns:1fr 1.55fr;gap:1.4rem;align-items:center}
+  .shot:nth-child(even){grid-template-columns:1.55fr 1fr}
+  .shot:nth-child(even) .shot-txt{order:2}
+  @media(max-width:780px){.shot,.shot:nth-child(even){grid-template-columns:1fr}.shot:nth-child(even) .shot-txt{order:0}}
+  .shot-txt h3{font-size:1.2rem;margin-bottom:.4rem}
+  .shot-txt p{color:var(--mut);font-size:.96rem}
+  .browser{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#15151d;
+    box-shadow:0 22px 60px rgba(0,0,0,.5);transition:.2s}
+  .browser:hover{transform:translateY(-4px);box-shadow:0 28px 70px rgba(0,0,0,.6);border-color:var(--gold)}
+  .browser .bar{display:flex;align-items:center;gap:.4rem;padding:.55rem .75rem;background:#0e0e14;border-bottom:1px solid var(--line2)}
+  .browser .dot{width:10px;height:10px;border-radius:50%;background:#3a3a45}
+  .browser .dot.r{background:#e0696b}.browser .dot.y{background:#e6b04a}.browser .dot.g{background:#5cbf76}
+  .browser .addr{margin-left:.6rem;flex:1;background:#15151d;border:1px solid var(--line2);border-radius:7px;
+    font-size:.74rem;color:var(--mut2);padding:.22rem .6rem;font-family:ui-monospace,Menlo,monospace}
+  .browser img{display:block;width:100%}
+
+  /* Support / donation */
+  .support{text-align:center;max-width:640px;margin:0 auto}
+  .coffee{font-size:3rem}
+  .donate{display:inline-flex;align-items:center;gap:.6rem;background:var(--grad);color:#1a1407;font-weight:800;padding:.95rem 1.7rem;border-radius:14px;margin-top:1.3rem;font-size:1.05rem}
+  .donate:hover{filter:brightness(1.06)}
+
+  /* Privacy prose */
+  .prose h3{margin:1.3rem 0 .35rem;font-size:1.1rem}
+  .prose p,.prose li{color:var(--mut)}
+  .prose ul{margin:.3rem 0 .3rem 1.2rem}
+
+  footer{padding:2.6rem 0 3.2rem;border-top:1px solid var(--line2);text-align:center;color:var(--mut)}
+  footer .flogo{height:30px;opacity:.95;margin-bottom:.5rem}
+  footer .fl{display:flex;gap:1.1rem;justify-content:center;flex-wrap:wrap;margin:.3rem 0 .8rem;font-size:.9rem}
+  footer .fl a{cursor:pointer}
+  footer .fl a:hover{color:var(--gold2)}
+  footer .cp{font-size:.8rem;color:var(--mut2)}
+
+  /* ── Mobile (≤640px) ───────────────────────────────── */
+  @media(max-width:640px){
+    .wrap{padding:0 1rem}
+    /* Nav: Logo oben, Tabs als zentrierte, scrollbare Zeile darunter */
+    .nav .row{height:auto;flex-direction:column;gap:.5rem;padding:.55rem 0}
+    .nav .logo{height:34px}
+    .nav .links{margin-left:0;width:100%;justify-content:center;gap:.3rem;flex-wrap:wrap}
+    .tab{padding:.42rem .6rem;font-size:.82rem}
+    .gh{padding:.42rem .6rem;font-size:.78rem}
+    .lang{margin-left:0}
+    /* Hero kompakter */
+    .hero{padding:2.4rem 0 1.8rem}
+    .hero .biglogo{width:min(300px,72vw)}
+    .cta{gap:.5rem;margin-top:1.4rem}
+    .btn{padding:.75rem 1.2rem;font-size:.95rem}
+    .strip{grid-template-columns:repeat(2,1fr);gap:.6rem;margin-top:1.8rem}
+    section.block{padding:1.8rem 0}
+    /* Screenshots: Bildunterschrift über das Bild, volle Breite, dezenterer Schatten */
+    .shot{gap:.8rem}
+    .browser{box-shadow:0 12px 32px rgba(0,0,0,.45)}
+    .browser .addr{font-size:.66rem}
+    .two{gap:1rem}
+    .card{padding:1.2rem}
+    pre{font-size:.78rem}
+  }
+  /* Sehr schmale Geräte (≤380px): Tabs noch etwas kleiner */
+  @media(max-width:380px){
+    .tab{padding:.38rem .5rem;font-size:.78rem}
+    .strip{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="nav"><div class="wrap row">
+  <img class="logo" src="logo.png" alt="NimtaFlow" />
+  <div class="links">
+    <button class="tab active" data-t="start" data-i18n="nav_start">Start</button>
+    <button class="tab" data-t="features" data-i18n="nav_features">Funktionen</button>
+    <button class="tab" data-t="preview" data-i18n="nav_preview">Vorschau</button>
+    <button class="tab" data-t="download" data-i18n="nav_download">Download</button>
+    <button class="tab" data-t="support" data-i18n="nav_support">Unterstützen</button>
+    <a class="gh" href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">GitHub ★</a>
+    <div class="lang">
+      <button data-lang="de">DE</button><button data-lang="en">EN</button>
+    </div>
+  </div>
+</div></div>
+
+<div class="wrap">
+
+  <!-- START -->
+  <div class="panel active" id="start">
+    <div class="hero">
+      <img class="biglogo" src="logo.png" alt="NimtaFlow" />
+      <h1 data-i18n="hero_h1">Deine eigene Foto-Cloud. <span class="gold" data-i18n="hero_h1b">Selbst gehostet.</span></h1>
+      <p class="sub" data-i18n="hero_sub">Verwalte deine Fotos &amp; Videos auf deiner eigenen Hardware — mit KI-Suche, Gesichtserkennung, Karte und Erinnerungen. Kein Abo, kein fremder Cloud-Anbieter, keine Auswertung deiner Daten. Web-Oberfläche und native iOS-App.</p>
+      <div class="cta">
+        <button class="btn btn-gold" data-t="download" data-i18n="cta_start">Loslegen</button>
+        <button class="btn btn-ghost" data-t="features" data-i18n="cta_features">Funktionen ansehen</button>
+        <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener" data-i18n="cta_login">Zum Login</a>
+      </div>
+      <p class="hint" data-i18n="hero_hint">Open Source · iOS-App in Vorbereitung für den App Store</p>
+      <div class="strip">
+        <div class="pill"><div class="n">🔒</div><div class="l" data-i18n="pill_host">100 % selbst gehostet</div></div>
+        <div class="pill"><div class="n">🤖</div><div class="l" data-i18n="pill_ai">KI-Suche &amp; Chat</div></div>
+        <div class="pill"><div class="n">📱</div><div class="l" data-i18n="pill_ios">Native iOS-App</div></div>
+        <div class="pill"><div class="n">🌍</div><div class="l">DE / EN</div></div>
+        <div class="pill"><div class="n">⭐</div><div class="l">Open Source</div></div>
+      </div>
+    </div>
+    <section class="block">
+      <span class="eyebrow" data-i18n="why_eyebrow">Warum NimtaFlow</span>
+      <h2 data-i18n="why_h2">Deine Erinnerungen gehören dir</h2>
+      <p class="lead" data-i18n="why_lead">Große Foto-Dienste leben von deinen Daten. NimtaFlow dreht das um: alles läuft auf deinem Server, Originale bleiben unangetastet, und moderne Features bekommst du trotzdem.</p>
+      <div class="feats">
+        <div class="fc"><div class="ic">🏠</div><h3 data-i18n="why1h">Auf deiner Hardware</h3><p data-i18n="why1p">Läuft per Docker auf Heimserver, NAS oder Mini-PC. Deine Fotos verlassen dein Netzwerk nicht.</p></div>
+        <div class="fc"><div class="ic">🛡️</div><h3 data-i18n="why2h">Privat by Design</h3><p data-i18n="why2p">Kein Tracking, keine Werbung, kein Datenverkauf. Optionale KI nur per Opt-in und nur für das gewählte Bild.</p></div>
+        <div class="fc"><div class="ic">⚡</div><h3 data-i18n="why3h">Schnell &amp; modern</h3><p data-i18n="why3p">Schnelle Galerie, Caching, flüssiges Blättern, Web + App aus einer Quelle.</p></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- FEATURES -->
+  <div class="panel" id="features">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow" data-i18n="nav_features">Funktionen</span>
+      <h2 data-i18n="feat_h2">Alles für deine Mediathek</h2>
+      <p class="lead" data-i18n="feat_lead">Von der automatischen Indexierung bis zur KI — übersichtlich, schnell, auf deinem Server.</p>
+      <div class="feats">
+        <div class="fc"><div class="ic">📚</div><h3 data-i18n="f1h">Bibliothek &amp; Quellen</h3><p data-i18n="f1p">Beliebig viele beobachtete Ordner mit automatischem Re-Scan. Originale werden nur gelesen, nie verändert.</p></div>
+        <div class="fc"><div class="ic">🔎</div><h3 data-i18n="f2h">KI-Suche &amp; Foto-Chat</h3><p data-i18n="f2p">Finde Fotos in natürlicher Sprache. Frag deine Mediathek im Chat — optional, lokal oder per KI-Anbieter.</p></div>
+        <div class="fc"><div class="ic">🙂</div><h3 data-i18n="f3h">Personen &amp; Beziehungen</h3><p data-i18n="f3p">Automatische Gesichtserkennung &amp; Gruppierung mit Bestätigungs-Vorschlägen und Familien-Graph.</p></div>
+        <div class="fc"><div class="ic">🗺️</div><h3 data-i18n="f4h">Karte &amp; Reisen</h3><p data-i18n="f4p">Sieh auf der Karte, wo deine Aufnahmen entstanden sind — inklusive Reisen &amp; Routen.</p></div>
+        <div class="fc"><div class="ic">✨</div><h3 data-i18n="f5h">Erinnerungen &amp; Highlights</h3><p data-i18n="f5p">„Heute vor X Jahren", automatische Rückblick-Videos und „Foto animieren" — KI-Clips aus Bildern.</p></div>
+        <div class="fc"><div class="ic">📱</div><h3 data-i18n="f6h">iOS-App &amp; Upload</h3><p data-i18n="f6p">Native App mit Galerie, Suche, Karte, Chat — plus Upload (manuell &amp; automatisch) in deinen eigenen Ordner.</p></div>
+        <div class="fc"><div class="ic">👥</div><h3 data-i18n="f7h">Mehrbenutzer &amp; Rechte</h3><p data-i18n="f7p">Mehrere Konten mit feiner Zugriffssteuerung: Ordner, Personen, Datumsbereiche, Funktions-Schalter.</p></div>
+        <div class="fc"><div class="ic">🌐</div><h3 data-i18n="f8h">Zweisprachig</h3><p data-i18n="f8p">Komplette Oberfläche in Deutsch &amp; Englisch — automatische Erkennung plus manueller Umschalter.</p></div>
+        <div class="fc"><div class="ic">⭐</div><h3 data-i18n="f9h">Open Source</h3><p data-i18n="f9p">Server &amp; App sind quelloffen. Transparent, anpassbar, selbst betreibbar — keine Blackbox.</p></div>
+        <div class="fc"><div class="ic">🔌</div><h3 data-i18n="f10h">MCP-Server &amp; KI-Assistenten</h3><p data-i18n="f10p">Verbinde Claude, ChatGPT &amp; Co. und durchsuche deine Mediathek in natürlicher Sprache — token-basiert, mit deinen Rechten.</p></div>
+      </div>
+      <div class="cta" style="margin-top:1.8rem">
+        <a class="btn btn-gold" href="features.html" data-i18n="feat_all">Alle Funktionen im Detail →</a>
+      </div>
+    </section>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="panel" id="preview">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow" data-i18n="nav_preview">Vorschau</span>
+      <h2 data-i18n="prev_h2">Ein Blick in die App</h2>
+      <p class="lead" data-i18n="prev_lead">Echte Screenshots aus NimtaFlow — hier mit lizenzfreien Beispielbildern. Dunkles Design, das sich der Tageszeit anpasst, zweisprachig, Web &amp; iOS aus einer Quelle.</p>
+      <div class="shots">
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev1h">Galerie</h3>
+            <p data-i18n="prev1p">Schnelle, flüssige Galerie mit großen Vorschaubildern. Filtern, Favoriten, Auswahl — alles direkt auf deinem Server.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/gallery</span></div>
+            <img src="shots/gallery.jpg" alt="NimtaFlow Galerie" loading="lazy" />
+          </div>
+        </div>
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev2h">Karte &amp; Weltkugel</h3>
+            <p data-i18n="prev2p">Sieh auf der interaktiven Weltkugel, wo deine Aufnahmen entstanden sind — gruppiert nach Orten, mit Reisen &amp; Routen.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/map</span></div>
+            <img src="shots/globe.jpg" alt="NimtaFlow Weltkugel" loading="lazy" />
+          </div>
+        </div>
+        <div class="shot">
+          <div class="shot-txt">
+            <h3 data-i18n="prev3h">Startseite &amp; Erinnerungen</h3>
+            <p data-i18n="prev3p">Eine persönliche Startseite mit Begrüßung, Statistiken, Highlights und „Heute vor X Jahren" — jedes Mal frisch zusammengestellt.</p>
+          </div>
+          <div class="browser">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="addr">login.nimtaflow.com/start</span></div>
+            <img src="shots/dashboard.jpg" alt="NimtaFlow Startseite" loading="lazy" />
+          </div>
+        </div>
+      </div>
+      <div class="cta" style="margin-top:2.2rem">
+        <button class="btn btn-gold" data-t="download" data-i18n="cta_start">Loslegen</button>
+        <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener" data-i18n="cta_login">Zum Login</a>
+      </div>
+    </section>
+  </div>
+
+  <!-- DOWNLOAD -->
+  <div class="panel" id="download">
+    <section class="block" style="border-top:none">
+      <span class="eyebrow" data-i18n="dl_eyebrow">Download &amp; Installation</span>
+      <h2 data-i18n="dl_h2">In wenigen Minuten startklar</h2>
+      <p class="lead" data-i18n="dl_lead">NimtaFlow läuft per Docker auf deiner eigenen Hardware. Hol dir den Code von GitHub und starte deine Instanz.</p>
+      <div class="two">
+        <div class="card">
+          <h3 style="margin-bottom:.3rem" data-i18n="dl_quick">Schnellstart (Docker)</h3>
+          <ol class="steps">
+            <li data-i18n="dl_s1"><b>Repository holen</b> — klone das Projekt von GitHub.</li>
+            <li data-i18n="dl_s2"><b>.env anlegen</b> — kopiere <code>.env.example</code>, setze Passwort &amp; Foto-Pfad.</li>
+            <li data-i18n="dl_s3"><b>Starten</b> — <code>docker compose up -d</code> baut &amp; startet alles.</li>
+            <li data-i18n="dl_s4"><b>Quellen hinzufügen</b> — Foto-Ordner eintragen; Indexierung läuft automatisch.</li>
+            <li data-i18n="dl_s5"><b>iOS-App</b> verbinden — Server-URL eintragen, anmelden, fertig.</li>
+          </ol>
+          <pre><code>git clone https://github.com/mnimtz/nimtaflow.git
+cd nimtaflow
+cp .env.example .env
+docker compose up -d</code></pre>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:.3rem" data-i18n="dl_req">Voraussetzungen</h3>
+          <ul class="checks">
+            <li data-i18n="dl_r1">Docker &amp; Docker Compose</li>
+            <li data-i18n="dl_r2">Ein Verzeichnis mit deinen Fotos/Videos</li>
+            <li data-i18n="dl_r3">Optional: GPU für schnellere lokale KI</li>
+            <li data-i18n="dl_r4">Optional: KI-Schlüssel (Gemini/OpenAI) für Cloud-KI</li>
+          </ul>
+          <div class="cta" style="justify-content:flex-start;margin-top:1.4rem">
+            <a class="btn btn-gold" href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener" data-i18n="dl_gh">Auf GitHub →</a>
+            <a class="btn btn-ghost" href="https://login.nimtaflow.com" target="_blank" rel="noopener" data-i18n="cta_login">Zum Login</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- SUPPORT / DONATION -->
+  <div class="panel" id="support">
+    <section class="block" style="border-top:none">
+      <div class="support">
+        <div class="coffee">☕</div>
+        <span class="eyebrow" data-i18n="sup_eyebrow" style="margin-top:1rem">Unterstützen</span>
+        <h2 data-i18n="sup_h2">Spendier uns einen Kaffee</h2>
+        <p class="lead" data-i18n="sup_lead" style="margin:0 auto 0">NimtaFlow ist ein freies Open-Source-Projekt — in der Freizeit entwickelt, ohne Abo und ohne deine Daten zu verkaufen. Wenn es dir gefällt, freuen wir uns über eine kleine Unterstützung. Sie fließt direkt in Entwicklung, Hosting der Demo und neue Funktionen.</p>
+        <a class="donate" id="donateBtn" href="https://paypal.me/MNimtz" target="_blank" rel="noopener">💛 <span data-i18n="sup_btn">Mit PayPal unterstützen</span></a>
+        <p class="hint" data-i18n="sup_hint">Vielen Dank! Alternativ hilft auch ein ⭐ auf GitHub.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- PRIVACY -->
+  <div class="panel" id="privacy">
+    <section class="block prose" style="border-top:none">
+      <span class="eyebrow" data-i18n="pv_eyebrow">Datenschutz</span>
+      <h2 data-i18n="pv_h2">Datenschutz &amp; Privatsphäre</h2>
+      <p data-i18n="pv_intro">NimtaFlow ist selbst-gehostet: deine Medien und Daten liegen auf dem von dir bzw. dem Betreiber kontrollierten Server, nicht bei einem Dritt-Dienst.</p>
+      <h3 data-i18n="pv1h">Welche Daten</h3>
+      <ul>
+        <li data-i18n="pv1a">Fotos &amp; Videos samt Metadaten (Datum, ggf. GPS).</li>
+        <li data-i18n="pv1b">Abgeleitete Daten: Vorschaubilder, Beschreibungen/Tags, Gesichts-Merkmale, Orte.</li>
+        <li data-i18n="pv1c">Kontodaten: E-Mail, Name, verschlüsselt gespeichertes Passwort (bcrypt).</li>
+      </ul>
+      <p data-i18n="pv1d"><strong>Kein Tracking, keine Werbung, keine Drittanalyse.</strong></p>
+      <h3 data-i18n="pv2h">Verarbeitung</h3>
+      <p data-i18n="pv2p">Standardmäßig läuft alles lokal auf dem Server. Optionale KI-Funktionen (Beschreibung, Suche, „Foto animieren") senden nur ein von dir ausgewähltes Medium an einen vom Betreiber konfigurierten KI-Anbieter — und nur, wenn aktiviert. Sind sie aus, verlässt kein Inhalt den Server.</p>
+      <h3 data-i18n="pv3h">Deine Rechte</h3>
+      <p data-i18n="pv3p">Auskunft, Berichtigung und Löschung über den unten genannten Kontakt.</p>
+      <p style="margin-top:1rem">Kontakt: <a href="mailto:marcus@nimtz.email">marcus@nimtz.email</a> · <a href="https://login.nimtaflow.com/privacy.html" target="_blank" rel="noopener" data-i18n="pv_full">Vollständige Fassung</a></p>
+    </section>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <img class="flogo" src="logo.png" alt="NimtaFlow" />
+    <div class="fl">
+      <a href="features.html" data-i18n="nav_features">Funktionen</a>
+      <a href="https://login.nimtaflow.com" target="_blank" rel="noopener" data-i18n="cta_login">Zum Login</a>
+      <a data-t="privacy" data-i18n="pv_eyebrow">Datenschutz</a>
+      <a data-t="support" data-i18n="nav_support">Unterstützen</a>
+      <a href="https://github.com/mnimtz/nimtaflow" target="_blank" rel="noopener">GitHub</a>
+      <a href="mailto:marcus@nimtz.email" data-i18n="ft_contact">Kontakt</a>
+    </div>
+    <div class="cp" data-i18n="ft_cp">© 2026 NimtaFlow · Selbst-gehostete Foto- &amp; Videoverwaltung</div>
+  </div>
+</footer>
+
+<script>
+  // ── Tab/register switching ──
+  const panels=document.querySelectorAll('.panel'), tabs=document.querySelectorAll('.tab');
+  function show(id){
+    panels.forEach(p=>p.classList.toggle('active',p.id===id));
+    tabs.forEach(t=>t.classList.toggle('active',t.dataset.t===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('[data-t]').forEach(el=>el.addEventListener('click',()=>show(el.dataset.t)));
+
+  // ── Bilingual (auto-detect DE/EN + manual toggle) ──
+  const I={
+    nav_start:["Start","Home"], nav_features:["Funktionen","Features"], nav_download:["Download","Download"],
+    nav_support:["Unterstützen","Support"], nav_preview:["Vorschau","Preview"],
+    prev_h2:["Ein Blick in die App","A look inside the app"],
+    prev_lead:["Echte Screenshots aus NimtaFlow — hier mit lizenzfreien Beispielbildern. Dunkles Design, das sich der Tageszeit anpasst, zweisprachig, Web & iOS aus einer Quelle.",
+      "Real screenshots from NimtaFlow — shown here with license-free sample images. A dark theme that adapts to the time of day, bilingual, web & iOS from one codebase."],
+    prev1h:["Galerie","Gallery"],
+    prev1p:["Schnelle, flüssige Galerie mit großen Vorschaubildern. Filtern, Favoriten, Auswahl — alles direkt auf deinem Server.",
+      "A fast, fluid gallery with large thumbnails. Filtering, favorites, selection — all straight from your server."],
+    prev2h:["Karte & Weltkugel","Map & globe"],
+    prev2p:["Sieh auf der interaktiven Weltkugel, wo deine Aufnahmen entstanden sind — gruppiert nach Orten, mit Reisen & Routen.",
+      "See on the interactive globe where your shots were taken — clustered by place, with trips & routes."],
+    prev3h:["Startseite & Erinnerungen","Home & memories"],
+    prev3p:["Eine persönliche Startseite mit Begrüßung, Statistiken, Highlights und „Heute vor X Jahren\" — jedes Mal frisch zusammengestellt.",
+      "A personal home screen with a greeting, stats, highlights and \"X years ago today\" — freshly composed every time."],
+    hero_h1:["Deine eigene Foto-Cloud. ","Your own photo cloud. "], hero_h1b:["Selbst gehostet.","Self-hosted."],
+    hero_sub:["Verwalte deine Fotos & Videos auf deiner eigenen Hardware — mit KI-Suche, Gesichtserkennung, Karte und Erinnerungen. Kein Abo, kein fremder Cloud-Anbieter, keine Auswertung deiner Daten. Web-Oberfläche und native iOS-App.",
+      "Manage your photos & videos on your own hardware — with AI search, face recognition, map and memories. No subscription, no third-party cloud, no mining of your data. Web app and a native iOS app."],
+    cta_start:["Loslegen","Get started"], cta_features:["Funktionen ansehen","See features"], cta_login:["Zum Login","Open login"],
+    hero_hint:["Open Source · iOS-App in Vorbereitung für den App Store","Open source · iOS app coming to the App Store"],
+    pill_host:["100 % selbst gehostet","100% self-hosted"], pill_ai:["KI-Suche & Chat","AI search & chat"], pill_ios:["Native iOS-App","Native iOS app"],
+    why_eyebrow:["Warum NimtaFlow","Why NimtaFlow"], why_h2:["Deine Erinnerungen gehören dir","Your memories belong to you"],
+    why_lead:["Große Foto-Dienste leben von deinen Daten. NimtaFlow dreht das um: alles läuft auf deinem Server, Originale bleiben unangetastet, und moderne Features bekommst du trotzdem.",
+      "Big photo services live off your data. NimtaFlow flips that: everything runs on your server, originals stay untouched — and you still get modern features."],
+    why1h:["Auf deiner Hardware","On your hardware"], why1p:["Läuft per Docker auf Heimserver, NAS oder Mini-PC. Deine Fotos verlassen dein Netzwerk nicht.","Runs via Docker on a home server, NAS or mini-PC. Your photos never leave your network."],
+    why2h:["Privat by Design","Private by design"], why2p:["Kein Tracking, keine Werbung, kein Datenverkauf. Optionale KI nur per Opt-in und nur für das gewählte Bild.","No tracking, no ads, no data selling. Optional AI is opt-in and only for the image you pick."],
+    why3h:["Schnell & modern","Fast & modern"], why3p:["Schnelle Galerie, Caching, flüssiges Blättern, Web + App aus einer Quelle.","Fast gallery, caching, smooth swiping, web + app from one codebase."],
+    feat_h2:["Alles für deine Mediathek","Everything for your library"], feat_lead:["Von der automatischen Indexierung bis zur KI — übersichtlich, schnell, auf deinem Server.","From automatic indexing to AI — clear, fast, on your server."],
+    f1h:["Bibliothek & Quellen","Library & sources"], f1p:["Beliebig viele beobachtete Ordner mit automatischem Re-Scan. Originale werden nur gelesen, nie verändert.","Any number of watched folders with automatic re-scan. Originals are read-only, never modified."],
+    f2h:["KI-Suche & Foto-Chat","AI search & photo chat"], f2p:["Finde Fotos in natürlicher Sprache. Frag deine Mediathek im Chat — optional, lokal oder per KI-Anbieter.","Find photos in natural language. Chat with your library — optional, local or via an AI provider."],
+    f3h:["Personen & Beziehungen","People & relationships"], f3p:["Automatische Gesichtserkennung & Gruppierung mit Bestätigungs-Vorschlägen und Familien-Graph.","Automatic face detection & grouping with confirm-suggestions and a family graph."],
+    f4h:["Karte & Reisen","Map & trips"], f4p:["Sieh auf der Karte, wo deine Aufnahmen entstanden sind — inklusive Reisen & Routen.","See on the map where your shots were taken — including trips & routes."],
+    f5h:["Erinnerungen & Highlights","Memories & highlights"], f5p:["„Heute vor X Jahren\", automatische Rückblick-Videos und „Foto animieren\" — KI-Clips aus Bildern.","“On this day”, automatic recap videos and “animate photo” — AI clips from stills."],
+    f6h:["iOS-App & Upload","iOS app & upload"], f6p:["Native App mit Galerie, Suche, Karte, Chat — plus Upload (manuell & automatisch) in deinen eigenen Ordner.","Native app with gallery, search, map, chat — plus upload (manual & automatic) into your own folder."],
+    f7h:["Mehrbenutzer & Rechte","Multi-user & permissions"], f7p:["Mehrere Konten mit feiner Zugriffssteuerung: Ordner, Personen, Datumsbereiche, Funktions-Schalter.","Multiple accounts with fine-grained access: folders, people, date ranges, feature flags."],
+    f8h:["Zweisprachig","Bilingual"], f8p:["Komplette Oberfläche in Deutsch & Englisch — automatische Erkennung plus manueller Umschalter.","Full UI in German & English — auto-detection plus a manual switch."],
+    f9h:["Open Source","Open source"], f9p:["Server & App sind quelloffen. Transparent, anpassbar, selbst betreibbar — keine Blackbox.","Server & app are open source. Transparent, customizable, self-hostable — no black box."],
+    f10h:["MCP-Server & KI-Assistenten","MCP server & AI assistants"], f10p:["Verbinde Claude, ChatGPT & Co. und durchsuche deine Mediathek in natürlicher Sprache — token-basiert, mit deinen Rechten.","Connect Claude, ChatGPT & co. and search your library in natural language — token-based, with your permissions."],
+    feat_all:["Alle Funktionen im Detail →","See all features in detail →"],
+    dl_eyebrow:["Download & Installation","Download & install"], dl_h2:["In wenigen Minuten startklar","Up and running in minutes"],
+    dl_lead:["NimtaFlow läuft per Docker auf deiner eigenen Hardware. Hol dir den Code von GitHub und starte deine Instanz.","NimtaFlow runs via Docker on your own hardware. Grab the code from GitHub and start your instance."],
+    dl_quick:["Schnellstart (Docker)","Quick start (Docker)"],
+    dl_s1:["<b>Repository holen</b> — klone das Projekt von GitHub.","<b>Get the repo</b> — clone the project from GitHub."],
+    dl_s2:["<b>.env anlegen</b> — kopiere <code>.env.example</code>, setze Passwort & Foto-Pfad.","<b>Create .env</b> — copy <code>.env.example</code>, set password & photo path."],
+    dl_s3:["<b>Starten</b> — <code>docker compose up -d</code> baut & startet alles.","<b>Start</b> — <code>docker compose up -d</code> builds & starts everything."],
+    dl_s4:["<b>Quellen hinzufügen</b> — Foto-Ordner eintragen; Indexierung läuft automatisch.","<b>Add sources</b> — point to your photo folders; indexing runs automatically."],
+    dl_s5:["<b>iOS-App</b> verbinden — Server-URL eintragen, anmelden, fertig.","<b>Connect the iOS app</b> — enter your server URL, sign in, done."],
+    dl_req:["Voraussetzungen","Requirements"],
+    dl_r1:["Docker & Docker Compose","Docker & Docker Compose"], dl_r2:["Ein Verzeichnis mit deinen Fotos/Videos","A directory with your photos/videos"],
+    dl_r3:["Optional: GPU für schnellere lokale KI","Optional: GPU for faster local AI"], dl_r4:["Optional: KI-Schlüssel (Gemini/OpenAI) für Cloud-KI","Optional: AI key (Gemini/OpenAI) for cloud AI"],
+    dl_gh:["Auf GitHub →","View on GitHub →"],
+    sup_eyebrow:["Unterstützen","Support"], sup_h2:["Spendier uns einen Kaffee","Buy us a coffee"],
+    sup_lead:["NimtaFlow ist ein freies Open-Source-Projekt — in der Freizeit entwickelt, ohne Abo und ohne deine Daten zu verkaufen. Wenn es dir gefällt, freuen wir uns über eine kleine Unterstützung. Sie fließt direkt in Entwicklung, Hosting der Demo und neue Funktionen.",
+      "NimtaFlow is a free open-source project — built in spare time, no subscription, no selling your data. If you like it, a small tip is hugely appreciated and goes straight into development, demo hosting and new features."],
+    sup_btn:["Mit PayPal unterstützen","Support via PayPal"], sup_hint:["Vielen Dank! Alternativ hilft auch ein ⭐ auf GitHub.","Thank you! A ⭐ on GitHub also helps."],
+    pv_eyebrow:["Datenschutz","Privacy"], pv_h2:["Datenschutz & Privatsphäre","Privacy"],
+    pv_intro:["NimtaFlow ist selbst-gehostet: deine Medien und Daten liegen auf dem von dir bzw. dem Betreiber kontrollierten Server, nicht bei einem Dritt-Dienst.","NimtaFlow is self-hosted: your media and data live on the server you (or the operator) control, not with a third party."],
+    pv1h:["Welche Daten","What data"],
+    pv1a:["Fotos & Videos samt Metadaten (Datum, ggf. GPS).","Photos & videos with metadata (date, optional GPS)."],
+    pv1b:["Abgeleitete Daten: Vorschaubilder, Beschreibungen/Tags, Gesichts-Merkmale, Orte.","Derived data: thumbnails, descriptions/tags, face features, places."],
+    pv1c:["Kontodaten: E-Mail, Name, verschlüsselt gespeichertes Passwort (bcrypt).","Account data: email, name, bcrypt-hashed password."],
+    pv1d:["<strong>Kein Tracking, keine Werbung, keine Drittanalyse.</strong>","<strong>No tracking, no ads, no third-party analytics.</strong>"],
+    pv2h:["Verarbeitung","Processing"],
+    pv2p:["Standardmäßig läuft alles lokal auf dem Server. Optionale KI-Funktionen senden nur ein von dir ausgewähltes Medium an einen vom Betreiber konfigurierten KI-Anbieter — und nur, wenn aktiviert. Sind sie aus, verlässt kein Inhalt den Server.",
+      "By default everything runs locally on the server. Optional AI features send only a media item you pick to an AI provider the operator configured — and only if enabled. If disabled, no content leaves the server."],
+    pv3h:["Deine Rechte","Your rights"], pv3p:["Auskunft, Berichtigung und Löschung über den unten genannten Kontakt.","Access, correction and deletion via the contact below."],
+    pv_full:["Vollständige Fassung","Full version"],
+    ft_contact:["Kontakt","Contact"], ft_cp:["© 2026 NimtaFlow · Selbst-gehostete Foto- & Videoverwaltung","© 2026 NimtaFlow · Self-hosted photo & video management"],
+  };
+  function setLang(l){
+    document.documentElement.lang=l;
+    localStorage.setItem('nf_lang',l);
+    document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on',b.dataset.lang===l));
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      const v=I[el.dataset.i18n]; if(v) el.innerHTML=v[l==='en'?1:0];
+    });
+  }
+  document.querySelectorAll('.lang button').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
+  const saved=localStorage.getItem('nf_lang');
+  const auto=(navigator.language||'de').toLowerCase().startsWith('de')?'de':'en';
+  setLang(saved||auto);
+</script>
+</body>
+</html>

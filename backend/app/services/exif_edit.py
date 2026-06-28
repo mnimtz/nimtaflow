@@ -1,0 +1,439 @@
+"""EXIF / IPTC / XMP editing service.
+
+Uses exiftool (subprocess) — handles JPEG, HEIC, PNG, RAW, MP4, MOV, and
+essentially everything ffprobe can inspect.  Falls back to piexif for JPEG-only
+edits when exiftool is not installed.
+"""
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+
+_EXIFTOOL = shutil.which("exiftool")
+
+# exiftool can hang indefinitely on a corrupt/truncated file. These reads run 4×
+# per new file during the library scan, on the SAME async loop that drives the
+# walk — so one hanging file freezes the ENTIRE scan (this is exactly what
+# stalled the /photos scan before it reached Foto_OldLife). Always bound the
+# subprocess and kill it on timeout.
+_EXIFTOOL_TIMEOUT = 20.0
+
+
+async def _communicate(proc, timeout: float = _EXIFTOOL_TIMEOUT):
+    """await proc.communicate() but never hang forever — kill on timeout."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.communicate()
+        except Exception:
+            pass
+        raise
+
+
+def _sidecar_paths(path: str):
+    """Candidate sidecar paths, preferred first: the canonical full-name form
+    'IMG_1234.JPG.xmp' (what we write now), then the legacy replace-extension form
+    'IMG_1234.xmp'. Reading checks both so a library written under either scheme
+    still round-trips on re-import."""
+    return [path + ".xmp", str(Path(path).with_suffix(".xmp"))]
+
+
+class ExifEditError(RuntimeError):
+    pass
+
+
+async def read_existing_ai_metadata(path: str):
+    """Read an already-present description + keywords from the file's embedded
+    XMP/IPTC, or from a `.xmp` sidecar next to it. Returns (description, keywords).
+
+    Used on scan to SKIP re-running AI on media that PhotoFlow (or another tool)
+    already described — e.g. after a re-import or DB loss, the descriptions we
+    wrote into the files are read back instead of recomputed."""
+    if not _EXIFTOOL:
+        return None, []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Description", "-IPTC:Caption-Abstract",
+                "-EXIF:ImageDescription", "-XMP:Subject", "-IPTC:Keywords", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await _communicate(proc)
+            if proc.returncode != 0 or not out:
+                return None, []
+            d = (json.loads(out) or [{}])[0]
+            desc = (d.get("Description") or d.get("Caption-Abstract") or d.get("ImageDescription") or "").strip() or None
+            subj = d.get("Subject") or d.get("Keywords") or []
+            if isinstance(subj, str):
+                subj = [s.strip() for s in subj.split(",") if s.strip()]
+            return desc, [str(s).strip() for s in subj if str(s).strip()]
+        except Exception:
+            return None, []
+
+    desc, kws = await _read(path)
+    if not desc:  # fall back to a sidecar (videos always use one; images may)
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                desc, kws2 = await _read(sc)
+                kws = kws or kws2
+                if desc:
+                    break
+    return desc, kws
+
+
+async def read_file_location(path: str):
+    """Read title + city + country from the file or its `.xmp` sidecar, so a
+    re-import recovers user-entered title and place names (which are otherwise
+    only re-derivable from GPS). Returns (title, city, country) — each or None."""
+    if not _EXIFTOOL:
+        return None, None, None
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Title", "-IPTC:ObjectName",
+                "-XMP:City", "-IPTC:City", "-XMP:Country", "-XMP:CountryName",
+                "-IPTC:Country-PrimaryLocationName", "-Iptc4xmpCore:Location", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await _communicate(proc)
+            if proc.returncode != 0 or not out:
+                return None, None, None
+            d = (json.loads(out) or [{}])[0]
+            title = (d.get("Title") or d.get("ObjectName") or "").strip() or None
+            city = (d.get("City") or d.get("Location") or "").strip() or None
+            country = (d.get("Country") or d.get("CountryName")
+                       or d.get("Country-PrimaryLocationName") or "").strip() or None
+            return title, city, country
+        except Exception:
+            return None, None, None
+
+    title, city, country = await _read(path)
+    if not (title or city or country):
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                title, city, country = await _read(sc)
+                if title or city or country:
+                    break
+    return title, city, country
+
+
+async def read_existing_extras(path: str):
+    """Read durable user metadata we write into files — XMP:Rating (0-5) and the
+    list of person names (XMP:PersonInImage) — from the file or its `.xmp` sidecar.
+    Returns (rating:Optional[int], persons:list[str]). Used on scan so a re-import
+    recovers favourites/ratings and who-is-in-the-photo, not just the description."""
+    if not _EXIFTOOL:
+        return None, []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-XMP:Rating",
+                "-XMP:PersonInImage", "-XMP-iptcExt:PersonInImage", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await _communicate(proc)
+            if proc.returncode != 0 or not out:
+                return None, []
+            d = (json.loads(out) or [{}])[0]
+            rating = d.get("Rating")
+            try:
+                rating = int(rating) if rating is not None and str(rating) != "" else None
+            except (ValueError, TypeError):
+                rating = None
+            persons = d.get("PersonInImage")
+            if isinstance(persons, str):
+                persons = [p.strip() for p in persons.split(",") if p.strip()]
+            persons = [str(p).strip() for p in (persons or []) if str(p).strip()]
+            return rating, persons
+        except Exception:
+            return None, []
+
+    rating, persons = await _read(path)
+    if rating is None and not persons:
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                rating, persons = await _read(sc)
+                if rating is not None or persons:
+                    break
+    return rating, persons
+
+
+async def read_face_regions(path: str):
+    """Read MWG face regions (XMP-mwg-rs:RegionInfo) from the file or its `.xmp`
+    sidecar. Returns a list of {cx,cy,w,h (normalized, CENTER-based), name}. Used
+    on import to recreate faces from the boxes we (or another tool) wrote, so face
+    DETECTION never has to run again on a re-imported library."""
+    if not _EXIFTOOL:
+        return []
+
+    async def _read(target: str):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _EXIFTOOL, "-json", "-struct", "-RegionInfo", target,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await _communicate(proc)
+            if proc.returncode != 0 or not out:
+                return []
+            d = (json.loads(out) or [{}])[0].get("RegionInfo") or {}
+            rl = d.get("RegionList") or []
+            out_regions = []
+            for r in rl:
+                if (r.get("Type") or "Face") != "Face":
+                    continue
+                a = r.get("Area") or {}
+                x, y, w, h = a.get("X"), a.get("Y"), a.get("W"), a.get("H")
+                if None in (x, y, w, h):
+                    continue
+                out_regions.append({
+                    "cx": float(x), "cy": float(y), "w": float(w), "h": float(h),
+                    "name": (r.get("Name") or "").strip(),
+                })
+            return out_regions
+        except Exception:
+            return []
+
+    regions = await _read(path)
+    if not regions:
+        for sc in _sidecar_paths(path):
+            if os.path.exists(sc):
+                regions = await _read(sc)
+                if regions:
+                    break
+    return regions
+
+
+def _clean_region_name(name: str) -> str:
+    """exiftool struct syntax uses { } [ ] , as delimiters — strip them from a
+    person name so they can't corrupt the RegionList struct."""
+    out = (name or "").strip()
+    for ch in "{}[],":
+        out = out.replace(ch, " ")
+    return " ".join(out.split())
+
+
+async def write_face_regions(path: str, regions: list, width: int, height: int,
+                             target: Optional[str] = None) -> bool:
+    """Write MWG face regions (XMP-mwg-rs:RegionInfo) into the file — the portable
+    standard that Lightroom/digiKam/Synology read. Each region carries the face
+    BOX (so re-import never needs face DETECTION again) plus the Name when known.
+    Named regions are also mirrored to XMP:PersonInImage for tools that only read
+    that. Idempotent: overwrites RegionInfo. `regions` = list of dicts with
+    cx,cy,w,h (normalized, CENTER-based) and optional name. Writes to `target`
+    (e.g. a .xmp sidecar for videos) when given, else into `path`."""
+    if not _EXIFTOOL or not regions:
+        return False
+    w = int(width or 0) or 1000
+    h = int(height or 0) or 1000
+    items, names = [], []
+    for r in regions:
+        area = (f"Area={{X={float(r['cx']):.4f},Y={float(r['cy']):.4f},"
+                f"W={float(r['w']):.4f},H={float(r['h']):.4f},Unit=normalized}}")
+        nm = _clean_region_name(r.get("name", ""))
+        if nm:
+            names.append(nm)
+            items.append(f"{{{area},Type=Face,Name={nm}}}")
+        else:
+            items.append(f"{{{area},Type=Face}}")
+    region_info = (f"{{AppliedToDimensions={{W={w},H={h},Unit=pixel}},"
+                   f"RegionList=[{','.join(items)}]}}")
+    args = [_EXIFTOOL, "-m", "-P", "-overwrite_original", f"-RegionInfo={region_info}"]
+    for nm in dict.fromkeys(names):  # de-dup; clear-then-add keeps it idempotent
+        args += [f"-XMP:PersonInImage-={nm}", f"-XMP:PersonInImage+={nm}"]
+    args.append(target or path)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await proc.communicate()
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+async def read_all_exif(path: str) -> Dict[str, Any]:
+    """Return all EXIF/IPTC/XMP tags as a flat dict."""
+    if not _EXIFTOOL:
+        raise ExifEditError("exiftool not found")
+    proc = await asyncio.create_subprocess_exec(
+        _EXIFTOOL, "-json", "-a", "-u", "-G1", path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise ExifEditError(stderr.decode()[:500])
+    data = json.loads(stdout)
+    return data[0] if data else {}
+
+
+async def write_exif(path: str, tags: Dict[str, Any], make_backup: bool = True) -> bool:
+    """Write arbitrary EXIF tags to a file using exiftool.
+
+    Args:
+        path: File to modify (modified in-place, original backed up as .orig_exif)
+        tags: Dict of tag_name → value, e.g. {"EXIF:Artist": "Max", "XMP:Description": "..."}
+        make_backup: If True, exiftool creates .orig_exif backup; if False, uses -overwrite_original
+
+    Returns True on success.
+    """
+    if not _EXIFTOOL:
+        raise ExifEditError("exiftool not found")
+
+    args = [_EXIFTOOL, "-m"]  # -m: ignore minor warnings (e.g. IPTC/EXIF length
+    #     limits) so they never block the write — XMP still receives the full text.
+    # -P: preserve the filesystem modification date. Without it exiftool sets
+    # FileModifyDate to "now", which would become the photo's date for any file
+    # lacking an EXIF capture date (scanner/Immich fall back to file mtime). We
+    # only ever write the caller's tags (description/caption/keywords/…) and
+    # NEVER DateTimeOriginal/CreateDate, so the real capture date is untouched.
+    args.append("-P")
+    if not make_backup:
+        args.append("-overwrite_original")
+    for k, v in tags.items():
+        args.append(f"-{k}={v}")
+    args.append(path)
+
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise ExifEditError(stderr.decode()[:500])
+    return True
+
+
+async def write_all(path: str, description: Optional[str] = None,
+                    keywords: Optional[list[str]] = None, rating: Optional[int] = None,
+                    title: Optional[str] = None, city: Optional[str] = None,
+                    country: Optional[str] = None) -> bool:
+    """Embed description + keywords + rating + title + place into a file in ONE
+    exiftool call (vs. ~4 separate spawns). Same tags/fields as the individual
+    write_* helpers. Keywords use repeated -IPTC:Keywords+= so ALL of them land
+    (the per-call write_keywords collapsed them via a dict key collision — only
+    the last survived; this fixes that too). -m tolerates length warnings, -P
+    preserves the filesystem date, -overwrite_original avoids a backup file."""
+    if not _EXIFTOOL:
+        raise ExifEditError("exiftool not found")
+    args = [_EXIFTOOL, "-m", "-P", "-overwrite_original"]
+    if description:
+        args += [f"-XMP:Description={description}",
+                 f"-IPTC:Caption-Abstract={description}",
+                 f"-EXIF:ImageDescription={description}"]
+    if keywords:
+        args.append("-IPTC:Keywords=")   # clear, then append each so all survive
+        for kw in keywords:
+            args.append(f"-IPTC:Keywords+={kw}")
+        args.append(f"-XMP:Subject={','.join(keywords)}")
+    if rating is not None:
+        args.append(f"-XMP:Rating={max(0, min(5, int(rating)))}")
+    if title:
+        args += [f"-XMP:Title={title}", f"-IPTC:ObjectName={title}"]
+    if city:
+        args += [f"-XMP:City={city}", f"-IPTC:City={city}"]
+    if country:
+        args += [f"-XMP:Country={country}", f"-IPTC:Country-PrimaryLocationName={country}"]
+    if len(args) == 4:   # nothing to write
+        return True
+    args.append(path)
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise ExifEditError(stderr.decode()[:500])
+    return True
+
+
+async def write_description(path: str, description: str, overwrite: bool = True) -> bool:
+    """Write AI or user description to XMP:Description (+ IPTC/EXIF mirrors).
+
+    XMP:Description is the authoritative field and has NO length limit — the full
+    description is always embedded there. IPTC:Caption-Abstract has a 2000-byte
+    standard limit and EXIF:ImageDescription is a legacy ASCII field; both get the
+    full text too (write_exif passes -m so a length warning never blocks the
+    write — XMP still gets everything)."""
+    return await write_exif(path, {
+        "XMP:Description": description,
+        "IPTC:Caption-Abstract": description,
+        "EXIF:ImageDescription": description,
+    }, make_backup=not overwrite)
+
+
+async def ensure_capture_date(path: str) -> Optional[str]:
+    """If the file has NO DateTimeOriginal, copy its filesystem date into the EXIF
+    capture-date tags. Photos without a capture date otherwise have no stable
+    date at all (and a re-import elsewhere would fall back to "now"). Returns the
+    date string written ("YYYY:MM:DD HH:MM:SS"), or None if it already had one /
+    on failure. Uses -P so writing does NOT itself bump the filesystem mtime.
+    Never overwrites an existing DateTimeOriginal."""
+    if not _EXIFTOOL:
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await _communicate(proc)
+        if out.decode(errors="replace").strip():
+            return None  # capture date already present — leave it untouched
+        # Copy the filesystem mod-date into the EXIF capture-date tags.
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-P", "-overwrite_original",
+            "-DateTimeOriginal<FileModifyDate", "-CreateDate<FileModifyDate",
+            "-XMP:DateTimeOriginal<FileModifyDate", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        proc = await asyncio.create_subprocess_exec(
+            _EXIFTOOL, "-s3", "-DateTimeOriginal", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await _communicate(proc)
+        return out.decode(errors="replace").strip() or None
+    except Exception:
+        return None
+
+
+async def write_rating(path: str, rating: int) -> bool:
+    """Write XMP rating (0-5) to file."""
+    return await write_exif(path, {
+        "XMP:Rating": str(max(0, min(5, rating))),
+    }, make_backup=False)
+
+
+async def write_keywords(path: str, keywords: list[str]) -> bool:
+    """Write keyword list to XMP + IPTC."""
+    kw_str = ",".join(keywords)
+    tags: Dict[str, Any] = {}
+    for kw in keywords:
+        tags[f"IPTC:Keywords+"] = kw
+    tags["XMP:Subject"] = kw_str
+    return await write_exif(path, tags, make_backup=False)
+
+
+async def write_gps(path: str, lat: float, lon: float, alt: Optional[float] = None) -> bool:
+    tags: Dict[str, Any] = {
+        "GPS:GPSLatitude": abs(lat),
+        "GPS:GPSLatitudeRef": "N" if lat >= 0 else "S",
+        "GPS:GPSLongitude": abs(lon),
+        "GPS:GPSLongitudeRef": "E" if lon >= 0 else "W",
+    }
+    if alt is not None:
+        tags["GPS:GPSAltitude"] = abs(alt)
+        tags["GPS:GPSAltitudeRef"] = "0" if alt >= 0 else "1"
+    return await write_exif(path, tags, make_backup=False)
+
+
+def exiftool_available() -> bool:
+    return _EXIFTOOL is not None

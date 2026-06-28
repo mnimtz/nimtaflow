@@ -1,0 +1,12 @@
+{
+  "name": "NimtaFlow",
+  "short_name": "NimtaFlow",
+  "description": "Self-hosted photo & video management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "/photoflow-icon.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

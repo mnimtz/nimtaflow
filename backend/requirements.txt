@@ -1,0 +1,57 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+sqlalchemy[asyncio]==2.0.31
+alembic==1.13.2
+asyncpg==0.29.0
+pgvector==0.3.2
+celery==5.4.0
+redis==5.0.7
+pillow==10.2.0
+pillow-heif==0.17.0
+exifread==3.0.0
+piexif==1.1.3
+httpx==0.27.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # passlib 1.7.4 self-test breaks on bcrypt>=4.1 (ValueError 72 bytes)
+python-multipart==0.0.9
+pydantic==2.8.2
+pydantic-settings==2.3.4
+watchdog==4.0.1
+apscheduler==3.10.4
+psutil==6.0.0
+pyotp==2.9.0
+aiofiles==24.1.0
+python-magic==0.4.27
+
+# ── Local / integrated AI (CPU) ───────────────────────────────────────────────
+# CPU-only torch wheels (much smaller than the default CUDA build)
+# CUDA 12.1 wheels — GPU is passed through to this LXC (RTX 2080). torch ships its
+# own CUDA runtime; on a CPU-only host pip still resolves these but they need a GPU.
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.2
+torchvision==0.17.2
+transformers==4.49.0
+accelerate==1.0.1
+einops==0.8.0
+timm==1.0.11
+sentencepiece==0.2.0
+sacremoses==0.1.1
+qwen-vl-utils==0.0.8
+sentence-transformers==3.0.1
+facenet-pytorch==2.6.0
+
+# ── InsightFace (ArcFace) face engine — optional, selectable in Settings ───────
+onnxruntime-gpu==1.18.1
+insightface==0.7.3
+# HDBSCAN clustering option (code falls back to DBSCAN if this import fails)
+hdbscan==0.8.40
+
+# Offline reverse-geocoding (bundled ~150k-city DB, no external API) -> fills
+# city/country from GPS for the map place search + the detail "Ort" line.
+reverse_geocoder==1.5.1
+
+# Beat detection for highlight "beat-sync" (slideshow transitions land on the
+# music beat). Optional at runtime: app.services.highlights.detect_beats lazy-
+# imports it and falls back to uniform timing if missing.
+librosa==0.10.2.post1

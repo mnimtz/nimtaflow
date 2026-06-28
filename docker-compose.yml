@@ -1,0 +1,295 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    volumes:
+      - photoflow-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: photoflow
+      POSTGRES_USER: photoflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photoflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
+      - photoflow-config:/config
+      - photoflow-models:/models     # persist jina-clip-v2 / e5 across rebuilds (search query + everyday embedding)
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      # Persistent HF model cache so jina-clip-v2 (search query + everyday/trickle
+      # embedding) survives rebuilds instead of re-downloading ~1.7 GB each time.
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+      JINA_DEVICE: cpu     # no GPU on this host — query/trickle embedding on CPU
+      # Run as root so XMP write-back can modify the root-owned photo library.
+      PHOTOFLOW_USER: root
+
+  worker:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    # GPU work serializes through one model copy: a single 8 GB card can hold
+    # exactly one 3B VLM. Prefork with >1 worker would load N copies → OOM
+    # (SIGKILL). Keep concurrency at 1 and consume ONLY the gpu queue (AI +
+    # face detection). Scans/thumbnails run on worker-cpu so they never wait.
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "gpu", "--loglevel=${LOG_LEVEL:-info}", "-c", "${WORKER_CONCURRENCY:-1}", "--max-tasks-per-child=50"]
+    restart: unless-stopped
+    runtime: nvidia          # GPU (RTX 2080) for the AI/face workers
+    # Safety net: a host without enough RAM/GPU that tried to load the 11 GB Qwen
+    # VLM OOM-killed the box. The local VLM is now disabled here (PHOTOFLOW_LOCAL_VLM
+    # below — the Asus agent keeps it); this caps the worker so it can never starve
+    # the API/DB even if something else balloons. The Asus's own nvidia runtime
+    # ignores mem_limit for GPU memory; this bounds host RAM only.
+    mem_limit: ${WORKER_MEM_LIMIT:-4g}
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
+      - photoflow-config:/config
+      - photoflow-models:/models
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      # Persistent model cache (HuggingFace) so downloads survive rebuilds
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+      TORCH_HOME: /models/torch
+      INSIGHTFACE_HOME: /models/insightface
+      # Cap CPU threads so onnxruntime/torch don't try to pin to host cores the
+      # LXC can't use (the pthread_setaffinity errors) and thrash the CPU.
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # The 8 GB card is filled by the VLM (Qwen-3B ~6 GB). Keep InsightFace face
+      # detection on CPU so the two don't fight for VRAM (→ CUDA OOM). Identical
+      # embeddings, just ~1-2 s slower per image.
+      FACE_DEVICE: cpu
+      # Reduce CUDA fragmentation OOMs ("tried to allocate 44 MiB, 8 MiB free").
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      # Run as root so local AI XMP write-back can modify the root-owned library.
+      PHOTOFLOW_USER: root
+
+  # CPU worker: scanning, thumbnails, clustering, metadata. No GPU, runs in
+  # parallel (concurrency 4) so a long AI backlog on the gpu worker never stalls
+  # folder scans or thumbnail generation. Also drains the default "celery" queue.
+  worker-cpu:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "cpu,celery", "--loglevel=${LOG_LEVEL:-info}", "-c", "${CPU_WORKER_CONCURRENCY:-4}", "--max-tasks-per-child=50"]
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
+      - photoflow-config:/config
+      - photoflow-models:/models
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+      TORCH_HOME: /models/torch
+      INSIGHTFACE_HOME: /models/insightface
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      # Run as root so the XMP backfill task can modify the root-owned library.
+      PHOTOFLOW_USER: root
+
+  # Dedicated scan worker (concurrency 1, own "scan" queue) so re-indexing a
+  # folder starts immediately and never waits behind the thumbnail backlog on
+  # worker-cpu. Light: just walks the tree + makes small thumbnails.
+  worker-scan:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    command: ["nice", "-n", "10", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "scan", "--loglevel=${LOG_LEVEL:-info}", "-c", "1", "--max-tasks-per-child=50"]
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - /cache-ssd:/cache     # SSD-Auslagerung (LXC mp → 2TB SSD): Thumbnails/Crops/Previews off the LXC root
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      PHOTOFLOW_USER: root
+
+  # Dedicated video worker (own "video" queue) so slow transcodes never occupy the
+  # worker-cpu slots that build image thumbnails — the two run fully in parallel.
+  # Gets /dev/dri via docker-compose.override.yml (QSV/Intel Quick Sync); the
+  # transcode falls back to software h264 if QSV init ever fails.
+  worker-video:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    command: ["nice", "-n", "15", "celery", "-A", "app.worker.celery_app", "worker", "-Q", "video", "--loglevel=${LOG_LEVEL:-info}", "-c", "${VIDEO_WORKER_CONCURRENCY:-2}", "--max-tasks-per-child=50"]
+    restart: unless-stopped
+    volumes:
+      - ${PHOTOS_PATH:-/mnt/media-8tb/Fotos}:/photos:rw
+      - /mnt:/mnt:ro
+      - /cache-ssd:/cache     # SSD-Auslagerung: web-mp4 transcodes off the LXC root
+      - photoflow-config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+      # Intel Quick Sync: select the iHD VA driver explicitly so ffmpeg's QSV
+      # init is deterministic on the Iris Xe (renderD128 passed in via override).
+      LIBVA_DRIVER_NAME: iHD
+      PHOTOFLOW_USER: root
+
+  beat:
+    build: ./backend
+    image: photoflow-app:latest
+    init: true
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=${LOG_LEVEL:-info}"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PF_CELERY_WORKER: "1"   # force NullPool in prefork children (no kept idle conns)
+      DATABASE_URL: postgresql+asyncpg://photoflow:${DB_PASSWORD}@db/photoflow
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY}
+      CACHE_PATH: /cache
+      # No GPU / not enough RAM here for the 11 GB Qwen VLM — never load it (it OOMs
+      # the box). e5 embedding + everything else still works; the Asus remote agent
+      # (separate compose, flag unset) is the one that runs the VLM on the 2080.
+      PHOTOFLOW_LOCAL_VLM: "0"
+      CONFIG_PATH: /config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Europe/Berlin}
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8090}:80"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: /api
+
+  # MCP-Server: NimtaFlow als MCP für Claude & Co. Dünner Client auf das Backend
+  # (erbt ACL via durchgereichtem Bearer-Token). Connector-URL: http://<host>:8091/mcp
+  mcp:
+    build: ./mcp-server
+    image: nimtaflow-mcp:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NIMTAFLOW_API_URL: http://backend:8000
+      # OAuth-Connector: SECRET_KEY = dasselbe wie das Backend → ausgestellte Tokens
+      # sind gültige NimtaFlow-JWTs. MCP_PUBLIC_URL = die extern erreichbare Basis-URL
+      # des MCP-Servers (für OAuth-Discovery/Redirects; z. B. https://mcp.nimtaflow.com).
+      SECRET_KEY: ${SECRET_KEY}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8091}
+      TZ: ${TZ:-Europe/Berlin}
+    ports:
+      - "${MCP_PORT:-8091}:8000"
+
+volumes:
+  photoflow-db:
+  photoflow-config:
+  photoflow-models:
