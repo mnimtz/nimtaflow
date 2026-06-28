@@ -104,6 +104,14 @@
   .react-photo-album--photo:hover img { transform: none; }
 }
 
+/* Lightbox on phones: bigger tap targets for the toolbar + push it below the
+   notch/status bar (env safe-area), so the photo's options are easy to reach. */
+@media (max-width: 640px) {
+  .yarl__toolbar { padding-top: max(10px, env(safe-area-inset-top)); padding-right: 6px; gap: 2px; }
+  .yarl__button { padding: 11px; }
+  .yarl__icon { width: 26px; height: 26px; }
+}
+
 /* ── Sidebar nav pill ──────────────────────────── */
 .nav-pill {
   @apply relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150;

@@ -586,14 +586,16 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           // browsing covers the whole library instead of looping a few photos.
           if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
         } }}
-        plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
+        plugins={(isMobile
+          ? [Zoom, Counter, Captions, Video, Download]
+          : [Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]) as any}
         toolbar={{ buttons: toolbarButtons.filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
         captions={{ descriptionTextAlign: 'center' }}
         carousel={{ finite: true, preload: 3 }}
-        styles={{ container: { backgroundColor: 'rgba(0,0,0,0.94)' } }}
+        styles={{ container: { backgroundColor: '#000' } }}
         animation={{ fade: 250, swipe: 300 }}
       />
       {info && photos[cur] && createPortal(<InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />, document.body)}
