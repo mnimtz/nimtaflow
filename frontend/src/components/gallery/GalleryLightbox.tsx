@@ -290,11 +290,13 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
         {namedPeople.length > 0 && (
           <Row icon={UsersIcon} label={t('gallery.people')}>
             <div className="flex flex-wrap gap-1.5">
-              {namedPeople.map(pp => (
+              {namedPeople.map(pp => {
+                const age = ageAt(pp.birthdate)
+                return (
                 <span key={pp.face_id} className="group flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200 text-xs">
                   {pp.name}
-                  {ageAt(pp.birthdate) != null && (
-                    <span className="text-indigo-300/60">· {t('gallery.yearsOld', { age: ageAt(pp.birthdate) })}</span>
+                  {age != null && (
+                    <span className="text-indigo-300/60">· {t('gallery.yearsOld', { age })}</span>
                   )}
                   {pp.person_id && pp.face_id && (
                     <button onClick={() => setCover(pp)} title={t('gallery.setCoverFor', { name: pp.name })}
@@ -309,7 +311,8 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
                     </>
                   )}
                 </span>
-              ))}
+                )
+              })}
             </div>
             {editFaceId != null && (
               <select autoFocus value="" onChange={e => { const v = Number(e.target.value); if (v) reassignPerson(editFaceId, v) }}
