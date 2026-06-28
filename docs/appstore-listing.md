@@ -17,7 +17,7 @@ EN: `Your self-hosted photo cloud`
 Primär: **Fotografie & Video** · Sekundär: Dienstprogramme
 
 ## Promotional Text (≤170, jederzeit änderbar)
-DE: `Verbinde die App mit deinem eigenen NimtaFlow-Server und genieße deine Fotos & Videos — mit KI-Suche, Personen, Karte und Erinnerungen. Deine Daten bleiben bei dir.`
+DE: `Verbinde die App mit deinem eigenen NimtaFlow-Server: Fotos & Videos, Personen, Karte, KI-Suche & „Frag das Foto", Rückblicke mit Musik. Deine Daten bleiben bei dir.`
 
 ---
 
@@ -38,12 +38,14 @@ feste, vorgegebene Server-URL gebunden.
 FUNKTIONEN
 • Galerie für Fotos und Videos – schnell, mit Gruppierung nach Tag/Monat/Jahr
 • Personen – automatische Gesichtserkennung & Gruppierung
+• Alter im Foto – bei Personen mit hinterlegtem Geburtstag das Alter zum Aufnahmezeitpunkt
 • Karte – wo deine Aufnahmen entstanden sind
 • Alben & Reisen – inklusive Reiserouten
-• Erinnerungen – „Heute vor X Jahren"
-• Intelligente Suche & Foto-Chat (optional, KI)
-• Highlights – automatische Rückblicks-Videos
+• Erinnerungen – „Heute vor X Jahren" & Personen-Jahresrückblick
+• KI-Suche & „Frag das Foto" – Foto antippen und in natürlicher Sprache fragen (optional)
+• Highlights – automatische Rückblicks-Videos mit Musik & KI-Soundtrack (Beat-Sync, lizenzsaubere Musik)
 • „Foto animieren" – einzelne Bilder per KI zu kurzen Clips (optional)
+• MCP-Server – verbinde deinen NimtaFlow-Server mit Claude, ChatGPT & anderen KI-Assistenten (in der App unter Einstellungen → MCP ein-/ausschaltbar, Token erzeugen)
 
 DEINE DATEN, DEINE REGELN
 Standardmäßig verlässt nichts deinen Server. Optionale KI-Funktionen senden nur ein von
@@ -72,12 +74,14 @@ and sign in. The app is intentionally not tied to a fixed, predefined server URL
 FEATURES
 • Gallery for photos and videos, grouped by day/month/year
 • People – automatic face detection & grouping
+• Age in photo – for people with a saved birthday, the age at the time the shot was taken
 • Map – where your shots were taken
 • Albums & Trips – including travel routes
-• Memories – "On this day, X years ago"
-• Smart search & photo chat (optional, AI)
-• Highlights – automatic recap videos
+• Memories – "On this day, X years ago" & a yearly recap per person
+• AI search & "Ask the photo" – tap a photo and ask in natural language (optional)
+• Highlights – automatic recap videos with music & AI soundtrack (beat-sync, properly licensed music)
 • "Animate photo" – turn single images into short AI clips (optional)
+• MCP server – connect your NimtaFlow server to Claude, ChatGPT & other AI assistants (toggle on/off and create a token in Settings → MCP)
 
 YOUR DATA, YOUR RULES
 By default nothing leaves your server. Optional AI features send only an image you pick to

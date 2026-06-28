@@ -88,6 +88,8 @@ siehe **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**. *(Einschätzung, k
 - **Register/Tabs**: Personen · Vorschläge · Unbekannte Gesichter · Verborgen.
 - **Click a face → full photo** in a lightbox (verify even when a low-quality video-frame crop is unclear) with confirm/reject inline.
 - **Contact details per person** — name, alias, birthday, e-mail, phone, address (mailto:/tel: links).
+- **Age in photo details** — for every recognized face with a stored birthday, the detail view shows the person's age at the time the photo was taken; the chat assistant computes birthdays/ages from the stored birthdate.
+- **People sorted by photo count** — the most-photographed people first.
 - **Merge / rename / hide / delete** people, **bulk** face assignment, **ignore** stray faces.
 - Choose a **display avatar** per person (★ on any of their faces — also straight from a photo's detail view).
 - **Schnell-Benenn-Modus** — full-screen, keyboard-driven naming of unnamed clusters (biggest first; Enter = name, Tab = skip, dissolve non-faces) to clear hundreds of clusters in minutes.
@@ -108,6 +110,14 @@ siehe **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**. *(Einschätzung, k
 - **Toggle `chat.provider`** (top of the chat): `gemini` (cloud, smart, only text leaves the house) or `local` (private RAG via the local Qwen — slower without a GPU on the host).
 - Results open **in-app** (lightbox), media-type/year filters, and exact counts via a `zaehle_fotos` tool. Full chat UI tab.
 
+### MCP Server (AI assistants)
+- **NimtaFlow runs as an MCP server** (`mcp-server/`, FastMCP, streamable-HTTP). Connect Claude/ChatGPT & other MCP clients to **search and act on your library in natural language**.
+- **14 tools**: semantic search (returns text + thumbnails the assistant can actually *see*), media detail (incl. each person's **age at the photo's date**), albums/people/places lists, **GPS-radius search**, library status; **create temporary share links** (single photo / album / free selection → auto-album); write tools behind a read/write switch (favorite, rating, create album, assign/unassign face, confirm suggestions).
+- **Per-user bearer token**, inherits the **same ACL as the API**; on/off + `read`/`read_write` switch in **Settings → MCP**. Share links auto-expire. Setup guide: **[docs/mcp-server-setup.md](docs/mcp-server-setup.md)** · concept: **[docs/mcp-server-konzept.md](docs/mcp-server-konzept.md)**.
+
+### Ask-the-photo / photo chat
+- **Tap a photo and ask in natural language** about it (local default, cloud opt-in).
+
 ### Relationships (optional, toggle in settings)
 - Define connections between people (parent, sibling, partner, …).
 - **Derive** siblings & grandparents automatically from parent links.
@@ -124,6 +134,12 @@ siehe **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**. *(Einschätzung, k
 - **Smart** albums (rule-based: date, camera, person, media type, favorites, rating).
 - **AI** albums (free-text prompt matched against descriptions).
 - Albums are creatable from the **chat assistant** too.
+
+### Highlights & Memories
+- **Smart "X years ago" memories** — the best photo of the day surfaced via a quality score.
+- **Person year-in-review** highlight theme.
+- **Music under highlights + beat-sync**, **per-video AI soundtrack** (license-clean models; only a mood text leaves the box, never your photos), plus a **CC0 music library**.
+- **AI video clips / "animate photo"** — turn a still into a short clip (opt-in, paid providers fal.ai/Veo or local).
 
 ### Library & Gallery
 - **Watched folders** with per-source scan intervals + deletion detection.
@@ -150,6 +166,7 @@ siehe **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**. *(Einschätzung, k
 
 ### Teilen
 - **Öffentliche Links** für Alben, einzelne Fotos/Videos und Reisen — login-freier Gäste-Zugriff über einen geheimen Token-Link (`/s/<token>`). Pro Link einstellbar: **Passwort**, **Ablaufdatum**, **Download der Originale**. Jede Anfrage prüft Token + Ablauf + Passwort + Zugehörigkeit (eine ID lässt sich nicht erraten/erweitern). Verwaltung unter **Einstellungen → Teilen** (inkl. öffentlicher Basis-URL für die Link-Erzeugung); widerrufbar mit einem Klick.
+- **Upgraded public share page** — large single view, details, a visible download button and NimtaFlow branding.
 
 ### Other
 - Background job pipeline with **per-feature logs** (scanner / ai / faces / video / **remote** / system) shown live in the UI; a **dedicated scan worker** so re-indexing starts immediately instead of waiting behind the thumbnail queue.

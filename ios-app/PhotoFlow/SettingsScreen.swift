@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsScreen: View {
     @EnvironmentObject var api: APIClient
@@ -39,6 +40,7 @@ struct SettingsScreen: View {
                 CacheSection()
                 if api.loggedIn { HighlightsMusicSection() }
                 if api.loggedIn { HighlightsAISection() }
+                if api.loggedIn { MCPSection() }
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
                     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
@@ -338,6 +340,91 @@ private struct HighlightsMusicSection: View {
                 tempo = s["highlights.music_tempo"] ?? ""
                 energy = s["highlights.music_energy"] ?? ""
                 genre = s["highlights.music_genre"] ?? ""
+            }
+        }
+    }
+}
+
+/// MCP server settings — NimtaFlow as an MCP server for Claude & co. On/off, access
+/// mode, share-link TTL, plus a one-tap long-lived token for the connector.
+private struct MCPSection: View {
+    @EnvironmentObject var api: APIClient
+    @State private var enabled = false
+    @State private var mode = "read"
+    @State private var ttl = "24"
+    @State private var token: String?
+    @State private var loaded = false
+    @State private var saved = false
+    @State private var minting = false
+    @State private var copied = false
+
+    private var connectorURL: String {
+        if let u = URL(string: api.serverURL), let host = u.host {
+            return "\(u.scheme ?? "https")://\(host):8091/mcp"
+        }
+        return "http://<server>:8091/mcp"
+    }
+
+    var body: some View {
+        Section("MCP-Server") {
+            Toggle("MCP-Zugriff aktivieren", isOn: $enabled)
+            Picker("Zugriffsmodus", selection: $mode) {
+                Text("Nur lesend").tag("read")
+                Text("Lesend + schreibend").tag("read_write")
+            }
+            HStack {
+                Text("Share-Link-Ablauf (Std.)")
+                Spacer()
+                TextField("24", text: $ttl).keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing).frame(width: 60)
+            }
+            Button(saved ? "✓ Gespeichert" : "Speichern") {
+                Task {
+                    try? await api.saveSettings([
+                        "mcp.enabled": enabled ? "true" : "false",
+                        "mcp.mode": mode,
+                        "mcp.share_ttl_hours": ttl.isEmpty ? "24" : ttl])
+                    saved = true
+                    try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
+                }
+            }
+
+            Button {
+                Task {
+                    minting = true; defer { minting = false }
+                    token = try? await api.mcpToken()
+                }
+            } label: {
+                HStack {
+                    if minting { ProgressView().controlSize(.small) }
+                    Text("MCP-Token erzeugen")
+                }
+            }.disabled(minting)
+
+            if let tk = token {
+                Text(tk).font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled).lineLimit(3)
+                Button {
+                    UIPasteboard.general.string = tk
+                    copied = true
+                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+                } label: { Label(copied ? "Kopiert" : "Token kopieren", systemImage: copied ? "checkmark" : "doc.on.doc") }
+                Text("Jetzt kopieren — wird nicht erneut angezeigt.").font(.caption).foregroundStyle(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Connector-URL").font(.caption).foregroundStyle(.secondary)
+                Text(connectorURL).font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+            }
+            Text("NimtaFlow als MCP-Server für Claude & Co. URL + Token im MCP-Client eintragen. Port 8091 muss erreichbar sein.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .task {
+            if loaded { return }; loaded = true
+            if let s = try? await api.appSettings() {
+                enabled = (s["mcp.enabled"] ?? "false") == "true"
+                mode = s["mcp.mode"] ?? "read"
+                ttl = s["mcp.share_ttl_hours"] ?? "24"
             }
         }
     }

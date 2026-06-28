@@ -430,6 +430,12 @@ final class APIClient: ObservableObject {
     func appSettings() async throws -> [String: String] { try await get("api/settings", as: [String: String].self) }
     func saveSettings(_ kv: [String: String]) async throws { try await action("api/settings", method: "PUT", json: kv) }
 
+    // MARK: MCP token — long-lived JWT for the MCP connector
+    private struct MCPTokenResp: Decodable { let token: String }
+    func mcpToken() async throws -> String {
+        try await send(makeRequest("api/settings/mcp-token", method: "POST"), as: MCPTokenResp.self).token
+    }
+
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {

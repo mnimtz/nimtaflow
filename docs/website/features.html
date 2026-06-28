@@ -235,6 +235,7 @@
       <div class="fc"><div class="ic">💬</div><h3 data-i18n="c3b_h">Frag-das-Foto</h3><p data-i18n="c3b_p">Ein Foto antippen und in normaler Sprache Fragen dazu stellen — lokal privat oder per Cloud.</p><ul><li>VQA</li><li>Lokal/Cloud</li></ul></div>
       <div class="fc"><div class="ic">🏷️</div><h3 data-i18n="c3c_h">Auto-Beschreibungen &amp; Tags</h3><p data-i18n="c3c_p">Jedes Medium wird automatisch beschrieben und verschlagwortet — durchsuchbar &amp; mehrsprachig.</p><ul><li>Auto-Tags</li></ul></div>
       <div class="fc"><div class="ic">🎛️</div><h3 data-i18n="c3d_h">2 lokale + 2 Cloud-Modelle</h3><p data-i18n="c3d_p">Pro KI-Funktion wählbar — lizenz- und datenschutzsauber. Nur gewählte Medien gehen je raus.</p><ul><li>Lokal</li><li>Cloud</li><li>Opt-in</li></ul></div>
+      <div class="fc"><div class="ic">🔌</div><h3 data-i18n="c3e_h">MCP-Server &amp; KI-Assistenten</h3><p data-i18n="c3e_p">NimtaFlow als MCP-Server: verbinde Claude, ChatGPT &amp; andere KI-Assistenten und durchsuche deine Mediathek in natürlicher Sprache, frag Details, Personen &amp; Orte ab, lege Alben an und erzeuge temporäre Teilen-Links. Lesend oder lesend+schreibend, token-basiert — erbt deine Zugriffsrechte.</p><ul><li>MCP</li><li>Token</li><li>Lese/Schreib</li></ul></div>
     </div>
   </section>
 
@@ -247,6 +248,7 @@
       <div class="fc"><div class="ic">🌳</div><h3 data-i18n="c4b_h">Familien-Graph &amp; Beziehungen</h3><p data-i18n="c4b_p">Personen verknüpfen und Beziehungen pflegen — wer gehört zu wem.</p><ul><li>Beziehungen</li></ul></div>
       <div class="fc"><div class="ic">🎬</div><h3 data-i18n="c4c_h">Personen-Jahresrückblick</h3><p data-i18n="c4c_p">Ein Mensch durch ein ganzes Jahr — als automatisches Highlight-Video.</p><ul><li>Video</li></ul></div>
       <div class="fc"><div class="ic">🔢</div><h3 data-i18n="c4d_h">Sortierung &amp; Filter</h3><p data-i18n="c4d_p">Nach Foto-Anzahl oder Name sortieren; einzelne Personen pro Konto sichtbar schalten.</p><ul><li>Sortierung</li></ul></div>
+      <div class="fc"><div class="ic">🎂</div><h3 data-i18n="c4e_h">Alter im Foto-Detail</h3><p data-i18n="c4e_p">Zu jedem erkannten Gesicht mit hinterlegtem Geburtstag zeigt das Detail das Alter zum Aufnahmezeitpunkt — und der Foto-Chat rechnet Geburtstage &amp; Alter aus.</p><ul><li>Geburtstag</li><li>Auto-Alter</li></ul></div>
     </div>
   </section>
 
@@ -348,7 +350,7 @@
 </footer>
 
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"NimtaFlow","applicationCategory":"MultimediaApplication","operatingSystem":"Docker, iOS","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"url":"https://www.nimtaflow.com/","sameAs":["https://github.com/mnimtz/nimtaflow"],"featureList":["Self-hosted photo & video management","AI semantic search","Photo chat & ask-the-photo (VQA)","Automatic descriptions & tags","Face recognition & people clustering","Family graph & relationships","Interactive map & 3D globe","Trips & routes","On-this-day memories","Highlight videos with music & beat-sync","AI soundtrack & CC0 music library","Animate photo (AI clips)","Travel postcard","Video transcoding & AI video descriptions","Public sharing of photos, albums, trips and highlights","Native iOS app with upload","Multi-user with fine-grained permissions","Bilingual (DE/EN)","Open source (AGPL)"]}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"NimtaFlow","applicationCategory":"MultimediaApplication","operatingSystem":"Docker, iOS","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"url":"https://www.nimtaflow.com/","sameAs":["https://github.com/mnimtz/nimtaflow"],"featureList":["Self-hosted photo & video management","AI semantic search","Photo chat & ask-the-photo (VQA)","MCP server for AI assistants (Claude, ChatGPT)","Age at capture for known faces","Automatic descriptions & tags","Face recognition & people clustering","Family graph & relationships","Interactive map & 3D globe","Trips & routes","On-this-day memories","Highlight videos with music & beat-sync","AI soundtrack & CC0 music library","Animate photo (AI clips)","Travel postcard","Video transcoding & AI video descriptions","Public sharing of photos, albums, trips and highlights","Native iOS app with upload","Multi-user with fine-grained permissions","Bilingual (DE/EN)","Open source (AGPL)"]}
 </script>
 
 <script>
@@ -380,12 +382,14 @@
     c3b_h:["Frag-das-Foto","Ask the photo"], c3b_p:["Ein Foto antippen und in normaler Sprache Fragen dazu stellen — lokal privat oder per Cloud.","Tap a photo and ask questions about it in plain language — private local or via cloud."],
     c3c_h:["Auto-Beschreibungen & Tags","Auto descriptions & tags"], c3c_p:["Jedes Medium wird automatisch beschrieben und verschlagwortet — durchsuchbar & mehrsprachig.","Every item is automatically described and tagged — searchable & multilingual."],
     c3d_h:["2 lokale + 2 Cloud-Modelle","2 local + 2 cloud models"], c3d_p:["Pro KI-Funktion wählbar — lizenz- und datenschutzsauber. Nur gewählte Medien gehen je raus.","Selectable per AI feature — license- and privacy-clean. Only media you pick ever leaves."],
+    c3e_h:["MCP-Server & KI-Assistenten","MCP server & AI assistants"], c3e_p:["NimtaFlow als MCP-Server: verbinde Claude, ChatGPT & andere KI-Assistenten und durchsuche deine Mediathek in natürlicher Sprache, frag Details, Personen & Orte ab, lege Alben an und erzeuge temporäre Teilen-Links. Lesend oder lesend+schreibend, token-basiert — erbt deine Zugriffsrechte.","NimtaFlow as an MCP server: connect Claude, ChatGPT & other AI assistants to search and act on your library in natural language — details, people, places, albums, temporary share links. Read or read-write, token-based, inherits your permissions."],
 
     c4t:["Personen & Gesichter","People & faces"], c4l:["Automatisch gruppiert, leicht bestätigt, sinnvoll verknüpft.","Automatically grouped, easily confirmed, meaningfully linked."],
     c4a_h:["Gesichtserkennung & Clustering","Face recognition & clustering"], c4a_p:["Gesichter werden automatisch gefunden und gruppiert — mit Vorschlägen zum Bestätigen.","Faces are detected and grouped automatically — with suggestions to confirm."],
     c4b_h:["Familien-Graph & Beziehungen","Family graph & relationships"], c4b_p:["Personen verknüpfen und Beziehungen pflegen — wer gehört zu wem.","Link people and maintain relationships — who belongs to whom."],
     c4c_h:["Personen-Jahresrückblick","Person year in review"], c4c_p:["Ein Mensch durch ein ganzes Jahr — als automatisches Highlight-Video.","One person through a whole year — as an automatic highlight video."],
     c4d_h:["Sortierung & Filter","Sorting & filters"], c4d_p:["Nach Foto-Anzahl oder Name sortieren; einzelne Personen pro Konto sichtbar schalten.","Sort by photo count or name; make individual people visible per account."],
+    c4e_h:["Alter im Foto-Detail","Age in photo detail"], c4e_p:["Zu jedem erkannten Gesicht mit hinterlegtem Geburtstag zeigt das Detail das Alter zum Aufnahmezeitpunkt — und der Foto-Chat rechnet Geburtstage & Alter aus.","For every detected face with a stored birthday, the detail view shows the age at the time the photo was taken — and the photo chat works out birthdays & ages."],
 
     c5t:["Karte, Orte & Reisen","Map, places & trips"], c5l:["Sieh, wo deine Erinnerungen entstanden sind — auf Karte und Weltkugel.","See where your memories were made — on a map and a globe."],
     c5a_h:["Interaktive Karte","Interactive map"], c5a_p:["Alle Aufnahmen mit GPS auf einer Karte, sauber nach Orten gruppiert.","All geotagged shots on a map, neatly clustered by place."],
