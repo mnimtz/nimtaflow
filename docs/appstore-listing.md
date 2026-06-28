@@ -98,7 +98,21 @@ You need the NimtaFlow server first. This app is the mobile companion to it.
 ## Keywords (≤100, kommagetrennt, keine Leerzeichen verschwenden)
 `fotos,fotoverwaltung,selfhosted,self-hosted,nas,backup,videos,galerie,server,privat,erinnerungen,homeserver`
 
-## Was ist neu (Versionshinweise, Beispiel)
+## Was ist neu (Versionshinweise)
+
+### v1.3
+DE: `• Alter im Foto-Detail: zu erkannten Personen mit hinterlegtem Geburtstag wird das Alter zum Aufnahmezeitpunkt angezeigt.
+• Frag das Foto: ein Bild antippen und in natürlicher Sprache Fragen stellen.
+• Musik & KI-Soundtrack für Rückblick-Videos (Beat-Sync, lizenzsaubere Musik).
+• Neu: NimtaFlow als MCP-Server für KI-Assistenten (Claude/ChatGPT) – ein-/ausschaltbar unter Einstellungen → MCP.
+• Viele Detail-Verbesserungen & Fehlerbehebungen.`
+EN: `• Age in photo details: for recognized people with a stored birthday, the app shows their age at the time the photo was taken.
+• Ask the photo: tap an image and ask questions in natural language.
+• Music & AI soundtrack for memory videos (beat-sync, license-clean music).
+• New: NimtaFlow as an MCP server for AI assistants (Claude/ChatGPT) – toggle under Settings → MCP.
+• Many refinements & bug fixes.`
+
+### v1.2 (vorher)
 DE: `Neues NimtaFlow-Design & App-Icon, Foto-/Video-Upload (manuell + automatisch ab Datum) in deinen eigenen Ordner, persönliche Begrüßung, schnelleres Blättern (Vorladen) + Bild-Cache mit „leeren"-Funktion, „Foto animieren" (KI-Clips), viele Detail-Verbesserungen.`
 EN: `New NimtaFlow design & app icon, photo/video upload (manual + auto from a chosen date) into your own folder, personal greeting, faster swiping (prefetch) + image cache with a "clear" option, "Animate photo" (AI clips), many refinements.`
 
