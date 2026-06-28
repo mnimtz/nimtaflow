@@ -16,7 +16,7 @@ import Video from 'yet-another-react-lightbox/plugins/video'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles, Share2, Image as ImgIcon } from 'lucide-react'
+import { Info, Heart, Camera, MapPin, Calendar, Aperture, Users as UsersIcon, Tag as TagIcon, Star, RefreshCw, Sparkles, Share2, Image as ImgIcon, Pencil, X } from 'lucide-react'
 import ShareDialog from '../ShareDialog'
 import { api, thumbUrl, type Photo } from '../../lib/api'
 import { useToast } from '../ui/dialogs'
@@ -116,6 +116,19 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
   const { data: settings } = useQuery<Record<string, string>>({
     queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 60_000,
   })
+  const { data: allPeople = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 300_000,
+  })
+  const [editFaceId, setEditFaceId] = useState<number | null>(null)
+  const removePerson = async (faceId: number) => {
+    try { await api.delete(`/people/faces/${faceId}/unassign`); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); toast(t('gallery.personRemoved'), 'success') }
+    catch { toast(t('gallery.personEditFailed'), 'error') }
+  }
+  const reassignPerson = async (faceId: number, personId: number) => {
+    setEditFaceId(null)
+    try { await api.post(`/people/faces/${faceId}/assign/${personId}`); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); toast(t('gallery.personChanged'), 'success') }
+    catch { toast(t('gallery.personEditFailed'), 'error') }
+  }
   // Default the Ask-the-photo provider to whatever is actually set up: if a Gemini
   // key is configured (or Gemini is the chosen AI provider) default to Cloud,
   // otherwise Local. In-process local needs a GPU the backend doesn't have, so on
@@ -274,9 +287,24 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
                     <button onClick={() => setCover(pp)} title={t('gallery.setCoverFor', { name: pp.name })}
                       className="text-indigo-300/70 hover:text-yellow-300 p-0.5"><Star size={11} /></button>
                   )}
+                  {pp.face_id && (
+                    <>
+                      <button onClick={() => setEditFaceId(editFaceId === pp.face_id ? null : pp.face_id)} title={t('gallery.personChange')}
+                        className="text-indigo-300/70 hover:text-white p-0.5"><Pencil size={11} /></button>
+                      <button onClick={() => removePerson(pp.face_id)} title={t('gallery.personRemove')}
+                        className="text-indigo-300/70 hover:text-red-300 p-0.5"><X size={11} /></button>
+                    </>
+                  )}
                 </span>
               ))}
             </div>
+            {editFaceId != null && (
+              <select autoFocus value="" onChange={e => { const v = Number(e.target.value); if (v) reassignPerson(editFaceId, v) }}
+                className="mt-2 w-full px-2 py-1.5 text-sm rounded bg-zinc-800 border border-zinc-700 text-white">
+                <option value="">{t('gallery.personPick')}</option>
+                {allPeople.filter(pe => (pe.name || '').trim()).map(pe => <option key={pe.id} value={pe.id}>{pe.name}</option>)}
+              </select>
+            )}
           </Row>
         )}
 

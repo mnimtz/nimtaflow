@@ -105,6 +105,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
   const [season, setSeason] = useState('weihnachten')
   const [aiClips, setAiClips] = useState(false)
   const [music, setMusic] = useState(true)
+  const [musicPrompt, setMusicPrompt] = useState('')
 
   const { data: mottos = [] } = useQuery<Motto[]>({ queryKey: ['highlight-mottos'], queryFn: () => api.get('/highlights/mottos').then(r => r.data.mottos) })
   const { data: people = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data) })
@@ -130,6 +131,7 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
       ...(needs('season') ? { season } : {}),
       ...(aiAvailable && aiClips && aiEnabled ? { ai_clips: true } : {}),
       music,
+      ...(music && musicPrompt.trim() ? { music_prompt: musicPrompt.trim() } : {}),
     }),
     onSuccess: () => { toast(t('highlights.toastCreated'), 'success'); onCreated() },
     onError: (e: any) => toast(e?.response?.data?.detail || t('highlights.toastError'), 'error'),
@@ -213,6 +215,14 @@ function CreateHighlight({ onClose, onCreated }: { onClose: () => void; onCreate
             <span className="block text-[11px] text-zinc-500 mt-0.5">{t('highlights.musicDesc')}</span>
           </span>
         </label>
+        {music && (
+          <div className="ml-7">
+            <input value={musicPrompt} onChange={e => setMusicPrompt(e.target.value)}
+              placeholder={t('highlights.musicPromptPh')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p className="text-[11px] text-zinc-400 mt-1">{t('highlights.musicPromptHint')}</p>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs text-zinc-500 mb-1">{t('highlights.titleOptional')}</label>
