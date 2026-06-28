@@ -70,6 +70,11 @@ export const gallery = {
 
     // GalleryLightbox — InfoPanel
     'gallery.info': 'Informationen',
+    'gallery.barDetails': 'Details',
+    'gallery.barFav': 'Favorit',
+    'gallery.barShare': 'Teilen',
+    'gallery.barPostcard': 'Postkarte',
+    'gallery.barAnimate': 'Animieren',
     'gallery.close': 'Schließen',
     'gallery.openOriginalVideo': 'Original-Video öffnen',
     'gallery.openOriginalFull': 'Original in voller Qualität öffnen',
@@ -288,6 +293,11 @@ export const gallery = {
 
     // GalleryLightbox — InfoPanel
     'gallery.info': 'Information',
+    'gallery.barDetails': 'Details',
+    'gallery.barFav': 'Favorite',
+    'gallery.barShare': 'Share',
+    'gallery.barPostcard': 'Postcard',
+    'gallery.barAnimate': 'Animate',
     'gallery.close': 'Close',
     'gallery.openOriginalVideo': 'Open original video',
     'gallery.openOriginalFull': 'Open original in full quality',

@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { Images, Sparkles, Users, BookImage, Video, MapPin, Clock, Star, X } from 'lucide-react'
+import { Images, Sparkles, Users, BookImage, Video, MapPin, Clock, Star } from 'lucide-react'
 import { useT } from '../i18n'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 
 type Ph = { id: number; thumb_url: string; thumb_medium_url: string; is_video: boolean }
 type Person = { id: number; name: string; face_count: number; avatar_url: string; items?: Ph[] }
@@ -24,7 +25,7 @@ type Dash = {
 export default function DashboardPage() {
   const { t } = useT()
   const nav = useNavigate()
-  const [lightbox, setLightbox] = useState<Ph | null>(null)
+  const [lightbox, setLightbox] = useState<{ photos: Ph[]; index: number } | null>(null)
   const { data, isLoading } = useQuery<Dash>({
     queryKey: ['dashboard'],
     queryFn: () => api.get('/v1/dashboard').then(r => r.data),
@@ -46,8 +47,8 @@ export default function DashboardPage() {
     return firstName ? `${g}, ${firstName}` : g
   })()
 
-  const Tile = ({ p }: { p: Ph }) => (
-    <button onClick={() => setLightbox(p)}
+  const Tile = ({ p, items, idx }: { p: Ph; items: Ph[]; idx: number }) => (
+    <button onClick={() => setLightbox({ photos: items, index: idx })}
       className="relative shrink-0 w-32 h-32 rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 group">
       <img src={p.thumb_medium_url} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
       {p.is_video && <Video size={14} className="absolute bottom-1 left-1 text-white drop-shadow" />}
@@ -95,7 +96,7 @@ export default function DashboardPage() {
       {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
         <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
           sub={prettyDate(m.date)}>
-          <Strip>{m.items.map(p => <Tile key={p.id} p={p} />)}</Strip>
+          <Strip>{m.items.map((p, i) => <Tile key={p.id} p={p} items={m.items} idx={i} />)}</Strip>
         </Section>
       ))}
 
@@ -108,7 +109,7 @@ export default function DashboardPage() {
               <span className="mt-2 font-medium text-zinc-900 dark:text-white">{data.person_of_week.name}</span>
               <span className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: data.person_of_week.face_count })}</span>
             </button>
-            <Strip>{(data.person_of_week.items ?? []).map(p => <Tile key={p.id} p={p} />)}</Strip>
+            <Strip>{(data.person_of_week.items ?? []).map((p, i, arr) => <Tile key={p.id} p={p} items={arr} idx={i} />)}</Strip>
           </div>
         </Section>
       )}
@@ -116,7 +117,7 @@ export default function DashboardPage() {
       {/* Highlights */}
       {data.highlights?.length > 0 && (
         <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
-          <Strip>{data.highlights.map(p => <Tile key={p.id} p={p} />)}</Strip>
+          <Strip>{data.highlights.map((p, i) => <Tile key={p.id} p={p} items={data.highlights} idx={i} />)}</Strip>
         </Section>
       )}
 
@@ -154,18 +155,17 @@ export default function DashboardPage() {
       {/* Recent */}
       {data.recent?.length > 0 && (
         <Section icon={Clock} title={t('dashboard.recent')} onMore={() => nav('/gallery')}>
-          <Strip>{data.recent.map(p => <Tile key={p.id} p={p} />)}</Strip>
+          <Strip>{data.recent.map((p, i) => <Tile key={p.id} p={p} items={data.recent} idx={i} />)}</Strip>
         </Section>
       )}
 
-      {/* Lightbox */}
+      {/* Lightbox — die echte Galerie-Lightbox (zuverlässiges Laden + Optionen/Details) */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightbox(null)}>
-          <button className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={28} /></button>
-          {lightbox.is_video
-            ? <video src={`/api/v1/photos/${lightbox.id}/stream?access_token=${localStorage.getItem('access_token')}`} controls autoPlay className="max-h-[90vh] max-w-[95vw]" onClick={e => e.stopPropagation()} />
-            : <img src={`/api/photos/${lightbox.id}/thumbnail?size=large`} className="max-h-[90vh] max-w-[95vw] object-contain" onClick={e => e.stopPropagation()} />}
-        </div>
+        <GalleryLightbox
+          photos={lightbox.photos as any}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   )

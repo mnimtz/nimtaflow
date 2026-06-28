@@ -598,6 +598,33 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
         styles={{ container: { backgroundColor: '#000' } }}
         animation={{ fade: 250, swipe: 300 }}
       />
+      {/* Mobile: garantiert sichtbare Aktionsleiste unten (die yarl-Toolbar-Icons oben
+          sind auf Phones zu klein/leicht zu übersehen). */}
+      {isMobile && photos[cur] && createPortal(
+        <div className="fixed inset-x-0 bottom-0 z-[99998] flex items-center justify-around px-1 py-2 bg-black/85 backdrop-blur border-t border-white/10"
+             style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+          <button onClick={() => setInfo(true)} className="flex flex-col items-center gap-0.5 text-white/90 text-[10px] px-3 py-1">
+            <Info size={21} /> {t('gallery.barDetails')}
+          </button>
+          {onFavorite && (
+            <button onClick={() => photos[cur] && toggleFav(photos[cur])} className="flex flex-col items-center gap-0.5 text-white/90 text-[10px] px-3 py-1">
+              <Heart size={21} fill={isFav(photos[cur]) ? 'currentColor' : 'none'} color={isFav(photos[cur]) ? '#f87171' : undefined} /> {t('gallery.barFav')}
+            </button>
+          )}
+          <button onClick={() => setShareOpen(true)} className="flex flex-col items-center gap-0.5 text-white/90 text-[10px] px-3 py-1">
+            <Share2 size={21} /> {t('gallery.barShare')}
+          </button>
+          {!photos[cur].is_video && (
+            <button onClick={() => setPostcardOpen(true)} className="flex flex-col items-center gap-0.5 text-white/90 text-[10px] px-3 py-1">
+              <ImgIcon size={21} /> {t('gallery.barPostcard')}
+            </button>
+          )}
+          {aiOn && !photos[cur].is_video && (
+            <button onClick={() => setAnimOpen(true)} className="flex flex-col items-center gap-0.5 text-white/90 text-[10px] px-3 py-1">
+              <Sparkles size={21} /> {t('gallery.barAnimate')}
+            </button>
+          )}
+        </div>, document.body)}
       {info && photos[cur] && createPortal(<InfoPanel photoId={photos[cur].id} onClose={() => setInfo(false)} />, document.body)}
       {shareOpen && photos[cur] && createPortal(<ShareDialog target={{ kind: 'photo', photoId: photos[cur].id, title: photos[cur].filename }} onClose={() => setShareOpen(false)} />, document.body)}
       {postcardOpen && photos[cur] && createPortal(<PostcardDialog photoId={photos[cur].id} onClose={() => setPostcardOpen(false)} />, document.body)}
