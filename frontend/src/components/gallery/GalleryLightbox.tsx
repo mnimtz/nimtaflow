@@ -525,6 +525,13 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
     </button>
   ) : null
 
+  // On narrow phones the toolbar (up to 9 icons) overflows → drop the least-useful
+  // controls there (mobile is already fullscreen; slideshow is rarely used on a phone).
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
+  const toolbarButtons = isMobile
+    ? [postcardBtn, shareBtn, favBtn, infoBtn, 'download', 'close']
+    : [animBtn, postcardBtn, shareBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close']
+
   return (
     <>
       <Lightbox
@@ -536,7 +543,7 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
           if (onLoadMore && hasMore && i >= photos.length - 3) onLoadMore()
         } }}
         plugins={[Zoom, Fullscreen, Slideshow, Thumbnails, Counter, Captions, Video, Download]}
-        toolbar={{ buttons: [animBtn, postcardBtn, shareBtn, favBtn, infoBtn, 'download', 'slideshow', 'fullscreen', 'close'].filter(Boolean) as any }}
+        toolbar={{ buttons: toolbarButtons.filter(Boolean) as any }}
         zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
         thumbnails={{ position: 'bottom', width: 96, height: 64, border: 0, gap: 6 }}
         counter={{ container: { style: { top: 'unset', bottom: 0 } } }}
