@@ -21,6 +21,12 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
 - **Store-Einreichung:** Screenshots/Metadaten (teils durch Website-Vorschau-Screenshots abgedeckt), finale Einreichung.
 - **Push-Konzept + Release-Readiness-Audit** — Konzept-Doku da (`docs/push-und-release-audit-konzept.md`), Umsetzung offen.
 
+### 🟡 1b · MCP-Server für NimtaFlow (Konzept steht)
+- **Konzept-Doku:** `docs/mcp-server-konzept.md`. NimtaFlow als MCP-Server für Claude/MCP-Clients.
+- **Prinzip:** Metadaten = Motor (Suche über Beschreibung/Personen/Tags/Datum/Embeddings, nie 140k Bilder ansehen); Thumbnails nur als Feinschliff für wenige Endkandidaten; **temporärer Share-Link = das Ergebnis** (Videos/Alben immer so).
+- **Architektur:** dünner Client auf die bestehende `/api/*` (erbt ACL + Logik), eigener Container, Pro-User-Token, Settings-Schalter `mcp.mode=read|read_write`. Keine Lösch-/Bulk-GPS-Tools; MCP-Shares mit TTL + noindex.
+- **Phasen:** Ph0 Skelett (`suche_medien`) → Ph1 Lese-Suite → Ph2 Share-Link-Deliverable → Ph3 Schreib-Suite → Ph4 async/Video/GPS-Einzel.
+
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
 - **Privates photoflow** ebenfalls bereinigt (CLAUDE.md aus History getilgt, IPs/PW/Claude-Trailer raus) — falls es je public wird, dann **vorher** GitHub-Token + Demo-PW rotieren (waren nur privat, also nie öffentlich abgeflossen).
