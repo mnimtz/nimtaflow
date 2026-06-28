@@ -13,6 +13,8 @@ Transport: Streamable HTTP unter /mcp. Connector-URL: http://<host>:<MCP_PORT>/m
 import os
 import base64
 import asyncio
+import math
+from datetime import date
 
 import httpx
 from mcp.server.fastmcp import FastMCP, Context
@@ -60,6 +62,29 @@ async def _status(client: httpx.AsyncClient) -> dict:
     if not st.get("enabled"):
         raise _Disabled("Der MCP-Zugriff ist in NimtaFlow gerade deaktiviert (Einstellungen → MCP → einschalten).")
     return st
+
+
+def _write_guard(st: dict):
+    if st.get("mode") != "read_write":
+        raise _Disabled("Schreibzugriff ist aus. In NimtaFlow unter Einstellungen → MCP den Modus auf „lesend + schreibend“ stellen.")
+
+
+def _age(birthdate: str | None, taken_at: str | None) -> int | None:
+    if not birthdate or not taken_at:
+        return None
+    try:
+        bd = date.fromisoformat(birthdate[:10]); sd = date.fromisoformat(taken_at[:10])
+    except Exception:
+        return None
+    a = sd.year - bd.year - ((sd.month, sd.day) < (bd.month, bd.day))
+    return a if 0 <= a < 130 else None
+
+
+def _haversine_km(lat1, lon1, lat2, lon2) -> float:
+    p = math.pi / 180
+    a = (0.5 - math.cos((lat2 - lat1) * p) / 2
+         + math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lon2 - lon1) * p)) / 2)
+    return 2 * 6371 * math.asin(math.sqrt(a))
 
 
 @mcp.tool(
@@ -206,6 +231,271 @@ async def teilen_link_erstellen(
         return (f"🔗 Teilen-Link für {label}: {url}\n"
                 f"Läuft in ~{expires_days} Tag(en) ab. "
                 f"Login-frei – zum Ansehen/Abspielen/Weitergeben.")
+
+
+# ── Lese-Tools ──────────────────────────────────────────────────────────────────
+
+@mcp.tool(description=(
+    "Alle Details zu einem Foto/Video (#ID): Datum, Ort, erkannte Personen (mit Alter "
+    "zum Aufnahmezeitpunkt, falls Geburtsdatum hinterlegt), Tags, KI-Beschreibung, "
+    "GPS, Favorit, Bewertung."))
+async def medien_detail(foto_id: int, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        try:
+            d = await _get_json(client, f"/api/photos/{int(foto_id)}")
+        except httpx.HTTPStatusError as e:
+            return f"Foto #{foto_id} nicht gefunden ({e.response.status_code})."
+        taken = d.get("taken_at")
+        ppl = []
+        seen = set()
+        for p in d.get("people", []):
+            nm = p.get("name")
+            if not nm or nm in seen:
+                continue
+            seen.add(nm)
+            age = _age(p.get("birthdate"), taken)
+            ppl.append(f"{nm}" + (f" ({age} J.)" if age is not None else ""))
+        place = ", ".join(x for x in (d.get("city"), d.get("country"), d.get("location_name")) if x)
+        lines = [f"{'🎬' if d.get('is_video') else '📷'} #{d.get('id')} — {d.get('filename','')}"]
+        if taken: lines.append(f"Datum: {taken[:19].replace('T',' ')}")
+        if place: lines.append(f"Ort: {place}")
+        if ppl: lines.append(f"Personen: {', '.join(ppl)}")
+        if d.get("tags"): lines.append(f"Tags: {', '.join(d['tags'])}")
+        if d.get("latitude") is not None: lines.append(f"GPS: {d['latitude']:.5f}, {d['longitude']:.5f}")
+        if d.get("user_rating"): lines.append(f"Bewertung: {'★'*int(d['user_rating'])}")
+        if d.get("is_favorite"): lines.append("⭐ Favorit")
+        desc = (d.get("description") or "").strip()
+        if desc: lines.append(f"\nBeschreibung: {desc}")
+        return "\n".join(lines)
+
+
+@mcp.tool(description="Listet alle Alben mit Foto-Anzahl und Typ (manuell/smart).")
+async def alben_liste(ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        albums = await _get_json(client, "/api/albums")
+        if not albums:
+            return "Noch keine Alben."
+        rows = sorted(albums, key=lambda a: a.get("photo_count", 0), reverse=True)
+        return "Alben:\n" + "\n".join(
+            f"• #{a['id']} {a['name']} — {a.get('photo_count',0)} Medien ({a.get('album_type','?')})"
+            for a in rows)
+
+
+@mcp.tool(description="Listet die erfassten Personen mit Foto-Anzahl und (falls vorhanden) Geburtsdatum.")
+async def personen_liste(ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        people = await _get_json(client, "/api/people")
+        named = [p for p in people if (p.get("name") or "").strip() and not p.get("is_hidden")]
+        rows = sorted(named, key=lambda p: p.get("photo_count", 0), reverse=True)[:80]
+        return "Personen:\n" + "\n".join(
+            f"• #{p['id']} {p['name']} — {p.get('photo_count',0)} Fotos"
+            + (f", geb. {p['birthdate']}" if p.get("birthdate") else "")
+            for p in rows)
+
+
+@mcp.tool(description="Listet die Orte (Städte/Länder) mit Foto-Anzahl — woher die meisten Aufnahmen stammen.")
+async def orte_liste(ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=60) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        rows = await _get_json(client, "/api/photos/map")
+        counts: dict = {}
+        for r in rows:
+            place = ", ".join(x for x in (r.get("city"), r.get("country")) if x)
+            if place:
+                counts[place] = counts.get(place, 0) + 1
+        if not counts:
+            return "Keine Orte mit GPS/Stadt gefunden."
+        top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:40]
+        return f"Orte ({len(counts)} gesamt, Top 40):\n" + "\n".join(f"• {p} — {n}" for p, n in top)
+
+
+@mcp.tool(description=(
+    "Findet Fotos/Videos im Umkreis (km) um eine GPS-Koordinate. Liefert die nächsten "
+    "Treffer mit Entfernung, Ort und Datum."))
+async def medien_im_umkreis(lat: float, lon: float, km: float = 5.0, limit: int = 20, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=60) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        rows = await _get_json(client, "/api/photos/map")
+        hits = []
+        for r in rows:
+            la, lo = r.get("latitude"), r.get("longitude")
+            if la is None or lo is None:
+                continue
+            dist = _haversine_km(float(lat), float(lon), float(la), float(lo))
+            if dist <= float(km):
+                hits.append((dist, r))
+        hits.sort(key=lambda x: x[0])
+        if not hits:
+            return f"Keine Medien im Umkreis von {km} km um {lat:.4f}, {lon:.4f}."
+        out = [f"{len(hits)} Treffer im Umkreis von {km} km (Top {min(limit,len(hits))}):"]
+        for dist, r in hits[:int(limit)]:
+            place = ", ".join(x for x in (r.get("city"), r.get("country")) if x)
+            out.append(f"• {'🎬' if r.get('is_video') else '📷'} #{r['id']} — {dist:.1f} km" + (f" · {place}" if place else ""))
+        return "\n".join(out)
+
+
+@mcp.tool(description=(
+    "Überblick über die Bibliothek: Gesamtzahl Fotos/Videos/Favoriten, Zeitspanne, "
+    "Gesichter (zugeordnet/frei), und der Verarbeitungs-Rückstand."))
+async def bibliothek_status(ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            await _status(client)
+        except _Disabled as e:
+            return str(e)
+        stats = await _get_json(client, "/api/photos/stats")
+        try:
+            remote = await _get_json(client, "/api/remote/status")
+        except Exception:
+            remote = {}
+        lines = ["📊 Bibliothek:"]
+        if stats.get("total") is not None: lines.append(f"• Fotos (fertig): {stats['total']:,}".replace(",", "."))
+        if stats.get("videos") is not None: lines.append(f"• Videos: {stats['videos']:,}".replace(",", "."))
+        if stats.get("favorites") is not None: lines.append(f"• Favoriten: {stats['favorites']:,}".replace(",", "."))
+        if stats.get("with_gps") is not None: lines.append(f"• mit GPS: {stats['with_gps']:,}".replace(",", "."))
+        if stats.get("min_date") and stats.get("max_date"):
+            lines.append(f"• Zeitspanne: {str(stats['min_date'])[:10]} … {str(stats['max_date'])[:10]}")
+        ft, fa, fu = remote.get("faces_total"), remote.get("faces_assigned"), remote.get("faces_unassigned")
+        if ft is not None:
+            lines.append(f"• Gesichter: {ft:,} gesamt, {fa:,} zugeordnet, {fu:,} frei".replace(",", "."))
+        if remote.get("pending") is not None:
+            lines.append(f"• Beschreibungs-Rückstand: {remote['pending']:,}".replace(",", "."))
+        return "\n".join(lines)
+
+
+# ── Schreib-Tools (nur bei mcp.mode = read_write) ────────────────────────────────
+
+@mcp.tool(description=(
+    "Markiert ein Foto/Video als Favorit oder hebt die Markierung auf. "
+    "Nur bei aktiviertem Schreibmodus."))
+async def favorit_setzen(foto_id: int, favorit: bool = True, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        d = await _get_json(client, f"/api/photos/{int(foto_id)}")
+        if bool(d.get("is_favorite")) == bool(favorit):
+            return f"#{foto_id} ist bereits {'Favorit' if favorit else 'kein Favorit'}."
+        r = await client.patch(f"/api/photos/{int(foto_id)}/favorite")
+        r.raise_for_status()
+        return f"#{foto_id} ist jetzt {'⭐ Favorit' if r.json().get('is_favorite') else 'kein Favorit'}."
+
+
+@mcp.tool(description="Setzt die Sterne-Bewertung (0–5) eines Fotos. Nur bei aktiviertem Schreibmodus.")
+async def bewertung_setzen(foto_id: int, sterne: int, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        r = await client.patch(f"/api/photos/{int(foto_id)}/rating", params={"rating": max(0, min(5, int(sterne)))})
+        r.raise_for_status()
+        return f"#{foto_id} Bewertung: {'★'*int(r.json().get('user_rating',0)) or '—'}"
+
+
+@mcp.tool(description=(
+    "Legt ein neues manuelles Album an, optional gleich mit Fotos (foto_ids). "
+    "Nur bei aktiviertem Schreibmodus."))
+async def album_erstellen(name: str, foto_ids: list[int] = None, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        r = await client.post("/api/albums", json={"name": name, "album_type": "manual"})
+        r.raise_for_status()
+        album = r.json(); aid = album["id"]
+        n = 0
+        ids = [int(i) for i in (foto_ids or [])]
+        if ids:
+            rr = await client.post(f"/api/albums/{aid}/photos", json={"photo_ids": ids})
+            rr.raise_for_status(); n = rr.json().get("added", len(ids))
+        return f"Album „{name}“ (#{aid}) angelegt" + (f", {n} Medien hinzugefügt." if ids else ".")
+
+
+@mcp.tool(description=(
+    "Ordnet ein erkanntes Gesicht (face_id) einer Person (person_id) zu. "
+    "Nur bei aktiviertem Schreibmodus."))
+async def gesicht_zuordnen(face_id: int, person_id: int, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        r = await client.post(f"/api/people/faces/{int(face_id)}/assign/{int(person_id)}")
+        r.raise_for_status()
+        return f"Gesicht {face_id} → Person {person_id} zugeordnet."
+
+
+@mcp.tool(description="Entfernt die Personen-Zuordnung eines Gesichts (face_id). Nur bei aktiviertem Schreibmodus.")
+async def gesicht_entfernen(face_id: int, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        r = await client.delete(f"/api/people/faces/{int(face_id)}/unassign")
+        r.raise_for_status()
+        return f"Zuordnung von Gesicht {face_id} entfernt."
+
+
+@mcp.tool(description=(
+    "Bestätigt ALLE offenen Gesichts-Vorschläge für eine Person (person_id) auf einmal "
+    "— die vorgeschlagenen Gesichter werden ihr zugeordnet. Nur bei aktiviertem Schreibmodus."))
+async def vorschlaege_bestaetigen(person_id: int, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=60) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        r = await client.post(f"/api/people/suggestions/confirm/{int(person_id)}")
+        r.raise_for_status()
+        data = r.json() if r.content else {}
+        n = data.get("confirmed", data.get("count", "?"))
+        return f"Vorschläge für Person {person_id} bestätigt ({n})."
 
 
 if __name__ == "__main__":

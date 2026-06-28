@@ -21,11 +21,11 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
 - **Store-Einreichung:** Screenshots/Metadaten (teils durch Website-Vorschau-Screenshots abgedeckt), finale Einreichung.
 - **Push-Konzept + Release-Readiness-Audit** — Konzept-Doku da (`docs/push-und-release-audit-konzept.md`), Umsetzung offen.
 
-### 🟡 1b · MCP-Server für NimtaFlow (Konzept steht)
-- **Konzept-Doku:** `docs/mcp-server-konzept.md`. NimtaFlow als MCP-Server für Claude/MCP-Clients.
-- **Prinzip:** Metadaten = Motor (Suche über Beschreibung/Personen/Tags/Datum/Embeddings, nie 140k Bilder ansehen); Thumbnails nur als Feinschliff für wenige Endkandidaten; **temporärer Share-Link = das Ergebnis** (Videos/Alben immer so).
-- **Architektur:** dünner Client auf die bestehende `/api/*` (erbt ACL + Logik), eigener Container, Pro-User-Token, Settings-Schalter `mcp.mode=read|read_write`. Keine Lösch-/Bulk-GPS-Tools; MCP-Shares mit TTL + noindex.
-- **Phasen:** Ph0 Skelett (`suche_medien`) → Ph1 Lese-Suite → Ph2 Share-Link-Deliverable → Ph3 Schreib-Suite → Ph4 async/Video/GPS-Einzel.
+### 🟢 1b · MCP-Server für NimtaFlow (Ph0–3 LIVE, v1.381–1.386)
+- **Konzept-Doku:** `docs/mcp-server-konzept.md`. Code: `mcp-server/` (FastMCP, streamable-http, Container `photoflow-mcp-1`, Port 8091, Image `nimtaflow-mcp`).
+- **Prinzip umgesetzt:** Metadaten = Motor (semantische Suche); Thumbnails nur Feinschliff; **temporärer Share-Link = Ergebnis**. Auth: Pro-User-JWT als Bearer durchgereicht → erbt ACL. Settings-Kategorie „MCP" (an/aus, `mcp.mode=read|read_write`, Share-TTL, Token erzeugen).
+- **14 Tools live:** Lesen — `suche_medien`, `medien_detail` (mit Alter), `alben_liste`, `personen_liste`, `orte_liste`, `medien_im_umkreis` (GPS-Radius), `bibliothek_status`; Teilen — `teilen_link_erstellen` (foto/album/auswahl→Auto-Album); Schreiben (🔒 read_write) — `favorit_setzen`, `bewertung_setzen`, `album_erstellen`, `gesicht_zuordnen`, `gesicht_entfernen`, `vorschlaege_bestaetigen`.
+- **Offen (Ph4):** async/kostenbewusst (Highlights/Video erzeugen), GPS-Einzel-Setzen, Postkarte. Multi-User: Token-Verwaltung/Rotation in Settings.
 
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
