@@ -139,6 +139,9 @@ class Photo(Base):
     # described by a non-local provider (e.g. Gemini) from being claimed for a
     # faces-only pass forever when it genuinely has no faces.
     faces_scanned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # When the photo's MWG face regions (box + person name) were last written into the
+    # file/sidecar. NULL = not yet written → the nightly backfill_faces task picks it up.
+    faces_written_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

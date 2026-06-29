@@ -62,6 +62,7 @@ celery_app.conf.update(
         "retry_failed_ai":    {"queue": "cpu"},
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
+        "write_faces":        {"queue": "cpu"},   # MWG face regions (button + nightly incremental)
         "backfill_geo":       {"queue": "cpu"},   # offline reverse-geocode GPS → city
         # Fast EXIF date+GPS(+geocode) backfill straight from file headers. On the
         # SCAN queue (near-empty) so it does NOT wait behind the huge process_photo
@@ -167,6 +168,15 @@ celery_app.conf.beat_schedule = {
     "backfill-xmp-nightly": {
         "task": "backfill_xmp",
         "schedule": crontab(hour=2, minute=30),
+    },
+    # Nightly, incremental, capped: write MWG face regions (person names + boxes) into
+    # files for photos that don't have them yet — works through the library „nach und
+    # nach" (3000/Nacht) instead of redoing everything. Replaces the need for
+    # scan.force_reindex for person-name persistence.
+    "backfill-faces-nightly": {
+        "task": "write_faces",
+        "schedule": crontab(hour=3, minute=10),
+        "kwargs": {"incremental": True, "limit": 3000},
     },
     # Nightly fast EXIF date+GPS backfill (scan queue) so newly-imported photos get
     # their date/coordinates within the night even when the process_photo cpu backlog

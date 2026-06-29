@@ -594,13 +594,18 @@ def reembed_imported_faces_task(self):
 
 
 @celery_app.task(bind=True, name="write_faces")
-def write_faces_task(self):
-    """Write EVERY photo's detected faces as MWG face regions (box + name where
-    known) into the files — button-driven, run once face clustering has settled.
-    Saves a future tool from re-running face DETECTION on the whole library.
-    Images: embedded XMP. Videos (can't embed): a `.xmp` sidecar."""
+def write_faces_task(self, incremental: bool = False, limit: int = None):
+    """Write photos' detected faces as MWG face regions (box + name where known) into
+    the files. Images: embedded XMP. Videos (can't embed): a `.xmp` sidecar.
+
+    Two modes:
+    - button (incremental=False): EVERY photo with faces — explicit full (re)write.
+    - nightly (incremental=True, limit=N): only photos NOT yet written
+      (faces_written_at IS NULL), capped at N → works through the library „nach und
+      nach" without redoing finished ones each night."""
     async def _main():
         from app.core.database import init_db, get_db
+        from app.core.timeutil import utcnow as _utcnow
         from app.models.photo import Photo
         from app.models.face import Face
         from app.models.person import Person
@@ -613,10 +618,19 @@ def write_faces_task(self):
         async for db in get_db():
             s = await load_settings(db)
             xmp_mode = str(s.get("xmp.write_mode", "off")).lower()
-            pids = [p for (p,) in (await db.execute(
-                select(Face.photo_id).where(Face.is_ignored == False).distinct()  # noqa: E712
-            )).all()]
-            flog("faces", "INFO", f"Gesichts-Regionen schreiben: {len(pids)} Foto(s) (Modus {xmp_mode})")
+            if incremental:
+                q = (select(Photo.id).where(
+                        Photo.is_missing == False, Photo.faces_written_at.is_(None),  # noqa: E712
+                        Photo.id.in_(select(Face.photo_id).where(Face.is_ignored == False)))  # noqa: E712
+                     .order_by(Photo.id))
+                if limit:
+                    q = q.limit(int(limit))
+                pids = [p for (p,) in (await db.execute(q)).all()]
+            else:
+                pids = [p for (p,) in (await db.execute(
+                    select(Face.photo_id).where(Face.is_ignored == False).distinct()  # noqa: E712
+                )).all()]
+            flog("faces", "INFO", f"Gesichts-Regionen schreiben: {len(pids)} Foto(s) (Modus {xmp_mode}, inkrementell={incremental})")
             done = failed = 0
             for pid in pids:
                 photo = await db.get(Photo, pid)
@@ -656,12 +670,17 @@ def write_faces_task(self):
                         # a describe job already wrote there (and vice-versa).
                         write_sidecar(photo.path, faces=regions,
                                       width=photo.width or 0, height=photo.height or 0)
-                    done += 1 if ok else 0
-                    failed += 0 if ok else 1
+                    if ok:
+                        done += 1
+                        photo.faces_written_at = _utcnow()   # nicht nochmal anfassen
+                    else:
+                        failed += 1
                 except Exception:
                     failed += 1
                 if (done + failed) % 100 == 0:
+                    await db.commit()
                     flog("faces", "INFO", f"Gesichts-Regionen: {done} geschrieben, {failed} Fehler …")
+            await db.commit()
             flog("faces", "INFO", f"Gesichts-Regionen fertig: {done} geschrieben, {failed} Fehler")
             return {"written": done, "failed": failed}
     return _run(_main())
