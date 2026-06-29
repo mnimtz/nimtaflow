@@ -600,7 +600,16 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
     # so we do the exiftool write here (xmp.write_mode: off|file|file_sidecar|sidecar).
     wrote_file = False
     xmp_mode = str(s.get("xmp.write_mode", "off")).lower()
-    if (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
+    # Datei am gespeicherten Pfad weg (verschoben/umbenannt/gelöscht)? Dann NICHT
+    # versuchen zu schreiben (das flutete sonst das Log mit „File not found"-WARNINGs)
+    # — stattdessen als fehlend markieren. Die Claim-Queries filtern is_missing==False,
+    # also wird das Foto danach nicht erneut beschrieben/geschrieben.
+    import os as _os
+    if photo.path and not _os.path.exists(photo.path):
+        if not photo.is_missing:
+            photo.is_missing = True
+            flog("ai", "INFO", f"Datei nicht mehr am Pfad — als fehlend markiert (remote): {photo.filename}")
+    elif (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
         try:
             # Videos: never embed (exiftool can't write MTS/AVCHD and many video
             # containers) — always use a .xmp sidecar instead. Images embed per mode.
