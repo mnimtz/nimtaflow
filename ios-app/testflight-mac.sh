@@ -12,7 +12,7 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
   -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
   CURRENT_PROJECT_VERSION="$BUILD" clean archive
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \
-  -exportOptionsPlist ExportOptions.plist -exportPath "$EXPORT" \
+  -exportOptionsPlist ExportOptions-mac-manual.plist -exportPath "$EXPORT" \
   -allowProvisioningUpdates \
   -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 PKG=$(ls "$EXPORT"/*.pkg 2>/dev/null | head -1)
