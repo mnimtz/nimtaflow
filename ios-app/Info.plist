@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.photoflow.upload</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>de</string>
 	<key>CFBundleDisplayName</key>
@@ -22,17 +26,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.photography</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>processing</string>
-		<string>fetch</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.photoflow.upload</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -40,14 +37,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>NimtaFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>NimtaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>NimtaFlow zeigt deinen aktuellen Standort auf der Foto-Karte an.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>NimtaFlow nimmt auf Wunsch ein kurzes Sprach-Memo zu einem Foto auf.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NimtaFlow speichert heruntergeladene Fotos und Videos in deiner Mediathek.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NimtaFlow lädt von dir ausgewählte Fotos und Videos in deine private Mediathek hoch.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+		<string>fetch</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
