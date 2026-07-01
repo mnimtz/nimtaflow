@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var sending = false
     @State private var status: ChatStatus?
     @State private var opened: PhotoV1?
+    @State private var navTarget: NavTarget?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -23,7 +24,8 @@ struct ChatView: View {
                             }
                             ForEach(messages) { m in
                                 ChatBubbleView(bubble: m, onTapPhoto: { open($0) },
-                                               onTapSuggestion: { s in Task { await sendIt(preset: s) } }).id(m.id)
+                                               onTapSuggestion: { s in Task { await sendIt(preset: s) } },
+                                               onTapNavigate: { navTarget = NavTarget(path: $0) }).id(m.id)
                             }
                             if sending {
                                 HStack(spacing: 6) { ProgressView(); Text("denkt nach…").foregroundStyle(.secondary) }
@@ -59,10 +61,27 @@ struct ChatView: View {
             }
             .task { status = try? await api.chatStatus() }
             .fullScreenCover(item: $opened) { p in PhotoPager(photos: [p], start: p) }
+            .sheet(item: $navTarget) { t in
+                navDestination(t.path)
+                    .presentationDetents([.large]).presentationDragIndicator(.visible)
+            }
         }
     }
 
     func open(_ id: Int) { Task { opened = try? await api.photo(id) } }
+
+    /// Bildet den Web-Pfad des Assistenten auf die passende iOS-Ansicht ab.
+    @ViewBuilder func navDestination(_ path: String) -> some View {
+        if path.hasPrefix("/people") { PeopleView() }
+        else if path.hasPrefix("/albums") { AlbumsView() }
+        else if path.hasPrefix("/trips") { TripsView() }
+        else if path.hasPrefix("/map") { MapScreen() }
+        else if path.hasPrefix("/highlights") { HighlightsView() }
+        else if path.hasPrefix("/relationships") { RelationshipsView() }
+        else if path.hasPrefix("/leitstand") { LeitstandView() }
+        else if path.hasPrefix("/search") { SearchView() }
+        else { GalleryView() }
+    }
 
     func sendIt(preset: String? = nil) async {
         let text = (preset ?? draft).trimmingCharacters(in: .whitespaces)
@@ -74,7 +93,7 @@ struct ChatView: View {
         do {
             let reply = try await api.chat(message: text, history: Array(hist))
             messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: reply.photo_ids,
-                                       suggestions: reply.suggestions ?? []))
+                                       suggestions: reply.suggestions ?? [], navigate: reply.navigate))
         } catch {
             messages.append(ChatBubble(role: "assistant", text: "⚠️ Konnte gerade nicht antworten. Bitte nochmal.", photoIDs: []))
         }
@@ -87,14 +106,31 @@ struct ChatBubble: Identifiable, Hashable {
     let text: String
     let photoIDs: [Int]
     var suggestions: [String] = []
+    var navigate: String? = nil   // Ansichts-Navigation (z. B. "/people?person=3")
 }
+
+/// Wrapper, damit ein Navigations-Pfad als .sheet(item:) präsentierbar ist.
+struct NavTarget: Identifiable { let id = UUID(); let path: String }
 
 private struct ChatBubbleView: View {
     @EnvironmentObject var api: APIClient
     let bubble: ChatBubble
     let onTapPhoto: (Int) -> Void
     var onTapSuggestion: (String) -> Void = { _ in }
+    var onTapNavigate: (String) -> Void = { _ in }
     var isUser: Bool { bubble.role == "user" }
+
+    private func navLabel(_ path: String) -> String {
+        if path.hasPrefix("/people") { return "Personen öffnen" }
+        if path.hasPrefix("/albums") { return "Alben öffnen" }
+        if path.hasPrefix("/trips") { return "Reisen öffnen" }
+        if path.hasPrefix("/map") { return "Karte öffnen" }
+        if path.hasPrefix("/highlights") { return "Highlights öffnen" }
+        if path.hasPrefix("/relationships") { return "Beziehungen öffnen" }
+        if path.hasPrefix("/leitstand") { return "Leitstand öffnen" }
+        if path.hasPrefix("/search") { return "Suche öffnen" }
+        return "Galerie öffnen"
+    }
 
     var body: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
@@ -115,6 +151,16 @@ private struct ChatBubbleView: View {
                         }
                     }
                     .padding(.horizontal, 2)
+                }
+            }
+            // Ansichts-Navigation ("öffne Anjas Seite", "zeig die Reisen")
+            if let nav = bubble.navigate, !nav.isEmpty {
+                Button { onTapNavigate(nav) } label: {
+                    Label(navLabel(nav), systemImage: "arrow.up.forward.app")
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.indigo.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.indigo)
                 }
             }
             // Proaktive Folge-Vorschläge als antippbare Chips
