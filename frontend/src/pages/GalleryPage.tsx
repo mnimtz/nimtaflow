@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3, FolderPlus, Play } from 'lucide-react'
+import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, CalendarRange, Minus, Plus, Rows3, Columns3, FolderPlus, Play } from 'lucide-react'
 import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
 import Gallery, { type LayoutMode } from '../components/gallery/Gallery'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
@@ -135,6 +135,8 @@ export default function GalleryPage() {
   const [zoom, setZoom] = useState<number>(() => Number(localStorage.getItem('gallery.zoom')) || (isMobile() ? 140 : 210))
   const [groupBy, setGroupBy] = useState<'none' | 'day' | 'month'>(() => (localStorage.getItem('gallery.groupBy') as any) || 'day')
   const [layout, setLayout] = useState<LayoutMode>(() => (localStorage.getItem('gallery.layout') as LayoutMode) || 'rows')
+  const [showTimeline, setShowTimeline] = useState<boolean>(() => (localStorage.getItem('gallery.timeline') ?? 'true') === 'true')
+  useEffect(() => { localStorage.setItem('gallery.timeline', String(showTimeline)) }, [showTimeline])
   useEffect(() => { localStorage.setItem('gallery.zoom', String(zoom)) }, [zoom])
   useEffect(() => { localStorage.setItem('gallery.groupBy', groupBy) }, [groupBy])
   useEffect(() => { localStorage.setItem('gallery.layout', layout) }, [layout])
@@ -390,6 +392,15 @@ export default function GalleryPage() {
                 <option value="none">{t('gallery.groupByNone')}</option>
               </select>
             </div>
+            {/* Zeitleiste an/aus (Jahres-Leiste rechts zum schnellen Springen) */}
+            {showScrubber && (
+              <button onClick={() => setShowTimeline(v => !v)} title="Zeitleiste (Jahres-Sprung) ein/aus"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${showTimeline
+                  ? 'border-indigo-500 text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                <CalendarRange size={14} /> <span className="hidden lg:inline">Zeitleiste</span>
+              </button>
+            )}
             {/* Zoom / density */}
             <div className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1" title={t('gallery.imageSize')}>
               <button onClick={() => setZoom(z => Math.max(110, z - 30))} className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><Minus size={13} /></button>
@@ -421,8 +432,8 @@ export default function GalleryPage() {
       </div>
 
       {/* Gallery area */}
-      <div ref={setScrollEl} className="relative flex-1 overflow-y-auto p-4">
-        {showScrubber && <DateScrubber scrollEl={scrollEl} buckets={bucketData?.buckets} onJump={jumpToMonth} />}
+      <div ref={setScrollEl} className={`relative flex-1 overflow-y-auto p-4 ${showScrubber && showTimeline ? 'md:pr-14' : ''}`}>
+        {showScrubber && showTimeline && <DateScrubber scrollEl={scrollEl} buckets={bucketData?.buckets} onJump={jumpToMonth} />}
         {jumpMonth && filters.dateTo && (
           <div className="sticky top-0 z-40 flex justify-center pointer-events-none">
             <button onClick={clearJump}

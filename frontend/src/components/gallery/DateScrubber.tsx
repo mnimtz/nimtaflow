@@ -31,12 +31,14 @@ export default function DateScrubber({ scrollEl, buckets, onJump }: {
     if (buckets && total) { let acc = 0; for (const b of buckets) { m.set(b.month, acc / total); acc += b.count } }
     return m
   }, [buckets, total])
-  // Jahres-Marken an ihrer Startposition.
+  // Jahres-Marken an ihrer Startposition. Bei vielen Jahren ausdünnen, damit die
+  // Leiste nicht überläuft (Ziel: ~16 Labels).
   const ticks = useMemo(() => {
-    const out: { y: string; f: number }[] = []
+    const all: { y: string; f: number }[] = []
     if (buckets && total) { let acc = 0; const seen = new Set<string>()
-      for (const b of buckets) { const y = b.month.slice(0, 4); if (!seen.has(y)) { seen.add(y); out.push({ y, f: acc / total }) } acc += b.count } }
-    return out
+      for (const b of buckets) { const y = b.month.slice(0, 4); if (!seen.has(y)) { seen.add(y); all.push({ y, f: acc / total }) } acc += b.count } }
+    const step = Math.ceil(all.length / 16) || 1
+    return all.filter((_, i) => i % step === 0)
   }, [buckets, total])
   const monthAtFrac = useCallback((f: number): string | null => {
     if (!buckets || !total) return null
@@ -107,22 +109,25 @@ export default function DateScrubber({ scrollEl, buckets, onJump }: {
   }, [active, onDrag, commit])
 
   if (!scrollEl) return null
+  const hasTimeline = ticks.length > 0
   return (
-    <div ref={trackRef} className="hidden md:block absolute right-0.5 top-2 bottom-2 w-9 z-30 group/scrub"
+    <div ref={trackRef} className="hidden md:block absolute right-0 top-2 bottom-2 w-12 z-30 group/scrub cursor-pointer"
       onPointerDown={e => { setActive(true); onDrag(e.clientY) }}>
-      {/* Jahres-Marken (nur mit buckets) */}
+      {/* dünne Leitlinie (dauerhaft sichtbar, wenn Zeitleiste aktiv) */}
+      {hasTimeline && <div className="absolute right-[26px] top-1 bottom-1 w-px bg-zinc-300/70 dark:bg-zinc-600/60" />}
+      {/* Jahres-Marken — dauerhaft sichtbar */}
       {ticks.map(t => (
-        <div key={t.y} className="absolute right-5 -translate-y-1/2 text-[10px] tabular-nums text-zinc-400/70 dark:text-zinc-500
-          opacity-0 group-hover/scrub:opacity-100 transition-opacity pointer-events-none" style={{ top: `${t.f * 100}%` }}>
-          {t.y}
+        <div key={t.y} className="absolute right-[30px] -translate-y-1/2 flex items-center gap-1 pointer-events-none" style={{ top: `${t.f * 100}%` }}>
+          <span className="text-[10px] tabular-nums font-medium text-zinc-500 dark:text-zinc-400 group-hover/scrub:text-zinc-800 dark:group-hover/scrub:text-zinc-200 transition-colors">{t.y}</span>
+          <span className="w-1.5 h-px bg-zinc-400/70 dark:bg-zinc-500/70" />
         </div>
       ))}
-      <div className={`absolute right-1.5 -translate-y-1/2 flex items-center gap-2 transition-opacity ${active ? 'opacity-100' : 'opacity-0 group-hover/scrub:opacity-100'}`}
-        style={{ top: `${frac * 100}%` }}>
+      {/* Griff/Thumb — dauerhaft sichtbar, größer beim Ziehen/Hover */}
+      <div className="absolute right-[18px] -translate-y-1/2 flex items-center gap-2" style={{ top: `${frac * 100}%` }}>
         {active && label && (
           <span className="px-2.5 py-1 rounded-lg bg-zinc-900 text-white text-xs font-medium shadow-lg whitespace-nowrap">{label}</span>
         )}
-        <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900 shadow cursor-grab active:cursor-grabbing" />
+        <div className="w-3 h-3 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900 shadow transition-transform group-hover/scrub:scale-125 active:scale-125" />
       </div>
     </div>
   )
