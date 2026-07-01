@@ -44,6 +44,14 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
   - **Fallen:** Render kann dauern → async (pending→rendering→done wie Highlights) + Budget/Reaper; atomare Transcodes (`.part`→`os.replace`).
 - **📌 Backlog — Motiv optimal in den Postkarten-Rahmen einpassen (Bilder UND Videos):** aktuell wird zugeschnitten (`cover`) oder verzerrt. Ziel: **nichts abgeschnitten, nichts verzerrt** — Seitenverhältnis erhalten und in den Rahmen einpassen (letterbox/pad mit themenpassendem Hintergrund, z. B. Blur-Fill wie beim Highlight-`_fill_graph`, oder smartes Crop, das Gesichter/Motiv nicht anschneidet). Gilt für Foto-Postkarte (Bild-Compositing) und Video-Postkarte (ffmpeg scale+pad statt crop/stretch).
 
+### 🟡 1e · Ambient-KI-Assistent (Idee, stark)
+**Kernidee:** Chat nicht als eigene Seite, sondern als **Assistent, der die aktuelle Ansicht steuert.** Kleines, immer sichtbares Symbol unten rechts (web + iOS) → öffnet ein **leicht transparentes, kleines Chat-Overlay**. Er kennt den **Kontext** (welche Ansicht, aktive Filter, gewählte Person) und **schiebt seine Antwort als Ergebnis-Set in genau diese Ansicht**.
+- **Beispiel:** In der Galerie „Wann lernte Lea laufen?" → die **Galerie filtert sich** auf die Treffer (Chip „Ergebnisse für: …" + Clear). Man nutzt dann die volle Galerie (Lightbox, Auswahl, Album, Teilen, Details) *mit* den Antwort-Ergebnissen.
+- **Technik liegt bereit:** `chat.py` macht schon Tool-Calls und liefert **`photo_ids`** → statt in die Chat-Blase zu rendern, in ein **gemeinsames „Ergebnis-Set"-State** schieben, das die Galerie/Karte/etc. anzeigt. Kontext (Ansicht/Filter/Person) an den Chat mitgeben.
+- **Auch Aktionen im Kontext:** „mach daraus ein Album", „teile die drei", „starte ein Highlight" — auf dem gerade gezeigten Set.
+- **Überall gleich:** Galerie (Foto-Filter), Karte (Pins filtern), Personen, Reisen; iOS mit demselben schwebenden Assistenten. Ergänzt „Frag das Foto" (pro Bild) als **app-weiten** Bruder.
+- **UX:** klein/transparent, ggf. verschiebbar + Position merken, Tastenkürzel (z. B. ⌘/Long-Press).
+
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
 - **Privates photoflow** ebenfalls bereinigt (CLAUDE.md aus History getilgt, IPs/PW/Claude-Trailer raus) — falls es je public wird, dann **vorher** GitHub-Token + Demo-PW rotieren (waren nur privat, also nie öffentlich abgeflossen).
