@@ -604,7 +604,10 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 uniq = [i for i in cited if i in seen_recs]
             else:
                 uniq = list(dict.fromkeys(seen_ids))
+            # result_ids = VOLLES Such-Ergebnis (alle Treffer), für den Ambient-Assistenten,
+            # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
+                    "result_ids": list(dict.fromkeys(seen_ids)),
                     "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
     _u = list(dict.fromkeys(seen_ids))
     return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": _u,

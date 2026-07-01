@@ -36,7 +36,8 @@ export default function FloatingAssistant() {
     setBusy(true)
     try {
       const r = await api.post('/chat', { message: text, history })
-      const ids: number[] = r.data.photo_ids || []
+      // result_ids = volles Such-Set (alle Treffer) → Galerie-Filter; Fallback: zitierte photo_ids.
+      const ids: number[] = (r.data.result_ids && r.data.result_ids.length ? r.data.result_ids : r.data.photo_ids) || []
       setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length }])
       if (ids.length) {
         setResult(ids, text)
