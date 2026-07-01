@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect, Suspense, lazy, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
-import { Layers, Navigation, Globe2, Map as MapIcon, Route } from 'lucide-react'
+import { Layers, Navigation, Globe2, Map as MapIcon, Route, Sparkles, X } from 'lucide-react'
 import { api, Photo, thumbUrl } from '../lib/api'
 import { useT } from '../i18n'
+import { useAssistant } from '../store/assistant'
 
 const GlobeView = lazy(() => import('./GlobeView'))
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
@@ -121,9 +122,17 @@ export default function MapPage() {
   const [showPlaces, setShowPlaces] = useState(false)
   const [me, setMe] = useState<[number, number] | null>(null)   // eigener Standort (Browser-Geolocation)
 
+  // Ambient-Assistent: aktives Ergebnis-Set filtert auch die KARTE (nicht nur die
+  // Galerie) — gleiche ACL, da /photos/map weiter photo_conditions(user) anwendet.
+  const asstIds = useAssistant((s) => s.resultIds)
+  const asstQuery = useAssistant((s) => s.resultQuery)
+  const asstClear = useAssistant((s) => s.clearResult)
+  const asstActive = !!(asstIds && asstIds.length)
+
   const { data, isLoading } = useQuery({
-    queryKey: ['photos-map'],
-    queryFn: () => api.get('/photos/map').then((r) => r.data as Photo[]),
+    queryKey: ['photos-map', asstActive ? asstIds : null],
+    queryFn: () => api.get('/photos/map', { params: asstActive ? { ids: asstIds!.join(',') } : {} })
+      .then((r) => r.data as Photo[]),
   })
 
   // Trip routes (cruise/ship lines etc.) — albums flagged as trips with >=2 waypoints.
@@ -191,7 +200,18 @@ export default function MapPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('map.title')}</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white shrink-0">{t('map.title')}</h1>
+          {asstActive && (
+            <span className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-600 text-white text-xs font-medium max-w-[60vw] md:max-w-md">
+              <Sparkles size={12} className="shrink-0" />
+              <span className="truncate">{asstQuery || 'Assistent'} · {withGps.length} auf der Karte</span>
+              <button onClick={asstClear} className="ml-0.5 p-0.5 rounded-full hover:bg-white/20 shrink-0" title="Filter aufheben">
+                <X size={13} />
+              </button>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {!view3d && places.length > 0 && (
             <button

@@ -582,12 +582,23 @@ async def trips(db: AsyncSession = Depends(get_db),
 
 
 @router.get("/map")
-async def map_points(db: AsyncSession = Depends(get_db),
+async def map_points(ids: Optional[str] = None,
+                     db: AsyncSession = Depends(get_db),
                      user: Optional[User] = Depends(current_user_optional)):
     """Lightweight: every photo with GPS as {id, latitude, longitude} — NO 500
     cap (the gallery list capped the map at 500). Just coordinates, so the whole
-    library's points render; clicking a point fetches the photo detail by id."""
+    library's points render; clicking a point fetches the photo detail by id.
+
+    Mit `ids` (kommagetrennt) nur genau diese Fotos — der Ambient-Assistent filtert
+    die Karte damit auf sein Ergebnis-Set (weiter ACL-gescoped via photo_conditions)."""
     conds = photo_conditions(user)
+    extra = []
+    if ids is not None:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            id_list = []
+        extra.append(Photo.id.in_(id_list) if id_list else Photo.id == -1)
     # Return ALL gps points (newest first) — the 2D map clusters them
     # (react-leaflet-cluster, zoom-adaptive); the globe slices to a renderable
     # subset client-side. Lightweight rows (just coords), so the full set is fine.
@@ -596,7 +607,7 @@ async def map_points(db: AsyncSession = Depends(get_db),
                Photo.city, Photo.country, Photo.location_name).where(
             Photo.latitude.isnot(None), Photo.longitude.isnot(None),
             Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
-            *conds,
+            *conds, *extra,
         ).order_by(Photo.taken_at.desc().nullslast())
     )).all()
     return [{"id": r[0], "latitude": r[1], "longitude": r[2], "is_video": r[3],

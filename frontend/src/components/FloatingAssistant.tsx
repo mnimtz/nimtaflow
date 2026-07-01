@@ -41,7 +41,8 @@ export default function FloatingAssistant() {
       setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length }])
       if (ids.length) {
         setResult(ids, text)
-        if (loc.pathname !== '/gallery') nav('/gallery')
+        // Auf der Karte bleiben (sie filtert sich selbst auf das Ergebnis); sonst zur Galerie.
+        if (loc.pathname !== '/gallery' && loc.pathname !== '/map') nav('/gallery')
       }
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'Gerade nicht erreichbar — bitte gleich nochmal.' }])
