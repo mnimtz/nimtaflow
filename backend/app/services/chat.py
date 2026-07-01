@@ -100,11 +100,20 @@ async def _identity_context(db: AsyncSession, settings: dict, user=None) -> str:
     relationships.self_person_id."""
     sid = None
     if user is not None:
-        sid = (getattr(user, "access_config", None) or {}).get("person_id") if getattr(user, "access_config", None) else None
-        sid = sid or getattr(user, "person_id", None)
+        # Eingeloggter Nutzer → IMMER die EIGENE Verknüpfung (access_config.person_id
+        # bzw. user.person_id), aus dem Login abgeleitet. KEIN Rückfall auf den globalen
+        # self_person_id — sonst hielte der Chat einen nicht-verknüpften Nutzer
+        # fälschlich für den Besitzer/Admin (Multi-User-Identitätsleck).
+        cfg = getattr(user, "access_config", None) or {}
+        sid = cfg.get("person_id") or getattr(user, "person_id", None)
+    else:
+        # Kein Login (offener / Single-User-Modus) → globaler Besitzer.
+        sid = settings.get("relationships.self_person_id")
     try:
-        sid = int(sid if sid is not None else settings.get("relationships.self_person_id"))
+        sid = int(sid) if sid is not None else None
     except (TypeError, ValueError):
+        sid = None
+    if sid is None:
         return ""
     from sqlalchemy import or_
     from app.models.relationship import PersonRelationship, LABEL, INVERSE_LABEL
