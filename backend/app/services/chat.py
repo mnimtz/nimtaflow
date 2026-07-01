@@ -71,7 +71,14 @@ SYSTEM = (
     "gelieferten datum_von/datum_bis, um die Geburtstags-Fotos zu finden. "
     "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
     "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
-    "Bestätige danach kurz, was du getan hast (Albumname + Anzahl)."
+    "Bestätige danach kurz, was du getan hast (Albumname + Anzahl). "
+    "Zu STATUS/VERARBEITUNG: Für Fragen zur eigenen Bibliothek (wie viele Fotos/Videos, "
+    "wie viele noch in Verarbeitung, wie viele ohne Beschreibung, ältestes/neuestes Foto) "
+    "nutze bibliothek_status. Für Fragen zum SERVER-BETRIEB (Queue-Auslastung, laufen die "
+    "Worker, wie lange dauert die Verarbeitung noch, Leitstand) nutze leitstand_status — das "
+    "ist nur für Administratoren; kommt kein_zugriff=true zurück, sag höflich, dass diese "
+    "Betriebsdaten dem Administrator vorbehalten sind. Restzeit-Angaben sind immer nur grobe "
+    "Schätzungen — kennzeichne sie als solche."
 )
 
 
@@ -405,6 +412,95 @@ async def _action_favorite(db: AsyncSession, settings: dict, args: dict) -> dict
     return {"ok": True, "anzahl": len(ids)}
 
 
+async def _library_status(db: AsyncSession, acl: list) -> dict:
+    """Bibliotheks-/Verarbeitungsstatus — STRIKT auf die Fotos begrenzt, die der Nutzer
+    sehen darf (acl = photo_conditions(user)). Ein eingeschränktes Konto sieht nur die
+    Zahlen seines eigenen Umfangs, nie die der Gesamtbibliothek."""
+    from app.models.photo import Photo, PhotoStatus
+    from sqlalchemy import or_
+    live = [Photo.is_trashed == False, *acl]  # noqa: E712
+
+    async def c(*conds) -> int:
+        return int(await db.scalar(select(func.count()).where(*live, *conds)) or 0)
+
+    done = await c(Photo.status == PhotoStatus.done)
+    videos = await c(Photo.is_video == True, Photo.status == PhotoStatus.done)  # noqa: E712
+    no_desc_img = await c(Photo.is_video == False, Photo.status == PhotoStatus.done,  # noqa: E712
+                          or_(Photo.description.is_(None), Photo.description == ""))
+    no_desc_vid = await c(Photo.is_video == True, Photo.status == PhotoStatus.done,  # noqa: E712
+                          or_(Photo.description.is_(None), Photo.description == ""))
+    in_progress = await c(Photo.status.notin_([PhotoStatus.done, PhotoStatus.error]))
+    errors = await c(Photo.status == PhotoStatus.error)
+    min_date = await db.scalar(select(func.min(Photo.taken_at)).where(*live))
+    max_date = await db.scalar(select(func.max(Photo.taken_at)).where(*live))
+    return {
+        "fotos_gesamt": done, "bilder": done - videos, "videos": videos,
+        "in_verarbeitung": in_progress, "fehler": errors,
+        "ohne_beschreibung_bilder": no_desc_img, "ohne_beschreibung_videos": no_desc_vid,
+        "aeltestes_datum": min_date.date().isoformat() if min_date else None,
+        "neuestes_datum": max_date.date().isoformat() if max_date else None,
+    }
+
+
+async def _ops_status(db: AsyncSession) -> dict:
+    """Betriebs-/Leitstand-Status (system-weit) — NUR für Administratoren aufrufen
+    (Gating passiert im Dispatcher). Queue-Tiefen, Worker-Liveness, globaler Backlog,
+    grobe Restzeit-Schätzung."""
+    from app.models.photo import Photo, PhotoStatus
+    from sqlalchemy import or_
+    from app.core.config import get_settings
+    import asyncio as _a
+
+    queues: dict = {}
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(get_settings().redis_url)
+        for q in ("cpu", "gpu", "scan", "video", "celery"):
+            queues[q] = int(await r.llen(q))
+        await r.aclose()
+    except Exception as e:
+        queues = {"fehler": str(e)[:80]}
+
+    workers: dict = {}
+    try:
+        from app.worker.celery_app import celery_app
+
+        def _ping():
+            return celery_app.control.inspect(timeout=1.5).ping() or {}
+        pong = await _a.get_running_loop().run_in_executor(None, _ping)
+        workers = {name: "aktiv" for name in pong.keys()} or {"status": "keine Antwort"}
+    except Exception as e:
+        workers = {"status": f"unbekannt ({str(e)[:60]})"}
+
+    async def c(*conds) -> int:  # global, kein acl (Admin)
+        return int(await db.scalar(select(func.count()).where(Photo.is_trashed == False, *conds)) or 0)  # noqa: E712
+
+    no_desc_img = await c(Photo.is_video == False, Photo.status == PhotoStatus.done,  # noqa: E712
+                          or_(Photo.description.is_(None), Photo.description == ""))
+    no_desc_vid = await c(Photo.is_video == True, Photo.status == PhotoStatus.done,  # noqa: E712
+                          or_(Photo.description.is_(None), Photo.description == ""))
+    video_faces_open = await c(Photo.is_video == True, Photo.faces_scanned == False)  # noqa: E712
+    errors = await c(Photo.status == PhotoStatus.error)
+
+    gpu_q = queues.get("gpu") if isinstance(queues.get("gpu"), int) else 0
+    eta = {
+        "gpu_gesichter": round((gpu_q or 0) * 28 / 4 / 60),      # ~28s/Video, ~4 parallel
+        "bild_beschreibungen": round(no_desc_img * 15 / 60),     # ~15s/Bild (1 Mac-Worker)
+        "video_beschreibungen": round(no_desc_vid * 45 / 60),    # ~45s/Video (1 Mac-Worker)
+    }
+    return {
+        "queues": queues, "worker": workers,
+        "backlog": {"bilder_ohne_beschreibung": no_desc_img,
+                    "videos_ohne_beschreibung": no_desc_vid,
+                    "videos_ohne_gesichtsscan": video_faces_open,
+                    "fehlerhafte_medien": errors},
+        "restzeit_schaetzung_minuten": eta,
+        "hinweis_restzeit": ("Grobe Schätzung aus typischen Durchsätzen — Bild- und "
+                             "Video-Beschreibungen laufen parallel auf getrennten Workern; "
+                             "reale Zeiten schwanken je nach Auslastung."),
+    }
+
+
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession, user=None) -> dict:
     # Chat may use its OWN Gemini key (Einstellungen → KI-Chat); falls back to the
     # shared image-AI key so existing setups keep working.
@@ -489,6 +585,24 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 **_filter_props,
             }, "required": ["suchbegriff"]},
         },
+        {
+            "name": "bibliothek_status",
+            "description": "Status der EIGENEN Bibliothek des Nutzers: Anzahl Fotos/Bilder/Videos, "
+                           "wie viele noch in Verarbeitung sind, Fehler, wie viele noch keine KI-"
+                           "Beschreibung haben, ältestes/neuestes Datum. Nutze das für 'wie viele Fotos "
+                           "habe ich', 'wie viele werden noch verarbeitet', 'wie viele ohne Beschreibung'. "
+                           "Zeigt ausschließlich den Umfang, den der Nutzer sehen darf.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "leitstand_status",
+            "description": "Betriebs-/Leitstand-Status des SERVERS: Queue-Tiefen (cpu/gpu/scan/video), "
+                           "ob die Worker laufen, der gesamte Verarbeitungs-Backlog und eine grobe "
+                           "Restzeit-Schätzung. Nutze das für 'wie voll ist die Queue', 'laufen die "
+                           "Worker', 'wie lange dauert die Verarbeitung noch', 'Leitstand', 'Auslastung'. "
+                           "NUR für Administratoren — kommt kein_zugriff zurück, ist der Nutzer nicht berechtigt.",
+            "parameters": {"type": "object", "properties": {}},
+        },
     ]}
     contents = []
     for h in (history or [])[-8:]:
@@ -556,6 +670,21 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "geburtstag_datum":
                         resp = await _birthday_date(db, args.get("person"), args.get("alter"))
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "bibliothek_status":
+                        # Streng ACL-scoped: nur der Umfang, den der Nutzer sehen darf.
+                        resp = await _library_status(db, acl)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "leitstand_status":
+                        # System-weite Betriebsdaten NUR für unbeschränkte (Admin-)Konten.
+                        if restricted:
+                            resp = {"kein_zugriff": True,
+                                    "hinweis": "Leitstand-/Betriebsdaten (Queue, Worker, Restzeit) "
+                                               "sind nur für Administratoren einsehbar."}
+                        else:
+                            resp = await _ops_status(db)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):

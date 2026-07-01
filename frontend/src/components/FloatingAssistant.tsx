@@ -69,7 +69,7 @@ export default function FloatingAssistant() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
             {messages.length === 0 && (
               <div className="text-[13px] text-zinc-400 leading-relaxed">
-                Frag mich etwas zu deinen Fotos — z. B. <span className="text-zinc-200">„Zeig mir Fotos vom Meer"</span>, <span className="text-zinc-200">„Fotos aus dem letzten Sommer"</span> oder <span className="text-zinc-200">„Sonnenuntergänge"</span>. Die Treffer erscheinen direkt in der Galerie.
+                Frag mich etwas zu deinen Fotos — z. B. <span className="text-zinc-200">„Zeig mir Fotos vom Meer"</span>, <span className="text-zinc-200">„Fotos aus dem letzten Sommer"</span> oder <span className="text-zinc-200">„Wie viele Fotos habe ich?"</span>. Die Treffer erscheinen direkt in der Galerie.
               </div>
             )}
             {messages.map((m, i) => (
