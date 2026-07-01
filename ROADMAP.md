@@ -3,6 +3,7 @@
 > Quelle der Wahrheit für den Arbeitsstand (in git, reist mit dem Repo).
 > NICHT auf projekt-gebundene Auto-Memory verlassen — bei neuem Stand HIER aktualisieren + committen.
 > Server-Zugang/Infra-Fallen stehen in `CLAUDE.md`.
+> **Next-Gen-/KI-Ideen (modern, einzigartig, interaktiv): `docs/roadmap-vision.md`.**
 
 **Stand: v1.318 (2026-06-23).** Security komplett (inkl. `/v1/chat`-ACL). Kleinkram +
 Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Public sauber.
