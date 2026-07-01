@@ -32,6 +32,12 @@ Frontend wendet intents auf die AKTUELLE Ansicht an (gemeinsamer „Ergebnis-Set
   spiegelt den MCP `read | read_write`-Split.
 - **KI-Backend-Wahl:** **lokal** (Ollama/integriert) ↔ **Cloud** (Gemini/…). Default lokal
   (Datenschutz). Nutzt/erweitert die bestehende `chat.provider`-Logik → `assistant.provider`.
+- **Persönlichkeit / eigener Prompt (`assistant.persona`):** frei editierbarer System-Prompt-
+  Zusatz, der Ton & Verhalten steuert — z. B. „immer freundlich & humorvoll", „liefere bei Fragen
+  proaktiv 1–2 Ideen/Vorschläge mit", „kurz & knapp". **Presets** zum Anklicken (Freundlich ·
+  Lustig · Proaktiv · Sachlich-kurz) + Freitextfeld. Wird an den bestehenden System-Prompt
+  angehängt (die Tool-/Sicherheits-Regeln bleiben unantastbar davor). Proaktivität als eigener
+  Schalter, damit „Vorschläge mitliefern" auch ohne Freitext geht.
 - Optional: Position/Erscheinung des Overlays.
 
 ## Phasen
