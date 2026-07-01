@@ -99,6 +99,16 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
                         limit: int = 60, extra_conditions: Optional[list] = None) -> List[Photo]:
     q = (query or "").strip()
     if not q:
+        # Kein Freitext, aber strukturelle Filter (Person/Jahr/Datum/Ort) → NICHT leer
+        # zurückgeben (das war der Bug: „Fotos von Anja 2017" fiel durch), sondern genau
+        # diese gefilterte Menge, neueste zuerst.
+        if extra_conditions:
+            sbase = [Photo.status == PhotoStatus.done, Photo.is_missing == False,  # noqa: E712
+                     Photo.is_trashed == False, Photo.thumb_small.isnot(None),
+                     *extra_conditions]
+            return (await db.execute(
+                select(Photo).where(*sbase).order_by(Photo.taken_at.desc().nullslast()).limit(limit)
+            )).scalars().all()
         return []
     base = [Photo.status == PhotoStatus.done, Photo.is_missing == False,  # noqa: E712
             Photo.is_trashed == False,
