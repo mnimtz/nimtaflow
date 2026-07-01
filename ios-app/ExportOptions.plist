@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- App-Store/TestFlight export options for `xcodebuild -exportArchive`. -->
+<!-- App Store export options for `xcodebuild -exportArchive`. -->
 <plist version="1.0">
 <dict>
 	<key>method</key>
