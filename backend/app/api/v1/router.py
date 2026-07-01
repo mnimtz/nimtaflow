@@ -1133,6 +1133,20 @@ async def stats_v1(db: AsyncSession = Depends(get_db),
     )
 
 
+# ── Leitstand / Ops-Status (iOS app, admin-only) ────────────────────────────────
+
+@router.get("/ops")
+async def ops_status_v1(db: AsyncSession = Depends(get_db),
+                        user: Optional[User] = Depends(current_user_optional)):
+    """Betriebs-/Leitstand-Status für die iOS-App: Queue-Tiefen, Worker-Liveness,
+    globaler Backlog, grobe Restzeit — NUR für Administratoren (system-weite Daten)."""
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.services.chat import _ops_status
+    return await _ops_status(db)
+
+
 # ── Erinnerungen / Memories (iOS app) ───────────────────────────────────────────
 
 class MemoryGroupV1(BaseModel):

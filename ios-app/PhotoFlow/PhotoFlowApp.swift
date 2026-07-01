@@ -74,8 +74,9 @@ struct RootView: View {
 /// full-screen cover so the child's own NavigationStack/title bar is used
 /// directly (no nested-stack double bars).
 struct MoreView: View {
+    @EnvironmentObject var api: APIClient
     private enum Dest: String, Identifiable {
-        case search, library, people, memories, highlights, trips, map, relationships, shares, settings
+        case search, library, people, memories, highlights, trips, map, relationships, shares, settings, leitstand
         var id: String { rawValue }
     }
     @State private var dest: Dest?
@@ -92,6 +93,9 @@ struct MoreView: View {
                 row("Karte", "map.fill", .map)
                 row("Beziehungen", "point.3.connected.trianglepath.dotted", .relationships)
                 row("Geteilte Links", "link", .shares)
+                if api.isAdmin {   // Leitstand nur für Administratoren
+                    row("Leitstand", "gauge.with.dots.needle.bottom.50percent", .leitstand)
+                }
                 row("Einstellungen", "gearshape.fill", .settings)
             }
             .navigationTitle("Mehr")
@@ -110,6 +114,7 @@ struct MoreView: View {
                 case .map: MapScreen()
                 case .relationships: RelationshipsView()
                 case .shares: SharesListView()
+                case .leitstand: LeitstandView()
                 case .settings: SettingsScreen()
                 }
             }

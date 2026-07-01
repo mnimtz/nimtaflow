@@ -2342,6 +2342,23 @@ def render_highlight_task(self, highlight_id: int):
                 rest = [p for p in photos if p.id not in _anim] if clip_files else photos
                 image_paths = [p.thumb_large for p in rest if p.thumb_large]
                 seconds_per = max(0.8, duration / max(1, len(image_paths)))
+
+                # Orientierungs-bewusste Leinwand: bei überwiegend HOCHKANT-Fotos ein
+                # Hochkant-Video (bzw. quadratisch bei gemischtem Satz) rendern, statt
+                # Hochkant-Inhalt in einen 16:9-Rahmen zu schrumpfen (wirkte klein/
+                # „verkleinert" mit viel Blur an den Seiten).
+                _por = sum(1 for p in photos if (p.height or 0) > (p.width or 0))
+                _lan = sum(1 for p in photos if (p.width or 0) > (p.height or 0))
+                _pf = _por / max(1, _por + _lan)
+                if _pf >= 0.6:
+                    canvas_w, canvas_h = 1080, 1920      # überwiegend Hochkant
+                elif _pf <= 0.4:
+                    canvas_w, canvas_h = 1920, 1080      # überwiegend Querformat
+                else:
+                    canvas_w, canvas_h = 1440, 1440      # gemischt → quadratisch
+                flog("highlights", "INFO",
+                     f"Highlight {highlight_id}: Leinwand {canvas_w}×{canvas_h} "
+                     f"({_por} hoch / {_lan} quer)")
                 music = (s_hl.get("highlights.music_path") or "").strip() or None
 
                 # ── Music + beat-sync (Phase 1) ──────────────────────────────
@@ -2438,11 +2455,12 @@ def render_highlight_task(self, highlight_id: int):
                     smusic = None if clip_files else music_eff
                     sbeat = bool(beat_sync) and not clip_files
                     if image_paths and not hl.render_slideshow(
-                            image_paths, slide, seconds_per,
+                            image_paths, slide, seconds_per, width=canvas_w, height=canvas_h,
                             music_path=smusic, beat_sync=sbeat, music_volume=vol):
                         return (False, None)
                     if clip_files:
-                        if not hl.render_hybrid(clip_files, slide if image_paths else None, out_path, music_path=music_eff):
+                        if not hl.render_hybrid(clip_files, slide if image_paths else None, out_path,
+                                                width=canvas_w, height=canvas_h, music_path=music_eff):
                             return (False, None)
                         try: _os.remove(slide)
                         except Exception: pass

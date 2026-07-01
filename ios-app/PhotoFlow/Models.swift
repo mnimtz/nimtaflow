@@ -378,6 +378,28 @@ struct ChatReply: Codable {
     let suggestions: [String]?      // proaktive Folge-Vorschläge (antippbare Chips)
 }
 
+// MARK: - Leitstand / Ops-Status (admin-only)
+
+struct OpsStatus: Codable {
+    struct Queues: Codable { let cpu: Int?; let gpu: Int?; let scan: Int?; let video: Int?; let celery: Int? }
+    struct Backlog: Codable {
+        let bilder_ohne_beschreibung: Int?
+        let videos_ohne_beschreibung: Int?
+        let videos_ohne_gesichtsscan: Int?
+        let fehlerhafte_medien: Int?
+    }
+    struct Eta: Codable {
+        let gpu_gesichter: Int?
+        let bild_beschreibungen: Int?
+        let video_beschreibungen: Int?
+    }
+    let queues: Queues?
+    let worker: [String: String]?
+    let backlog: Backlog?
+    let restzeit_schaetzung_minuten: Eta?
+    let hinweis_restzeit: String?
+}
+
 // MARK: - Highlights (video assistant)
 
 /// A motto offered by GET /api/highlights/mottos. `params` lists which inputs

@@ -34,6 +34,7 @@ final class APIClient: ObservableObject {
     @AppStorage("access_token") var token: String = ""
     @AppStorage("refresh_token") var refresh: String = ""
     @Published var loggedIn: Bool = false
+    @Published var isAdmin: Bool = false     // gesetzt aus /auth/me.role → Leitstand nur für Admins
 
     init() { loggedIn = !token.isEmpty }
 
@@ -304,10 +305,16 @@ final class APIClient: ObservableObject {
     // MARK: Memories
     func memories() async throws -> [MemoryGroupV1] { try await get("api/v1/memories", as: [MemoryGroupV1].self) }
     /// Display name of the logged-in user (for the dashboard greeting). Empty on failure.
+    /// Sets `isAdmin` as a side effect (steuert die Leitstand-Sichtbarkeit).
     func meName() async -> String {
-        struct M: Decodable { let name: String }
-        return (try? await get("api/auth/me", as: M.self))?.name ?? ""
+        struct M: Decodable { let name: String; let role: String? }
+        let m = try? await get("api/auth/me", as: M.self)
+        isAdmin = (m?.role == "admin")
+        return m?.name ?? ""
     }
+
+    // MARK: Leitstand / Ops (admin-only)
+    func opsStatus() async throws -> OpsStatus { try await get("api/v1/ops", as: OpsStatus.self) }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
