@@ -1154,6 +1154,43 @@ async def memories_v1(request: Request, db: AsyncSession = Depends(get_db),
 
 # ── Dashboard / Startseite (web + iOS) ──────────────────────────────────────────
 
+import time as _time
+_DASH_CACHE: dict = {}     # user_id → (expiry_ts, payload) — Kurz-Cache gegen ~10s-Ladezeit
+_DASH_TTL = 180            # 3 Min: Startseite ändert sich langsam (Person der Woche wöchentlich,
+                           # „vor X Jahren" täglich, Neuzugänge selten) → Wiederholaufruf instant.
+
+
+async def _lean_stats_v1(db: AsyncSession, user: Optional[User]) -> LibraryStatsV1:
+    """Startseiten-Stats in 2 Queries statt ~13. get_stats() scannte 140k Fotos/Gesichter
+    ~13× einzeln (~4s) — der größte Brocken der Dashboard-Ladezeit. Hier alle Kennzahlen
+    per Conditional-Aggregation (FILTER) in EINEM Scan + eine Gesichts-Query. Gleiche ACL."""
+    from sqlalchemy import func as _f
+    from app.models.face import Face
+    acl = photo_conditions(user)
+    D = PhotoStatus.done
+    row = (await db.execute(select(
+        _f.count().filter(Photo.status == D).label("total"),
+        _f.count().filter(Photo.is_video == True, Photo.status == D).label("videos"),          # noqa: E712
+        _f.count().filter(Photo.latitude.isnot(None)).label("with_gps"),
+        _f.count().filter(Photo.description.isnot(None), Photo.description != "").label("described"),
+        _f.count().filter(Photo.is_favorite == True).label("favorites"),                        # noqa: E712
+        _f.count().filter(Photo.status.notin_([D, PhotoStatus.error])).label("processing"),
+        _f.min(Photo.taken_at).label("dmin"), _f.max(Photo.taken_at).label("dmax"),
+    ).where(Photo.is_trashed == False, *acl))).one()                                            # noqa: E712
+    wf_q = select(_f.count(_f.distinct(Face.photo_id))).select_from(Face)
+    if acl:
+        wf_q = wf_q.join(Photo, Photo.id == Face.photo_id).where(*acl)
+    with_faces = int(await db.scalar(wf_q) or 0)
+    total, videos = int(row.total or 0), int(row.videos or 0)
+    return LibraryStatsV1(
+        total=total, videos=videos, images=max(0, total - videos),
+        processing=int(row.processing or 0), described=int(row.described or 0),
+        with_faces=with_faces, favorites=int(row.favorites or 0), with_gps=int(row.with_gps or 0),
+        date_min=row.dmin.isoformat() if row.dmin else None,
+        date_max=row.dmax.isoformat() if row.dmax else None,
+    )
+
+
 @router.get("/dashboard")
 async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
                        user: Optional[User] = Depends(current_user_optional)):
@@ -1167,11 +1204,20 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     from app.models.album import Album, AlbumPhoto
     acl = photo_conditions(user)
 
+    # Kurz-Cache: die Startseite ist teuer zu bauen (~mehrere Sekunden) — Wiederhol-
+    # aufrufe innerhalb des TTL kommen sofort (behebt den langsamen ersten Eindruck
+    # nach dem ersten Laden). Pro Nutzer getrennt (ACL).
+    _ckey = user.id if user else 0
+    _now = _time.time()
+    _hit = _DASH_CACHE.get(_ckey)
+    if _hit and _hit[0] > _now:
+        return _hit[1]
+
     out: dict = {}
 
-    # 1) stats
+    # 1) stats — schlanke Variante (2 Queries statt ~13 → ~4s gespart)
     try:
-        out["stats"] = (await stats_v1(db=db, user=user)).model_dump()
+        out["stats"] = (await _lean_stats_v1(db, user)).model_dump()
     except Exception:
         out["stats"] = None
 
@@ -1291,4 +1337,5 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
                               if wh.cover_photo_id else None),
             }
 
+    _DASH_CACHE[_ckey] = (_now + _DASH_TTL, out)
     return out

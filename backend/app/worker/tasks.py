@@ -2661,9 +2661,13 @@ def generate_weekly_highlight_task(self):
             s = await load_settings(db)
             if str(s.get("highlights.weekly_enabled", "false")).lower() != "true":
                 return {"skipped": "disabled"}
-            since = datetime.now(timezone.utc) - timedelta(days=6)
+            # Dedup auf die AKTUELLE ISO-Woche (seit Montag 00:00 UTC) statt „letzte 6 Tage".
+            # Sonst blockierte ein außerplanmäßig (z. B. Do) erstellter Highlight den nächsten
+            # Montags-Lauf — genau so fiel KW 27 aus (KW-26-Highlight war 4 Tage vorher da).
+            _now = datetime.now(timezone.utc)
+            monday = (_now - timedelta(days=_now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
             recent = (await db.execute(select(func.count()).where(
-                Highlight.motto == "week_review", Highlight.created_at >= since))).scalar() or 0
+                Highlight.motto == "week_review", Highlight.created_at >= monday))).scalar() or 0
             if recent:
                 return {"skipped": "already created this week"}
             kw = datetime.now(timezone.utc).isocalendar().week
