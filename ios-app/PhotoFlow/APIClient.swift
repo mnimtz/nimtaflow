@@ -454,10 +454,12 @@ final class APIClient: ObservableObject {
 
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
-    func chat(message: String, history: [ChatTurn], provider: String? = nil) async throws -> ChatReply {
+    func chat(message: String, history: [ChatTurn], provider: String? = nil,
+              contextIDs: [Int] = []) async throws -> ChatReply {
         var body: [String: Any] = ["message": message,
                                    "history": history.map { ["role": $0.role, "content": $0.content] }]
         if let provider { body["provider"] = provider }
+        if !contextIDs.isEmpty { body["context_ids"] = contextIDs }
         return try await send(makeRequest("api/v1/chat", method: "POST", json: body), as: ChatReply.self)
     }
 }

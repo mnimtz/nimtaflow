@@ -6,7 +6,7 @@ import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { useT } from '../i18n'
 
 type ChatPhoto = { id: number; titel?: string | null; beschreibung?: string | null; datum?: string | null; ort?: string | null; ist_video?: boolean }
-type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[]; photos?: ChatPhoto[] }
+type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[]; result_ids?: number[]; photos?: ChatPhoto[]; suggestions?: string[]; navigate?: string | null }
 
 export default function ChatPage() {
   const { t } = useT()
@@ -49,12 +49,21 @@ export default function ChatPage() {
     text = text.trim()
     if (!text || sending) return
     const history = messages.map(m => ({ role: m.role, content: m.content }))
+    // context_ids: letzte Assistenten-Treffer für Folgefragen ("davon", "daraus")
+    const lastResultIDs = [...messages].reverse().find(m => m.role === 'assistant' && (m.result_ids?.length ?? 0) > 0)?.result_ids ?? []
     setMessages(m => [...m, { role: 'user', content: text }])
     setInput('')
     setSending(true)
     try {
-      const r = await api.post('/chat', { message: text, history, provider: provider || undefined })
-      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || t('chat.noAnswer'), photo_ids: r.data.photo_ids || [], photos: r.data.photos || [] }])
+      const body: Record<string, unknown> = { message: text, history, provider: provider || undefined }
+      if (lastResultIDs.length) body.context_ids = lastResultIDs
+      const r = await api.post('/chat', body)
+      const d = r.data
+      setMessages(m => [...m, {
+        role: 'assistant', content: d.answer || t('chat.noAnswer'),
+        photo_ids: d.photo_ids || [], result_ids: d.result_ids || [],
+        photos: d.photos || [], suggestions: d.suggestions || [], navigate: d.navigate,
+      }])
     } catch (e: any) {
       setMessages(m => [...m, { role: 'assistant', content: t('chat.errorPrefix') + (e?.response?.data?.detail || e?.message || t('chat.errorUnknown')) }])
     } finally { setSending(false) }

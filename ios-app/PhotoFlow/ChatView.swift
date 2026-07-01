@@ -128,8 +128,10 @@ struct ChatView: View {
         // „Konnte nicht antworten" als echten Assistent-Turn in den Kontext.
         let hist = messages.dropLast().filter { !$0.isError }
             .map { ChatTurn(role: $0.role, content: $0.text) }
+        // context_ids: letzte Assistenten-Antwort mit Treffern → für Folgefragen ("davon", "daraus")
+        let lastResultIDs = messages.last(where: { $0.role == "assistant" && !$0.resultIDs.isEmpty })?.resultIDs ?? []
         do {
-            let reply = try await api.chat(message: text, history: Array(hist))
+            let reply = try await api.chat(message: text, history: Array(hist), contextIDs: lastResultIDs)
             // Teaser-Strip: zitierte Fotos, sonst die ersten paar Treffer. Das VOLLE
             // Set (resultIDs) hängt an der Bubble → „In Galerie öffnen" zeigt alle.
             let full = reply.result_ids ?? reply.photo_ids

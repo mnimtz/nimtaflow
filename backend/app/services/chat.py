@@ -111,9 +111,12 @@ def _today_block() -> str:
     """Heutiges Datum + vorberechnete Zeitfenster für RELATIVE Angaben, damit der Agent
     'letzte Woche', 'gestern', 'diesen Monat' zuverlässig in datum_von/datum_bis übersetzt
     statt über alle Jahre zu suchen. Wir rechnen die Wochen-/Monatsgrenzen HIER (Python),
-    damit das Modell nicht selbst rechnen muss."""
-    from datetime import date as _d, timedelta as _td
-    t = _d.today()
+    damit das Modell nicht selbst rechnen muss. Nutzt Europe/Berlin — damit stimmt
+    'heute'/'gestern' auch kurz nach Mitternacht."""
+    from datetime import timedelta as _td
+    from datetime import datetime as _dtt
+    from zoneinfo import ZoneInfo
+    t = _dtt.now(ZoneInfo("Europe/Berlin")).date()
     y = t - _td(days=1)                                  # gestern
     this_mon = t - _td(days=t.weekday())                 # Montag DIESER Woche
     last_mon = this_mon - _td(days=7)                    # Montag LETZTE Woche
@@ -498,6 +501,60 @@ async def _action_favorite(db: AsyncSession, settings: dict, args: dict) -> dict
     return {"ok": True, "anzahl": len(ids)}
 
 
+async def _action_set_rating(db: AsyncSession, settings: dict, args: dict) -> dict:
+    """Setzt die Sternebewertung (1–5) für ein Foto oder alle passenden Fotos."""
+    from sqlalchemy import update as _upd
+    bewertung = int(args.get("bewertung") or 0)
+    if not 1 <= bewertung <= 5:
+        return {"ok": False, "info": "Bewertung muss 1–5 sein."}
+    foto_id = args.get("foto_id")
+    if foto_id:
+        ids = [int(foto_id)]
+    else:
+        ids = await _resolve_action_photo_ids(db, settings, args, limit=500)
+    if not ids:
+        return {"ok": False, "info": "Keine passenden Fotos gefunden."}
+    await db.execute(_upd(Photo).where(Photo.id.in_(ids)).values(user_rating=bewertung))
+    await db.commit()
+    return {"ok": True, "anzahl": len(ids), "bewertung": bewertung}
+
+
+async def _action_add_to_album(db: AsyncSession, settings: dict, args: dict,
+                               context_ids: list) -> dict:
+    """Fügt Fotos zu einem BESTEHENDEN Album hinzu (per Name oder ID)."""
+    from app.models.album import Album, AlbumPhoto
+    album_name = (args.get("album_name") or "").strip()
+    album_id = args.get("album_id")
+    if album_id:
+        album = await db.get(Album, int(album_id))
+    elif album_name:
+        album = (await db.execute(
+            select(Album).where(Album.name.ilike(f"%{album_name}%")).limit(1)
+        )).scalar_one_or_none()
+    else:
+        return {"ok": False, "info": "Album-Name oder Album-ID erforderlich."}
+    if not album:
+        return {"ok": False, "info": f"Album '{album_name}' nicht gefunden."}
+    # Fotos: bevorzuge context_ids (letzte Suchergebnisse), sonst Suche
+    if context_ids and not any(args.get(k) for k in ("suchbegriff", "person", "person2", "ort")):
+        ids = list(context_ids)
+    else:
+        ids = await _resolve_action_photo_ids(db, settings, args, limit=2000)
+    if not ids:
+        return {"ok": False, "info": "Keine passenden Fotos gefunden."}
+    existing = {r[0] for r in (await db.execute(
+        select(AlbumPhoto.photo_id).where(AlbumPhoto.album_id == album.id,
+                                          AlbumPhoto.photo_id.in_(ids)))).all()}
+    max_order = await db.scalar(
+        select(func.max(AlbumPhoto.sort_order)).where(AlbumPhoto.album_id == album.id)) or 0
+    new_ids = [i for i in ids if i not in existing]
+    for i, pid in enumerate(new_ids):
+        db.add(AlbumPhoto(album_id=album.id, photo_id=pid, sort_order=max_order + i + 1))
+    await db.commit()
+    return {"ok": True, "album_id": album.id, "album_name": album.name,
+            "hinzugefuegt": len(new_ids), "bereits_drin": len(existing)}
+
+
 async def _library_status(db: AsyncSession, acl: list) -> dict:
     """Bibliotheks-/Verarbeitungsstatus — STRIKT auf die Fotos begrenzt, die der Nutzer
     sehen darf (acl = photo_conditions(user)). Ein eingeschränktes Konto sieht nur die
@@ -714,7 +771,8 @@ async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) 
     return {"fehler": "Unbekanntes Ziel."}
 
 
-async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession, user=None) -> dict:
+async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession,
+                        user=None, context_ids: Optional[List[int]] = None) -> dict:
     # Chat may use its OWN Gemini key (Einstellungen → KI-Chat); falls back to the
     # shared image-AI key so existing setups keep working.
     key = (settings.get("chat.gemini.api_key") or settings.get("ai.gemini.api_key") or "").strip()
@@ -733,6 +791,14 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
         "datum_von": {"type": "string", "description": "Frühestes Datum (inkl.) als YYYY-MM-DD. Für konkrete Ereignisse/Feiertage rechne den Zeitraum SELBST aus, z. B. Ostern 2022 → datum_von='2022-04-15', datum_bis='2022-04-18'; Weihnachten 2021 → 2021-12-24..2021-12-26."},
         "datum_bis": {"type": "string", "description": "Spätestes Datum (inkl.) als YYYY-MM-DD."},
     }
+    _kontext_prop = {
+        "kontext_filtern": {
+            "type": "boolean",
+            "description": "Wenn true: nur innerhalb der IDs des LETZTEN Suchergebnisses suchen/filtern "
+                           "(für Folgefragen wie 'davon nur Videos', 'daraus die besten', 'mach ein Album '  "
+                           "daraus'). Setze das, wenn der Nutzer 'diese', 'davon', 'daraus', 'die Ergebnisse' sagt.",
+        }
+    } if context_ids else {}
     tool = {"function_declarations": [
         {
             "name": "suche_fotos",
@@ -741,7 +807,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                            "Medientyp (Bild/Video) und Jahr.",
             "parameters": {"type": "object", "properties": {
                 "suchbegriff": {"type": "string", "description": "Wonach gesucht wird, z. B. 'Günter im Garten', 'Strand'"},
-                **_filter_props,
+                **_filter_props, **_kontext_prop,
             }, "required": ["suchbegriff"]},
         },
         {
@@ -750,7 +816,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                            "Filtert nach Medientyp, Jahr und optional Person.",
             "parameters": {"type": "object", "properties": {
                 "person": {"type": "string", "description": "optionaler Personenname, z. B. 'Lea Marie Nimtz'"},
-                **_filter_props,
+                **_filter_props, **_kontext_prop,
             }},
         },
         {
@@ -865,6 +931,34 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 "season": {"type": "string", "description": "z. B. 'weihnachten', 'sommer' (bei season)"},
             }, "required": ["thema"]},
         },
+        {
+            "name": "bewertung_setzen",
+            "description": "Setzt die Stern-Bewertung (1–5) für ein Foto oder alle passenden Fotos. "
+                           "Für 'bewerte dieses Foto mit 5 Sternen', 'gib dem Bild 4 Sterne', "
+                           "'markiere alle Urlaubsfotos mit 5 Sternen'. Bewertung 5=Spitze, 4=Gut, "
+                           "3=OK, 2=Schwach, 1=Schlecht.",
+            "parameters": {"type": "object", "properties": {
+                "bewertung": {"type": "integer", "description": "1–5 Sterne"},
+                "foto_id": {"type": "integer", "description": "ID eines einzelnen Fotos (wenn nur ein bestimmtes)"},
+                "suchbegriff": {"type": "string", "description": "optional, welche Fotos bewertet werden"},
+                "person": {"type": "string"},
+                **_filter_props, **_kontext_prop,
+            }, "required": ["bewertung"]},
+        },
+        {
+            "name": "zu_album_hinzufuegen",
+            "description": "Fügt Fotos zu einem BESTEHENDEN Album hinzu (kein neues Album erstellen). "
+                           "Für 'füg diese zu Album X hinzu', 'pack das in mein Urlaubs-Album', 'zum Album "
+                           "Sommer 2024 hinzufügen'. Wenn der Nutzer 'diese'/'die Ergebnisse'/'davon' "
+                           "sagt, nutze kontext_filtern=true (letztes Suchergebnis).",
+            "parameters": {"type": "object", "properties": {
+                "album_name": {"type": "string", "description": "Name des bestehenden Albums (Teilname reicht)"},
+                "album_id": {"type": "integer", "description": "Album-ID (wenn bekannt)"},
+                "suchbegriff": {"type": "string", "description": "optional: welche Fotos"},
+                "person": {"type": "string"},
+                **_filter_props, **_kontext_prop,
+            }},
+        },
     ]}
     contents = []
     for h in (history or [])[-8:]:
@@ -893,7 +987,17 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     # "gestern", "diesen Monat" nicht in ein Datumsfenster übersetzen und sucht dann über
     # ALLE Jahre (Bug: "Anja letzte Woche" → Bilder aus vielen Jahren). Wir liefern das
     # Datum und die exakte Umrechnungsregel mit, inkl. berechneter Wochen-Eckdaten.
-    system_text = SYSTEM + _today_block() + persona_block + await _identity_context(db, settings, user)
+    # CONTEXT_IDS: letzte Suchergebnisse — für Folgefragen ("davon", "daraus") bereitstellen.
+    ctx_block = ""
+    if context_ids:
+        preview = context_ids[:8]
+        ctx_block = (f"\n\nKONTEXT — letztes Suchergebnis: {len(context_ids)} Fotos (IDs: "
+                     f"{preview}{'…' if len(context_ids) > 8 else ''}). "
+                     f"Wenn der Nutzer 'diese', 'davon', 'daraus', 'die', 'sie' meint (Folgefrage auf "
+                     f"die letzte Suche): setze im Tool kontext_filtern=true — dann wird NUR innerhalb "
+                     f"dieser {len(context_ids)} Fotos gefiltert. Gibt es keinen Bezug auf das letzte "
+                     f"Ergebnis (neue, unabhängige Suche), lasse kontext_filtern weg.")
+    system_text = SYSTEM + _today_block() + ctx_block + persona_block + await _identity_context(db, settings, user)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {
@@ -924,10 +1028,18 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 for c in calls:
                     args = c.get("args") or {}
                     if c.get("name") == "zaehle_fotos":
-                        resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
-                                            args.get("jahr_bis"), args.get("person"), acl=acl,
-                                            person2=args.get("person2"), ort=args.get("ort"),
-                                            datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
+                        if args.get("kontext_filtern") and context_ids:
+                            # Zähle direkt innerhalb des Kontexts (filtere nach Medientyp etc.)
+                            ctx_acl_count = list(acl) + [Photo.id.in_(context_ids)]
+                            resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
+                                                args.get("jahr_bis"), args.get("person"), acl=ctx_acl_count,
+                                                person2=args.get("person2"), ort=args.get("ort"),
+                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
+                        else:
+                            resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
+                                                args.get("jahr_bis"), args.get("person"), acl=acl,
+                                                person2=args.get("person2"), ort=args.get("ort"),
+                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "zeitliche_eckdaten":
@@ -984,24 +1096,35 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                                                   args.get("season"), user)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
-                    elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):
+                    elif c.get("name") in ("album_erstellen", "als_favorit_markieren",
+                                           "bewertung_setzen", "zu_album_hinzufuegen"):
                         # Write actions stay disabled for restricted accounts (read-only chat).
                         if restricted:
                             resp = {"fehler": "Aktionen sind in diesem Konto nicht verfügbar."}
                         elif c.get("name") == "album_erstellen":
                             resp = await _action_create_album(db, settings, args)
-                        else:
+                        elif c.get("name") == "als_favorit_markieren":
                             resp = await _action_favorite(db, settings, args)
+                        elif c.get("name") == "bewertung_setzen":
+                            resp = await _action_set_rating(db, settings, args)
+                        else:  # zu_album_hinzufuegen
+                            resp = await _action_add_to_album(db, settings, args, context_ids or [])
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     else:
+                        # kontext_filtern: Folgefrage auf das letzte Suchergebnis →
+                        # nur innerhalb der context_ids suchen/filtern.
+                        ctx_acl = list(acl)
+                        if args.get("kontext_filtern") and context_ids:
+                            from sqlalchemy import and_
+                            ctx_acl = list(acl) + [Photo.id.in_(context_ids)]
                         recs = await _retrieve(db, args.get("suchbegriff", ""), settings,
                                                medientyp=args.get("medientyp"),
                                                jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"),
                                                person=args.get("person"), person2=args.get("person2"),
                                                ort=args.get("ort"),
                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
-                                               acl=acl)
+                                               acl=ctx_acl)
                         for rrec in recs:
                             seen_recs.setdefault(rrec["id"], rrec)
                         # GALERIE = ALLE Treffer: bei starken Struktur-Filtern (Person/Ort/
@@ -1011,15 +1134,28 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         has_struct = any(args.get(k) for k in ("person", "person2", "ort",
                                           "datum_von", "datum_bis", "jahr_von", "jahr_bis"))
                         gallery_ids = [rrec["id"] for rrec in recs]
-                        gesamt = len(gallery_ids)
-                        if has_struct:
+                        # Echte gesamt_anzahl: separater COUNT ohne 2000er-Cap, damit das Modell
+                        # "2000 Fotos von Anja" nicht sagt, wenn es 7742 sind.
+                        if args.get("kontext_filtern") and context_ids:
+                            gesamt = len([i for i in context_ids
+                                          if not ctx_acl or True])  # einfache Annäherung
+                            full = [i for i in context_ids]
+                            gallery_ids = full
+                        elif has_struct:
+                            cnt_res = await _count(
+                                db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
+                                args.get("person"), acl=acl,
+                                person2=args.get("person2"), ort=args.get("ort"),
+                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
+                            gesamt = cnt_res["anzahl"]
                             full = await _structural_ids(
                                 db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
                                 args.get("person"), args.get("person2"), args.get("ort"),
                                 args.get("datum_von"), args.get("datum_bis"), acl)
                             if full:
                                 gallery_ids = full
-                                gesamt = len(full)
+                        else:
+                            gesamt = len(gallery_ids)
                         seen_ids.extend(gallery_ids)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": {"treffer": recs, "gesamt_anzahl": gesamt}}}]})
@@ -1088,8 +1224,10 @@ async def _local_rag(message: str, settings: dict, db: AsyncSession, user=None) 
 
 
 async def chat(message: str, history: list, settings: dict, db: AsyncSession,
-               provider: Optional[str] = None, user=None) -> dict:
+               provider: Optional[str] = None, user=None,
+               context_ids: Optional[List[int]] = None) -> dict:
     prov = (provider or settings.get("chat.provider") or "gemini").lower()
     if prov == "local":
         return await _local_rag(message, settings, db, user=user)
-    return await _gemini_agent(message, history, settings, db, user=user)
+    return await _gemini_agent(message, history, settings, db, user=user,
+                               context_ids=context_ids or None)

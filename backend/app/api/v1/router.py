@@ -1058,6 +1058,7 @@ class ChatRequestV1(BaseModel):
     message: str
     history: List[dict] = []
     provider: Optional[str] = None
+    context_ids: List[int] = []   # letztes Suchergebnis → "davon", "daraus" Folgefragen
 
 
 @router.get("/chat/status")
@@ -1078,7 +1079,9 @@ async def chat_v1(body: ChatRequestV1, db: AsyncSession = Depends(get_db),
     import logging as _lg
     s = await load_settings(db)
     hist = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.history]
-    res = await chat_svc.chat(body.message, hist, s, db, provider=body.provider, user=user)
+    ctx = [int(i) for i in (body.context_ids or [])][:2000]
+    res = await chat_svc.chat(body.message, hist, s, db, provider=body.provider, user=user,
+                              context_ids=ctx or None)
     # DIAGNOSE (temporär): wer fragt, was, wie viele Treffer — um Client/Account/Scope-
     # Probleme im Chat sichtbar zu machen (Screenshots zeigten 0 Treffer trotz Daten).
     try:
