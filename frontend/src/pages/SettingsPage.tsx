@@ -1137,6 +1137,38 @@ function ChatSettingsSection() {
           <span className="text-sm text-zinc-700 dark:text-zinc-300">{t('settings.chatEnable')}</span>
         </label>
 
+        {/* Persönlichkeit / Ton des Assistenten */}
+        <div>
+          <Label>Persönlichkeit &amp; Ton</Label>
+          <textarea value={settings['chat.persona'] ?? ''} onChange={e => set('chat.persona', e.target.value)} rows={3}
+            placeholder="z. B. Antworte freundlich und mit einer Prise Humor und schlage proaktiv passende Ideen vor."
+            className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <p className="text-[11px] text-zinc-400 mt-1">Gibt dem Assistenten einen festen Charakter. Inhaltliche Korrektheit bleibt davon unberührt.</p>
+        </div>
+
+        {/* Ambient-Assistent (schwebendes Widget) + granulare Steuerung */}
+        <div className="space-y-2.5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Ambient-Assistent (schwebendes Widget)</p>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input type="checkbox" className="w-4 h-4 accent-indigo-600"
+                   checked={(settings['features.assistant'] ?? 'true') !== 'false'}
+                   onChange={e => set('features.assistant', e.target.checked ? 'true' : 'false')} />
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">Widget überall anzeigen</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none pl-6">
+            <input type="checkbox" className="w-4 h-4 accent-indigo-600"
+                   checked={(settings['assistant.steer.gallery'] ?? 'true') !== 'false'}
+                   onChange={e => set('assistant.steer.gallery', e.target.checked ? 'true' : 'false')} />
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">Galerie steuern (zu Treffern springen)</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none pl-6">
+            <input type="checkbox" className="w-4 h-4 accent-indigo-600"
+                   checked={(settings['assistant.steer.map'] ?? 'true') !== 'false'}
+                   onChange={e => set('assistant.steer.map', e.target.checked ? 'true' : 'false')} />
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">Karte steuern („Auf der Karte")</span>
+          </label>
+        </div>
+
         <SaveButton pending={save.isPending} saved={saved} onClick={() => save.mutate(settings)} />
       </div>
     </div>

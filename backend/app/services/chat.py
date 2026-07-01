@@ -627,7 +627,12 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     from app.core.access import photo_conditions, _is_unrestricted
     acl = photo_conditions(user)                 # [] for admin/open; folder/date/person scope otherwise
     restricted = not _is_unrestricted(user)      # restricted accounts get read-only chat
-    system_text = SYSTEM + await _identity_context(db, settings, user)
+    # Persona/Ton aus den Einstellungen (freundlich/lustig/proaktiv …) — vor die Identität
+    # gehängt, damit der Nutzer den Charakter des Assistenten steuern kann.
+    persona = (settings.get("chat.persona") or "").strip()
+    persona_block = (f"\n\nPERSÖNLICHKEIT & TON (vom Nutzer vorgegeben, befolge das durchgehend, "
+                     f"ohne die inhaltliche Korrektheit zu opfern): {persona[:600]}") if persona else ""
+    system_text = SYSTEM + persona_block + await _identity_context(db, settings, user)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {

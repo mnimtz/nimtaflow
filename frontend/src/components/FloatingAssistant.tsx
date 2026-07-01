@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Sparkles, X, ArrowUp, Loader2, MapPin } from 'lucide-react'
 import { api } from '../lib/api'
@@ -15,15 +16,23 @@ const VIEW_LABEL: Record<string, string> = {
 export default function FloatingAssistant() {
   const nav = useNavigate()
   const loc = useLocation()
-  const { enabled, open, setOpen, toggle, setResult } = useAssistant()
+  const { open, setOpen, toggle, setResult } = useAssistant()
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // Steuerung aus den Einstellungen (Kategorie „Chat-Assistent").
+  const { data: cfg } = useQuery<Record<string, string>>({
+    queryKey: ['settings'], queryFn: () => api.get('/settings').then(r => r.data), staleTime: 30_000,
+  })
+  const assistantOn = (cfg?.['features.assistant'] ?? 'true') !== 'false'
+  const steerGallery = (cfg?.['assistant.steer.gallery'] ?? 'true') !== 'false'
+  const steerMap = (cfg?.['assistant.steer.map'] ?? 'true') !== 'false'
+
   useEffect(() => { scrollRef.current?.scrollTo({ top: 1e9 }) }, [messages, busy])
 
-  if (!enabled) return null
+  if (!assistantOn) return null
 
   const context = VIEW_LABEL[loc.pathname] || null
 
@@ -42,8 +51,9 @@ export default function FloatingAssistant() {
       setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length, ids, suggestions, query: text }])
       if (ids.length) {
         setResult(ids, text)
-        // Auf der Karte bleiben (sie filtert sich selbst auf das Ergebnis); sonst zur Galerie.
-        if (loc.pathname !== '/gallery' && loc.pathname !== '/map') nav('/gallery')
+        // Auf der Karte bleiben (sie filtert sich selbst); sonst — wenn erlaubt — zur Galerie.
+        if (loc.pathname === '/map') { /* bleibt auf der Karte */ }
+        else if (steerGallery && loc.pathname !== '/gallery') nav('/gallery')
       }
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'Gerade nicht erreichbar — bitte gleich nochmal.' }])
@@ -85,14 +95,18 @@ export default function FloatingAssistant() {
                 <div className={`max-w-[85%] text-[13px] leading-relaxed rounded-xl px-2.5 py-1.5 ${
                   m.role === 'user' ? 'self-end bg-indigo-600 text-white' : 'bg-white/10 text-zinc-100'}`}>
                   {m.content}
-                  {m.role === 'assistant' && !!m.photoCount && (
+                  {m.role === 'assistant' && !!m.photoCount && (steerGallery || steerMap) && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <button onClick={() => nav('/gallery')} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
-                        <Sparkles size={11} /> {m.photoCount} in der Galerie
-                      </button>
-                      <button onClick={() => showOnMap(m)} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
-                        <MapPin size={11} /> Auf der Karte
-                      </button>
+                      {steerGallery && (
+                        <button onClick={() => nav('/gallery')} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
+                          <Sparkles size={11} /> {m.photoCount} in der Galerie
+                        </button>
+                      )}
+                      {steerMap && (
+                        <button onClick={() => showOnMap(m)} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
+                          <MapPin size={11} /> Auf der Karte
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
