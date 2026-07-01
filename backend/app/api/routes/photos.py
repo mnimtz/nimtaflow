@@ -119,7 +119,10 @@ async def list_photos(
             )
         )
 
-    total = await db.scalar(select(func.count()).select_from(q.subquery()))
+    # Gesamtzahl nur auf Seite 1 zählen (COUNT über ~140k+ACL-Joins kostet ~140ms) —
+    # sie ändert sich beim Weiterscrollen nicht. Das Frontend liest total aus Seite 1
+    # und entscheidet „nächste Seite?" anhand der zurückgegebenen Item-Anzahl.
+    total = await db.scalar(select(func.count()).select_from(q.subquery())) if page == 1 else -1
     if sort == "oldest":
         q = q.order_by(Photo.taken_at.asc().nullsfirst(), Photo.id.asc())
     elif sort == "added":

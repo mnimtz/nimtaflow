@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { RowsPhotoAlbum, MasonryPhotoAlbum } from 'react-photo-album'
 import 'react-photo-album/rows.css'
 import 'react-photo-album/masonry.css'
@@ -7,6 +8,55 @@ import { groupByDate, type Indexed } from './justified'
 import { useT } from '../../i18n'
 
 export type LayoutMode = 'rows' | 'masonry'
+
+// ── Sektions-Virtualisierung (à la Immich/Google Photos) ──────────────────────
+// Nur Sektionen im (erweiterten) Sichtbereich sind echt im DOM; alles andere ist
+// ein leeres Div bekannter Höhe. So bleiben DOM- UND JS-Kosten (react-photo-album
+// Layout, React-Reconciliation) konstant, egal wie tief man scrollt — statt O(n)
+// pro nachgeladener Seite. Gemessene Höhen werden gecacht, damit der Platzhalter
+// exakt so hoch ist wie die gerenderte Sektion → kein Scroll-Springen.
+const heightCache = new Map<string, number>()
+
+function LazySection({ id, estHeight, scrollRoot, eager, children }: {
+  id: string; estHeight: number; scrollRoot?: HTMLElement | null; eager?: boolean; children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(!!eager)
+  const [h, setH] = useState(() => heightCache.get(id) ?? estHeight)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), {
+      root: scrollRoot ?? null, rootMargin: '1400px 0px',
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [scrollRoot])
+
+  // Solange sichtbar: echte Höhe messen und cachen → korrekter Platzhalter beim
+  // späteren Aushängen, kein Scroll-Sprung.
+  useEffect(() => {
+    if (!visible || !ref.current) return
+    const el = ref.current
+    const measure = () => {
+      const height = el.getBoundingClientRect().height
+      if (height > 0) { heightCache.set(id, height); setH(height) }
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [visible, id])
+
+  return <div ref={ref} style={visible ? undefined : { height: h }}>{visible ? children : null}</div>
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
 
 type AlbumPhoto = { src: string; width: number; height: number; key: string; srcSet: { src: string; width: number; height: number }[]; _p: Photo; _i: number }
 
@@ -69,6 +119,7 @@ interface Props {
   layout?: LayoutMode
   rowHeight?: number
   groupBy?: 'none' | 'day' | 'month'
+  scrollRoot?: HTMLElement | null
   onPhotoClick: (index: number) => void
   onFavoriteToggle?: (photo: Photo) => void
   selectable?: boolean
@@ -79,7 +130,7 @@ interface Props {
 
 function Album({ items, layout, rowHeight, anySelected, ...cb }: {
   items: Indexed[]; layout: LayoutMode; rowHeight: number; anySelected: boolean
-} & Omit<Props, 'photos' | 'layout' | 'rowHeight' | 'groupBy'>) {
+} & Omit<Props, 'photos' | 'layout' | 'rowHeight' | 'groupBy' | 'scrollRoot'>) {
   const album = toAlbum(items)
   const common = {
     photos: album,
@@ -111,31 +162,49 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
   return <RowsPhotoAlbum {...common as any} targetRowHeight={rowHeight} rowConstraints={{ singleRowMaxHeight: Math.round(rowHeight * 1.35) }} />
 }
 
-export default function Gallery({ photos, layout = 'rows', rowHeight = 200, groupBy = 'none', ...cb }: Props) {
+export default function Gallery({ photos, layout = 'rows', rowHeight = 200, groupBy = 'none', scrollRoot, ...cb }: Props) {
   const { t } = useT()
   const anySelected = (cb.selected?.size ?? 0) > 0
+  // Grobe Höhenschätzung pro Sektion (~5 Bilder/Reihe), bis die echte Höhe gemessen
+  // und gecacht ist. Nur für den Platzhalter vor dem ersten Rendern relevant.
+  const estRows = (n: number) => Math.ceil(n / 5) * (rowHeight + 5)
+
   if (groupBy === 'none') {
-    return <Album items={photos.map((photo, index) => ({ photo, index }))} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
+    // Flache Liste in feste Blöcke schneiden und jeden virtualisieren.
+    const CH = 48
+    const items = photos.map((photo, index) => ({ photo, index }))
+    return (
+      <div className="space-y-1">
+        {chunk(items, CH).map((block, bi) => (
+          <LazySection key={block[0]?.photo.id ?? bi} id={`flat:${block[0]?.photo.id ?? bi}`}
+            estHeight={estRows(block.length)} scrollRoot={scrollRoot} eager={bi === 0}>
+            <Album items={block} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
+          </LazySection>
+        ))}
+      </div>
+    )
   }
   return (
     <div className="space-y-6">
-      {groupByDate(photos, groupBy).map(g => {
+      {groupByDate(photos, groupBy).map((g, gi) => {
         const ids = g.items.map(it => it.photo.id)
         const allSel = cb.selectable && ids.length > 0 && ids.every(id => cb.selected?.has(id))
         return (
-          <section key={g.key} data-gkey={g.key} style={{ contentVisibility: 'auto', containIntrinsicSize: `${Math.ceil(g.items.length / 5) * (rowHeight + 5) + 44}px` } as any}>
-            <div className="sticky top-0 z-20 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-2">
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 capitalize">{g.label}</h3>
-              <span className="text-xs text-zinc-400">{g.items.length}</span>
-              {cb.selectable && (
-                <button onClick={() => cb.onSelectMany?.(ids, !allSel)}
-                  className="ml-1 text-xs text-indigo-500 hover:text-indigo-400 font-medium">
-                  {allSel ? t('gallery.deselect') : t('gallery.selectAll')}
-                </button>
-              )}
-            </div>
-            <Album items={g.items} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
-          </section>
+          <LazySection key={g.key} id={`${groupBy}:${g.key}`} estHeight={estRows(g.items.length) + 44} scrollRoot={scrollRoot} eager={gi < 2}>
+            <section data-gkey={g.key}>
+              <div className="sticky top-0 z-20 py-2 mb-2 bg-gradient-to-b from-white via-white/95 to-white/0 dark:from-zinc-950 dark:via-zinc-950/95 dark:to-transparent backdrop-blur-sm flex items-baseline gap-2">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 capitalize">{g.label}</h3>
+                <span className="text-xs text-zinc-400">{g.items.length}</span>
+                {cb.selectable && (
+                  <button onClick={() => cb.onSelectMany?.(ids, !allSel)}
+                    className="ml-1 text-xs text-indigo-500 hover:text-indigo-400 font-medium">
+                    {allSel ? t('gallery.deselect') : t('gallery.selectAll')}
+                  </button>
+                )}
+              </div>
+              <Album items={g.items} layout={layout} rowHeight={rowHeight} anySelected={anySelected} {...cb} />
+            </section>
+          </LazySection>
         )
       })}
     </div>

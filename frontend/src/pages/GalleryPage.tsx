@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { LayoutGrid, Sparkles, Search, X, Heart, Archive, Trash2, Calendar, Minus, Plus, Rows3, Columns3, FolderPlus, Play } from 'lucide-react'
 import { api, thumbUrl, type Photo, type PhotoStats } from '../lib/api'
@@ -156,8 +156,10 @@ export default function GalleryPage() {
     queryFn: ({ pageParam = 1 }) =>
       api.get('/photos', { params: { ...filterParams, page: pageParam, limit: pageSize } })
         .then(r => r.data as PhotoListResponse),
+    // Nächste Seite laden, wenn die letzte VOLL war (total wird ab Seite 2 nicht mehr
+    // gezählt → -1). Eine nicht-volle Seite ist das Ende.
     getNextPageParam: (last) =>
-      last.page * last.limit < last.total ? last.page + 1 : undefined,
+      last.items.length >= last.limit ? last.page + 1 : undefined,
     initialPageParam: 1,
     enabled: viewMode === 'grid',
   })
@@ -182,7 +184,12 @@ export default function GalleryPage() {
     },
   })
 
-  const allGridPhotos = infiniteQuery.data?.pages.flatMap(p => p.items) ?? []
+  // Nur neu flachklopfen, wenn wirklich eine Seite dazukam (nicht bei jedem Render) —
+  // spart O(n)-Arbeit beim Scrollen/Nachladen.
+  const allGridPhotos = useMemo(
+    () => infiniteQuery.data?.pages.flatMap(p => p.items) ?? [],
+    [infiniteQuery.data?.pages],
+  )
   const total = infiniteQuery.data?.pages[0]?.total ?? 0
 
   function clearSelection() { setSelected(new Set()); setLastIndex(null) }
@@ -393,6 +400,7 @@ export default function GalleryPage() {
               layout={layout}
               rowHeight={rowHeight}
               groupBy={(sort === 'name' || sort === 'added') ? 'none' : groupBy}
+              scrollRoot={scrollEl}
               onPhotoClick={i => setLightbox({ photos: allGridPhotos, index: i, live: true })}
               onFavoriteToggle={photo => favMutation.mutate(photo.id)}
               selectable
