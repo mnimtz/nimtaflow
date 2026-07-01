@@ -514,6 +514,7 @@ def backfill_blur_task(self, limit: int = 4000):
     (blur_data IS NULL) from their already-generated small thumbnail. Cheap (~ms each,
     no original re-decode), runs inline in batches; nightly + on-demand. Idempotent."""
     async def _main():
+        import os
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
         from app.services.feature_log import log as flog
