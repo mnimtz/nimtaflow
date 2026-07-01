@@ -1052,9 +1052,22 @@ async def chat_v1(body: ChatRequestV1, db: AsyncSession = Depends(get_db),
     restricted account safely chats over only its own photos; write-actions stay off."""
     from app.services import chat as chat_svc
     from app.services.settings_loader import load_settings
+    from app.core.access import _is_unrestricted
+    import logging as _lg
     s = await load_settings(db)
     hist = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.history]
-    return await chat_svc.chat(body.message, hist, s, db, provider=body.provider, user=user)
+    res = await chat_svc.chat(body.message, hist, s, db, provider=body.provider, user=user)
+    # DIAGNOSE (temporär): wer fragt, was, wie viele Treffer — um Client/Account/Scope-
+    # Probleme im Chat sichtbar zu machen (Screenshots zeigten 0 Treffer trotz Daten).
+    try:
+        _lg.getLogger("uvicorn.error").info(
+            "CHATDIAG user=%s(id=%s) unrestricted=%s msg=%r -> photos=%d",
+            getattr(user, "email", None), getattr(user, "id", None),
+            _is_unrestricted(user), (body.message or "")[:80],
+            len((res or {}).get("photo_ids") or []))
+    except Exception:
+        pass
+    return res
 
 
 # ── Trips / events (iOS app) ────────────────────────────────────────────────────
