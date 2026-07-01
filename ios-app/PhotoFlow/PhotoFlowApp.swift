@@ -47,7 +47,9 @@ struct RootView: View {
                 MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
             }
             .tint(.indigo)
-            .task { await store.syncServer(api) }
+            // isAdmin (steuert die Leitstand-Sichtbarkeit) beim App-Start setzen, nicht erst
+            // als Nebeneffekt des Dashboard-Ladens.
+            .task { await store.syncServer(api); _ = await api.meName() }
 
             // Ambient-Assistent: schwebt über allen Tabs, überall erreichbar.
             Button { showAssistant = true } label: {

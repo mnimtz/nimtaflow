@@ -2347,8 +2347,11 @@ def render_highlight_task(self, highlight_id: int):
                 # Hochkant-Video (bzw. quadratisch bei gemischtem Satz) rendern, statt
                 # Hochkant-Inhalt in einen 16:9-Rahmen zu schrumpfen (wirkte klein/
                 # „verkleinert" mit viel Blur an den Seiten).
-                _por = sum(1 for p in photos if (p.height or 0) > (p.width or 0))
-                _lan = sum(1 for p in photos if (p.width or 0) > (p.height or 0))
+                # Orientierung über die TATSÄCHLICH als Slideshow gezeigten Fotos (rest)
+                # zählen, nicht über alle (photos) — sonst verzerren KI-animierte Frames die Quote.
+                _slide = rest if rest else photos
+                _por = sum(1 for p in _slide if (p.height or 0) > (p.width or 0))
+                _lan = sum(1 for p in _slide if (p.width or 0) > (p.height or 0))
                 _pf = _por / max(1, _por + _lan)
                 if _pf >= 0.6:
                     canvas_w, canvas_h = 1080, 1920      # überwiegend Hochkant

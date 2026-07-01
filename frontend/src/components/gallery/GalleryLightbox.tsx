@@ -510,6 +510,21 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
     setFavs(s => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n })
   }
   const isFav = (p?: Photo) => !!p && favs.has(p.id)
+  // Live-Nachladen (onLoadMore) hängt neue Fotos an `photos` an — deren Server-Favorit-Status
+  // ins Set übernehmen, aber NUR für neue IDs (lokale Toggles bereits gesehener Fotos bleiben).
+  const seenIds = useRef(new Set(photos.map(p => p.id)))
+  useEffect(() => {
+    setFavs(prev => {
+      let changed = false; const next = new Set(prev)
+      for (const p of photos) {
+        if (!seenIds.current.has(p.id)) {
+          seenIds.current.add(p.id)
+          if (p.is_favorite) { next.add(p.id); changed = true }
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [photos])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

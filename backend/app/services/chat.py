@@ -551,7 +551,8 @@ async def _recap(db: AsyncSession, medientyp, jahr_von, jahr_bis, person, datum_
     acc_sub = select(_P.id).where(*base)
     ppl = (await db.execute(select(Person.name, _f.count(_f.distinct(Face.photo_id)).label("n"))
            .join(Face, Face.person_id == Person.id)
-           .where(Face.photo_id.in_(acc_sub), _f.length(_f.coalesce(Person.name, "")) > 0)
+           .where(Face.photo_id.in_(acc_sub), _f.length(_f.coalesce(Person.name, "")) > 0,
+                  Person.is_hidden == False)   # noqa: E712  keine versteckten Personen im Rückblick
            .group_by(Person.name).order_by(_f.count(_f.distinct(Face.photo_id)).desc()).limit(8))).all()
     descs = (await db.execute(select(_P.description).where(
         *base, _P.description.isnot(None), _P.description != "").order_by(_P.taken_at).limit(6))).scalars().all()
@@ -637,9 +638,16 @@ async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) 
         return {"navigate": f"/people?person={row[0]}", "name": row[1]} if row else \
                {"fehler": f"Person '{name}' nicht gefunden."}
     if z in ("album", "reise"):
-        from app.models.album import Album
-        row = (await db.execute(select(Album.id, Album.name).where(
-            Album.name.ilike(f"%{name.strip()}%")).limit(1))).first()
+        from app.models.album import Album, AlbumPhoto
+        from app.core.access import photo_conditions
+        acl = photo_conditions(user)
+        q = select(Album.id, Album.name).where(Album.name.ilike(f"%{name.strip()}%"))
+        if acl:
+            # Eingeschränktes Konto: nur Alben, die MINDESTENS ein für den Nutzer sichtbares
+            # Foto enthalten — sonst würden fremde Album-Namen/-IDs geleakt.
+            q = q.where(Album.id.in_(
+                select(AlbumPhoto.album_id).join(Photo, Photo.id == AlbumPhoto.photo_id).where(*acl)))
+        row = (await db.execute(q.limit(1))).first()
         if not row:
             return {"fehler": f"{'Reise' if z == 'reise' else 'Album'} '{name}' nicht gefunden."}
         path = f"/trips?trip={row[0]}" if z == "reise" else f"/albums?album={row[0]}"

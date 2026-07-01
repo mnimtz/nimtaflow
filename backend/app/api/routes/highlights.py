@@ -316,17 +316,26 @@ async def save_highlight_to_library(highlight_id: int, db: AsyncSession = Depend
         select(PhotoSource.path).where(PhotoSource.enabled == True))).scalars().all()  # noqa: E712
     base = min(roots, key=len) if roots else get_settings().photos_path
     dest_dir = Path(base) / "Highlights"
-    dest_dir.mkdir(parents=True, exist_ok=True)
 
     safe = _re.sub(r"[^\w\-]+", "_", (h.title or f"Highlight_{h.id}")).strip("_") or f"Highlight_{h.id}"
     stamp = (h.created_at or datetime.utcnow()).strftime("%Y-%m-%d")
-    dest = dest_dir / f"{safe}_{stamp}.mp4"
-    n = 1
-    while dest.exists():
-        dest = dest_dir / f"{safe}_{stamp}_{n}.mp4"; n += 1
+    src = h.file_path
 
-    shutil.copy2(h.file_path, dest)
-    content_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+    # mkdir + kopieren + hashen sind BLOCKIEREND (Video oft 50–200 MB) → im Thread, damit
+    # der Event-Loop nicht einfriert. Schreibfehler (Ziel nicht beschreibbar) sauber melden.
+    def _copy_and_hash():
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"{safe}_{stamp}.mp4"
+        n = 1
+        while dest.exists():
+            dest = dest_dir / f"{safe}_{stamp}_{n}.mp4"; n += 1
+        shutil.copy2(src, dest)
+        return dest, hashlib.sha256(dest.read_bytes()).hexdigest()
+    import asyncio
+    try:
+        dest, content_hash = await asyncio.to_thread(_copy_and_hash)
+    except (OSError, PermissionError) as e:
+        raise HTTPException(500, f"Konnte nicht in die Bibliothek schreiben: {str(e)[:120]}")
 
     existing = await db.scalar(select(Photo.id).where(Photo.file_hash == content_hash))
     if existing:

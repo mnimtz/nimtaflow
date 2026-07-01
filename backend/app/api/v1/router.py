@@ -1170,8 +1170,9 @@ async def memories_v1(request: Request, db: AsyncSession = Depends(get_db),
 
 import time as _time
 _DASH_CACHE: dict = {}     # user_id → (expiry_ts, payload) — Kurz-Cache gegen ~10s-Ladezeit
-_DASH_TTL = 180            # 3 Min: Startseite ändert sich langsam (Person der Woche wöchentlich,
-                           # „vor X Jahren" täglich, Neuzugänge selten) → Wiederholaufruf instant.
+_DASH_TTL = 90             # 90s: kurz genug, dass frisch getrashte/hochgeladene Fotos schnell
+                           # verschwinden/erscheinen; lang genug, dass Wiederholaufrufe instant sind.
+_DASH_CACHE_MAX = 256      # harte Obergrenze gegen unbegrenztes Wachstum (Memory-Leak)
 
 
 async def _lean_stats_v1(db: AsyncSession, user: Optional[User]) -> LibraryStatsV1:
@@ -1351,5 +1352,7 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
                               if wh.cover_photo_id else None),
             }
 
+    if len(_DASH_CACHE) >= _DASH_CACHE_MAX:   # Obergrenze: alte Einträge verwerfen (kein Leak)
+        _DASH_CACHE.clear()
     _DASH_CACHE[_ckey] = (_now + _DASH_TTL, out)
     return out
