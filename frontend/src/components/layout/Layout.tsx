@@ -77,7 +77,8 @@ const nav = [
   { to: '/start', icon: Home, labelKey: 'nav.start' },
   { to: '/gallery', icon: Images, labelKey: 'nav.gallery' },
   { to: '/search', icon: Sparkles, labelKey: 'nav.search' },
-  { to: '/chat', icon: MessageCircle, labelKey: 'nav.chat' },
+  // Alter Chat-Tab entfernt — der schwebende Ambient-Assistent (FloatingAssistant)
+  // ersetzt ihn. Die /chat-Route bleibt als Deep-Link erhalten.
   { to: '/albums', icon: BookImage, labelKey: 'nav.albums' },
   { to: '/highlights', icon: Clapperboard, labelKey: 'nav.highlights' },
   { to: '/people', icon: Users, labelKey: 'nav.people' },

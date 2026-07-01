@@ -43,8 +43,7 @@ struct RootView: View {
                 DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
                 GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
                 AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
-                ProGate(feature: "KI-Chat") { ChatView() }
-                    .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
+                // Alter Chat-Tab entfernt — der schwebende ✨-Assistent (unten) ersetzt ihn.
                 MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
             }
             .tint(.indigo)
