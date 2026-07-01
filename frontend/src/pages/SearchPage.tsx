@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, Sparkles, Loader2 } from 'lucide-react'
 import { api, type Photo } from '../lib/api'
 import JustifiedGrid from '../components/gallery/JustifiedGrid'
-import PhotoLightbox from '../components/gallery/PhotoLightbox'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { useT } from '../i18n'
 
 export default function SearchPage() {
@@ -95,7 +95,7 @@ export default function SearchPage() {
       </div>
 
       {lightbox && (
-        <PhotoLightbox photos={lightbox.photos} initialIndex={lightbox.index} onClose={() => setLightbox(null)} />
+        <GalleryLightbox photos={lightbox.photos} index={lightbox.index} onClose={() => setLightbox(null)} />
       )}
     </div>
   )

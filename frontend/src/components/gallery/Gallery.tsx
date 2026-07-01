@@ -148,20 +148,15 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
         const pos = (p.focus_x != null && p.focus_y != null)
           ? `${Math.round(p.focus_x * 100)}% ${Math.round(p.focus_y * 100)}%`
           : '50% 38%'
-        // LQIP als reiner Lade-Platzhalter: Der Blur liegt als eigene Ebene hinter dem
-        // Bild und ist NUR sichtbar, solange das Thumbnail noch lädt. Lädt es schnell
-        // (LAN/Cache), erscheint es sofort scharf — KEINE künstliche Einblendung, damit
-        // das schnelle Laden nichts ausbremst. Nur bei langsamem Laden sieht man kurz
-        // den Blur statt einer leeren Kachel.
+        // LQIP als reiner Lade-Platzhalter — direkt als HINTERGRUND des <img> (kein
+        // Wrapper-Div, damit react-photo-album die Kachel korrekt bemaßt und nichts
+        // kollabiert). Solange das Thumbnail lädt, zeigt das transparente <img> den
+        // Blur dahinter; sobald geladen, verdeckt das scharfe Bild ihn SOFORT — kein
+        // künstlicher Verzug, schnelles Laden bleibt schnell.
         const blur = p.blur_data
           ? { backgroundImage: `url(data:image/jpeg;base64,${p.blur_data})`, backgroundSize: 'cover', backgroundPosition: pos, backgroundRepeat: 'no-repeat' as const }
           : {}
-        return (
-          <div style={{ ...(props.style || {}), position: 'relative', overflow: 'hidden', ...blur }}>
-            <img src={props.src} srcSet={props.srcSet} sizes={props.sizes} alt="" loading="lazy" draggable={false}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos }} />
-          </div>
-        )
+        return <img {...props} style={{ ...(props.style || {}), display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos, ...blur }} />
       },
       extras: (_: any, ctx: any) => {
         const p = (ctx.photo as AlbumPhoto)._p, i = (ctx.photo as AlbumPhoto)._i

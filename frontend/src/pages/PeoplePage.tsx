@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { api, thumbUrl } from '../lib/api'
 import { differenceInYears } from 'date-fns'
-import PhotoLightbox from '../components/gallery/PhotoLightbox'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import QuickNameOverlay from '../components/people/QuickNameOverlay'
 import { Modal, useToast, useConfirm } from '../components/ui/dialogs'
 import { useT } from '../i18n'
@@ -934,7 +934,7 @@ function PersonDetailView({ personId, onBack, onDeleted, onOpenPerson }: {
         </div>
       )}
 
-      {lightboxIndex !== null && <PhotoLightbox photos={photos as any} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />}
+      {lightboxIndex !== null && <GalleryLightbox photos={photos as any} index={lightboxIndex} onClose={() => setLightboxIndex(null)} />}
     </div>
   )
 }

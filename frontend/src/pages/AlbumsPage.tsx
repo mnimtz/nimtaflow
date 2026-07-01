@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2, Pencil, PawPrint } from 'lucide-react'
 import ShareDialog from '../components/ShareDialog'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { api, thumbUrl } from '../lib/api'
 import { format } from 'date-fns'
 import { de } from 'date-fns/locale'
@@ -394,7 +395,7 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
   const [showShare, setShowShare] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [sort, setSort] = useState('newest')
-  const [lightbox, setLightbox] = useState<AlbumPhoto | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['album-photos', album.id, sort],
     queryFn: () => api.get(`/albums/${album.id}/photos?limit=500&sort=${sort}`).then(r => r.data),
@@ -458,8 +459,8 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
         </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
-          {photos.map(photo => (
-            <button key={photo.id} onClick={() => setLightbox(photo)}
+          {photos.map((photo, i) => (
+            <button key={photo.id} onClick={() => setLightboxIndex(i)}
               className="aspect-square rounded-md overflow-hidden bg-zinc-800 group">
               <img
                 src={thumbUrl(photo, 'small')}
@@ -471,12 +472,9 @@ function AlbumDetail({ album, onBack }: { album: Album; onBack: () => void }) {
         </div>
       )}
 
-      {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setLightbox(null)}>
-          <button className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={28} /></button>
-          <img src={`/api/photos/${lightbox.id}/thumbnail?size=large`}
-            className="max-h-[90vh] max-w-[95vw] object-contain" onClick={e => e.stopPropagation()} />
-        </div>
+      {/* Einheitliche Lightbox (Details, Postkarte, KI, Teilen …) statt reinem Bild */}
+      {lightboxIndex !== null && (
+        <GalleryLightbox photos={photos as any} index={lightboxIndex} onClose={() => setLightboxIndex(null)} />
       )}
     </div>
   )
