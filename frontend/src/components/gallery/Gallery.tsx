@@ -148,19 +148,18 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
         const pos = (p.focus_x != null && p.focus_y != null)
           ? `${Math.round(p.focus_x * 100)}% ${Math.round(p.focus_y * 100)}%`
           : '50% 38%'
-        // LQIP-Blur-up: Der winzige Blur liegt als EIGENE Ebene hinter dem Bild und ist
-        // sofort da; das scharfe Thumbnail blendet darüber ein (~0,45 s) — so ist der
-        // Effekt auch bei blitzschnellem Laden im LAN sichtbar (kein graues Blinken).
+        // LQIP als reiner Lade-Platzhalter: Der Blur liegt als eigene Ebene hinter dem
+        // Bild und ist NUR sichtbar, solange das Thumbnail noch lädt. Lädt es schnell
+        // (LAN/Cache), erscheint es sofort scharf — KEINE künstliche Einblendung, damit
+        // das schnelle Laden nichts ausbremst. Nur bei langsamem Laden sieht man kurz
+        // den Blur statt einer leeren Kachel.
         const blur = p.blur_data
           ? { backgroundImage: `url(data:image/jpeg;base64,${p.blur_data})`, backgroundSize: 'cover', backgroundPosition: pos, backgroundRepeat: 'no-repeat' as const }
           : {}
         return (
           <div style={{ ...(props.style || {}), position: 'relative', overflow: 'hidden', ...blur }}>
             <img src={props.src} srcSet={props.srcSet} sizes={props.sizes} alt="" loading="lazy" draggable={false}
-              ref={el => { if (el && el.complete) el.style.opacity = '1' }}   // schon im Cache → sofort zeigen
-              onLoad={e => { (e.currentTarget as HTMLImageElement).style.opacity = '1' }}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-                       objectPosition: pos, opacity: p.blur_data ? 0 : 1, transition: 'opacity .45s ease' }} />
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos }} />
           </div>
         )
       },
