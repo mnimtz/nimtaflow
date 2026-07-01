@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import Photos
 
 /// "Highlights" video assistant — parity with the web. Lists rendered highlight
 /// videos (with live polling while any are pending/rendering), plays finished
@@ -176,21 +177,25 @@ private struct HighlightPlayerView: View {
     @Environment(\.dismiss) var dismiss
     @State private var saving = false
     @State private var saved = false
+    @State private var savingPhotos = false
+    @State private var photosSaved = false
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             VideoPlayerView(url: api.url("api/highlights/\(highlight.id)/video?access_token=\(api.token)"))
                 .ignoresSafeArea()
-            HStack {
+            HStack(spacing: 10) {
                 Button {
                     Task { saving = true; try? await api.saveHighlightToLibrary(highlight.id); saved = true; saving = false }
                 } label: {
-                    Label(saved ? "Gespeichert" : "In Bibliothek", systemImage: saved ? "checkmark.circle.fill" : "square.and.arrow.down")
-                        .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(.ultraThinMaterial, in: Capsule()).foregroundStyle(.white)
+                    chip(saved ? "Gespeichert" : "In Bibliothek", saved ? "checkmark.circle.fill" : "square.and.arrow.down")
                 }
                 .disabled(saving || saved)
+                Button { Task { await saveToPhotos() } } label: {
+                    chip(photosSaved ? "In Fotos ✓" : "In Fotos", photosSaved ? "checkmark.circle.fill" : "photo.badge.arrow.down")
+                }
+                .disabled(savingPhotos || photosSaved)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white.opacity(0.85))
@@ -198,6 +203,33 @@ private struct HighlightPlayerView: View {
             }
             .padding(.horizontal).padding(.top, 8)
         }
+    }
+
+    @ViewBuilder private func chip(_ text: String, _ icon: String) -> some View {
+        Label(text, systemImage: icon)
+            .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule()).foregroundStyle(.white)
+    }
+
+    /// Lädt das Highlight-Video und speichert es in die iOS-Fotomediathek (Kamerarolle).
+    private func saveToPhotos() async {
+        savingPhotos = true; defer { savingPhotos = false }
+        guard let url = api.url("api/highlights/\(highlight.id)/video?access_token=\(api.token)") else { return }
+        do {
+            let (tmp, _) = try await URLSession.shared.download(from: url)
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("highlight_\(highlight.id).mp4")
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: tmp, to: dest)
+            let status = await withCheckedContinuation { (c: CheckedContinuation<PHAuthorizationStatus, Never>) in
+                PHPhotoLibrary.requestAuthorization(for: .addOnly) { c.resume(returning: $0) }
+            }
+            guard status == .authorized || status == .limited else { return }
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: dest, options: nil)
+            }
+            try? FileManager.default.removeItem(at: dest)
+            photosSaved = true
+        } catch { photosSaved = false }
     }
 }
 
