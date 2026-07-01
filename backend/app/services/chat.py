@@ -79,6 +79,10 @@ SYSTEM = (
     "ist nur für Administratoren; kommt kein_zugriff=true zurück, sag höflich, dass diese "
     "Betriebsdaten dem Administrator vorbehalten sind. Restzeit-Angaben sind immer nur grobe "
     "Schätzungen — kennzeichne sie als solche. "
+    "Zu ZUSAMMENFASSUNGEN/RÜCKBLICKEN ('erzähl mir von unserem Urlaub in X', 'Rückblick 2023', "
+    "'fass den Sommer zusammen', 'wo war ich überall', 'wen sehe ich am häufigsten') nutze das "
+    "Werkzeug rueckblick (Aggregat: Anzahl, Zeitspanne, Top-Orte, Top-Personen) und schreibe daraus "
+    "eine kurze, warme ERZÄHLUNG mit konkreten Orten/Personen/Zeiträumen — kein trockenes Aufzählen. "
     "Zu NAVIGATION: Will der Nutzer zu einer ANSICHT/Seite (nicht nur Fotos sehen), nutze "
     "oeffne_ansicht — z. B. 'geh zu den Personen'/'zeig alle Reisen' (Übersicht) oder 'öffne "
     "Anjas Seite'/'zeig unsere Kroatien-Reise' (mit name). Für reines Anzeigen von Fotos "
@@ -520,6 +524,46 @@ async def _ops_status(db: AsyncSession) -> dict:
     }
 
 
+async def _recap(db: AsyncSession, medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis,
+                 ort, acl: list) -> dict:
+    """Aggregat-Zusammenfassung für 'erzähl mir von…'/Rückblick: Anzahl, Zeitspanne,
+    häufigste Orte, wer dabei war, Beispiel-Beschreibungen — plus die passenden Foto-IDs
+    (für die Galerie). Streng ACL-gescoped."""
+    from sqlalchemy import func as _f
+    from app.models.photo import Photo as _P, PhotoStatus as _S
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von, datum_bis, None, ort)
+    base = [_P.status == _S.done, _P.is_trashed == False, _P.thumb_small.isnot(None), *conds, *acl]  # noqa: E712
+    row = (await db.execute(select(
+        _f.count().label("total"),
+        _f.count().filter(_P.is_video == True).label("videos"),                    # noqa: E712
+        _f.min(_P.taken_at).label("dmin"), _f.max(_P.taken_at).label("dmax"),
+    ).where(*base))).one()
+    total = int(row.total or 0)
+    if not total:
+        return {"anzahl": 0}
+    place_col = _f.coalesce(_P.city, _P.country, _P.location_name)
+    places = (await db.execute(select(place_col, _f.count()).where(*base, place_col.isnot(None))
+              .group_by(place_col).order_by(_f.count().desc()).limit(8))).all()
+    acc_sub = select(_P.id).where(*base)
+    ppl = (await db.execute(select(Person.name, _f.count(_f.distinct(Face.photo_id)).label("n"))
+           .join(Face, Face.person_id == Person.id)
+           .where(Face.photo_id.in_(acc_sub), _f.length(_f.coalesce(Person.name, "")) > 0)
+           .group_by(Person.name).order_by(_f.count(_f.distinct(Face.photo_id)).desc()).limit(8))).all()
+    descs = (await db.execute(select(_P.description).where(
+        *base, _P.description.isnot(None), _P.description != "").order_by(_P.taken_at).limit(6))).scalars().all()
+    ids = (await db.execute(select(_P.id).where(*base).order_by(_P.taken_at).limit(500))).scalars().all()
+    videos = int(row.videos or 0)
+    return {
+        "anzahl": total, "bilder": total - videos, "videos": videos,
+        "von": row.dmin.date().isoformat() if row.dmin else None,
+        "bis": row.dmax.date().isoformat() if row.dmax else None,
+        "top_orte": [{"ort": p[0], "anzahl": p[1]} for p in places],
+        "top_personen": [{"name": p[0], "anzahl": p[1]} for p in ppl],
+        "beispiel_beschreibungen": [(d or "")[:200] for d in descs],
+        "_ids": list(ids),   # intern: für die Galerie, nicht an das LLM
+    }
+
+
 async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) -> dict:
     """Löst ein Navigations-Ziel in einen App-Pfad auf (Phase 3: Ansichten steuern).
     Übersichten direkt; bestimmte Person/Album/Reise per Name → deren Deep-Link.
@@ -674,6 +718,19 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 "name": {"type": "string", "description": "Name der Person/Reise/des Albums (nur bei ziel person/album/reise)"},
             }, "required": ["ziel"]},
         },
+        {
+            "name": "rueckblick",
+            "description": "Liefert eine ZUSAMMENFASSUNG/ein Aggregat über einen Zeitraum, Ort oder eine "
+                           "Person: Anzahl Fotos/Videos, Zeitspanne (von–bis), häufigste Orte, wer dabei "
+                           "war (Top-Personen) und Beispiel-Beschreibungen. Nutze das für 'erzähl mir von …', "
+                           "'wie war unser Urlaub in X', 'Rückblick 2023', 'fass den Sommer zusammen', 'wo "
+                           "war ich überall', 'wen sehe ich am häufigsten'. Schreibe daraus eine kurze, warme "
+                           "ERZÄHLUNG (kein reines Aufzählen) und nenne konkrete Orte/Personen/Zeiträume.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "optional: nur Fotos MIT dieser Person"},
+                **_filter_props,
+            }},
+        },
     ]}
     contents = []
     for h in (history or [])[-8:]:
@@ -768,6 +825,13 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         resp = await _resolve_view(db, args.get("ziel"), args.get("name"), user)
                         if resp.get("navigate"):
                             nav_target = resp["navigate"]
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "rueckblick":
+                        resp = await _recap(db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
+                                            args.get("person"), args.get("datum_von"), args.get("datum_bis"),
+                                            args.get("ort"), acl)
+                        seen_ids.extend(resp.pop("_ids", []))   # Galerie zeigt die Fotos des Rückblicks
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):
