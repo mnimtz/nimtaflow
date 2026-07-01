@@ -72,6 +72,10 @@ SYSTEM = (
     "Du kannst auch HANDELN: Möchte der Nutzer ein Album anlegen, nutze "
     "album_erstellen; sollen Fotos favorisiert werden, nutze als_favorit_markieren. "
     "Bestätige danach kurz, was du getan hast (Albumname + Anzahl). "
+    "Für ein VIDEO/Highlight ('mach ein Video von …', 'erstell ein Highlight', 'wie hat sich X "
+    "verändert' als Video) nutze highlight_erstellen mit passendem thema. Bei einem Video zu "
+    "einem ORT/einer Reise erst album_erstellen (mit ort/jahr), dann highlight_erstellen "
+    "thema='trip' mit dem gelieferten album_id. Sag danach, dass das Rendern ein paar Minuten dauert. "
     "Zu STATUS/VERARBEITUNG: Für Fragen zur eigenen Bibliothek (wie viele Fotos/Videos, "
     "wie viele noch in Verarbeitung, wie viele ohne Beschreibung, ältestes/neuestes Foto) "
     "nutze bibliothek_status. Für Fragen zum SERVER-BETRIEB (Queue-Auslastung, laufen die "
@@ -564,6 +568,48 @@ async def _recap(db: AsyncSession, medientyp, jahr_von, jahr_bis, person, datum_
     }
 
 
+async def _create_highlight_action(db: AsyncSession, thema, person, jahr, album_id, season, user) -> dict:
+    """Erstellt ein Highlight-Video (Slideshow) und reiht das Rendern ein. Bewusst OHNE
+    KI-Clips (ai_clips=False) → keine fal.ai-Kosten aus dem Chat. Dauert einige Minuten."""
+    from app.models.highlight import Highlight, HighlightStatus
+    from app.services.highlights import MOTTOS
+    valid = {m["motto"] for m in MOTTOS}
+    labels = {m["motto"]: m["label"] for m in MOTTOS}
+    if thema not in valid:
+        return {"fehler": f"Unbekanntes Thema: {thema}"}
+    pid = None
+    if person and person.strip():
+        row = (await db.execute(select(Person.id, Person.name).where(
+            Person.name.ilike(f"%{person.strip()}%")).limit(1))).first()
+        if not row:
+            return {"fehler": f"Person '{person}' nicht gefunden."}
+        pid = row[0]
+    params: dict = {"duration_sec": 60.0, "ai_clips": False}
+    if pid:
+        params["person_id"] = pid
+    if jahr:
+        params["year"] = int(jahr)
+    if album_id:
+        params["album_id"] = int(album_id)
+    if season:
+        params["season"] = season
+    title = labels.get(thema, "Highlight")
+    if pid and person:
+        title = f"{person.strip()} — {title}"
+    h = Highlight(title=title, motto=thema, duration_sec=60.0, params=params,
+                  status=HighlightStatus.pending, created_by=getattr(user, "id", None))
+    db.add(h)
+    await db.commit()
+    await db.refresh(h)
+    try:
+        from app.worker.tasks import render_highlight_task
+        render_highlight_task.delay(h.id)
+    except Exception:
+        pass
+    return {"ok": True, "highlight_id": h.id, "titel": title,
+            "hinweis": "Wird erstellt — das dauert ein paar Minuten, danach unter Highlights sichtbar."}
+
+
 async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) -> dict:
     """Löst ein Navigations-Ziel in einen App-Pfad auf (Phase 3: Ansichten steuern).
     Übersichten direkt; bestimmte Person/Album/Reise per Name → deren Deep-Link.
@@ -731,6 +777,27 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 **_filter_props,
             }},
         },
+        {
+            "name": "highlight_erstellen",
+            "description": "Erstellt ein Highlight-VIDEO (Slideshow, Rendern dauert ein paar Minuten). Für "
+                           "'mach/erstell ein Video/Highlight von …'. thema wählt die Vorlage: 'person_year' "
+                           "(eine Person in EINEM Jahr → + person + jahr), 'person_years' (eine Person im Laufe "
+                           "der Jahre — auch für 'wie hat sich X verändert' → + person), 'year_review' "
+                           "(Jahresrückblick → + jahr), 'through_the_years' (quer durch alle Jahre), 'season' "
+                           "(Jahreszeit/Feiertag → + season), 'newest_50', 'most_favorited', 'top_rated', "
+                           "'album_highlight'/'trip' (aus einem Album → + album_id). Für ein Video zu einem "
+                           "ORT/einer Reise (z. B. 'Kroatien-Urlaub'): lege ZUERST mit album_erstellen ein "
+                           "Album an und rufe DANN highlight_erstellen mit thema='trip' + dessen album_id auf.",
+            "parameters": {"type": "object", "properties": {
+                "thema": {"type": "string", "enum": ["person_year", "person_years", "year_review",
+                                                     "through_the_years", "season", "newest_50",
+                                                     "most_favorited", "top_rated", "album_highlight", "trip"]},
+                "person": {"type": "string", "description": "Personenname (bei person_year/person_years)"},
+                "jahr": {"type": "integer", "description": "Jahr (bei person_year/year_review)"},
+                "album_id": {"type": "integer", "description": "Album-ID (bei album_highlight/trip)"},
+                "season": {"type": "string", "description": "z. B. 'weihnachten', 'sommer' (bei season)"},
+            }, "required": ["thema"]},
+        },
     ]}
     contents = []
     for h in (history or [])[-8:]:
@@ -832,6 +899,16 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                             args.get("person"), args.get("datum_von"), args.get("datum_bis"),
                                             args.get("ort"), acl)
                         seen_ids.extend(resp.pop("_ids", []))   # Galerie zeigt die Fotos des Rückblicks
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "highlight_erstellen":
+                        # Highlight-Erstellung = Schreib-/Render-Aktion → für eingeschränkte Konten aus.
+                        if restricted:
+                            resp = {"fehler": "Aktionen sind in diesem Konto nicht verfügbar."}
+                        else:
+                            resp = await _create_highlight_action(db, args.get("thema"), args.get("person"),
+                                                                  args.get("jahr"), args.get("album_id"),
+                                                                  args.get("season"), user)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):
