@@ -70,26 +70,32 @@ struct PeopleView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        Picker("Filter", selection: $filter) {
-                            ForEach(filters, id: \.0) { Text($0.1).tag($0.0) }
+                        // Filter (Unbekannte/Einzelgesichter) ist Gesichts-Verwaltung → nur Admins.
+                        if api.isAdmin {
+                            Picker("Filter", selection: $filter) {
+                                ForEach(filters, id: \.0) { Text($0.1).tag($0.0) }
+                            }
+                            Divider()
                         }
-                        Divider()
                         Picker("Sortierung", selection: $sortMode) {
                             ForEach(sorts, id: \.0) { Text($0.1).tag($0.0) }
                         }
                     } label: {
-                        Label(filters.first { $0.0 == filter }?.1 ?? "Filter",
+                        Label(api.isAdmin ? (filters.first { $0.0 == filter }?.1 ?? "Filter") : "Sortierung",
                               systemImage: "line.3.horizontal.decrease.circle")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(mergeMode ? "Abbrechen" : "Zusammenführen") {
-                        mergeMode.toggle(); if !mergeMode { selection.removeAll() }
-                    }
-                }
-                if !mergeMode {
+                // Zusammenführen + Vorschläge (Gesichts-Verwaltung) nur für Admins.
+                if api.isAdmin {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button { showSuggestions = true } label: { Image(systemName: "sparkles") }
+                        Button(mergeMode ? "Abbrechen" : "Zusammenführen") {
+                            mergeMode.toggle(); if !mergeMode { selection.removeAll() }
+                        }
+                    }
+                    if !mergeMode {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { showSuggestions = true } label: { Image(systemName: "sparkles") }
+                        }
                     }
                 }
             }
@@ -120,6 +126,7 @@ struct PeopleView: View {
 
     func toggle(_ id: Int) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
     func load() async {
+        if !api.isAdmin { filter = "named" }   // eingeschränkte Nutzer: nur benannte Personen
         do {
             people = try await api.people()
             // Deep-Select: direkt zur angefragten Person springen (statt nur die Liste).

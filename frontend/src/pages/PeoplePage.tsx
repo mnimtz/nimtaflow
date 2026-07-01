@@ -193,6 +193,12 @@ export default function PeoplePage() {
   const known = useMemo(() => people.filter(p => (p.name || '').trim()), [people])
   const unknown = useMemo(() => people.filter(p => !(p.name || '').trim()), [people])
   const selectedPeople = people.filter(p => selection.has(p.id))
+  // Gesichts-Verwaltung (Vorschläge, unbekannte/lose Gesichter, Zusammenführen) ist eine
+  // Admin-Aufgabe — eingeschränkte Nutzer sehen davon nichts.
+  const { data: me } = useQuery<{ role: string; access_config: any }>({
+    queryKey: ['auth-me'], queryFn: () => api.get('/auth/me').then(r => r.data), staleTime: 60_000,
+  })
+  const canManage = !!me && (me.role === 'admin' || Object.keys(me.access_config || {}).length === 0)
 
   const toggleSelect = (id: number) =>
     setSelection(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -256,6 +262,8 @@ export default function PeoplePage() {
             <option value="name">{t('people.sortName')}</option>
             <option value="recent">{t('people.sortRecent')}</option>
           </select>
+          {/* Gesichts-/Personen-Verwaltung nur für Admins/unbeschränkte Konten */}
+          {canManage && (<>
           <button onClick={() => setQuickName(true)} title={t('people.quickNameTitle')}
             className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
             {t('people.quickName')}
@@ -298,6 +306,7 @@ export default function PeoplePage() {
           <button onClick={() => setShowAdd(true)} className={BTN_PRIMARY}>
             <UserPlus size={15} /><span className="hidden sm:inline">{t('people.add')}</span>
           </button>
+          </>)}
         </div>
       </div>
 
@@ -326,10 +335,13 @@ export default function PeoplePage() {
           <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 -mt-2 overflow-x-auto">
             {([
               ['personen', t('people.tabPeople', { count: known.length + unknown.length })],
-              ['vorschlaege', sugGroups.reduce((a, g) => a + g.count, 0) ? t('people.tabSuggestionsCount', { count: sugGroups.reduce((a, g) => a + g.count, 0) }) : t('people.tabSuggestions')],
-              ['gesichter', looseTotal ? t('people.tabUnknownFacesCount', { count: looseTotal }) : t('people.tabUnknownFaces')],
-              ['verborgen', t('people.tabHidden')],
-            ] as const).map(([k, lbl]) => (
+              // Verwaltungs-Tabs nur für Admins/unbeschränkte Konten.
+              ...(canManage ? [
+                ['vorschlaege', sugGroups.reduce((a, g) => a + g.count, 0) ? t('people.tabSuggestionsCount', { count: sugGroups.reduce((a, g) => a + g.count, 0) }) : t('people.tabSuggestions')],
+                ['gesichter', looseTotal ? t('people.tabUnknownFacesCount', { count: looseTotal }) : t('people.tabUnknownFaces')],
+                ['verborgen', t('people.tabHidden')],
+              ] : []),
+            ] as [typeof pview, string][]).map(([k, lbl]) => (
               <button key={k} onClick={() => { setPview(k); if (k === 'verborgen') setShowIgnored(true) }}
                 className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 whitespace-nowrap ${pview === k ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}>
                 {lbl}

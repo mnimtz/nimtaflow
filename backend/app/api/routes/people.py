@@ -525,8 +525,12 @@ async def unassigned_faces(page: int = 1, limit: int = Query(50, ge=1, le=500),
     """Paginated — there can be thousands of loose faces; returning all of them as
     on-demand crops froze the page. Best-confidence first.
     A restricted account only sees loose faces in photos it may access."""
-    from app.core.access import photo_conditions
+    from app.core.access import photo_conditions, _is_unrestricted
     from app.models.photo import Photo
+    # Gesichts-Verwaltung (lose/unbekannte Gesichter) ist eine Admin-Aufgabe — eingeschränkte
+    # Nutzer sollen sie gar nicht sehen.
+    if not _is_unrestricted(user):
+        return {"total": 0, "page": page, "limit": limit, "items": []}
     where = [Face.person_id == None, Face.is_ignored == False]  # noqa: E711,E712
     acl = photo_conditions(user)
     if acl:
@@ -547,8 +551,10 @@ async def face_suggestions(db: AsyncSession = Depends(get_db),
     """Borderline ArcFace matches grouped by the suggested (named) person, so the user
     confirms 'Is this Marcus?' with one tap. Populated by the suggest_faces task.
     A restricted account only sees suggestions for faces/persons it may access."""
-    from app.core.access import photo_conditions, visible_person_subquery
+    from app.core.access import photo_conditions, visible_person_subquery, _is_unrestricted
     from app.models.photo import Photo
+    if not _is_unrestricted(user):   # Gesichts-Zuordnung ist Admin-Aufgabe
+        return {"groups": []}
     acl = photo_conditions(user)
     where = [Face.suggested_person_id.isnot(None), Face.person_id == None,  # noqa: E711
              Face.is_ignored == False]  # noqa: E712
@@ -656,7 +662,11 @@ async def ignore_faces(body: FaceIdsRequest, ignored: bool = True, db: AsyncSess
 
 
 @router.get("/faces/ignored")
-async def ignored_faces(limit: int = Query(500, ge=1, le=2000), db: AsyncSession = Depends(get_db)):
+async def ignored_faces(limit: int = Query(500, ge=1, le=2000), db: AsyncSession = Depends(get_db),
+                        user=Depends(current_user_optional)):
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user):   # Gesichts-Verwaltung ist Admin-Aufgabe
+        return []
     rows = (await db.execute(
         select(Face.id, Face.photo_id, Face.confidence)
         .where(Face.is_ignored == True)  # noqa: E712
