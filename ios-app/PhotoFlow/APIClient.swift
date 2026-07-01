@@ -416,6 +416,8 @@ final class APIClient: ObservableObject {
         return try await send(makeRequest("api/highlights", method: "POST", json: body), as: HighlightV1.self)
     }
     func deleteHighlight(_ id: Int) async throws { try await action("api/highlights/\(id)", method: "DELETE") }
+    /// Kopiert das Highlight-Video in den Bibliotheks-Ordner „Highlights" und indexiert es.
+    func saveHighlightToLibrary(_ id: Int) async throws { try await action("api/highlights/\(id)/save-to-library", method: "POST") }
     /// External video-AI: animate one photo (optionally with a creative scene prompt).
     @discardableResult
     func animatePhoto(_ photoId: Int, prompt: String? = nil) async throws -> Bool {

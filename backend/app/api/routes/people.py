@@ -716,22 +716,25 @@ async def cluster_faces():
 @router.post("/{person_id}/set-as-me")
 async def set_as_me(person_id: int, db: AsyncSession = Depends(get_db),
                     user=Depends(current_user_optional)):
-    """Mark this person as 'the user' → links the PhotoFlow profile to a Person so
-    the chat AI knows who 'ich'/'meine Frau' refers to. Stores the global
-    relationships.self_person_id (read by chat) and, if logged in, User.person_id."""
+    """Mark this person as 'the user' → links the account to a Person so der Chat weiß,
+    wer 'ich'/'meine Frau' ist. Setzt IMMER den pro-User-Link (User.person_id). Den
+    GLOBALEN relationships.self_person_id nur für Admin/unbeschränkt bzw. offenen Modus —
+    sonst überschriebe ein regulärer Nutzer den Besitzer-Standard (Multi-User-Leck)."""
     from app.models.settings import Setting
     from app.models.user import User as _User
+    from app.core.access import _is_unrestricted
     person = await db.get(Person, person_id)
     if not person:
         raise HTTPException(404)
-    existing = await db.scalar(select(Setting).where(Setting.key == "relationships.self_person_id"))
-    if existing:
-        existing.value = str(person_id)
-    else:
-        db.add(Setting(key="relationships.self_person_id", value=str(person_id)))
     if user:
         u = await db.get(_User, user.id)
         if u:
             u.person_id = person_id
+    if user is None or _is_unrestricted(user):   # Besitzer / offener Modus → globaler Standard
+        existing = await db.scalar(select(Setting).where(Setting.key == "relationships.self_person_id"))
+        if existing:
+            existing.value = str(person_id)
+        else:
+            db.add(Setting(key="relationships.self_person_id", value=str(person_id)))
     await db.commit()
     return {"self_person_id": person_id, "name": person.name}

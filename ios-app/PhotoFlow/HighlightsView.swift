@@ -174,17 +174,29 @@ private struct HighlightPlayerView: View {
     let highlight: HighlightV1
     @EnvironmentObject var api: APIClient
     @Environment(\.dismiss) var dismiss
+    @State private var saving = false
+    @State private var saved = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             VideoPlayerView(url: api.url("api/highlights/\(highlight.id)/video?access_token=\(api.token)"))
                 .ignoresSafeArea()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title).foregroundStyle(.white.opacity(0.85))
-                    .padding()
+            HStack {
+                Button {
+                    Task { saving = true; try? await api.saveHighlightToLibrary(highlight.id); saved = true; saving = false }
+                } label: {
+                    Label(saved ? "Gespeichert" : "In Bibliothek", systemImage: saved ? "checkmark.circle.fill" : "square.and.arrow.down")
+                        .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule()).foregroundStyle(.white)
+                }
+                .disabled(saving || saved)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white.opacity(0.85))
+                }
             }
+            .padding(.horizontal).padding(.top, 8)
         }
     }
 }

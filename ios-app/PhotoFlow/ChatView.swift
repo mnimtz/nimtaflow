@@ -98,7 +98,10 @@ struct ChatView: View {
         let hist = messages.dropLast().map { ChatTurn(role: $0.role, content: $0.text) }
         do {
             let reply = try await api.chat(message: text, history: Array(hist))
-            messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: reply.photo_ids,
+            // Zitierte Fotos zeigen; hat der Agent keine zitiert (z. B. Rückblick), die
+            // ersten Treffer aus result_ids als Vorschau.
+            let shown = !reply.photo_ids.isEmpty ? reply.photo_ids : Array((reply.result_ids ?? []).prefix(12))
+            messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: shown,
                                        suggestions: reply.suggestions ?? [], navigate: reply.navigate))
         } catch {
             messages.append(ChatBubble(role: "assistant", text: "⚠️ Konnte gerade nicht antworten. Bitte nochmal.", photoIDs: []))
