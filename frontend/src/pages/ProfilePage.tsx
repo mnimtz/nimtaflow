@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Camera, Trash2, User as UserIcon, ArrowLeft, FolderPlus, RefreshCw, FolderOpen } from 'lucide-react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
+import PersonSelfLink from '../components/PersonSelfLink'
 
 type Profile = {
   id: number; email: string; name: string; role: string
@@ -118,6 +119,12 @@ export default function ProfilePage() {
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           {saveProfile.isPending ? t('profile.saving') : t('profile.save')}
         </button>
+      </section>
+
+      {/* Das bin ich (Profil ↔ Person) — jeder Nutzer ordnet sich selbst zu */}
+      <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 md:p-5 mb-6 space-y-3">
+        <h2 className="font-semibold text-zinc-900 dark:text-white">{t('profile.identitySection')}</h2>
+        <PersonSelfLink />
       </section>
 
       {/* Passwort */}
