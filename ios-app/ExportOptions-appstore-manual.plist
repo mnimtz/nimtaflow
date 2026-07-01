@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>teamID</key><string>KQGPPH4S33</string>
+  <key>destination</key><string>export</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution: Marcus Nimtz (KQGPPH4S33)</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>email.nimtz.photoflow</key><string>NimtaFlow AppStore 2026</string>
+  </dict>
+  <key>uploadSymbols</key><true/>
+  <key>manageAppVersionAndBuildNumber</key><true/>
+</dict>
+</plist>
