@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useToast } from '../components/ui/dialogs'
-import { Sparkles, Film, Trash2, Plus, X, Clock, Share2 } from 'lucide-react'
+import { Sparkles, Film, Trash2, Plus, X, Clock, Share2, Download, FolderPlus } from 'lucide-react'
 import { useT } from '../i18n'
 import ShareDialog from '../components/ShareDialog'
 
@@ -25,9 +25,15 @@ export default function HighlightsPage() {
     queryFn: () => api.get('/highlights').then(r => r.data),
     refetchInterval: q => (Array.isArray(q.state.data) && q.state.data.some((h: Highlight) => h.status === 'pending' || h.status === 'rendering') ? 4000 : false),
   })
+  const toast = useToast()
   const del = useMutation({
     mutationFn: (id: number) => api.delete(`/highlights/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['highlights'] }),
+  })
+  const saveToLib = useMutation({
+    mutationFn: (id: number) => api.post(`/highlights/${id}/save-to-library`).then(r => r.data),
+    onSuccess: (d: any) => toast(d?.duplicate ? t('highlights.savedAlready') : t('highlights.savedToLibrary'), 'success'),
+    onError: (e: any) => toast(e?.response?.data?.detail || t('highlights.saveError'), 'error'),
   })
 
   return (
@@ -85,7 +91,17 @@ export default function HighlightsPage() {
 
       {play && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setPlay(null)}>
-          <button className="absolute top-4 right-4 text-white/80 hover:text-white"><X size={28} /></button>
+          <div className="absolute top-4 right-4 flex items-center gap-4" onClick={e => e.stopPropagation()}>
+            <a href={`/api/highlights/${play.id}/video`} download={`${(play.title || 'Highlight').replace(/[^\w\-]+/g, '_')}.mp4`}
+              className="text-white/80 hover:text-white" title={t('highlights.download')}>
+              <Download size={22} />
+            </a>
+            <button onClick={() => saveToLib.mutate(play.id)} disabled={saveToLib.isPending}
+              className="text-white/80 hover:text-white disabled:opacity-50" title={t('highlights.saveToLibrary')}>
+              <FolderPlus size={22} />
+            </button>
+            <button onClick={() => setPlay(null)} className="text-white/80 hover:text-white"><X size={26} /></button>
+          </div>
           <video src={`/api/highlights/${play.id}/video`}
             controls autoPlay playsInline className="max-h-[90vh] max-w-[95vw]" onClick={e => e.stopPropagation()} />
         </div>

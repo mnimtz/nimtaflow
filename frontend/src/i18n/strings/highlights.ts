@@ -2,6 +2,11 @@ export const highlights = {
   de: {
     'highlights.title': 'Highlights',
     'highlights.newVideo': 'Neues Highlight-Video',
+    'highlights.download': 'Video herunterladen',
+    'highlights.saveToLibrary': 'In Bibliothek speichern',
+    'highlights.savedToLibrary': 'In Bibliothek gespeichert (Ordner „Highlights")',
+    'highlights.savedAlready': 'Ist bereits in der Bibliothek',
+    'highlights.saveError': 'Speichern fehlgeschlagen',
     'highlights.empty': 'Noch keine Highlight-Videos. Erstelle dein erstes oben rechts.',
     'highlights.statusError': 'Fehler',
     'highlights.statusRendering': 'Wird erstellt…',
@@ -48,6 +53,11 @@ export const highlights = {
   en: {
     'highlights.title': 'Highlights',
     'highlights.newVideo': 'New highlight video',
+    'highlights.download': 'Download video',
+    'highlights.saveToLibrary': 'Save to library',
+    'highlights.savedToLibrary': 'Saved to library (folder “Highlights”)',
+    'highlights.savedAlready': 'Already in your library',
+    'highlights.saveError': 'Saving failed',
     'highlights.empty': 'No highlight videos yet. Create your first one in the top right.',
     'highlights.statusError': 'Error',
     'highlights.statusRendering': 'Creating…',

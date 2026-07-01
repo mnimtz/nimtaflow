@@ -286,6 +286,68 @@ async def get_highlight_video(highlight_id: int, request: Request,
                              headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)})
 
 
+class SaveToLibraryResult(BaseModel):
+    ok: bool
+    photo_id: Optional[int] = None
+    path: Optional[str] = None
+    duplicate: bool = False
+
+
+@router.post("/{highlight_id}/save-to-library", response_model=SaveToLibraryResult)
+async def save_highlight_to_library(highlight_id: int, db: AsyncSession = Depends(get_db),
+                                    user: Optional[User] = Depends(current_user_optional)):
+    """Kopiert das gerenderte Highlight-Video in einen Unterordner 'Highlights' der
+    Bibliothek und indexiert es als echtes Medium — so bleibt es dauerhaft erhalten
+    (statt nur im flüchtigen Cache). Nur Admin/unbeschränkt (globale Bibliothek)."""
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Nur für Administratoren.")
+    import shutil, hashlib, re as _re
+    from pathlib import Path
+    from app.models.source import PhotoSource
+    from app.models.photo import Photo, PhotoStatus
+    from app.core.config import get_settings
+
+    h = await db.get(Highlight, highlight_id)
+    if not h or not h.file_path or not os.path.exists(h.file_path):
+        raise HTTPException(404, "Highlight-Video nicht gefunden.")
+
+    # Ziel: kürzeste (oberste) Source-Root + Unterordner 'Highlights'
+    roots = (await db.execute(
+        select(PhotoSource.path).where(PhotoSource.enabled == True))).scalars().all()  # noqa: E712
+    base = min(roots, key=len) if roots else get_settings().photos_path
+    dest_dir = Path(base) / "Highlights"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    safe = _re.sub(r"[^\w\-]+", "_", (h.title or f"Highlight_{h.id}")).strip("_") or f"Highlight_{h.id}"
+    stamp = (h.created_at or datetime.utcnow()).strftime("%Y-%m-%d")
+    dest = dest_dir / f"{safe}_{stamp}.mp4"
+    n = 1
+    while dest.exists():
+        dest = dest_dir / f"{safe}_{stamp}_{n}.mp4"; n += 1
+
+    shutil.copy2(h.file_path, dest)
+    content_hash = hashlib.sha256(dest.read_bytes()).hexdigest()
+
+    existing = await db.scalar(select(Photo.id).where(Photo.file_hash == content_hash))
+    if existing:
+        try: dest.unlink()          # schon in der Bibliothek → doppelte Datei wieder weg
+        except Exception: pass
+        return SaveToLibraryResult(ok=True, photo_id=existing, duplicate=True)
+
+    photo = Photo(path=str(dest), filename=dest.name, file_hash=content_hash,
+                  file_size=dest.stat().st_size, mime_type="video/mp4",
+                  is_video=True, status=PhotoStatus.pending)
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+    try:
+        from app.worker.tasks import process_photo_task
+        process_photo_task.delay(photo.id)
+    except Exception:
+        pass
+    return SaveToLibraryResult(ok=True, photo_id=photo.id, path=str(dest))
+
+
 @router.delete("/{highlight_id}", status_code=204)
 async def delete_highlight(highlight_id: int, db: AsyncSession = Depends(get_db),
                            user: Optional[User] = Depends(current_user_optional)):
