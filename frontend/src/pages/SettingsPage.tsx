@@ -2791,6 +2791,8 @@ function UsersSection() {
   const [pw, setPw] = useState('')
   const [accFor, setAccFor] = useState<number | null>(null)
   const [acc, setAcc] = useState<Record<string, any>>({})
+  // Unterordner-Picker für Zugriffs-Whitelist/Blacklist (statt nur Root-Sources).
+  const [folderPicker, setFolderPicker] = useState<null | 'folder_whitelist' | 'folder_blacklist'>(null)
   const [editFor, setEditFor] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
@@ -2919,30 +2921,43 @@ function UsersSection() {
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrOnlyFolders')}</label>
-                        <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                          {sourcePaths.map(path => (
-                            <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-                              <input type="checkbox" checked={(acc.folder_whitelist || []).includes(path)} onChange={() => setAcc(a => ({ ...a, folder_whitelist: toggleIn(a.folder_whitelist, path) }))} className="accent-indigo-500" />
-                              <span className="truncate">{path}</span>
-                            </label>
-                          ))}
-                          {sourcePaths.length === 0 && <span className="text-xs text-zinc-400">{t('settings.usrNoSources')}</span>}
+                      {(['folder_whitelist', 'folder_blacklist'] as const).map(key => (
+                        <div key={key}>
+                          <label className="block text-xs text-zinc-500 mb-1">
+                            {key === 'folder_whitelist' ? t('settings.usrOnlyFolders') : t('settings.usrHideFolders')}
+                          </label>
+                          <div className="space-y-1 max-h-36 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            {/* Root-Sources als Schnell-Toggle */}
+                            {sourcePaths.map(path => (
+                              <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+                                <input type="checkbox" checked={(acc[key] || []).includes(path)} onChange={() => setAcc(a => ({ ...a, [key]: toggleIn(a[key], path) }))} className="accent-indigo-500" />
+                                <span className="truncate">{path}</span>
+                              </label>
+                            ))}
+                            {/* Gewählte UNTERORDNER (nicht in Root-Sources) als entfernbare Einträge */}
+                            {(acc[key] || []).filter((p: string) => !sourcePaths.includes(p)).map((p: string) => (
+                              <div key={p} className="flex items-center gap-1.5 text-xs text-indigo-700 dark:text-indigo-300">
+                                <button type="button" title={t('settings.delete')} onClick={() => setAcc(a => ({ ...a, [key]: toggleIn(a[key], p) }))}
+                                  className="text-zinc-400 hover:text-red-500 leading-none">✕</button>
+                                <span className="truncate">{p}</span>
+                              </div>
+                            ))}
+                            {sourcePaths.length === 0 && (acc[key] || []).length === 0 && <span className="text-xs text-zinc-400">{t('settings.usrNoSources')}</span>}
+                          </div>
+                          <button type="button" onClick={() => setFolderPicker(key)}
+                            className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                            + {t('settings.usrPickSubfolder')}
+                          </button>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrHideFolders')}</label>
-                        <div className="space-y-1 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                          {sourcePaths.map(path => (
-                            <label key={path} className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-                              <input type="checkbox" checked={(acc.folder_blacklist || []).includes(path)} onChange={() => setAcc(a => ({ ...a, folder_blacklist: toggleIn(a.folder_blacklist, path) }))} className="accent-indigo-500" />
-                              <span className="truncate">{path}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
                     </div>
+                    {folderPicker && (
+                      <FolderBrowser
+                        initialPath={sourcePaths[0] || '/'}
+                        onSelect={(path) => { setAcc(a => ({ ...a, [folderPicker]: [...new Set([...(a[folderPicker] || []), path])] })); setFolderPicker(null) }}
+                        onClose={() => setFolderPicker(null)}
+                      />
+                    )}
                     <div className="flex flex-wrap gap-3">
                       {([['allow_download', t('settings.download')], ['allow_map', t('settings.usrAccMap')], ['allow_pipeline', t('settings.usrAccPipeline')]] as const).map(([k, lbl]) => (
                         <label key={k} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
