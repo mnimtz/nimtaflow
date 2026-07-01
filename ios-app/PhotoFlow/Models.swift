@@ -373,6 +373,9 @@ struct ChatTurn: Codable, Hashable {
 struct ChatReply: Codable {
     let answer: String
     let photo_ids: [Int]
+    let result_ids: [Int]?          // volles Treffer-Set (Ambient-Assistent)
+    let navigate: String?           // Ansichts-Navigation (z. B. "/people?person=3")
+    let suggestions: [String]?      // proaktive Folge-Vorschläge (antippbare Chips)
 }
 
 // MARK: - Highlights (video assistant)

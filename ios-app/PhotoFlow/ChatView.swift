@@ -22,7 +22,8 @@ struct ChatView: View {
                                 ChatHint(status: status)
                             }
                             ForEach(messages) { m in
-                                ChatBubbleView(bubble: m, onTapPhoto: { open($0) }).id(m.id)
+                                ChatBubbleView(bubble: m, onTapPhoto: { open($0) },
+                                               onTapSuggestion: { s in Task { await sendIt(preset: s) } }).id(m.id)
                             }
                             if sending {
                                 HStack(spacing: 6) { ProgressView(); Text("denkt nach…").foregroundStyle(.secondary) }
@@ -63,16 +64,17 @@ struct ChatView: View {
 
     func open(_ id: Int) { Task { opened = try? await api.photo(id) } }
 
-    func sendIt() async {
-        let text = draft.trimmingCharacters(in: .whitespaces)
+    func sendIt(preset: String? = nil) async {
+        let text = (preset ?? draft).trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty, !sending else { return }
-        draft = ""
+        if preset == nil { draft = "" }
         messages.append(ChatBubble(role: "user", text: text, photoIDs: []))
         sending = true; defer { sending = false }
         let hist = messages.dropLast().map { ChatTurn(role: $0.role, content: $0.text) }
         do {
             let reply = try await api.chat(message: text, history: Array(hist))
-            messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: reply.photo_ids))
+            messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: reply.photo_ids,
+                                       suggestions: reply.suggestions ?? []))
         } catch {
             messages.append(ChatBubble(role: "assistant", text: "⚠️ Konnte gerade nicht antworten. Bitte nochmal.", photoIDs: []))
         }
@@ -84,12 +86,14 @@ struct ChatBubble: Identifiable, Hashable {
     let role: String       // "user" | "assistant"
     let text: String
     let photoIDs: [Int]
+    var suggestions: [String] = []
 }
 
 private struct ChatBubbleView: View {
     @EnvironmentObject var api: APIClient
     let bubble: ChatBubble
     let onTapPhoto: (Int) -> Void
+    var onTapSuggestion: (String) -> Void = { _ in }
     var isUser: Bool { bubble.role == "user" }
 
     var body: some View {
@@ -108,6 +112,22 @@ private struct ChatBubbleView: View {
                                 .frame(width: 92, height: 92)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .onTapGesture { onTapPhoto(pid) }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+            // Proaktive Folge-Vorschläge als antippbare Chips
+            if !bubble.suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(bubble.suggestions, id: \.self) { s in
+                            Button { onTapSuggestion(s) } label: {
+                                Text(s).font(.footnote)
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(Color.indigo.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.indigo)
+                            }
                         }
                     }
                     .padding(.horizontal, 2)

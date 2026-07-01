@@ -33,20 +33,38 @@ struct PhotoFlowApp: App {
 struct RootView: View {
     @EnvironmentObject var api: APIClient
     @EnvironmentObject var store: Store
+    @State private var showAssistant = false
     var body: some View {
         if !api.loggedIn {
             LoginView()
         } else {
-        TabView {
-            DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
-            GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
-            AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
-            ProGate(feature: "KI-Chat") { ChatView() }
-                .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
-            MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
+        ZStack(alignment: .bottomTrailing) {
+            TabView {
+                DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
+                GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
+                AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
+                ProGate(feature: "KI-Chat") { ChatView() }
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }
+                MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
+            }
+            .tint(.indigo)
+            .task { await store.syncServer(api) }
+
+            // Ambient-Assistent: schwebt über allen Tabs, überall erreichbar.
+            Button { showAssistant = true } label: {
+                Image(systemName: "sparkles")
+                    .font(.title2).fontWeight(.semibold).foregroundStyle(.white)
+                    .frame(width: 54, height: 54)
+                    .background(Color.indigo, in: Circle())
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+            }
+            .padding(.trailing, 16).padding(.bottom, 68)
+            .sheet(isPresented: $showAssistant) {
+                ProGate(feature: "KI-Chat") { ChatView() }
+                    .presentationDetents([.large, .medium])
+                    .presentationDragIndicator(.visible)
+            }
         }
-        .tint(.indigo)
-        .task { await store.syncServer(api) }
         }
     }
 }
