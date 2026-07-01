@@ -51,6 +51,16 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
 - **Auch Aktionen im Kontext:** „mach daraus ein Album", „teile die drei", „starte ein Highlight" — auf dem gerade gezeigten Set.
 - **Überall gleich:** Galerie (Foto-Filter), Karte (Pins filtern), Personen, Reisen; iOS mit demselben schwebenden Assistenten. Ergänzt „Frag das Foto" (pro Bild) als **app-weiten** Bruder.
 - **UX:** klein/transparent, ggf. verschiebbar + Position merken, Tastenkürzel (z. B. ⌘/Long-Press).
+- **Was der Assistent steuern könnte (Brainstorm):** Der Assistent bekommt „UI-Werkzeuge" (wie MCP-Tools, nach innen) und gibt strukturierte **View-Intents** zurück:
+  - **Karte/Weltkugel:** „nur Bilder mit Lea" → nur GPS-Punkte mit Lea; „wo war ich 2022?" (Zoom auf Cluster); „nur Reisen/Italien", „als Heatmap", „Reiserouten"; „Fotos von diesem Punkt öffnen".
+  - **Galerie:** filtern/sortieren/gruppieren („älteste zuerst", „nach Monat", „nur Videos/Favoriten"); auswählen+handeln („5 schönsten wählen", „als Favorit", „Album draus").
+  - **Highlights:** „mach ein Highlight: Lea am Strand, ruhige Klaviermusik, 30 s" → Auftrag mit Person/Motiv/Musik/Länge, erscheint bei Highlights & rendert; „Jahresrückblick Anja 2023"; „animiere dieses Foto als Unterwasserwelt"; nachschärfen („Musik energischer/kürzer").
+  - **Personen:** „alle mit Lea UND Anja", „wer am häufigsten mit mir", „Vorschläge für Lea bestätigen".
+  - **Reisen:** „Reise 'Italien 2022' aus diesem Zeitraum anlegen", „Route zeigen", „Fotos hinzufügen".
+  - **Alben/Teilen/Postkarte:** „Smart-Album 'Hunde'", „gezeigte ins Album Sommer", „die drei als Link teilen (Ablauf morgen)", „Postkarte mit Gruß X, Gold-Theme".
+  - **Wartung:** „wie viele ohne Beschreibung?", „Gesichtserkennung starten", „Namen in Dateien schreiben", „verwaiste Duplikate aufräumen".
+  - **Navigation/Hilfe:** „zu den Musik-Einstellungen", „erklär mir das Teilen".
+  - **Verbindendes Konzept:** gemeinsames **„Ergebnis-Set + View-Intent"-State** — Assistent liefert strukturierte Kommandos, das Frontend führt sie in der aktuellen Ansicht aus → jede Ansicht ist „assistierbar", ohne dass der Chat sie kennen muss.
 
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
