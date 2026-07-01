@@ -136,6 +136,47 @@ async def list_photos(
     return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
 
 
+@router.get("/timeline/buckets")
+async def timeline_buckets(
+    search: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    person_id: Optional[int] = None,
+    tag: Optional[str] = None,
+    camera: Optional[str] = None,
+    media_type: Optional[str] = None,
+    favorites: bool = False,
+    has_gps: Optional[bool] = None,
+    view: str = "library",
+    ids: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
+):
+    """Monats-Zählungen für die aktuelle Filter-/Ansicht-Kombination — damit die Galerie
+    die GESAMTE Zeitspanne (Höhe + Datums-Sprungmarken) sofort kennt, ohne alle Fotos zu
+    laden (Immich-„Timeline-Buckets"). Respektiert dieselbe ACL/Filter wie die Foto-Liste."""
+    q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps, view)
+    for c in photo_conditions(user):
+        q = q.where(c)
+    if ids is not None:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            id_list = []
+        q = q.where(Photo.id.in_(id_list) if id_list else Photo.id == -1)
+    sub = q.subquery()
+    month = func.to_char(func.date_trunc("month", sub.c.taken_at), "YYYY-MM")
+    rows = (await db.execute(
+        select(month.label("m"), func.count().label("c"))
+        .select_from(sub).where(sub.c.taken_at.isnot(None))
+        .group_by(month).order_by(month.desc())
+    )).all()
+    undated = await db.scalar(select(func.count()).select_from(sub).where(sub.c.taken_at.is_(None))) or 0
+    buckets = [{"month": m, "count": c} for m, c in rows]
+    total = sum(c for _, c in rows) + undated
+    return {"buckets": buckets, "undated": undated, "total": total}
+
+
 # Pet keywords the AI tagger emits (DE + EN). Exact (lower-cased) match keeps it
 # precise — clean single-word tags like "Hund"/"Katze", no "hundert" false hits.
 _PET_TAGS = {

@@ -131,6 +131,7 @@ export default function GalleryPage() {
   const [library, setLibrary] = useState<'library' | 'favorites' | 'archive' | 'trash'>('library')
   const [sort, setSort] = useState<'newest' | 'oldest' | 'added' | 'name'>('newest')
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE)
+  const [jumpMonth, setJumpMonth] = useState<string | null>(null)
   const [zoom, setZoom] = useState<number>(() => Number(localStorage.getItem('gallery.zoom')) || (isMobile() ? 140 : 210))
   const [groupBy, setGroupBy] = useState<'none' | 'day' | 'month'>(() => (localStorage.getItem('gallery.groupBy') as any) || 'day')
   const [layout, setLayout] = useState<LayoutMode>(() => (localStorage.getItem('gallery.layout') as LayoutMode) || 'rows')
@@ -170,6 +171,41 @@ export default function GalleryPage() {
     queryFn: () => api.get('/photos/stats').then(r => r.data),
     staleTime: 60_000,
   })
+
+  // Timeline-Buckets (Monats-Zählungen) für den Datum-Scrubber — bewusst OHNE Datums-
+  // filter, damit die Leiste immer die GESAMTE Historie der aktuellen Ansicht/Person
+  // kennt und man überall hinspringen kann.
+  const bucketParams = useMemo(() => {
+    const p: Record<string, string> = { view: library }
+    if (asstActive) p.ids = asstIds!.join(',')
+    if (filters.search) p.search = filters.search
+    if (filters.camera) p.camera = filters.camera
+    if (filters.mediaType) p.media_type = filters.mediaType
+    if (filters.favorites) p.favorites = 'true'
+    if (filters.hasGps === true) p.has_gps = 'true'
+    if (filters.personId != null) p.person_id = String(filters.personId)
+    return p
+  }, [library, asstActive, asstIds, filters.search, filters.camera, filters.mediaType, filters.favorites, filters.hasGps, filters.personId])
+
+  const showScrubber = viewMode === 'grid' && groupBy !== 'none' && sort !== 'name' && sort !== 'added'
+  const { data: bucketData } = useQuery<{ buckets: { month: string; count: number }[]; total: number }>({
+    queryKey: ['photo-buckets', bucketParams],
+    queryFn: () => api.get('/photos/timeline/buckets', { params: bucketParams }).then(r => r.data),
+    enabled: showScrubber,
+    staleTime: 60_000,
+  })
+
+  function jumpToMonth(month: string) {
+    const [y, m] = month.split('-').map(Number)
+    const last = new Date(y, m, 0).getDate()   // letzter Tag des Monats
+    setJumpMonth(month)
+    setFilters(f => ({ ...f, dateTo: `${month}-${String(last).padStart(2, '0')}` }))
+    scrollEl?.scrollTo({ top: 0 })
+  }
+  function clearJump() {
+    setJumpMonth(null)
+    setFilters(f => ({ ...f, dateTo: '' }))
+  }
 
   const favMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/photos/${id}/favorite`),
@@ -386,7 +422,17 @@ export default function GalleryPage() {
 
       {/* Gallery area */}
       <div ref={setScrollEl} className="relative flex-1 overflow-y-auto p-4">
-        {viewMode === 'grid' && groupBy !== 'none' && sort !== 'name' && sort !== 'added' && <DateScrubber scrollEl={scrollEl} />}
+        {showScrubber && <DateScrubber scrollEl={scrollEl} buckets={bucketData?.buckets} onJump={jumpToMonth} />}
+        {jumpMonth && filters.dateTo && (
+          <div className="sticky top-0 z-40 flex justify-center pointer-events-none">
+            <button onClick={clearJump}
+              className="pointer-events-auto mt-1 flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-medium shadow-lg hover:bg-indigo-500">
+              <Calendar size={13} />
+              ab {new Date(jumpMonth + '-01').toLocaleDateString('de', { month: 'long', year: 'numeric' })}
+              <X size={13} className="opacity-80" /> zu heute
+            </button>
+          </div>
+        )}
         {viewMode === 'grid' && (
           <>
             {allGridPhotos.length === 0 && !infiniteQuery.isLoading && (
