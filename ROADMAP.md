@@ -42,6 +42,7 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
   - **Musik optional** (reuse Highlight-Musik/CC0/KI-Soundtrack) als Unterlegung/Überblendung.
   - **Auslieferung:** eigener ShareType-Variant `postcard`(video) bzw. `video_postcard`; öffentliche Seite rendert das Video mit Gruß; temporärer/ablaufender Link.
   - **Fallen:** Render kann dauern → async (pending→rendering→done wie Highlights) + Budget/Reaper; atomare Transcodes (`.part`→`os.replace`).
+- **📌 Backlog — Motiv optimal in den Postkarten-Rahmen einpassen (Bilder UND Videos):** aktuell wird zugeschnitten (`cover`) oder verzerrt. Ziel: **nichts abgeschnitten, nichts verzerrt** — Seitenverhältnis erhalten und in den Rahmen einpassen (letterbox/pad mit themenpassendem Hintergrund, z. B. Blur-Fill wie beim Highlight-`_fill_graph`, oder smartes Crop, das Gesichter/Motiv nicht anschneidet). Gilt für Foto-Postkarte (Bild-Compositing) und Video-Postkarte (ffmpeg scale+pad statt crop/stretch).
 
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
