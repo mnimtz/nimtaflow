@@ -28,6 +28,16 @@ export default function App() {
     queryFn: () => api.get('/auth/status').then(r => r.data),
     retry: false, staleTime: 60_000,
   })
+  // Reaktiver Auth-Zustand — MUSS vor allen frühen returns stehen (Rules of Hooks!):
+  // setTokens/clearTokens feuern 'pf-auth' → hier neu bewerten. So ist man nach dem
+  // Login sofort drin (kein F5), Login/Logout in anderen Tabs synchronisiert mit.
+  const [authed, setAuthed] = useState(() => !!getToken())
+  useEffect(() => {
+    const sync = () => setAuthed(!!getToken())
+    window.addEventListener('pf-auth', sync)
+    window.addEventListener('storage', sync)
+    return () => { window.removeEventListener('pf-auth', sync); window.removeEventListener('storage', sync) }
+  }, [])
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-400">Lädt…</div>
   }
@@ -37,16 +47,6 @@ export default function App() {
   // login (and public share) — never the app shell. Prevents the brief "flash" of the
   // navigation/registers before the 401-redirect would kick in. (Data is already
   // API-protected; this also removes the security-optics leak of the empty shell.)
-  // Reaktiver Auth-Zustand: nach dem Login schreibt setTokens den Token UND feuert
-  // 'pf-auth' → hier neu bewerten. Vorher war `authed` ein einmaliger getToken()-Read,
-  // der nach navigate('/') nicht neu lief → man war erst nach F5 „drin".
-  const [authed, setAuthed] = useState(() => !!getToken())
-  useEffect(() => {
-    const sync = () => setAuthed(!!getToken())
-    window.addEventListener('pf-auth', sync)      // Login/Logout in diesem Tab
-    window.addEventListener('storage', sync)      // Login/Logout in anderem Tab
-    return () => { window.removeEventListener('pf-auth', sync); window.removeEventListener('storage', sync) }
-  }, [])
   if (status?.enforce && !authed) {
     return (
       <Routes>
