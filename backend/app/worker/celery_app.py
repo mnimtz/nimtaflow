@@ -68,6 +68,7 @@ celery_app.conf.update(
         # SCAN queue (near-empty) so it does NOT wait behind the huge process_photo
         # cpu backlog — the map/timeline populate in minutes, not after the queue drains.
         "backfill_metadata":  {"queue": "scan"},
+        "backfill_blur":      {"queue": "cpu"},   # tiny LQIP placeholders → instant scroll
         "suggest_faces":      {"queue": "scan"},  # borderline face→person suggestions
         # Dedicated queue + worker so slow video transcodes (esp. software h264)
         # never occupy the worker-cpu slots that make image thumbnails — those two
@@ -191,6 +192,13 @@ celery_app.conf.beat_schedule = {
     "backfill-geo-nightly": {
         "task": "backfill_geo",
         "schedule": crontab(hour=4, minute=45),
+    },
+    # Nightly LQIP backfill: tiny blur placeholders for existing photos that don't
+    # have one yet (instant-scroll grid). Cheap, reads the small thumb. 05:05.
+    "backfill-blur-nightly": {
+        "task": "backfill_blur",
+        "schedule": crontab(hour=5, minute=5),
+        "kwargs": {"limit": 8000},
     },
     # Nightly false-positive face filter: re-detect unnamed faces' crops, ignore
     # the ones that aren't faces (hands/patterns). New photos keep arriving, so it

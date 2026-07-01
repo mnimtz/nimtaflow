@@ -35,6 +35,9 @@ class Photo(Base):
     # Face-aware crop centre (0..1) so the grid doesn't cut off heads.
     focus_x: Mapped[Optional[float]] = mapped_column(Float)
     focus_y: Mapped[Optional[float]] = mapped_column(Float)
+    # Tiny base64-JPEG placeholder (LQIP) shown instantly behind the grid tile while
+    # the real thumbnail loads — the "instant scroll" feel (Immich/Google Photos).
+    blur_data: Mapped[Optional[str]] = mapped_column(Text)
     # When a remote GPU worker has leased this photo's AI job (re-claimable if stale).
     ai_claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     # Bumped by a DB trigger on every UPDATE → drives iOS incremental /sync.

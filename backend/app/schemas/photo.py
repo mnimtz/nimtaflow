@@ -25,6 +25,7 @@ class PhotoBase(BaseModel):
     user_rating: Optional[int] = None
     focus_x: Optional[float] = None   # face-aware crop center (0..1)
     focus_y: Optional[float] = None
+    blur_data: Optional[str] = None   # base64 micro-JPEG LQIP placeholder
 
     model_config = {"from_attributes": True}
 

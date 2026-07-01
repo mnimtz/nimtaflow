@@ -92,6 +92,7 @@ export type Photo = {
   user_rating: number | null
   focus_x?: number | null
   focus_y?: number | null
+  blur_data?: string | null
 }
 
 /** Thumbnail URL with a cache-bust token.

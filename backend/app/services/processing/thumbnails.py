@@ -164,6 +164,25 @@ def generate_webp_thumbnail(photo_path: str, cache_root: str, size: str = "mediu
         return None
 
 
+def compute_lqip(thumb_path: str, max_px: int = 20) -> Optional[str]:
+    """Tiny blurred placeholder (LQIP) as a base64 JPEG, computed from the already
+    generated small thumbnail — no re-decode of the (huge) original. The browser
+    renders it instantly behind the real tile (CSS-blurred) so scrolling never shows
+    a blank grey square. ~0.4–0.9 KB per photo. Returns raw base64 (no data: prefix).
+    """
+    try:
+        import base64
+        from io import BytesIO
+        img = Image.open(thumb_path)
+        img = _to_rgb(img)
+        img.thumbnail((max_px, max_px), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, "JPEG", quality=30, optimize=True)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
 def _fix_orientation(img: Image.Image) -> Image.Image:
     try:
         from PIL import ImageOps

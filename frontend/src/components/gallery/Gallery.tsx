@@ -148,7 +148,13 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
         const pos = (p.focus_x != null && p.focus_y != null)
           ? `${Math.round(p.focus_x * 100)}% ${Math.round(p.focus_y * 100)}%`
           : '50% 38%'
-        return <img {...props} style={{ ...(props.style || {}), display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos }} />
+        // LQIP: der winzige Blur liegt als Hintergrund hinter der Kachel und ist SOFORT
+        // sichtbar; das echte Thumbnail lädt darüber und verdeckt ihn beim Laden. Kein
+        // graues Kachel-Blinken mehr beim Scrollen.
+        const bg = p.blur_data
+          ? { backgroundImage: `url(data:image/jpeg;base64,${p.blur_data})`, backgroundSize: 'cover', backgroundPosition: pos }
+          : {}
+        return <img {...props} style={{ ...(props.style || {}), display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos, ...bg }} />
       },
       extras: (_: any, ctx: any) => {
         const p = (ctx.photo as AlbumPhoto)._p, i = (ctx.photo as AlbumPhoto)._i

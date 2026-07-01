@@ -508,6 +508,41 @@ def retry_missing_thumbnails_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="backfill_blur")
+def backfill_blur_task(self, limit: int = 4000):
+    """Compute the tiny LQIP placeholder for existing photos that don't have one yet
+    (blur_data IS NULL) from their already-generated small thumbnail. Cheap (~ms each,
+    no original re-decode), runs inline in batches; nightly + on-demand. Idempotent."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from app.services.processing.thumbnails import compute_lqip
+        from sqlalchemy import select
+        init_db()
+        done = 0
+        async for db in get_db():
+            rows = (await db.execute(select(Photo.id, Photo.thumb_small).where(
+                Photo.blur_data.is_(None), Photo.thumb_small.isnot(None),
+                Photo.is_trashed == False,  # noqa: E712
+            ).order_by(Photo.id.desc()).limit(limit))).all()
+            for pid, thumb in rows:
+                if not thumb or not os.path.exists(thumb):
+                    continue
+                lq = compute_lqip(thumb)
+                if lq:
+                    p = await db.get(Photo, pid)
+                    if p:
+                        p.blur_data = lq
+                        done += 1
+                if done % 500 == 0 and done:
+                    await db.commit()
+            await db.commit()
+            flog("scanner", "INFO", f"LQIP-Backfill: {done} Platzhalter erzeugt (von {len(rows)} geprüft)")
+            return {"filled": done}
+    return _run(_main())
+
+
 # NOTE: person-name persistence is handled by write_faces_task (the "In Dateien
 # schreiben" button → /people/write-faces), which writes MWG face regions carrying
 # both the box AND the name (+ a PersonInImage mirror) into the file/sidecar. The
@@ -1762,6 +1797,17 @@ def process_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_f
                     if not photo.thumb_small:
                         photo.thumb_attempts = (photo.thumb_attempts or 0) + 1
                         flog("scanner", "WARNING", f"Thumbnail fehlgeschlagen (Versuch {photo.thumb_attempts}): {photo.filename}")
+
+                # LQIP-Platzhalter aus dem kleinen Thumbnail (instant-scroll). Billig,
+                # best-effort — darf die Verarbeitung nie scheitern lassen.
+                if photo.thumb_small and (redo_thumbs or not photo.blur_data):
+                    try:
+                        from app.services.processing.thumbnails import compute_lqip
+                        lq = compute_lqip(photo.thumb_small)
+                        if lq:
+                            photo.blur_data = lq
+                    except Exception:
+                        pass
 
                 # Persist thumbnails immediately — AI is best-effort and must
                 # never cost us the thumbnail or stick the photo on a transient error.
