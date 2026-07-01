@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
-from app.core.access import photo_conditions, can_see_photo, feature_allowed, upload_base_dir
+from app.core.access import photo_conditions, can_see_photo, user_can_access_photo, feature_allowed, upload_base_dir
 from app.models.user import User, UserRole
 from app.models.photo import Photo, PhotoStatus
 from app.schemas.photo import PhotoBase
@@ -232,9 +232,29 @@ async def list_pets_v1(request: Request, cursor: Optional[int] = Query(None),
 async def get_photo_v1(photo_id: int, request: Request, db: AsyncSession = Depends(get_db),
                        user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo or photo.is_trashed or not can_see_photo(photo, user):
+    if not photo or photo.is_trashed or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     return _to_v1(photo, request)
+
+
+class PhotoIdsRequest(BaseModel):
+    ids: List[int] = []
+
+
+@router.post("/photos/by-ids", response_model=List[PhotoV1])
+async def photos_by_ids_v1(body: PhotoIdsRequest, request: Request,
+                           db: AsyncSession = Depends(get_db),
+                           user: Optional[User] = Depends(current_user_optional)):
+    """Batch-load exactly these photo ids (ACL-scoped), returned IN THE REQUESTED ORDER.
+    Powers 'open all chat results in the gallery' on iOS: the assistant returns result_ids,
+    the app fetches the full PhotoV1 objects here and shows them in the swipe gallery."""
+    ids = [int(i) for i in (body.ids or [])][:2000]
+    if not ids:
+        return []
+    rows = (await db.execute(select(Photo).where(
+        Photo.id.in_(ids), Photo.is_trashed == False, *photo_conditions(user)))).scalars().all()  # noqa: E712
+    by_id = {p.id: p for p in rows}
+    return [_to_v1(by_id[i], request) for i in ids if i in by_id]
 
 
 @router.get("/photos/{photo_id}/detail")
@@ -246,7 +266,7 @@ async def photo_detail_v1(photo_id: int, request: Request, db: AsyncSession = De
     from app.models.face import Face
     from app.models.person import Person
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     tags = [t for (t,) in (await db.execute(
         select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
@@ -283,7 +303,7 @@ async def delete_photo_v1(photo_id: int, delete_file: bool = True,
     """Hard-delete from the iOS app (endgültig löschen)."""
     from app.api.routes.photos import _hard_delete, _source_roots
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     await _hard_delete(db, photo, delete_file, await _source_roots(db))
     await db.commit()
@@ -455,7 +475,7 @@ async def stream_video_v1(
 ):
     """HTTP Range-aware video stream. iOS AVPlayer requires Range support."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video or not can_see_photo(photo, user):
+    if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     if not feature_allowed(user, "allow_download"):
         raise HTTPException(403, "Download nicht erlaubt")
@@ -517,7 +537,7 @@ async def video_preview_v1(photo_id: int, db: AsyncSession = Depends(get_db),
                            user: Optional[User] = Depends(current_user_optional)):
     """Return animated WebP hover preview for a video."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video or not can_see_photo(photo, user):
+    if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
@@ -537,7 +557,7 @@ async def video_sprite_v1(photo_id: int, db: AsyncSession = Depends(get_db),
                           user: Optional[User] = Depends(current_user_optional)):
     """JPEG sprite sheet for video scrubbing (thumbnail track)."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video or not can_see_photo(photo, user):
+    if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
@@ -554,7 +574,7 @@ async def video_sprite_vtt_v1(photo_id: int, db: AsyncSession = Depends(get_db),
                               user: Optional[User] = Depends(current_user_optional)):
     """WebVTT thumbnail track for timeline scrubbing."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.is_video or not can_see_photo(photo, user):
+    if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
 
     cache_root = os.getenv("CACHE_PATH", "/cache")
@@ -572,7 +592,7 @@ async def video_sprite_vtt_v1(photo_id: int, db: AsyncSession = Depends(get_db),
 async def favorite_v1(photo_id: int, db: AsyncSession = Depends(get_db),
                       user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     photo.is_favorite = not photo.is_favorite
     await db.commit()
@@ -583,7 +603,7 @@ async def favorite_v1(photo_id: int, db: AsyncSession = Depends(get_db),
 async def rating_v1(photo_id: int, rating: int = 0, db: AsyncSession = Depends(get_db),
                     user: Optional[User] = Depends(current_user_optional)):
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     photo.user_rating = max(0, min(5, rating))
     await db.commit()
@@ -762,7 +782,7 @@ async def set_voice_note_v1(photo_id: int, file: UploadFile = File(...),
     import os as _os
     from app.core.config import get_settings
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     data = await file.read()
     if len(data) > 25 * 1024 * 1024:
@@ -786,7 +806,7 @@ async def get_voice_note_v1(photo_id: int, db: AsyncSession = Depends(get_db),
     from fastapi.responses import FileResponse
     import os as _os
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user) or not getattr(photo, "voice_note_path", None) or not _os.path.exists(photo.voice_note_path):
+    if not photo or not await user_can_access_photo(db, photo_id, user) or not getattr(photo, "voice_note_path", None) or not _os.path.exists(photo.voice_note_path):
         raise HTTPException(404)
     ext = _os.path.splitext(photo.voice_note_path)[1].lower()
     mt = {".m4a": "audio/mp4", ".mp3": "audio/mpeg"}.get(ext, "audio/webm")
@@ -799,7 +819,7 @@ async def delete_voice_note_v1(photo_id: int, db: AsyncSession = Depends(get_db)
     from fastapi import HTTPException
     import os as _os
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     if getattr(photo, "voice_note_path", None):
         try:
@@ -1020,6 +1040,8 @@ async def photo_faces_v1(photo_id: int, db: AsyncSession = Depends(get_db),
                          user: Optional[User] = Depends(current_user_optional)):
     """Recognised, named persons in this photo (with their face id) — so the app
     can offer 'set this as <name>'s profile picture' from the photo detail."""
+    if not await user_can_access_photo(db, photo_id, user):
+        raise HTTPException(404)
     from app.models.face import Face
     from app.models.person import Person
     rows = (await db.execute(

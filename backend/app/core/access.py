@@ -70,6 +70,20 @@ def can_see_photo(photo: Photo, user: Optional[User]) -> bool:
     return True
 
 
+async def user_can_access_photo(db, photo_id: int, user: Optional[User]) -> bool:
+    """Authoritative single-photo access check — the ONE to use before returning,
+    streaming, mutating or deleting a photo by id. Unlike `can_see_photo` (which by
+    design only covers date + folder rules), this ALSO enforces `visible_person_ids`:
+    a person-whitelist-only account otherwise passed `can_see_photo` for EVERY photo
+    (it has no folder/date rules) and could read/change/hard-delete foreign photos via
+    the v1 single-photo endpoints. Query-based so it applies the exact same WHERE as
+    the list endpoints. Unrestricted (admin/open) short-circuits to True."""
+    if _is_unrestricted(user):
+        return True
+    return bool(await db.scalar(
+        select(Photo.id).where(Photo.id == photo_id, *photo_conditions(user))))
+
+
 def visible_person_subquery(user: Optional[User]):
     """A SELECT of person_ids the user may see. Returns None when unrestricted.
 

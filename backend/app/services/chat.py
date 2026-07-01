@@ -91,6 +91,13 @@ SYSTEM = (
     "oeffne_ansicht — z. B. 'geh zu den Personen'/'zeig alle Reisen' (Übersicht) oder 'öffne "
     "Anjas Seite'/'zeig unsere Kroatien-Reise' (mit name). Für reines Anzeigen von Fotos "
     "hingegen suche_fotos. Nach dem Navigieren kurz bestätigen, wohin. "
+    "ANZEIGEN & KNAPP BLEIBEN: Bei reinen Anzeige-/Suchwünschen ('zeig mir …', 'Fotos von …') "
+    "antworte in 1–2 kurzen Sätzen und VERLASS dich auf die Galerie — der Nutzer sieht ALLE Treffer "
+    "dort, du musst sie NICHT einzeln als Text aufzählen (keine Fotobeschreibungs-Listen/Textwände). "
+    "Das Werkzeug suche_fotos liefert 'gesamt_anzahl' (die WAHRE Trefferzahl der ganzen Galerie, nicht "
+    "nur die zurückgegebenen Beispiele) — nenne diese Zahl ('Ich habe 240 Fotos von Anja gefunden – "
+    "sie sind in deiner Galerie'), NICHT die Länge der 'treffer'-Beispielliste. Höchstens 1–2 Fotos per "
+    "#id hervorheben, wenn es die Antwort wirklich stützt. "
     "PROAKTIV: Wenn es sinnvoll ist, biete am ENDE deiner Antwort 2–3 kurze Folge-Vorschläge "
     "an — als allerletzte Zeile im Format 'VORSCHLÄGE: <a> | <b> | <c>'. Sie müssen KNAPP sein "
     "(Tap-Buttons, max. ~4 Wörter), konkret und auf den Kontext bezogen, z. B. bei Fototreffern "
@@ -300,19 +307,35 @@ async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 2
     return await _fused_records(db, photos)
 
 
+async def _structural_ids(db: AsyncSession, medientyp, jahr_von, jahr_bis, person,
+                          person2, ort, datum_von, datum_bis, acl, cap: int = 2000) -> List[int]:
+    """ALLE passenden Foto-IDs für die GALERIE (nicht nur die ~60 Modell-Kontext-Records),
+    neueste zuerst — damit „zeig alle Fotos von X" wirklich jeden Treffer liefert statt
+    einer Top-K-Auswahl. Rein strukturell (Person/Ort/Datum/Jahr/Medientyp); wird genutzt,
+    wenn solche Filter die Anfrage dominieren."""
+    from app.models.photo import PhotoStatus
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
+                               datum_bis, person2, ort) + list(acl or [])
+    rows = await db.execute(
+        select(Photo.id).where(Photo.status == PhotoStatus.done, Photo.is_trashed == False,  # noqa: E712
+                               Photo.thumb_small.isnot(None), *conds)
+        .order_by(Photo.taken_at.desc().nullslast()).limit(cap))
+    return list(rows.scalars().all())
+
+
 async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[int],
-                 jahr_bis: Optional[int], person: Optional[str], acl: Optional[list] = None) -> dict:
-    """Exact count for 'wie viele …' questions — structural filters, not top-K search."""
-    conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [Photo.is_trashed == False] + list(acl or [])  # noqa: E712
-    q = select(func.count(func.distinct(Photo.id))).select_from(Photo)
-    if person and person.strip():
-        q = (q.join(Face, Face.photo_id == Photo.id)
-              .join(Person, Person.id == Face.person_id)
-              .where(Person.name.ilike(f"%{person.strip()}%")))
-    q = q.where(*conds)
-    n = await db.scalar(q)
+                 jahr_bis: Optional[int], person: Optional[str], acl: Optional[list] = None,
+                 person2: Optional[str] = None, ort: Optional[str] = None,
+                 datum_von: Optional[str] = None, datum_bis: Optional[str] = None) -> dict:
+    """Exact count for 'wie viele …' questions — structural filters, not top-K search.
+    Nutzt ALLE Filter (person2/ort/Datum), damit die Zahl zur gefilterten Galerie passt
+    ('wie viele Fotos von Lea in der Türkei 2022' zählt Ort+Jahr korrekt mit)."""
+    conds = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
+                               datum_bis, person2, ort) + [Photo.is_trashed == False] + list(acl or [])  # noqa: E712
+    n = await db.scalar(select(func.count(func.distinct(Photo.id))).select_from(Photo).where(*conds))
     return {"anzahl": int(n or 0), "medientyp": medientyp or "beide",
-            "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person}
+            "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person,
+            "person2": person2, "ort": ort}
 
 
 async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Optional[str] = None,
@@ -902,7 +925,9 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     args = c.get("args") or {}
                     if c.get("name") == "zaehle_fotos":
                         resp = await _count(db, args.get("medientyp"), args.get("jahr_von"),
-                                            args.get("jahr_bis"), args.get("person"), acl=acl)
+                                            args.get("jahr_bis"), args.get("person"), acl=acl,
+                                            person2=args.get("person2"), ort=args.get("ort"),
+                                            datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "zeitliche_eckdaten":
@@ -977,11 +1002,27 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                                ort=args.get("ort"),
                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
                                                acl=acl)
-                        seen_ids.extend([rrec["id"] for rrec in recs])
                         for rrec in recs:
                             seen_recs.setdefault(rrec["id"], rrec)
+                        # GALERIE = ALLE Treffer: bei starken Struktur-Filtern (Person/Ort/
+                        # Datum/Jahr) das VOLLE ID-Set liefern statt nur der ~60 Modell-
+                        # Kontext-Records — behebt „findet viel zu wenig". Bei reiner
+                        # Freitext-Semantik ohne Filter bleibt es bei den gerankten Records.
+                        has_struct = any(args.get(k) for k in ("person", "person2", "ort",
+                                          "datum_von", "datum_bis", "jahr_von", "jahr_bis"))
+                        gallery_ids = [rrec["id"] for rrec in recs]
+                        gesamt = len(gallery_ids)
+                        if has_struct:
+                            full = await _structural_ids(
+                                db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
+                                args.get("person"), args.get("person2"), args.get("ort"),
+                                args.get("datum_von"), args.get("datum_bis"), acl)
+                            if full:
+                                gallery_ids = full
+                                gesamt = len(full)
+                        seen_ids.extend(gallery_ids)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
-                            "name": c["name"], "response": {"treffer": recs}}}]})
+                            "name": c["name"], "response": {"treffer": recs, "gesamt_anzahl": gesamt}}}]})
                         if vision and img_budget > 0 and recs:
                             imgs = await _image_parts(db, [r["id"] for r in recs], min(6, img_budget))
                             if imgs:

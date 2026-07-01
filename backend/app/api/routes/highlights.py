@@ -134,6 +134,12 @@ async def create_highlight(
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
+    # SICHERHEIT: Der Render (select_photos_for_motto) zieht Fotos OHNE ACL — ein
+    # eingeschränktes Konto könnte sonst ein Highlight aus dem GESAMTEN Bestand
+    # erzeugen und via /{id}/video fremde Fotos streamen. Highlights sind ohnehin
+    # global/Besitzer-gedacht → nur Admin (konsistent mit save-to-library).
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Highlight-Videos können nur Administratoren erstellen.")
     if body.motto not in _VALID_MOTTOS:
         raise HTTPException(400, f"Unbekanntes Motto: {body.motto}")
     duration = max(8.0, min(900.0, float(body.duration_sec or 60.0)))
@@ -194,6 +200,8 @@ async def animate_photo(
     """External video-AI: turn ONE still photo into a short animated clip — optionally with a
     creative scene prompt (place the person in a new world). Opt-in (highlights.ai_enabled)
     + budget-capped in the worker. Returns a pending Highlight."""
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "KI-Videos können nur Administratoren erstellen.")
     from app.models.photo import Photo
     from app.services.settings_loader import load_settings
     s = await load_settings(db)

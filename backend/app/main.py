@@ -143,9 +143,18 @@ async def lifespan(app: FastAPI):
     async with _engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
-        # Lightweight column migrations (create_all never ALTERs existing tables).
-        for stmt in _COLUMN_MIGRATIONS:
-            await conn.execute(text(stmt))
+    # Lightweight column migrations (create_all never ALTERs existing tables).
+    # Each in its OWN transaction + non-fatal: a single failing/edge-case ALTER must
+    # never abort the whole batch and crash startup (all statements are IF NOT EXISTS
+    # / idempotent, so skipping a failed one is safe). Previously one shared txn meant
+    # any single failure rolled back ALL migrations and propagated out of lifespan.
+    import logging as _logging
+    for stmt in _COLUMN_MIGRATIONS:
+        try:
+            async with _engine.begin() as conn:
+                await conn.execute(text(stmt))
+        except Exception:
+            _logging.getLogger("photoflow").warning("migration skipped: %s", stmt[:80])
 
     # Enum value additions — a new column doesn't extend an existing PG enum type.
     # Each in its own transaction + non-fatal so one failure never blocks startup.

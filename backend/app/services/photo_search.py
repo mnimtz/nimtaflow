@@ -150,31 +150,37 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     # ── literal / tag / person hits ──────────────────────────────────────────
     kw: dict = defaultdict(int)
     if tokens:
-        for t in tokens:
-            like = f"%{t}%"
-            rows = (await db.execute(select(Photo.id).where(*base, or_(
-                Photo.description.ilike(like), Photo.keywords.ilike(like),
-                Photo.city.ilike(like), Photo.country.ilike(like), Photo.location_name.ilike(like),
-            )))).all()
+        try:
+            for t in tokens:
+                like = f"%{t}%"
+                rows = (await db.execute(select(Photo.id).where(*base, or_(
+                    Photo.description.ilike(like), Photo.keywords.ilike(like),
+                    Photo.city.ilike(like), Photo.country.ilike(like), Photo.location_name.ilike(like),
+                )))).all()
+                for (pid,) in rows:
+                    kw[pid] += 1
+            # tags (scoped to accessible photos)
+            rows = (await db.execute(
+                select(PhotoTag.photo_id).join(Tag, Tag.id == PhotoTag.tag_id)
+                .where(PhotoTag.photo_id.in_(acc_sub), or_(*[Tag.name.ilike(f"%{t}%") for t in tokens]))
+            )).all()
             for (pid,) in rows:
                 kw[pid] += 1
-        # tags (scoped to accessible photos)
-        rows = (await db.execute(
-            select(PhotoTag.photo_id).join(Tag, Tag.id == PhotoTag.tag_id)
-            .where(PhotoTag.photo_id.in_(acc_sub), or_(*[Tag.name.ilike(f"%{t}%") for t in tokens]))
-        )).all()
-        for (pid,) in rows:
-            kw[pid] += 1
-        # person names → that person's accessible photos
-        prows = (await db.execute(
-            select(Person.id).where(or_(*[Person.name.ilike(f"%{t}%") for t in tokens]))
-        )).all()
-        pids = [r[0] for r in prows]
-        if pids:
-            frows = (await db.execute(select(Face.photo_id).where(
-                Face.person_id.in_(pids), Face.photo_id.in_(acc_sub)))).all()
-            for (pid,) in frows:
-                kw[pid] += 2  # a named-person match is a strong signal
+            # person names → that person's accessible photos
+            prows = (await db.execute(
+                select(Person.id).where(or_(*[Person.name.ilike(f"%{t}%") for t in tokens]))
+            )).all()
+            pids = [r[0] for r in prows]
+            if pids:
+                frows = (await db.execute(select(Face.photo_id).where(
+                    Face.person_id.in_(pids), Face.photo_id.in_(acc_sub)))).all()
+                for (pid,) in frows:
+                    kw[pid] += 2  # a named-person match is a strong signal
+        except Exception:
+            # Ein fehlgeschlagener Teil-Query lässt die Transaktion abgebrochen zurück;
+            # ohne Rollback würde der finale Fetch mit PendingRollbackError 500en und der
+            # Chat leer antworten TROTZ vorhandener Daten. Degradieren statt crashen.
+            await db.rollback()
 
     # ── relationship phrases ("meine ehefrau", "mein kollege") → people ───────
     try:
@@ -207,7 +213,11 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     top = sorted(scores, key=lambda p: -scores[p])[:limit]
     # Re-apply base here too (defense in depth): nothing outside the caller's scope
     # can be returned even if a future match path forgets to scope itself.
-    photos = (await db.execute(select(Photo).where(Photo.id.in_(top), *base))).scalars().all()
+    try:
+        photos = (await db.execute(select(Photo).where(Photo.id.in_(top), *base))).scalars().all()
+    except Exception:
+        await db.rollback()
+        photos = (await db.execute(select(Photo).where(Photo.id.in_(top), *base))).scalars().all()
     order = {pid: i for i, pid in enumerate(top)}
     photos.sort(key=lambda p: order.get(p.id, 1e9))
     return photos
