@@ -767,6 +767,7 @@ def _render_xfade(images: List[str], out_path: str, durations: List[float],
     if music:
         cmd += ["-map", "[outa]", "-c:a", "aac", "-b:a", "192k", "-shortest"]
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-g", "60", "-keyint_min", "60",   # Keyframe alle 2s → flüssige Wiedergabe + sauberes Spulen
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
@@ -803,6 +804,7 @@ def _render_concat(images: List[str], out_path: str, durations: List[float],
         else:
             cmd += ["-vf", _fill_vf(width, height)]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-g", "60", "-keyint_min", "60",   # Keyframe alle 2s → flüssige Wiedergabe + sauberes Spulen
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
         r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
         return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000
@@ -840,6 +842,7 @@ def render_hybrid(clip_paths: List[str], slideshow_path: Optional[str], out_path
     if music_idx is not None:
         cmd += ["-map", f"{music_idx}:a", "-shortest", "-c:a", "aac", "-b:a", "160k"]
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-g", "60", "-keyint_min", "60",   # Keyframe alle 2s → flüssige Wiedergabe + sauberes Spulen
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", out_path]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=_RENDER_TIMEOUT)
