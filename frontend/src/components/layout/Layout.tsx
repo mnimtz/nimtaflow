@@ -7,6 +7,7 @@ import { useTheme } from '../../store/theme'
 import { api, getToken, clearTokens } from '../../lib/api'
 import { useT } from '../../i18n'
 import LanguageSwitcher from '../LanguageSwitcher'
+import FloatingAssistant from '../FloatingAssistant'
 import clsx from 'clsx'
 
 function UserBadge() {
@@ -230,6 +231,9 @@ export default function Layout() {
           </div>
         </div>
       )}
+
+      {/* Ambient-KI-Assistent — schwebt überall, filtert die Galerie auf die Antwort */}
+      <FloatingAssistant />
     </div>
   )
 }

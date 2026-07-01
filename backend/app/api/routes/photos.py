@@ -93,12 +93,21 @@ async def list_photos(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
+    ids: Optional[str] = None,   # kommagetrennte Foto-IDs (KI-Assistent-Ergebnis-Set)
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
     q = _base_query(db, search, date_from, date_to, person_id, tag, camera, media_type, favorites, has_gps, view)
     for c in photo_conditions(user):
         q = q.where(c)
+
+    if ids is not None:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            id_list = []
+        # Nur genau diese Fotos (Assistent). Leere Liste → bewusst 0 Treffer.
+        q = q.where(Photo.id.in_(id_list) if id_list else Photo.id == -1)
 
     if lat is not None and lng is not None and radius_km:
         lat_delta = radius_km / 111.0

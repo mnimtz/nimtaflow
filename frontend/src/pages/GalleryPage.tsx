@@ -8,6 +8,7 @@ import DateScrubber from '../components/gallery/DateScrubber'
 import FilterPanel, { DEFAULT_FILTERS, type Filters } from '../components/gallery/FilterPanel'
 import { Modal, useToast } from '../components/ui/dialogs'
 import { useT } from '../i18n'
+import { useAssistant } from '../store/assistant'
 
 type ViewMode = 'grid' | 'memories'
 
@@ -139,7 +140,16 @@ export default function GalleryPage() {
   const rowHeight = zoom
   const qc = useQueryClient()
 
-  const filterParams = { ...buildFilterParams(filters), view: library, sort }
+  // Ambient-Assistent: aktives Ergebnis-Set filtert die Galerie auf genau diese Fotos.
+  const asstIds = useAssistant(s => s.resultIds)
+  const asstQuery = useAssistant(s => s.resultQuery)
+  const asstClear = useAssistant(s => s.clearResult)
+  const asstActive = !!(asstIds && asstIds.length)
+
+  const filterParams = {
+    ...buildFilterParams(filters), view: library, sort,
+    ...(asstActive ? { ids: asstIds!.join(',') } : {}),
+  }
 
   const infiniteQuery = useInfiniteQuery({
     queryKey: ['photos', 'grid', filterParams, pageSize],
@@ -227,6 +237,16 @@ export default function GalleryPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Ambient-Assistent: aktives Ergebnis-Set */}
+      {asstActive && (
+        <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600/10 border-b border-indigo-500/30 text-sm">
+          <Sparkles size={15} className="text-indigo-500 shrink-0" />
+          <span className="text-zinc-700 dark:text-zinc-200 truncate">{t('gallery.assistantResults')} <span className="font-medium">„{asstQuery}"</span></span>
+          <button onClick={() => asstClear()} className="ml-auto flex items-center gap-1 text-indigo-600 dark:text-indigo-300 hover:underline shrink-0">
+            <X size={14} /> {t('gallery.assistantClear')}
+          </button>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="relative z-40 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm px-4 py-2 flex items-center gap-3 flex-wrap">
         {/* Library views */}
