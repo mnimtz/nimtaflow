@@ -100,6 +100,42 @@ SYSTEM = (
 )
 
 
+def _today_block() -> str:
+    """Heutiges Datum + vorberechnete Zeitfenster für RELATIVE Angaben, damit der Agent
+    'letzte Woche', 'gestern', 'diesen Monat' zuverlässig in datum_von/datum_bis übersetzt
+    statt über alle Jahre zu suchen. Wir rechnen die Wochen-/Monatsgrenzen HIER (Python),
+    damit das Modell nicht selbst rechnen muss."""
+    from datetime import date as _d, timedelta as _td
+    t = _d.today()
+    y = t - _td(days=1)                                  # gestern
+    this_mon = t - _td(days=t.weekday())                 # Montag DIESER Woche
+    last_mon = this_mon - _td(days=7)                    # Montag LETZTE Woche
+    last_sun = this_mon - _td(days=1)                    # Sonntag LETZTE Woche
+    m_start = t.replace(day=1)                           # 1. dieses Monats
+    lm_end = m_start - _td(days=1)                        # letzter Tag Vormonat
+    lm_start = lm_end.replace(day=1)                     # 1. Vormonat
+    d7 = t - _td(days=7)                                 # letzte 7 Tage
+    d30 = t - _td(days=30)                               # letzte 30 Tage
+    iso = lambda x: x.isoformat()
+    return (
+        f"\n\nHEUTIGES DATUM: {iso(t)}. Bei RELATIVEN Zeitangaben MUSST du datum_von/datum_bis "
+        f"(YYYY-MM-DD) setzen — sonst wird fälschlich über alle Jahre gesucht. Nutze exakt diese "
+        f"vorgerechneten Fenster:\n"
+        f"• 'heute' → datum_von={iso(t)}, datum_bis={iso(t)}\n"
+        f"• 'gestern' → datum_von={iso(y)}, datum_bis={iso(y)}\n"
+        f"• 'letzte Woche'/'vorige Woche' → datum_von={iso(last_mon)}, datum_bis={iso(last_sun)}\n"
+        f"• 'diese Woche' → datum_von={iso(this_mon)}, datum_bis={iso(t)}\n"
+        f"• 'letzten 7 Tage'/'die Tage'/'kürzlich' → datum_von={iso(d7)}, datum_bis={iso(t)}\n"
+        f"• 'letzten 30 Tage'/'letzten Monat' (rollierend) → datum_von={iso(d30)}, datum_bis={iso(t)}\n"
+        f"• 'diesen Monat' → datum_von={iso(m_start)}, datum_bis={iso(t)}\n"
+        f"• 'letzten Monat'/'im Vormonat' (Kalendermonat) → datum_von={iso(lm_start)}, datum_bis={iso(lm_end)}\n"
+        f"• 'dieses Jahr' → jahr_von={t.year}, jahr_bis={t.year}; 'letztes Jahr' → jahr_von={t.year-1}, jahr_bis={t.year-1}.\n"
+        f"Für 'vor N Tagen/Wochen/Monaten' rechne analog von heute aus. Kombiniere das IMMER mit "
+        f"person, wenn ein Name genannt ist (z. B. 'Anja letzte Woche' → person='Anja', "
+        f"datum_von={iso(last_mon)}, datum_bis={iso(last_sun)})."
+    )
+
+
 async def _identity_context(db: AsyncSession, settings: dict, user=None) -> str:
     """Tell the assistant WHO the user is and their relations, so 'meine Frau' /
     'mein Sohn' resolve instantly instead of 'wer ist deine Frau?'. Prefers the
@@ -830,7 +866,11 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     persona = (settings.get("chat.persona") or "").strip()
     persona_block = (f"\n\nPERSÖNLICHKEIT & TON (vom Nutzer vorgegeben, befolge das durchgehend, "
                      f"ohne die inhaltliche Korrektheit zu opfern): {persona[:600]}") if persona else ""
-    system_text = SYSTEM + persona_block + await _identity_context(db, settings, user)
+    # HEUTIGES DATUM + relative Zeitangaben: ohne "heute" kann das Modell "letzte Woche",
+    # "gestern", "diesen Monat" nicht in ein Datumsfenster übersetzen und sucht dann über
+    # ALLE Jahre (Bug: "Anja letzte Woche" → Bilder aus vielen Jahren). Wir liefern das
+    # Datum und die exakte Umrechnungsregel mit, inkl. berechneter Wochen-Eckdaten.
+    system_text = SYSTEM + _today_block() + persona_block + await _identity_context(db, settings, user)
     async with httpx.AsyncClient(timeout=90) as client:
         for _ in range(5):  # allow a few tool round-trips
             payload = {
@@ -991,7 +1031,7 @@ async def _local_rag(message: str, settings: dict, db: AsyncSession, user=None) 
         return {"answer": "Dazu habe ich keine passenden Fotos gefunden.", "photo_ids": []}
     from app.services.ai.local_vlm import LocalVLMProvider
     ctx = json.dumps(recs, ensure_ascii=False, indent=0)
-    prompt = (f"{SYSTEM}\n\nGefundene Fotos (JSON):\n{ctx}\n\nFrage: {message}\n\n"
+    prompt = (f"{SYSTEM}{_today_block()}\n\nGefundene Fotos (JSON):\n{ctx}\n\nFrage: {message}\n\n"
               "Antworte knapp auf Deutsch, nur anhand dieser Fotos.")
     model = (settings.get("ai.local.model") or "qwen2.5-vl-3b")
     prov = LocalVLMProvider(model if model.startswith("qwen") else "qwen2.5-vl-3b")
