@@ -78,7 +78,13 @@ SYSTEM = (
     "Worker, wie lange dauert die Verarbeitung noch, Leitstand) nutze leitstand_status — das "
     "ist nur für Administratoren; kommt kein_zugriff=true zurück, sag höflich, dass diese "
     "Betriebsdaten dem Administrator vorbehalten sind. Restzeit-Angaben sind immer nur grobe "
-    "Schätzungen — kennzeichne sie als solche."
+    "Schätzungen — kennzeichne sie als solche. "
+    "PROAKTIV: Wenn es sinnvoll ist, biete am ENDE deiner Antwort 2–3 kurze Folge-Vorschläge "
+    "an — als allerletzte Zeile im Format 'VORSCHLÄGE: <a> | <b> | <c>'. Sie müssen KNAPP sein "
+    "(Tap-Buttons, max. ~4 Wörter), konkret und auf den Kontext bezogen, z. B. bei Fototreffern "
+    "'Als Album speichern | Auch <Nachbarjahr> zeigen | Nur Videos'; bei einer Person 'Zeitraum "
+    "anzeigen | Gemeinsame Fotos'. Formuliere sie als Anweisung, die man direkt wieder an dich "
+    "stellen könnte. Lass die Zeile WEG, wenn keine sinnvollen Vorschläge existieren."
 )
 
 
@@ -723,6 +729,14 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             # photo would display loosely-related semantic hits years off. Only fall
             # back to the full seen set when the model cited nothing (e.g. "zeig mir …").
             import re as _re
+            # Proaktive Folge-Vorschläge: der Agent hängt optional eine letzte Zeile
+            # "VORSCHLÄGE: a | b | c" an → als antippbare Chips ausliefern, aus dem
+            # angezeigten Antworttext entfernen.
+            suggestions: list = []
+            sm = _re.search(r"(?im)^\s*VORSCHL[ÄA]GE\s*:\s*(.+)$", text)
+            if sm:
+                suggestions = [s.strip(" -•") for s in sm.group(1).split("|") if s.strip(" -•")][:3]
+                text = text[:sm.start()].rstrip()
             cited = list(dict.fromkeys(int(m) for m in _re.findall(r"#(\d+)", text)))
             if cited:
                 missing = [i for i in cited if i not in seen_recs]
@@ -737,6 +751,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
                     "result_ids": list(dict.fromkeys(seen_ids)),
+                    "suggestions": suggestions,
                     "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
     _u = list(dict.fromkeys(seen_ids))
     return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": _u,

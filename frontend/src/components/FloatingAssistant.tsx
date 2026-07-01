@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Sparkles, X, ArrowUp, Loader2 } from 'lucide-react'
+import { Sparkles, X, ArrowUp, Loader2, MapPin } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAssistant } from '../store/assistant'
 
-type Msg = { role: 'user' | 'assistant'; content: string; photoCount?: number }
+type Msg = { role: 'user' | 'assistant'; content: string; photoCount?: number; ids?: number[]; suggestions?: string[]; query?: string }
 
 const VIEW_LABEL: Record<string, string> = {
   '/': 'Start', '/gallery': 'Galerie', '/map': 'Karte', '/people': 'Personen',
@@ -27,10 +27,10 @@ export default function FloatingAssistant() {
 
   const context = VIEW_LABEL[loc.pathname] || null
 
-  async function send() {
-    const text = input.trim()
+  async function send(preset?: string) {
+    const text = (preset ?? input).trim()
     if (!text || busy) return
-    setInput('')
+    if (preset === undefined) setInput('')
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     setMessages(m => [...m, { role: 'user', content: text }])
     setBusy(true)
@@ -38,7 +38,8 @@ export default function FloatingAssistant() {
       const r = await api.post('/chat', { message: text, history })
       // result_ids = volles Such-Set (alle Treffer) → Galerie-Filter; Fallback: zitierte photo_ids.
       const ids: number[] = (r.data.result_ids && r.data.result_ids.length ? r.data.result_ids : r.data.photo_ids) || []
-      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length }])
+      const suggestions: string[] = Array.isArray(r.data.suggestions) ? r.data.suggestions : []
+      setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length, ids, suggestions, query: text }])
       if (ids.length) {
         setResult(ids, text)
         // Auf der Karte bleiben (sie filtert sich selbst auf das Ergebnis); sonst zur Galerie.
@@ -49,6 +50,12 @@ export default function FloatingAssistant() {
     } finally {
       setBusy(false)
     }
+  }
+
+  // Ergebnis dieser Nachricht auf der Karte zeigen (nutzt das geteilte Ergebnis-Set).
+  function showOnMap(msg: Msg) {
+    if (msg.ids && msg.ids.length) setResult(msg.ids, msg.query || '')
+    nav('/map')
   }
 
   return (
@@ -74,16 +81,32 @@ export default function FloatingAssistant() {
               </div>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+              <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex flex-col items-start'}>
                 <div className={`max-w-[85%] text-[13px] leading-relaxed rounded-xl px-2.5 py-1.5 ${
-                  m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white/10 text-zinc-100'}`}>
+                  m.role === 'user' ? 'self-end bg-indigo-600 text-white' : 'bg-white/10 text-zinc-100'}`}>
                   {m.content}
                   {m.role === 'assistant' && !!m.photoCount && (
-                    <button onClick={() => nav('/gallery')} className="mt-1.5 flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
-                      <Sparkles size={11} /> {m.photoCount} Treffer in der Galerie ansehen
-                    </button>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <button onClick={() => nav('/gallery')} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
+                        <Sparkles size={11} /> {m.photoCount} in der Galerie
+                      </button>
+                      <button onClick={() => showOnMap(m)} className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-indigo-200">
+                        <MapPin size={11} /> Auf der Karte
+                      </button>
+                    </div>
                   )}
                 </div>
+                {/* Proaktive Folge-Vorschläge als antippbare Chips */}
+                {m.role === 'assistant' && m.suggestions && m.suggestions.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.suggestions.map((s, k) => (
+                      <button key={k} onClick={() => send(s)} disabled={busy}
+                        className="px-2.5 py-1 rounded-full bg-white/5 border border-white/15 text-[11px] text-zinc-200 hover:bg-white/10 hover:border-indigo-400/50 disabled:opacity-40 transition-colors">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {busy && <div className="flex items-center gap-2 text-[12px] text-zinc-400"><Loader2 size={13} className="animate-spin" /> denkt nach…</div>}
@@ -94,7 +117,7 @@ export default function FloatingAssistant() {
               onKeyDown={e => { if (e.key === 'Enter') send() }}
               placeholder="Frag den Assistenten…"
               className="flex-1 h-9 px-3 text-sm rounded-lg bg-white/5 border border-white/10 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <button onClick={send} disabled={busy || !input.trim()}
+            <button onClick={() => send()} disabled={busy || !input.trim()}
               className="w-9 h-9 shrink-0 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center disabled:opacity-40">
               <ArrowUp size={16} />
             </button>
