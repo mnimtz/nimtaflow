@@ -16,6 +16,16 @@ from app.schemas.person import PersonCreate, PersonUpdate, PersonOut, PersonDeta
 router = APIRouter(prefix="/people", tags=["people"])
 
 
+async def require_manager(user=Depends(current_user_optional)):
+    """Personen-/Gesichts-VERWALTUNG (löschen, verbergen, umbenennen, zusammenführen,
+    zuordnen, clustern, Vorschläge bestätigen …) ist eine Admin-Aufgabe. Nur `set-as-me`
+    (die eigene Identität) bleibt für alle erlaubt."""
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Diese Aktion ist Administratoren vorbehalten.")
+    return user
+
+
 def _face_crop_path(face, photo, person_id: int = 0):
     """Path to a face crop. For a video face detected at a known frame_time, crop
     from THAT frame (not the 10%-mark thumbnail); else from the SSD thumbnail."""
@@ -102,7 +112,7 @@ async def list_people(include_hidden: bool = False, sort: str = "name",
     return result
 
 
-@router.post("/warm-crops")
+@router.post("/warm-crops", dependencies=[Depends(require_manager)])
 async def warm_crops(db: AsyncSession = Depends(get_db)):
     """Pre-generate (warm) the 256px face-crop cache for every face so the People
     page never triggers on-demand crops — the slow case being VIDEO faces (each
@@ -136,7 +146,7 @@ async def crops_status(db: AsyncSession = Depends(get_db)):
     return {"total_faces": int(total), "cached": cached}
 
 
-@router.post("", response_model=PersonOut, status_code=201)
+@router.post("", response_model=PersonOut, status_code=201, dependencies=[Depends(require_manager)])
 async def create_person(data: PersonCreate, db: AsyncSession = Depends(get_db)):
     person = Person(**data.model_dump())
     db.add(person)
@@ -159,7 +169,7 @@ async def get_person(person_id: int, db: AsyncSession = Depends(get_db),
     return PersonDetail(**person.__dict__, face_count=face_count or 0)
 
 
-@router.patch("/{person_id}", response_model=PersonOut)
+@router.patch("/{person_id}", response_model=PersonOut, dependencies=[Depends(require_manager)])
 async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = Depends(get_db)):
     person = await db.get(Person, person_id)
     if not person:
@@ -178,7 +188,7 @@ async def update_person(person_id: int, data: PersonUpdate, db: AsyncSession = D
     return person
 
 
-@router.post("/write-faces")
+@router.post("/write-faces", dependencies=[Depends(require_manager)])
 async def write_faces_to_files(db: AsyncSession = Depends(get_db)):
     """Persist EVERY detected face as an MWG face region (box + name where known)
     into the files. Button-driven — run once the detect → cluster → name phase has
@@ -192,7 +202,7 @@ async def write_faces_to_files(db: AsyncSession = Depends(get_db)):
     return {"queued_photos": int(n_photos or 0)}
 
 
-@router.post("/detect-faces-local")
+@router.post("/detect-faces-local", dependencies=[Depends(require_manager)])
 async def detect_faces_local(db: AsyncSession = Depends(get_db)):
     """Run face detection on the SERVER (insightface, CPU) for every image still
     lacking a face pass — decoupled from the slow descriptions, so faces finish
@@ -209,7 +219,7 @@ async def detect_faces_local(db: AsyncSession = Depends(get_db)):
     return {"queued_photos": int(n or 0)}
 
 
-@router.post("/reembed-imported")
+@router.post("/reembed-imported", dependencies=[Depends(require_manager)])
 async def reembed_imported(db: AsyncSession = Depends(get_db)):
     """Recover ArcFace embeddings for faces imported from MWG regions (box only,
     no embedding) so they re-join clustering after a recovery/re-import."""
@@ -220,7 +230,7 @@ async def reembed_imported(db: AsyncSession = Depends(get_db)):
     return {"queued_faces": int(n or 0)}
 
 
-@router.delete("/{person_id}", status_code=204)
+@router.delete("/{person_id}", status_code=204, dependencies=[Depends(require_manager)])
 async def delete_person(person_id: int, db: AsyncSession = Depends(get_db)):
     person = await db.get(Person, person_id)
     if not person:
@@ -239,7 +249,7 @@ class MergeRequest(BaseModel):
     keep_name: Optional[str] = None  # if set, override target name after merge
 
 
-@router.post("/merge")
+@router.post("/merge", dependencies=[Depends(require_manager)])
 async def merge_persons(body: MergeRequest, db: AsyncSession = Depends(get_db)):
     """Merge source into target: all faces of source are reassigned to target, source is deleted."""
     source = await db.get(Person, body.source_id)
@@ -275,7 +285,7 @@ class MergeMultiRequest(BaseModel):
     keep_name: Optional[str] = None
 
 
-@router.post("/merge-multi")
+@router.post("/merge-multi", dependencies=[Depends(require_manager)])
 async def merge_multiple(body: MergeMultiRequest, db: AsyncSession = Depends(get_db)):
     """Merge several selected persons into one target (multiselect in the UI).
     All faces of every source move to target; the sources are deleted."""
@@ -308,7 +318,7 @@ async def merge_multiple(body: MergeMultiRequest, db: AsyncSession = Depends(get
 
 # ── Hide / unhide ─────────────────────────────────────────────────────────────
 
-@router.post("/{person_id}/hide")
+@router.post("/{person_id}/hide", dependencies=[Depends(require_manager)])
 async def set_person_hidden(person_id: int, hidden: bool = True, db: AsyncSession = Depends(get_db)):
     """Hide a person from the main People grid (Immich-style) without deleting
     them — their faces stay assigned, so re-clustering won't re-surface them."""
@@ -322,7 +332,7 @@ async def set_person_hidden(person_id: int, hidden: bool = True, db: AsyncSessio
 
 # ── Profile / display image ───────────────────────────────────────────────────
 
-@router.post("/{person_id}/profile-face/{face_id}")
+@router.post("/{person_id}/profile-face/{face_id}", dependencies=[Depends(require_manager)])
 async def set_profile_face(person_id: int, face_id: int, db: AsyncSession = Depends(get_db)):
     """Set which face crop to use as the person's display avatar."""
     person = await db.get(Person, person_id)
@@ -460,7 +470,7 @@ async def person_faces(person_id: int, page: int = 1, limit: int = 120,
 
 # ── Face management ───────────────────────────────────────────────────────────
 
-@router.post("/faces/{face_id}/assign/{person_id}")
+@router.post("/faces/{face_id}/assign/{person_id}", dependencies=[Depends(require_manager)])
 async def assign_face(face_id: int, person_id: int, db: AsyncSession = Depends(get_db)):
     face = await db.get(Face, face_id)
     if not face:
@@ -476,7 +486,7 @@ class AssignManyRequest(BaseModel):
     person_id: int
 
 
-@router.post("/faces/assign-many")
+@router.post("/faces/assign-many", dependencies=[Depends(require_manager)])
 async def assign_faces_many(body: AssignManyRequest, db: AsyncSession = Depends(get_db)):
     """Assign several selected faces to one existing person at once."""
     if not body.face_ids:
@@ -495,7 +505,7 @@ class NewPersonManyRequest(BaseModel):
     name: Optional[str] = None
 
 
-@router.post("/faces/new-person-many")
+@router.post("/faces/new-person-many", dependencies=[Depends(require_manager)])
 async def new_person_from_faces(body: NewPersonManyRequest, db: AsyncSession = Depends(get_db)):
     """Create a new person from several selected faces (optionally named)."""
     if not body.face_ids:
@@ -509,7 +519,7 @@ async def new_person_from_faces(body: NewPersonManyRequest, db: AsyncSession = D
     return {"person_id": person.id}
 
 
-@router.delete("/faces/{face_id}/unassign", status_code=204)
+@router.delete("/faces/{face_id}/unassign", status_code=204, dependencies=[Depends(require_manager)])
 async def unassign_face(face_id: int, db: AsyncSession = Depends(get_db)):
     face = await db.get(Face, face_id)
     if not face:
@@ -587,7 +597,7 @@ async def face_suggestions(db: AsyncSession = Depends(get_db),
     return {"groups": groups}
 
 
-@router.post("/faces/{face_id}/confirm-suggestion")
+@router.post("/faces/{face_id}/confirm-suggestion", dependencies=[Depends(require_manager)])
 async def confirm_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
     face = await db.get(Face, face_id)
     if not face or face.suggested_person_id is None:
@@ -600,7 +610,7 @@ async def confirm_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True, "person_id": face.person_id}
 
 
-@router.post("/faces/{face_id}/reject-suggestion")
+@router.post("/faces/{face_id}/reject-suggestion", dependencies=[Depends(require_manager)])
 async def reject_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
     face = await db.get(Face, face_id)
     if not face:
@@ -611,7 +621,7 @@ async def reject_suggestion(face_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
-@router.post("/suggestions/confirm/{person_id}")
+@router.post("/suggestions/confirm/{person_id}", dependencies=[Depends(require_manager)])
 async def confirm_all_suggestions(person_id: int, db: AsyncSession = Depends(get_db)):
     """Confirm ALL borderline suggestions for one person at once."""
     res = await db.execute(update(Face).where(
@@ -622,7 +632,7 @@ async def confirm_all_suggestions(person_id: int, db: AsyncSession = Depends(get
     return {"confirmed": res.rowcount}
 
 
-@router.post("/suggestions/reject/{person_id}")
+@router.post("/suggestions/reject/{person_id}", dependencies=[Depends(require_manager)])
 async def reject_all_suggestions(person_id: int, db: AsyncSession = Depends(get_db)):
     """Reject ALL borderline suggestions for one person at once — clears the suggestion
     (does NOT assign or ignore the faces), mirroring the single reject-suggestion."""
@@ -634,7 +644,7 @@ async def reject_all_suggestions(person_id: int, db: AsyncSession = Depends(get_
     return {"rejected": res.rowcount}
 
 
-@router.post("/suggest")
+@router.post("/suggest", dependencies=[Depends(require_manager)])
 async def trigger_suggest(db: AsyncSession = Depends(get_db)):
     """(Re)compute borderline face→person suggestions in the background (scan queue)."""
     from app.worker.tasks import suggest_faces_task
@@ -646,7 +656,7 @@ class FaceIdsRequest(BaseModel):
     face_ids: List[int]
 
 
-@router.post("/faces/ignore")
+@router.post("/faces/ignore", dependencies=[Depends(require_manager)])
 async def ignore_faces(body: FaceIdsRequest, ignored: bool = True, db: AsyncSession = Depends(get_db)):
     """Bulk hide/ignore (or restore) faces — for the many strangers' faces you
     don't want to manage. Ignored faces drop out of the unassigned list and are
@@ -694,7 +704,7 @@ async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db),
     raise HTTPException(404, "crop failed")
 
 
-@router.post("/faces/{face_id}/new-person")
+@router.post("/faces/{face_id}/new-person", dependencies=[Depends(require_manager)])
 async def face_to_new_person(face_id: int, db: AsyncSession = Depends(get_db)):
     face = await db.get(Face, face_id)
     if not face:
@@ -707,7 +717,7 @@ async def face_to_new_person(face_id: int, db: AsyncSession = Depends(get_db)):
     return {"person_id": person.id}
 
 
-@router.post("/cluster")
+@router.post("/cluster", dependencies=[Depends(require_manager)])
 async def cluster_faces():
     """Group still-unassigned face embeddings into people via DBSCAN (cosine).
     Each new cluster becomes an unnamed Person (rename/merge in the UI). Faces
