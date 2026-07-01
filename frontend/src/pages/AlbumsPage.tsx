@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, FolderOpen, Sparkles, Brain, Trash2, RefreshCw, ChevronRight, X, Share2, Pencil, PawPrint } from 'lucide-react'
 import ShareDialog from '../components/ShareDialog'
@@ -56,6 +57,16 @@ export default function AlbumsPage() {
     queryKey: ['albums'],
     queryFn: () => api.get('/albums').then(r => r.data),
   })
+
+  // Deep-Link vom Assistenten: /albums?album=<id> öffnet direkt dieses Album.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const aid = searchParams.get('album')
+    if (aid && /^\d+$/.test(aid) && albums.length) {
+      const a = albums.find(x => x.id === Number(aid))
+      if (a) { setSelectedAlbum(a); setSearchParams({}, { replace: true }) }
+    }
+  }, [searchParams, albums])
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/albums/${id}`),

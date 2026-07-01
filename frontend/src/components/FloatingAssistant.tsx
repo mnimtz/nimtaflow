@@ -48,8 +48,13 @@ export default function FloatingAssistant() {
       // result_ids = volles Such-Set (alle Treffer) → Galerie-Filter; Fallback: zitierte photo_ids.
       const ids: number[] = (r.data.result_ids && r.data.result_ids.length ? r.data.result_ids : r.data.photo_ids) || []
       const suggestions: string[] = Array.isArray(r.data.suggestions) ? r.data.suggestions : []
+      const navTo: string | null = r.data.navigate || null
       setMessages(m => [...m, { role: 'assistant', content: r.data.answer || '…', photoCount: ids.length, ids, suggestions, query: text }])
-      if (ids.length) {
+      if (navTo) {
+        // Ansichts-Navigation (Personen/Reisen/Alben/Übersichten) hat Vorrang.
+        if (ids.length) setResult(ids, text)
+        nav(navTo)
+      } else if (ids.length) {
         setResult(ids, text)
         // Auf der Karte bleiben (sie filtert sich selbst); sonst — wenn erlaubt — zur Galerie.
         if (loc.pathname === '/map') { /* bleibt auf der Karte */ }

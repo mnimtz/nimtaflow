@@ -79,6 +79,10 @@ SYSTEM = (
     "ist nur für Administratoren; kommt kein_zugriff=true zurück, sag höflich, dass diese "
     "Betriebsdaten dem Administrator vorbehalten sind. Restzeit-Angaben sind immer nur grobe "
     "Schätzungen — kennzeichne sie als solche. "
+    "Zu NAVIGATION: Will der Nutzer zu einer ANSICHT/Seite (nicht nur Fotos sehen), nutze "
+    "oeffne_ansicht — z. B. 'geh zu den Personen'/'zeig alle Reisen' (Übersicht) oder 'öffne "
+    "Anjas Seite'/'zeig unsere Kroatien-Reise' (mit name). Für reines Anzeigen von Fotos "
+    "hingegen suche_fotos. Nach dem Navigieren kurz bestätigen, wohin. "
     "PROAKTIV: Wenn es sinnvoll ist, biete am ENDE deiner Antwort 2–3 kurze Folge-Vorschläge "
     "an — als allerletzte Zeile im Format 'VORSCHLÄGE: <a> | <b> | <c>'. Sie müssen KNAPP sein "
     "(Tap-Buttons, max. ~4 Wörter), konkret und auf den Kontext bezogen, z. B. bei Fototreffern "
@@ -507,6 +511,43 @@ async def _ops_status(db: AsyncSession) -> dict:
     }
 
 
+async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) -> dict:
+    """Löst ein Navigations-Ziel in einen App-Pfad auf (Phase 3: Ansichten steuern).
+    Übersichten direkt; bestimmte Person/Album/Reise per Name → deren Deep-Link.
+    ACL: Personen über visible_person_subquery, Leitstand nur für Admins."""
+    from app.core.access import _is_unrestricted
+    z = (ziel or "").lower()
+    overviews = {"personen": "/people", "alben": "/albums", "reisen": "/trips",
+                 "karte": "/map", "highlights": "/highlights", "start": "/start"}
+    if z in overviews:
+        return {"navigate": overviews[z]}
+    if z == "leitstand":
+        return {"navigate": "/leitstand"} if _is_unrestricted(user) else \
+               {"kein_zugriff": True, "hinweis": "Der Leitstand ist nur für Administratoren."}
+    if not (name or "").strip():
+        return {"fehler": "Für eine bestimmte Person/Album/Reise brauche ich einen Namen."}
+    if z == "person":
+        from app.models.person import Person
+        from app.core.access import visible_person_subquery
+        q = select(Person.id, Person.name).where(
+            Person.name.ilike(f"%{name.strip()}%"), Person.is_hidden == False)  # noqa: E712
+        vps = visible_person_subquery(user)
+        if vps is not None:
+            q = q.where(Person.id.in_(vps))
+        row = (await db.execute(q.limit(1))).first()
+        return {"navigate": f"/people?person={row[0]}", "name": row[1]} if row else \
+               {"fehler": f"Person '{name}' nicht gefunden."}
+    if z in ("album", "reise"):
+        from app.models.album import Album
+        row = (await db.execute(select(Album.id, Album.name).where(
+            Album.name.ilike(f"%{name.strip()}%")).limit(1))).first()
+        if not row:
+            return {"fehler": f"{'Reise' if z == 'reise' else 'Album'} '{name}' nicht gefunden."}
+        path = f"/trips?trip={row[0]}" if z == "reise" else f"/albums?album={row[0]}"
+        return {"navigate": path, "name": row[1]}
+    return {"fehler": "Unbekanntes Ziel."}
+
+
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession, user=None) -> dict:
     # Chat may use its OWN Gemini key (Einstellungen → KI-Chat); falls back to the
     # shared image-AI key so existing setups keep working.
@@ -609,6 +650,21 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                            "NUR für Administratoren — kommt kein_zugriff zurück, ist der Nutzer nicht berechtigt.",
             "parameters": {"type": "object", "properties": {}},
         },
+        {
+            "name": "oeffne_ansicht",
+            "description": "Navigiert zu einer ANSICHT/Seite der App, wenn der Nutzer dorthin WILL "
+                           "(nicht nur Fotos filtern). Für Übersichten: ziel='personen'|'alben'|'reisen'"
+                           "|'karte'|'highlights'|'start'|'leitstand'. Für eine BESTIMMTE Person/Reise/"
+                           "Album zusätzlich name= (z. B. 'öffne Anjas Seite' → ziel='person', name='Anja'; "
+                           "'zeig unsere Kroatien-Reise' → ziel='reise', name='Kroatien'; 'öffne das Album "
+                           "Sommer 2023' → ziel='album', name='Sommer 2023'). Für reines Fotos-Anzeigen "
+                           "NICHT nutzen — dafür suche_fotos. Bestätige danach kurz, wohin du navigierst.",
+            "parameters": {"type": "object", "properties": {
+                "ziel": {"type": "string", "enum": ["personen", "alben", "reisen", "karte", "highlights",
+                                                    "start", "leitstand", "person", "album", "reise"]},
+                "name": {"type": "string", "description": "Name der Person/Reise/des Albums (nur bei ziel person/album/reise)"},
+            }, "required": ["ziel"]},
+        },
     ]}
     contents = []
     for h in (history or [])[-8:]:
@@ -617,6 +673,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     contents.append({"role": "user", "parts": [{"text": message}]})
 
     seen_ids: list = []
+    nav_target: Optional[str] = None   # Ansichts-Navigation (oeffne_ansicht) → Frontend springt dorthin
     seen_recs: dict = {}   # id → fused record (description/date/place) for a rich gallery reply
     # Multimodal: send the top hits' thumbnails so Gemini can SEE them. Budget caps
     # total images across the conversation to bound token cost (chat.vision=off disables).
@@ -698,6 +755,12 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                             resp = await _ops_status(db)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "oeffne_ansicht":
+                        resp = await _resolve_view(db, args.get("ziel"), args.get("name"), user)
+                        if resp.get("navigate"):
+                            nav_target = resp["navigate"]
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
                     elif c.get("name") in ("album_erstellen", "als_favorit_markieren"):
                         # Write actions stay disabled for restricted accounts (read-only chat).
                         if restricted:
@@ -756,7 +819,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
                     "result_ids": list(dict.fromkeys(seen_ids)),
-                    "suggestions": suggestions,
+                    "suggestions": suggestions, "navigate": nav_target,
                     "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
     _u = list(dict.fromkeys(seen_ids))
     return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": _u,

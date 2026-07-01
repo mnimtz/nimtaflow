@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   UserPlus, Users, GitMerge, Trash2, Pencil, ArrowLeft, X, Eye, EyeOff,
@@ -41,6 +42,12 @@ const INPUT = 'w-full px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 border bo
 
 export default function PeoplePage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // Deep-Link vom Assistenten: /people?person=<id> öffnet direkt diese Person.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const pid = searchParams.get('person')
+    if (pid && /^\d+$/.test(pid)) { setSelectedId(Number(pid)); setSearchParams({}, { replace: true }) }
+  }, [searchParams])
   const [showHidden, setShowHidden] = useState(false)
   const [sort, setSort] = useState('photos')
   const [selectMode, setSelectMode] = useState(false)

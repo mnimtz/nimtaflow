@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Polyline, Marker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -321,6 +322,16 @@ export default function TripsPage() {
 
   const { data: albums = [] } = useQuery<Album[]>({ queryKey: ['albums'], queryFn: () => api.get('/albums').then(r => r.data) })
   const trips = albums.filter(a => a.smart_criteria?.trip)
+
+  // Deep-Link vom Assistenten: /trips?trip=<id> öffnet direkt diese Reise.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const tid = searchParams.get('trip')
+    if (tid && /^\d+$/.test(tid) && albums.length) {
+      const a = albums.find(x => x.id === Number(tid))
+      if (a) { setOpenTrip(a); setSearchParams({}, { replace: true }) }
+    }
+  }, [searchParams, albums])
   const { data: evData } = useQuery<{ events: Ev[] }>({ queryKey: ['trips'], queryFn: () => api.get('/photos/trips').then(r => r.data) })
   const suggestions = (evData?.events || []).filter(e => e.is_trip)
 
