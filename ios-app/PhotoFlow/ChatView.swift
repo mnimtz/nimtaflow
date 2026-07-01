@@ -11,6 +11,8 @@ struct ChatView: View {
     @State private var status: ChatStatus?
     @State private var opened: PhotoV1?
     @State private var navTarget: NavTarget?
+    @State private var gallery: GalleryPresentation?
+    @State private var loadingGallery = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -25,10 +27,15 @@ struct ChatView: View {
                             ForEach(messages) { m in
                                 ChatBubbleView(bubble: m, onTapPhoto: { open($0) },
                                                onTapSuggestion: { s in Task { await sendIt(preset: s) } },
-                                               onTapNavigate: { navTarget = NavTarget(path: $0) }).id(m.id)
+                                               onTapNavigate: { navTarget = NavTarget(path: $0) },
+                                               onOpenGallery: { ids in Task { await openGallery(ids) } }).id(m.id)
                             }
                             if sending {
                                 HStack(spacing: 6) { ProgressView(); Text("denkt nach…").foregroundStyle(.secondary) }
+                                    .font(.footnote).padding(.horizontal)
+                            }
+                            if loadingGallery {
+                                HStack(spacing: 6) { ProgressView(); Text("Galerie öffnen…").foregroundStyle(.secondary) }
                                     .font(.footnote).padding(.horizontal)
                             }
                         }
@@ -61,6 +68,9 @@ struct ChatView: View {
             }
             .task { status = try? await api.chatStatus() }
             .fullScreenCover(item: $opened) { p in PhotoPager(photos: [p], start: p) }
+            .fullScreenCover(item: $gallery) { g in
+                if let first = g.photos.first { PhotoPager(photos: g.photos, start: first) }
+            }
             .sheet(item: $navTarget) { t in
                 navDestination(t.path)
                     .presentationDetents([.large]).presentationDragIndicator(.visible)
@@ -68,7 +78,26 @@ struct ChatView: View {
         }
     }
 
-    func open(_ id: Int) { Task { opened = try? await api.photo(id) } }
+    func open(_ id: Int) {
+        Task {
+            do { opened = try await api.photo(id) }
+            catch { messages.append(ChatBubble(role: "assistant",
+                        text: "Konnte das Foto nicht öffnen.", photoIDs: [], isError: true)) }
+        }
+    }
+
+    /// Öffnet ALLE Treffer-IDs als Vollbild-Swipe-Galerie (statt nur Mini-Thumbs im Chat).
+    func openGallery(_ ids: [Int]) async {
+        guard !ids.isEmpty, !loadingGallery else { return }
+        loadingGallery = true; defer { loadingGallery = false }
+        do {
+            let photos = try await api.photosByIDs(ids)
+            if !photos.isEmpty { gallery = GalleryPresentation(photos: photos) }
+        } catch {
+            messages.append(ChatBubble(role: "assistant",
+                text: "Konnte die Galerie gerade nicht öffnen.", photoIDs: [], isError: true))
+        }
+    }
 
     /// Person-ID aus einem Pfad wie "/people?person=3" ziehen (für Deep-Select).
     private func personId(from path: String) -> Int? {
@@ -95,27 +124,46 @@ struct ChatView: View {
         if preset == nil { draft = "" }
         messages.append(ChatBubble(role: "user", text: text, photoIDs: []))
         sending = true; defer { sending = false }
-        let hist = messages.dropLast().map { ChatTurn(role: $0.role, content: $0.text) }
+        // Fehler-Bubbles NICHT in die History geben — sonst bekäme das Modell
+        // „Konnte nicht antworten" als echten Assistent-Turn in den Kontext.
+        let hist = messages.dropLast().filter { !$0.isError }
+            .map { ChatTurn(role: $0.role, content: $0.text) }
         do {
             let reply = try await api.chat(message: text, history: Array(hist))
-            // Zitierte Fotos zeigen; hat der Agent keine zitiert (z. B. Rückblick), die
-            // ersten Treffer aus result_ids als Vorschau.
-            let shown = !reply.photo_ids.isEmpty ? reply.photo_ids : Array((reply.result_ids ?? []).prefix(12))
+            // Teaser-Strip: zitierte Fotos, sonst die ersten paar Treffer. Das VOLLE
+            // Set (resultIDs) hängt an der Bubble → „In Galerie öffnen" zeigt alle.
+            let full = reply.result_ids ?? reply.photo_ids
+            let shown = !reply.photo_ids.isEmpty ? Array(reply.photo_ids.prefix(4))
+                                                 : Array(full.prefix(4))
+            var seen = Set<String>()
+            let sugg = (reply.suggestions ?? [])
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
             messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: shown,
-                                       suggestions: reply.suggestions ?? [], navigate: reply.navigate))
+                                       resultIDs: full,
+                                       suggestions: sugg, navigate: reply.navigate))
+        } catch APIClient.APIError.status(401) {
+            messages.append(ChatBubble(role: "assistant",
+                text: "Deine Sitzung ist abgelaufen. Bitte melde dich neu an.", photoIDs: [], isError: true))
         } catch {
-            messages.append(ChatBubble(role: "assistant", text: "⚠️ Konnte gerade nicht antworten. Bitte nochmal.", photoIDs: []))
+            messages.append(ChatBubble(role: "assistant",
+                text: "⚠️ Konnte gerade nicht antworten. Bitte nochmal.", photoIDs: [], isError: true))
         }
     }
 }
+
+/// Wrapper, damit eine geladene Trefferliste als .fullScreenCover(item:) präsentierbar ist.
+struct GalleryPresentation: Identifiable { let id = UUID(); let photos: [PhotoV1] }
 
 struct ChatBubble: Identifiable, Hashable {
     let id = UUID()
     let role: String       // "user" | "assistant"
     let text: String
-    let photoIDs: [Int]
+    let photoIDs: [Int]           // Teaser-Thumbnails (max. ~4)
+    var resultIDs: [Int] = []     // VOLLES Treffer-Set → "In Galerie öffnen"
     var suggestions: [String] = []
     var navigate: String? = nil   // Ansichts-Navigation (z. B. "/people?person=3")
+    var isError: Bool = false     // Fehler-Bubble → nicht in die History geben
 }
 
 /// Wrapper, damit ein Navigations-Pfad als .sheet(item:) präsentierbar ist.
@@ -127,6 +175,7 @@ private struct ChatBubbleView: View {
     let onTapPhoto: (Int) -> Void
     var onTapSuggestion: (String) -> Void = { _ in }
     var onTapNavigate: (String) -> Void = { _ in }
+    var onOpenGallery: ([Int]) -> Void = { _ in }
     var isUser: Bool { bubble.role == "user" }
 
     private func navLabel(_ path: String) -> String {
@@ -160,6 +209,19 @@ private struct ChatBubbleView: View {
                         }
                     }
                     .padding(.horizontal, 2)
+                }
+            }
+            // Treffer gehören in die GALERIE, nicht als Mini-Thumbs in den Chat: ein
+            // prominenter Button öffnet ALLE Treffer als Vollbild-Swipe-Galerie.
+            if !bubble.resultIDs.isEmpty {
+                Button { onOpenGallery(bubble.resultIDs) } label: {
+                    Label(bubble.resultIDs.count > 1 ? "Alle \(bubble.resultIDs.count) in Galerie öffnen"
+                                                     : "In Galerie öffnen",
+                          systemImage: "photo.on.rectangle.angled")
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.indigo.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.indigo)
                 }
             }
             // Ansichts-Navigation ("öffne Anjas Seite", "zeig die Reisen")

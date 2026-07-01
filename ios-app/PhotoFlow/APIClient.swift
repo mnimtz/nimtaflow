@@ -193,6 +193,13 @@ final class APIClient: ObservableObject {
 
     // MARK: Single photo
     func photo(_ id: Int) async throws -> PhotoV1 { try await get("api/v1/photos/\(id)", as: PhotoV1.self) }
+    /// Batch-load exactly these ids (ACL-scoped, server keeps the requested order) —
+    /// used to open all chat results in the swipe gallery.
+    func photosByIDs(_ ids: [Int]) async throws -> [PhotoV1] {
+        guard !ids.isEmpty else { return [] }
+        return try await send(makeRequest("api/v1/photos/by-ids", method: "POST", json: ["ids": ids]),
+                              as: [PhotoV1].self)
+    }
     func setRating(_ id: Int, rating: Int) async throws { try await action("api/v1/photos/\(id)/rating?rating=\(rating)", method: "PATCH") }
     func reprocess(_ id: Int) async throws { try await action("api/photos/\(id)/reprocess", method: "POST") }
     func photoFaces(_ id: Int) async throws -> [PhotoFace] { try await get("api/v1/photos/\(id)/faces", as: [PhotoFace].self) }
