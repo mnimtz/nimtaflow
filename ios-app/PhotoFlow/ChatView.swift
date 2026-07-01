@@ -70,9 +70,15 @@ struct ChatView: View {
 
     func open(_ id: Int) { Task { opened = try? await api.photo(id) } }
 
+    /// Person-ID aus einem Pfad wie "/people?person=3" ziehen (für Deep-Select).
+    private func personId(from path: String) -> Int? {
+        URLComponents(string: "http://x" + path)?.queryItems?
+            .first(where: { $0.name == "person" })?.value.flatMap { Int($0) }
+    }
+
     /// Bildet den Web-Pfad des Assistenten auf die passende iOS-Ansicht ab.
     @ViewBuilder func navDestination(_ path: String) -> some View {
-        if path.hasPrefix("/people") { PeopleView() }
+        if path.hasPrefix("/people") { PeopleView(initialPersonId: personId(from: path)) }
         else if path.hasPrefix("/albums") { AlbumsView() }
         else if path.hasPrefix("/trips") { TripsView() }
         else if path.hasPrefix("/map") { MapScreen() }

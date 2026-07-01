@@ -2,6 +2,9 @@ import SwiftUI
 
 struct PeopleView: View {
     @EnvironmentObject var api: APIClient
+    var initialPersonId: Int? = nil          // Deep-Select vom Assistenten ("öffne Anjas Seite")
+    @State private var navPath: [PersonV1] = []
+    @State private var deepLinkApplied = false
     @State private var people: [PersonV1] = []
     @State private var mergeMode = false
     @State private var selection: Set<Int> = []
@@ -38,7 +41,7 @@ struct PeopleView: View {
     private let sorts: [(String, String)] = [("count", "Nach Anzahl"), ("name", "Nach Name")]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 16) {
                     ForEach(filtered) { p in
@@ -116,7 +119,15 @@ struct PeopleView: View {
     }
 
     func toggle(_ id: Int) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
-    func load() async { do { people = try await api.people() } catch { self.error = "Laden fehlgeschlagen" } }
+    func load() async {
+        do {
+            people = try await api.people()
+            // Deep-Select: direkt zur angefragten Person springen (statt nur die Liste).
+            if !deepLinkApplied, let pid = initialPersonId, let p = people.first(where: { $0.id == pid }) {
+                deepLinkApplied = true; navPath = [p]
+            }
+        } catch { self.error = "Laden fehlgeschlagen" }
+    }
     func merge(target: Int) async {
         let sources = Array(selection).filter { $0 != target }
         guard !sources.isEmpty else { return }
