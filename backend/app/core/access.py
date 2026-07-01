@@ -71,11 +71,20 @@ def can_see_photo(photo: Photo, user: Optional[User]) -> bool:
 
 
 def visible_person_subquery(user: Optional[User]):
-    """A SELECT of person_ids the user may see — persons that appear (have a face)
-    in at least one photo the user can access. Returns None when unrestricted
-    (no person filtering needed)."""
+    """A SELECT of person_ids the user may see. Returns None when unrestricted.
+
+    WICHTIG: Ist `visible_person_ids` explizit gesetzt, sind das GENAU die sichtbaren
+    Personen — NICHT aus den zugänglichen Fotos ableiten. Sonst würden per Co-Vorkommen
+    (die erlaubten Personen tauchen in Gruppenfotos mit anderen auf) fremde Personen
+    sichtbar → Leck: der Nutzer sähe faktisch alle Personen/Gesichter."""
     if _is_unrestricted(user):
         return None
+    cfg = user.access_config or {}
+    pids = cfg.get("visible_person_ids")
+    if pids:
+        from app.models.person import Person
+        return select(Person.id).where(Person.id.in_(pids))
+    # Kein Personen-Whitelist (nur Ordner-/Datums-Scope) → Personen in zugänglichen Fotos.
     return select(Face.person_id).where(
         Face.photo_id.in_(select(Photo.id).where(*photo_conditions(user)))
     )
