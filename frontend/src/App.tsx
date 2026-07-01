@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, getToken } from './lib/api'
@@ -36,7 +37,16 @@ export default function App() {
   // login (and public share) — never the app shell. Prevents the brief "flash" of the
   // navigation/registers before the 401-redirect would kick in. (Data is already
   // API-protected; this also removes the security-optics leak of the empty shell.)
-  const authed = !!getToken()
+  // Reaktiver Auth-Zustand: nach dem Login schreibt setTokens den Token UND feuert
+  // 'pf-auth' → hier neu bewerten. Vorher war `authed` ein einmaliger getToken()-Read,
+  // der nach navigate('/') nicht neu lief → man war erst nach F5 „drin".
+  const [authed, setAuthed] = useState(() => !!getToken())
+  useEffect(() => {
+    const sync = () => setAuthed(!!getToken())
+    window.addEventListener('pf-auth', sync)      // Login/Logout in diesem Tab
+    window.addEventListener('storage', sync)      // Login/Logout in anderem Tab
+    return () => { window.removeEventListener('pf-auth', sync); window.removeEventListener('storage', sync) }
+  }, [])
   if (status?.enforce && !authed) {
     return (
       <Routes>

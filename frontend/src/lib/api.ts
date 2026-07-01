@@ -20,12 +20,14 @@ export function setTokens(access: string, refresh: string, remember = true) {
   keep.setItem('access_token', access); keep.setItem('refresh_token', refresh)
   drop.removeItem('access_token'); drop.removeItem('refresh_token')
   syncAuthCookie()
+  window.dispatchEvent(new Event('pf-auth'))   // App.tsx schaltet reaktiv auf „eingeloggt"
 }
 export function clearTokens() {
   for (const s of [localStorage, sessionStorage]) {
     s.removeItem('access_token'); s.removeItem('refresh_token')
   }
   syncAuthCookie()
+  window.dispatchEvent(new Event('pf-auth'))   // reaktiv ausloggen
 }
 
 // Mirror the access token into a cookie so <img>/AsyncImage requests (thumbnails,
