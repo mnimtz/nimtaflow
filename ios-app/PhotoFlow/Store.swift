@@ -20,6 +20,9 @@ final class Store: ObservableObject {
     @Published var serverPro = false         // /auth/me.is_pro (eigener Server)
     @Published var purchasing = false
     @Published var ready = false             // erster Entitlement-Check abgeschlossen
+    // Chat-Assistent → Galerie-Filter: wenn der Nutzer "Alle N in Galerie öffnen" tippt,
+    // landen die Treffer hier; GalleryView beobachtet das und schaltet in den Filtermodus.
+    @Published var chatGalleryFilter: [Int]? = nil
 
     var promoActive: Bool { Date() < Store.promoEnd }
     var isPro: Bool { purchasedPro || serverPro || promoActive }

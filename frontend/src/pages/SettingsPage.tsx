@@ -2862,10 +2862,8 @@ function UsersSection() {
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
                   {u.is_active ? t('settings.usrDeactivate') : t('settings.usrActivate')}
                 </button>
-                {u.role !== 'admin' && (
-                  <button onClick={() => { setAccFor(accFor === u.id ? null : u.id); setAcc(u.access_config || {}) }}
-                    className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.usrAccess')}</button>
-                )}
+                <button onClick={() => { setAccFor(accFor === u.id ? null : u.id); setAcc(u.access_config || {}) }}
+                  className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.usrAccess')}</button>
                 <button onClick={() => { setEditFor(editFor === u.id ? null : u.id); setEditName(u.name); setEditEmail(u.email) }}
                   className="text-xs px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('settings.edit')}</button>
                 <button onClick={() => { setPwFor(pwFor === u.id ? null : u.id); setPw('') }}
@@ -2892,6 +2890,14 @@ function UsersSection() {
                 )}
                 {accFor === u.id && (
                   <div className="w-full mt-2 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 space-y-3">
+                    {u.role === 'admin' && (
+                      <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                        <span className="text-amber-500 mt-0.5">⚠</span>
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          <strong>Admin-Selbstbeschränkung:</strong> Diese Einstellungen beschränken nur deine eigene Ansicht — Admin- und Schreibrechte bleiben vollständig erhalten. Du kannst die Einschränkung jederzeit selbst rückgängig machen.
+                        </p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrVisibleFrom')}</label>
@@ -2965,9 +2971,16 @@ function UsersSection() {
                         </label>
                       ))}
                     </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => patchU.mutate({ id: u.id, body: { access_config: acc } as any })}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">{t('settings.usrSaveAccess')}</button>
+                    <div className="flex justify-between items-center">
+                      {u.role === 'admin' && u.access_config?.self_restrict && (
+                        <button onClick={() => patchU.mutate({ id: u.id, body: { access_config: null } as any })}
+                          className="text-xs text-zinc-500 hover:text-red-500">Beschränkung aufheben</button>
+                      )}
+                      <button onClick={() => {
+                        const toSave = u.role === 'admin' ? { ...acc, self_restrict: true } : acc
+                        patchU.mutate({ id: u.id, body: { access_config: toSave } as any })
+                      }}
+                        className="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500">{t('settings.usrSaveAccess')}</button>
                     </div>
                   </div>
                 )}

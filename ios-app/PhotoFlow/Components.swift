@@ -92,6 +92,28 @@ func imageCacheSizeMB() -> Int {
     imageSession.configuration.urlCache?.removeAllCachedResponses()
 }
 
+/// Shimmer-Platzhalter für Thumb während des Ladens — sanft animierter Gradient.
+private struct ShimmerView: View {
+    @State private var phase: CGFloat = -1
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            LinearGradient(
+                stops: [
+                    .init(color: Color(white: 0.18, opacity: 1), location: 0),
+                    .init(color: Color(white: 0.28, opacity: 1), location: 0.4),
+                    .init(color: Color(white: 0.18, opacity: 1), location: 1),
+                ],
+                startPoint: .init(x: phase, y: 0),
+                endPoint: .init(x: phase + 1, y: 1)
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = 1 }
+            }
+        }
+    }
+}
+
 /// Authenticated async image that fills its frame (gallery thumbnails etc.).
 struct Thumb: View {
     let url: URL?
@@ -104,9 +126,10 @@ struct Thumb: View {
             if let img = loader.image {
                 Image(uiImage: img).resizable().aspectRatio(contentMode: contentMode)
             } else if loader.failed {
-                Color.gray.opacity(0.18).overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+                Color(white: 0.15)
+                    .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
             } else {
-                Color.gray.opacity(0.12).overlay(ProgressView())
+                ShimmerView()
             }
         }
         .clipped()

@@ -5,8 +5,10 @@ access_config (JSON on User) may contain:
   folder_whitelist / folder_blacklist : list of path prefixes
   visible_person_ids : list of person ids (only photos containing them); null = all
   allow_download / allow_map / allow_share / allow_pipeline : feature flags
+  self_restrict : bool — Admins können sich damit freiwillig ihr eigenes Bild einschränken.
+    Ohne self_restrict=true sind Admins immer unrestricted.
 
-Admins (and unauthenticated requests when login isn't enforced) are unrestricted.
+Admins without self_restrict (and unauthenticated requests when login isn't enforced) are unrestricted.
 """
 from typing import List, Optional
 from sqlalchemy import or_, select
@@ -17,7 +19,15 @@ from app.models.user import User, UserRole
 
 
 def _is_unrestricted(user: Optional[User]) -> bool:
-    return user is None or user.role == UserRole.admin or not (user.access_config or {})
+    if user is None:
+        return True
+    if user.role == UserRole.admin:
+        # Admin ist unrestricted — AUSSER er hat self_restrict=true in seiner eigenen
+        # access_config gesetzt (freiwillige Selbstbeschränkung der eigenen Ansicht).
+        # Schreib-/Admin-Rechte (require_admin) sind davon unberührt.
+        cfg = user.access_config or {}
+        return not cfg.get("self_restrict", False)
+    return not (user.access_config or {})
 
 
 def _esc(s: str) -> str:

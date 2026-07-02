@@ -54,6 +54,10 @@ async def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_
         me.name = fields["name"].strip() or me.name
     if "birthdate" in fields:
         me.birthdate = (fields["birthdate"] or None)
+    # Admins dürfen ihre eigene access_config setzen (self_restrict-Ansichtsfilter).
+    # Schreib-/Admin-Rechte (require_admin) sind davon unberührt — kein Selbst-Lockout möglich.
+    if "access_config" in fields and me.role.value == "admin":
+        me.access_config = fields["access_config"] or None
     await db.commit()
     await db.refresh(me)
     return me

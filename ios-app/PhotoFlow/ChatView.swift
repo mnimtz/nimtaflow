@@ -5,6 +5,8 @@ import SwiftUI
 /// thumbnail strip; tapping one opens it full-screen.
 struct ChatView: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
     @State private var messages: [ChatBubble] = []
     @State private var draft = ""
     @State private var sending = false
@@ -28,7 +30,8 @@ struct ChatView: View {
                                 ChatBubbleView(bubble: m, onTapPhoto: { open($0) },
                                                onTapSuggestion: { s in Task { await sendIt(preset: s) } },
                                                onTapNavigate: { navTarget = NavTarget(path: $0) },
-                                               onOpenGallery: { ids in Task { await openGallery(ids) } }).id(m.id)
+                                               onOpenGallery: { ids in Task { await openGallery(ids) } },
+                                               onOpenInGallery: { ids in sendToGallery(ids) }).id(m.id)
                             }
                             if sending {
                                 HStack(spacing: 6) { ProgressView(); Text("denkt nach…").foregroundStyle(.secondary) }
@@ -86,7 +89,7 @@ struct ChatView: View {
         }
     }
 
-    /// Öffnet ALLE Treffer-IDs als Vollbild-Swipe-Galerie (statt nur Mini-Thumbs im Chat).
+    /// Öffnet ALLE Treffer-IDs als Vollbild-Swipe-Galerie im Chat.
     func openGallery(_ ids: [Int]) async {
         guard !ids.isEmpty, !loadingGallery else { return }
         loadingGallery = true; defer { loadingGallery = false }
@@ -97,6 +100,14 @@ struct ChatView: View {
             messages.append(ChatBubble(role: "assistant",
                 text: "Konnte die Galerie gerade nicht öffnen.", photoIDs: [], isError: true))
         }
+    }
+
+    /// Filtert die Galerie auf diese IDs und schließt den Chat-Sheet.
+    /// Wird vom "In Galerie öffnen"-Button aufgerufen, wenn der Nutzer auf dem Galerie-Tab ist.
+    func sendToGallery(_ ids: [Int]) {
+        guard !ids.isEmpty else { return }
+        store.chatGalleryFilter = ids
+        dismiss()
     }
 
     /// Person-ID aus einem Pfad wie "/people?person=3" ziehen (für Deep-Select).
@@ -178,6 +189,7 @@ private struct ChatBubbleView: View {
     var onTapSuggestion: (String) -> Void = { _ in }
     var onTapNavigate: (String) -> Void = { _ in }
     var onOpenGallery: ([Int]) -> Void = { _ in }
+    var onOpenInGallery: ([Int]) -> Void = { _ in }  // schließt Sheet + filtert Galerie-Tab
     var isUser: Bool { bubble.role == "user" }
 
     private func navLabel(_ path: String) -> String {
@@ -213,17 +225,28 @@ private struct ChatBubbleView: View {
                     .padding(.horizontal, 2)
                 }
             }
-            // Treffer gehören in die GALERIE, nicht als Mini-Thumbs in den Chat: ein
-            // prominenter Button öffnet ALLE Treffer als Vollbild-Swipe-Galerie.
+            // Treffer gehören in die GALERIE: zwei Wege —
+            // 1. "In Galerie öffnen" → filtert den Galerie-Tab und schließt den Chat-Sheet.
+            // 2. "Als Vollbild ansehen" → öffnet PhotoPager direkt im Chat (für schnellen Blick).
             if !bubble.resultIDs.isEmpty {
-                Button { onOpenGallery(bubble.resultIDs) } label: {
-                    Label(bubble.resultIDs.count > 1 ? "Alle \(bubble.resultIDs.count) in Galerie öffnen"
-                                                     : "In Galerie öffnen",
-                          systemImage: "photo.on.rectangle.angled")
-                        .font(.footnote.weight(.medium))
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Color.indigo.opacity(0.18), in: Capsule())
-                        .foregroundStyle(.indigo)
+                VStack(alignment: .leading, spacing: 5) {
+                    Button { onOpenInGallery(bubble.resultIDs) } label: {
+                        Label(bubble.resultIDs.count > 1
+                              ? "Alle \(bubble.resultIDs.count) in Galerie öffnen"
+                              : "In Galerie öffnen",
+                              systemImage: "rectangle.grid.2x2")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Color.indigo.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.indigo)
+                    }
+                    Button { onOpenGallery(bubble.resultIDs) } label: {
+                        Label("Als Vollbild ansehen", systemImage: "photo.on.rectangle.angled")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             // Ansichts-Navigation ("öffne Anjas Seite", "zeig die Reisen")

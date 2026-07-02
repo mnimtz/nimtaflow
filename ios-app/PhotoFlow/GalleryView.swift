@@ -6,6 +6,7 @@ import AVFoundation
 
 struct GalleryView: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var store: Store
     @State private var photos: [PhotoV1] = []
     @State private var cursor: Int? = nil
     @State private var hasMore = true
@@ -20,6 +21,9 @@ struct GalleryView: View {
     @State private var personId: Int? = nil
     @State private var personName: String? = nil
     @State private var showFilter = false
+    // Chat-Assistent → Galerie-Filter (wenn Nutzer "In Galerie öffnen" im Chat tippt)
+    @State private var chatFilteredPhotos: [PhotoV1]? = nil
+    @State private var chatFilterLoading = false
     private var filterActive: Bool { mediaType != nil || personId != nil || sort != "newest" }
 
     // Upload
@@ -42,9 +46,9 @@ struct GalleryView: View {
     ]
 
     private var sections: [(key: String, items: [PhotoV1])] {
-        if groupMode == "none" { return [("", photos)] }
+        if groupMode == "none" { return [("", displayPhotos)] }
         var order: [String] = []; var map: [String: [PhotoV1]] = [:]
-        for p in photos {
+        for p in displayPhotos {
             let k = groupKey(p.taken_at)
             if map[k] == nil { map[k] = []; order.append(k) }
             map[k]!.append(p)
@@ -72,9 +76,30 @@ struct GalleryView: View {
         return f.date(from: key).map { o.string(from: $0) } ?? key
     }
 
+    private var displayPhotos: [PhotoV1] { chatFilteredPhotos ?? photos }
+
     var body: some View {
         NavigationStack {
             ScrollView {
+                // Chat-Filter-Banner: zeigt an, dass die Galerie auf Chat-Ergebnisse gefiltert ist.
+                if chatFilteredPhotos != nil {
+                    HStack(spacing: 8) {
+                        if chatFilterLoading {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "sparkles").foregroundStyle(.indigo)
+                            Text("\(chatFilteredPhotos?.count ?? 0) Treffer vom Assistenten")
+                                .font(.footnote.weight(.medium))
+                        }
+                        Spacer()
+                        Button { chatFilteredPhotos = nil; store.chatGalleryFilter = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.indigo.opacity(0.08))
+                }
                 LazyVStack(alignment: .leading, spacing: 2,
                            pinnedViews: groupMode == "none" ? [] : [.sectionHeaders]) {
                     ForEach(sections, id: \.key) { sec in
@@ -92,8 +117,8 @@ struct GalleryView: View {
                     }
                 }
                 .padding(2)
-                if loading { ProgressView().padding() }
-                if !loading && photos.isEmpty { emptyState }
+                if loading || chatFilterLoading { ProgressView().padding() }
+                if !loading && !chatFilterLoading && displayPhotos.isEmpty { emptyState }
             }
             .navigationTitle("Galerie")
             .toolbar {
@@ -154,9 +179,19 @@ struct GalleryView: View {
             }
             .refreshable { await reload() }
             .task { if photos.isEmpty { await load() } }
+            .onChange(of: store.chatGalleryFilter) { _, ids in
+                guard let ids, !ids.isEmpty else { chatFilteredPhotos = nil; return }
+                Task { await applyChatFilter(ids) }
+            }
             .fullScreenCover(item: $selected) { p in
-                PhotoPager(photos: photos, start: p,
-                           onRemoved: { id in photos.removeAll { $0.id == id } })
+                PhotoPager(photos: displayPhotos, start: p,
+                           onRemoved: { id in
+                               if chatFilteredPhotos != nil {
+                                   chatFilteredPhotos?.removeAll { $0.id == id }
+                               } else {
+                                   photos.removeAll { $0.id == id }
+                               }
+                           })
             }
         }
     }
@@ -210,13 +245,20 @@ struct GalleryView: View {
 
     @ViewBuilder private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: loadError == nil ? "photo.on.rectangle" : "exclamationmark.triangle")
-                .font(.largeTitle).foregroundStyle(loadError == nil ? Color.secondary : Color.orange)
-            Text(loadError ?? "Keine Fotos geladen").font(.headline).multilineTextAlignment(.center)
-            if let t = lastTotal { Text("Server meldet \(t) Fotos").font(.caption).foregroundStyle(.secondary) }
-            Text("Server: \(api.serverURL)").font(.caption2).foregroundStyle(.secondary)
-            Button("Erneut laden") { Task { await reload() } }
-                .buttonStyle(.borderedProminent).padding(.top, 4)
+            if chatFilteredPhotos != nil {
+                Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.indigo)
+                Text("Keine Treffer für diesen Chat-Filter").font(.headline)
+                Button("Filter zurücksetzen") { chatFilteredPhotos = nil; store.chatGalleryFilter = nil }
+                    .buttonStyle(.borderedProminent).padding(.top, 4)
+            } else {
+                Image(systemName: loadError == nil ? "photo.on.rectangle" : "exclamationmark.triangle")
+                    .font(.largeTitle).foregroundStyle(loadError == nil ? Color.secondary : Color.orange)
+                Text(loadError ?? "Keine Fotos geladen").font(.headline).multilineTextAlignment(.center)
+                if let t = lastTotal { Text("Server meldet \(t) Fotos").font(.caption).foregroundStyle(.secondary) }
+                Text("Server: \(api.serverURL)").font(.caption2).foregroundStyle(.secondary)
+                Button("Erneut laden") { Task { await reload() } }
+                    .buttonStyle(.borderedProminent).padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity).padding(.top, 80).padding(.horizontal)
     }
@@ -246,6 +288,19 @@ struct GalleryView: View {
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
             lastTotal = page.total; loadError = nil
         } catch { handle(error) }
+    }
+
+    /// Lädt Fotos für die IDs aus dem Chat-Assistenten und zeigt sie gefiltert in der Galerie.
+    func applyChatFilter(_ ids: [Int]) async {
+        guard !ids.isEmpty else { chatFilteredPhotos = nil; return }
+        chatFilterLoading = true; defer { chatFilterLoading = false }
+        do {
+            let fetched = try await api.photosByIDs(ids)
+            chatFilteredPhotos = fetched
+        } catch {
+            chatFilteredPhotos = nil
+            store.chatGalleryFilter = nil
+        }
     }
 
     private func handle(_ error: Error) {

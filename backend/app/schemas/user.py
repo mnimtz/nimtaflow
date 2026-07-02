@@ -46,10 +46,13 @@ class PasswordSet(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    """Self-service profile edit (current user)."""
+    """Self-service profile edit (current user). Admins dürfen zusätzlich ihre eigene
+    access_config setzen (self_restrict=true aktiviert Ordner-/Personen-Filter für die
+    eigene Ansicht; Schreib-/Admin-Rechte bleiben davon unberührt)."""
     name: Optional[str] = None
     email: Optional[str] = None
     birthdate: Optional[str] = None
+    access_config: Optional[Dict[str, Any]] = None   # Admin: eigene Ansichts-Einschränkung
 
 
 class PasswordChange(BaseModel):
