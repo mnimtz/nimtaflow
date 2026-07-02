@@ -132,7 +132,7 @@ private struct AutoUploadSection: View {
                         mgr.fromDate = today
                         fromDate = today
                     }
-                    AutoUploadManager.scheduleBackground()
+                    AutoUploadManager.scheduleBackground()   // no-op on Mac
                 }
             if mgr.enabled {
                 DatePicker("Nur ab Datum", selection: $fromDate, displayedComponents: .date)
@@ -140,7 +140,8 @@ private struct AutoUploadSection: View {
                 Text("Originale werden unverändert hochgeladen. Bereits hochgeladene werden übersprungen.")
                     .font(.caption).foregroundStyle(.secondary)
 
-                // ── Bedingungen ───────────────────────────────────────────
+                // ── Bedingungen (Hintergrund nur auf iOS verfügbar) ──────
+#if os(iOS)
                 Toggle("Im Hintergrund (automatisch)", isOn: $mgr.background)
                     .onChange(of: mgr.background) { _, _ in AutoUploadManager.scheduleBackground() }
                 Toggle("Nur über WLAN", isOn: $mgr.wifiOnly)
@@ -155,6 +156,11 @@ private struct AutoUploadSection: View {
                 }
                 Text("Der Hintergrund-Upload läuft, wenn iOS es erlaubt — meist nachts beim Laden im WLAN. Den genauen Zeitpunkt bestimmt das System.")
                     .font(.caption).foregroundStyle(.secondary)
+#else
+                Toggle("Nur über WLAN", isOn: $mgr.wifiOnly)
+                Text("Hintergrund-Upload ist auf dem Mac nicht verfügbar — nutze „Jetzt hochladen".")
+                    .font(.caption).foregroundStyle(.secondary)
+#endif
             }
             Button {
                 Task { await mgr.run(api: api) }

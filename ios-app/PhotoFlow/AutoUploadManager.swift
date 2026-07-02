@@ -2,7 +2,9 @@ import SwiftUI
 import Photos
 import Network
 import UIKit
+#if os(iOS)
 import BackgroundTasks
+#endif
 
 /// Automatic camera-roll upload. Scans the photo library for assets taken on/after
 /// a configurable date and uploads the ones not yet sent (tracked by localIdentifier),
@@ -19,9 +21,7 @@ final class AutoUploadManager: ObservableObject {
     /// Conditions for AUTOMATIC runs (the manual "Jetzt hochladen" button ignores them).
     @AppStorage("autoUpload.wifiOnly") var wifiOnly = true
     @AppStorage("autoUpload.requireCharging") var requireCharging = false
-    /// Run opportunistically in the background (BGProcessingTask). iOS decides the
-    /// exact time — typically at night while charging on Wi-Fi, which matches the
-    /// conditions below.
+    /// Run opportunistically in the background (BGProcessingTask — iOS only).
     @AppStorage("autoUpload.background") var background = true
     /// Prefer a nightly window: schedule the background task for ~this hour.
     @AppStorage("autoUpload.nightOnly") var nightOnly = false
@@ -63,9 +63,13 @@ final class AutoUploadManager: ObservableObject {
     }
 
     static func isCharging() -> Bool {
+#if os(iOS)
         UIDevice.current.isBatteryMonitoringEnabled = true
         let s = UIDevice.current.batteryState
         return s == .charging || s == .full
+#else
+        return true   // Mac ist immer am Strom
+#endif
     }
 
     /// True only on (non-expensive) Wi-Fi — excludes cellular and personal hotspots.
@@ -121,19 +125,14 @@ final class AutoUploadManager: ObservableObject {
 
         var ok = 0, dup = 0, fail = 0
         for asset in pending {
-            // Stop cleanly if the background task's time runs out (or conditions drop).
             if Task.isCancelled { lastResult = "Pausiert (Hintergrund)"; return }
             do {
                 let (data, name, mime) = try await exportOriginal(asset)
                 let r = try await api.uploadFile(data: data, filename: name, mime: mime)
-                // Server status is "accepted" | "duplicate" | "error". Only mark a
-                // local asset as uploaded when the server actually took it — an
-                // "error" (or any unexpected status) must NOT be recorded as done,
-                // otherwise the photo is silently dropped from backup forever.
                 switch r.status {
                 case "accepted": ok += 1; markUploaded(asset.localIdentifier)
                 case "duplicate": dup += 1; markUploaded(asset.localIdentifier)
-                default: fail += 1   // "error" / unknown → retry next run, don't mark
+                default: fail += 1
                 }
             } catch {
                 fail += 1
@@ -147,12 +146,13 @@ final class AutoUploadManager: ObservableObject {
         var s = uploadedIDs; s.insert(id); uploadedIDs = s
     }
 
-    // ── Background task (BGProcessingTask) ────────────────────────────────────
-    /// Register the handler once, at app launch (before launch finishes).
+    // ── Background task (BGProcessingTask — iOS only) ─────────────────────────
+    /// Register the handler once, at app launch (before launch finishes). No-op on Mac.
     nonisolated static func registerBackgroundTask() {
+#if os(iOS)
         BGTaskScheduler.shared.register(forTaskWithIdentifier: bgTaskID, using: nil) { task in
             guard let task = task as? BGProcessingTask else { return }
-            scheduleBackground()                         // queue the next opportunistic run
+            scheduleBackground()
             let box = _BGCompletion(task)
             let work = Task { @MainActor in
                 await AutoUploadManager.shared.run(api: APIClient.shared, enforceConditions: true)
@@ -160,11 +160,12 @@ final class AutoUploadManager: ObservableObject {
             }
             task.expirationHandler = { work.cancel(); box.complete(false) }
         }
+#endif
     }
 
-    /// Ask iOS to run the upload opportunistically. With nightOnly it targets ~the
-    /// chosen hour; otherwise as soon as the conditions (network/power) are met.
+    /// Ask iOS to run the upload opportunistically. No-op on Mac.
     nonisolated static func scheduleBackground() {
+#if os(iOS)
         let d = UserDefaults.standard
         guard d.bool(forKey: "autoUpload.enabled") else { return }
         guard (d.object(forKey: "autoUpload.background") as? Bool) ?? true else { return }
@@ -178,6 +179,7 @@ final class AutoUploadManager: ObservableObject {
             req.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         }
         try? BGTaskScheduler.shared.submit(req)
+#endif
     }
 
     nonisolated static func nextNight(hour: Int) -> Date {
@@ -206,7 +208,7 @@ final class AutoUploadManager: ObservableObject {
             throw APIClient.APIError.decode
         }
         let opts = PHAssetResourceRequestOptions()
-        opts.isNetworkAccessAllowed = true   // fetch from iCloud if needed
+        opts.isNetworkAccessAllowed = true
         var buf = Data()
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             PHAssetResourceManager.default().requestData(for: res, options: opts) { chunk in
@@ -230,6 +232,9 @@ final class AutoUploadManager: ObservableObject {
     }
 }
 
+// MARK: - BGTask completion guard (iOS only)
+
+#if os(iOS)
 /// Guards a BGTask so setTaskCompleted is called exactly once (work-done vs. expiry).
 final class _BGCompletion: @unchecked Sendable {
     private let lock = NSLock()
@@ -243,3 +248,4 @@ final class _BGCompletion: @unchecked Sendable {
         task.setTaskCompleted(success: ok)
     }
 }
+#endif

@@ -7,8 +7,8 @@ struct PhotoFlowApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Must register the background-upload handler before launch finishes.
-        AutoUploadManager.registerBackgroundTask()
+        // BGProcessingTask registration must happen before launch finishes — iOS only.
+        AutoUploadManager.registerBackgroundTask()   // no-op on Mac (guarded inside)
     }
 
     var body: some Scene {
@@ -21,9 +21,7 @@ struct PhotoFlowApp: App {
                 Task { await AutoUploadManager.shared.runIfEnabled(api: api) }
                 MemoryReminders.shared.sync()
             case .background:
-                // Queue an opportunistic background upload (iOS picks the moment —
-                // typically at night while charging on Wi-Fi).
-                AutoUploadManager.scheduleBackground()
+                AutoUploadManager.scheduleBackground()   // no-op on Mac (guarded inside)
             default: break
             }
         }
