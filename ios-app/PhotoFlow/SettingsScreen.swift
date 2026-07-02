@@ -158,7 +158,7 @@ private struct AutoUploadSection: View {
                     .font(.caption).foregroundStyle(.secondary)
 #else
                 Toggle("Nur über WLAN", isOn: $mgr.wifiOnly)
-                Text("Hintergrund-Upload ist auf dem Mac nicht verfügbar — nutze „Jetzt hochladen".")
+                Text("Hintergrund-Upload ist auf dem Mac nicht verfügbar — nutze ‚Jetzt hochladen'.")
                     .font(.caption).foregroundStyle(.secondary)
 #endif
             }
