@@ -313,12 +313,15 @@ function Wizard({ onClose, onCreated }: { onClose: () => void; onCreated: (id: n
   )
 }
 
+type TripFilter = 'all' | 'auto' | 'manual'
+
 export default function TripsPage() {
   const { t } = useT()
   const qc = useQueryClient()
   const [wizard, setWizard] = useState(false)
   const [openTrip, setOpenTrip] = useState<Album | null>(null)
   const [lb, setLb] = useState<{ photos: Photo[]; index: number } | null>(null)
+  const [filter, setFilter] = useState<TripFilter>('all')
 
   const { data: albums = [] } = useQuery<Album[]>({ queryKey: ['albums'], queryFn: () => api.get('/albums').then(r => r.data) })
   const trips = albums.filter(a => a.smart_criteria?.trip)
@@ -342,59 +345,90 @@ export default function TripsPage() {
     } catch { /* ignore */ }
   }
 
+  // Unified normalized list: manual trips first (newest id → top), then auto by date.
+  type TripItem = { kind: 'manual'; album: Album } | { kind: 'auto'; ev: Ev }
+  const allItems = useMemo((): TripItem[] => [
+    ...[...trips].sort((a, b) => b.id - a.id).map(album => ({ kind: 'manual' as const, album })),
+    ...suggestions.map(ev => ({ kind: 'auto' as const, ev })),
+  ], [trips, suggestions])
+
+  const filtered = useMemo(() =>
+    filter === 'all' ? allItems :
+    filter === 'manual' ? allItems.filter(i => i.kind === 'manual') :
+    allItems.filter(i => i.kind === 'auto'),
+  [allItems, filter])
+
   if (openTrip) return <TripDetail album={openTrip} onBack={() => setOpenTrip(null)} />
+
+  const filterLabels: Record<TripFilter, string> = {
+    all: t('trips.filterAll'),
+    auto: t('trips.filterAuto'),
+    manual: t('trips.filterManual'),
+  }
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Plane size={20} /> {t('trips.heading')}</h1>
         <button onClick={() => setWizard(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500">
           <Sparkles size={15} /> {t('trips.createTitle')}
         </button>
       </div>
 
-      {trips.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          {trips.map(a => (
-            <button key={a.id} onClick={() => setOpenTrip(a)}
-              className="group text-left rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 hover:ring-2 hover:ring-indigo-500 transition">
+      {/* Filter-Tabs */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-sm w-fit mb-5">
+        {(['all', 'auto', 'manual'] as TripFilter[]).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1 rounded-lg font-medium transition-all ${filter === f ? 'bg-white dark:bg-zinc-700 shadow text-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>
+            {filterLabels[f]}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(item => item.kind === 'manual' ? (
+            <button key={`m-${item.album.id}`} onClick={() => setOpenTrip(item.album)}
+              className="group text-left rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 hover:ring-2 hover:ring-indigo-500 transition relative">
               <div className="aspect-[16/10] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                {a.cover_photo_id && <img src={thumbUrl({ id: a.cover_photo_id } as any, 'medium')} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />}
+                {item.album.cover_photo_id && <img src={thumbUrl({ id: item.album.cover_photo_id } as any, 'medium')} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />}
               </div>
+              {/* Manuell-Badge */}
+              <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-black/55 text-white backdrop-blur-sm">
+                <Pencil size={10} /> {t('trips.badgeManual')}
+              </span>
               <div className="p-3">
-                <div className="font-semibold text-zinc-900 dark:text-white truncate">{a.name}</div>
+                <div className="font-semibold text-zinc-900 dark:text-white truncate">{item.album.name}</div>
                 <div className="text-xs text-zinc-500 mt-1 flex items-center gap-3">
-                  <span className="flex items-center gap-1"><Images size={12} /> {a.photo_count}</span>
-                  {a.smart_criteria?.route?.length ? <span className="flex items-center gap-1"><MapPin size={12} /> {a.smart_criteria.route.length}</span> : null}
+                  <span className="flex items-center gap-1"><Images size={12} /> {item.album.photo_count}</span>
+                  {item.album.smart_criteria?.route?.length ? <span className="flex items-center gap-1"><MapPin size={12} /> {item.album.smart_criteria.route.length}</span> : null}
+                </div>
+              </div>
+            </button>
+          ) : (
+            <button key={`a-${item.ev.date_from}-${item.ev.cover_photo_id}`} onClick={() => openEvent(item.ev)}
+              className="group text-left rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 hover:ring-2 hover:ring-indigo-500 transition relative">
+              <div className="aspect-[16/10] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                <img src={thumbUrl({ id: item.ev.cover_photo_id } as any, 'medium')} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+              </div>
+              {/* Auto-Badge */}
+              <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-600/80 text-white backdrop-blur-sm">
+                <Sparkles size={10} /> {t('trips.badgeAuto')}
+              </span>
+              <div className="p-3">
+                <div className="font-semibold text-zinc-900 dark:text-white truncate flex items-center gap-1.5">
+                  {item.ev.city ? <><MapPin size={13} className="text-indigo-400 shrink-0" /> {item.ev.city}</> : t('trips.event')}
+                </div>
+                <div className="text-xs text-zinc-500 mt-0.5">{fmtRange(item.ev.date_from, item.ev.date_to)}</div>
+                <div className="text-xs text-zinc-500 mt-1 flex items-center gap-3">
+                  <span className="flex items-center gap-1"><Images size={12} /> {item.ev.count}</span>
+                  {item.ev.days > 1 && <span>{t('trips.days', { n: item.ev.days })}</span>}
                 </div>
               </div>
             </button>
           ))}
         </div>
-      )}
-
-      {suggestions.length > 0 && (
-        <>
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">{t('trips.autoDetected')}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {suggestions.map(e => (
-              <button key={`${e.date_from}-${e.cover_photo_id}`} onClick={() => openEvent(e)}
-                className="group text-left rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 hover:ring-2 hover:ring-indigo-500 transition">
-                <div className="aspect-[16/10] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                  <img src={thumbUrl({ id: e.cover_photo_id } as any, 'medium')} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                </div>
-                <div className="p-3">
-                  <div className="font-semibold text-zinc-900 dark:text-white truncate flex items-center gap-1.5">{e.city ? <><MapPin size={13} className="text-indigo-400 shrink-0" /> {e.city}</> : t('trips.event')}</div>
-                  <div className="text-xs text-zinc-500 mt-0.5">{fmtRange(e.date_from, e.date_to)}</div>
-                  <div className="text-xs text-zinc-500 mt-1 flex items-center gap-3"><span className="flex items-center gap-1"><Images size={12} /> {e.count}</span>{e.days > 1 && <span>{t('trips.days', { n: e.days })}</span>}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {trips.length === 0 && suggestions.length === 0 && (
+      ) : (
         <p className="text-zinc-500 text-sm">{t('trips.emptyState')}</p>
       )}
 

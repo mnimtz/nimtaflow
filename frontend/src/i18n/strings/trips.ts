@@ -45,6 +45,11 @@ export const trips = {
     'trips.event': 'Event',
     'trips.days': '{n} Tage',
     'trips.emptyState': 'Noch keine Reisen. Lege über „Reise anlegen" eine an — Gemini baut die Route und ordnet die Fotos automatisch zu.',
+    'trips.filterAll': 'Alle',
+    'trips.filterAuto': 'Automatisch',
+    'trips.filterManual': 'Manuell',
+    'trips.badgeAuto': 'Automatisch',
+    'trips.badgeManual': 'Manuell',
   } as Record<string, string>,
   en: {
     'trips.addPhotosTitle': 'Add photos to trip',
@@ -92,5 +97,10 @@ export const trips = {
     'trips.event': 'Event',
     'trips.days': '{n} days',
     'trips.emptyState': 'No trips yet. Create one via “Create trip” — Gemini builds the route and assigns the photos automatically.',
+    'trips.filterAll': 'All',
+    'trips.filterAuto': 'Automatic',
+    'trips.filterManual': 'Manual',
+    'trips.badgeAuto': 'Automatic',
+    'trips.badgeManual': 'Manual',
   } as Record<string, string>,
 }

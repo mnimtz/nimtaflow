@@ -1,7 +1,18 @@
 import SwiftUI
 
+private enum TripFilter: String, CaseIterable {
+    case all, auto, manual
+    var label: String {
+        switch self {
+        case .all:    return "Alle"
+        case .auto:   return "Automatisch"
+        case .manual: return "Manuell"
+        }
+    }
+}
+
 /// Auto-detected trips/events — cover, city, dates, count. Tapping opens the
-/// event's photos (loaded by date range) in the shared full-screen pager.
+/// event’s photos (loaded by date range) in the shared full-screen pager.
 struct TripsView: View {
     @EnvironmentObject var api: APIClient
     @AppStorage("trips_min_photos") private var minPhotos: Int = 8
@@ -9,7 +20,7 @@ struct TripsView: View {
     @State private var events: [TripEventV1] = []
     @State private var storedTrips: [AlbumV1] = []
     @State private var homeCity: String?
-    @State private var tripsOnly = true
+    @State private var tripFilter: TripFilter = .all
     @State private var loading = false
     @State private var error: String?
     @State private var showSettings = false
@@ -27,53 +38,62 @@ struct TripsView: View {
     }
     func clearDismissed() { dismissedRaw = "" }
 
+    // Gefilterte Listen je nach gewähltem Filter-Tab.
+    private var shownManual: [AlbumV1] {
+        tripFilter == .auto ? [] : storedTrips
+    }
+    private var shownAuto: [TripEventV1] {
+        tripFilter == .manual ? [] : visibleEvents
+    }
+    private var isEmpty: Bool { shownManual.isEmpty && shownAuto.isEmpty }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let error, visibleEvents.isEmpty && storedTrips.isEmpty {
+                if let error, isEmpty {
                     Text(error).foregroundStyle(.secondary).padding()
                 }
-                if let h = homeCity {
+                if let h = homeCity, tripFilter != .manual {
                     Text("Zuhause: \(h)").font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top, 4)
                 }
                 LazyVStack(spacing: 14) {
-                    if !storedTrips.isEmpty {
-                        Text("Gespeicherte Reisen").font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        ForEach(storedTrips) { t in
-                            NavigationLink(value: t) { StoredTripCard(album: t) }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button { renameText = t.name; renaming = t } label: {
-                                        Label("Umbenennen", systemImage: "pencil")
-                                    }
-                                    Button(role: .destructive) {
-                                        Task { try? await api.deleteTrip(t.id); await load() }
-                                    } label: { Label("Reise löschen", systemImage: "trash") }
-                                }
+                    // Manuelle Reisen
+                    ForEach(shownManual) { t in
+                        NavigationLink(value: t) {
+                            StoredTripCard(album: t, showBadge: tripFilter == .all)
                         }
-                        if !visibleEvents.isEmpty {
-                            Text("Automatisch erkannt").font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { renameText = t.name; renaming = t } label: {
+                                Label("Umbenennen", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                Task { try? await api.deleteTrip(t.id); await load() }
+                            } label: { Label("Reise löschen", systemImage: "trash") }
                         }
                     }
-                    ForEach(visibleEvents) { e in
-                        NavigationLink(value: e) { TripCard(event: e) }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button(role: .destructive) { dismiss(e) } label: {
-                                    Label("Aus Liste entfernen", systemImage: "trash")
-                                }
+                    // Automatisch erkannte Reisen
+                    ForEach(shownAuto) { e in
+                        NavigationLink(value: e) {
+                            TripCard(event: e, showBadge: tripFilter == .all)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) { dismiss(e) } label: {
+                                Label("Aus Liste entfernen", systemImage: "trash")
                             }
+                        }
                     }
                 }
                 .padding(12)
                 if loading { ProgressView().padding() }
-                if !loading && visibleEvents.isEmpty && storedTrips.isEmpty && error == nil {
-                    ContentUnavailableView("Keine Reisen", systemImage: "airplane.departure",
-                                           description: Text(tripsOnly ? "Schalte ‚Alle‘ ein oder senke ‚min. Bilder‘ in den Einstellungen." : "Noch keine Events erkannt."))
-                        .padding(.top, 60)
+                if !loading && isEmpty && error == nil {
+                    ContentUnavailableView(
+                        "Keine Reisen",
+                        systemImage: "airplane.departure",
+                        description: Text("Noch keine Reisen in dieser Kategorie. Lege über + eine an oder passe ‚min. Bilder’ in den Einstellungen an.")
+                    ).padding(.top, 60)
                 }
             }
             .navigationTitle("Reisen")
@@ -87,11 +107,13 @@ struct TripsView: View {
                     Button { showWizard = true } label: { Image(systemName: "plus.circle.fill") }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Picker("", selection: $tripsOnly) {
-                        Text("Reisen").tag(true); Text("Alle").tag(false)
+                    Picker("", selection: $tripFilter) {
+                        ForEach(TripFilter.allCases, id: \.self) { f in
+                            Text(f.label).tag(f)
+                        }
                     }
-                    .pickerStyle(.segmented).frame(width: 150)
-                    .onChange(of: tripsOnly) { _, _ in Task { await load() } }
+                    .pickerStyle(.segmented)
+                    .frame(width: 210)
                 }
             }
             .sheet(isPresented: $showSettings) {
@@ -122,10 +144,10 @@ struct TripsView: View {
     func load() async {
         loading = true; defer { loading = false }
         do {
-            async let tripsResp = api.trips(tripsOnly: tripsOnly, minPhotos: minPhotos)
+            async let tripsResp = api.trips(tripsOnly: false, minPhotos: minPhotos)
             async let albumsResp = api.albums()
             let r = try await tripsResp
-            events = r.events; homeCity = r.home_city; error = nil
+            events = r.events.filter { $0.is_trip }; homeCity = r.home_city; error = nil
             storedTrips = ((try? await albumsResp) ?? []).filter { $0.is_trip }
         } catch { self.error = "Reisen konnten nicht geladen werden." }
     }
@@ -135,6 +157,7 @@ struct TripsView: View {
 private struct StoredTripCard: View {
     @EnvironmentObject var api: APIClient
     let album: AlbumV1
+    var showBadge: Bool = false
 
     var body: some View {
         Color.clear
@@ -155,6 +178,16 @@ private struct StoredTripCard: View {
                     Text("\(album.photo_count) Fotos").font(.caption)
                 }
                 .foregroundStyle(.white).padding(12)
+            }
+            .overlay(alignment: .topTrailing) {
+                if showBadge {
+                    Label("Manuell", systemImage: "pencil")
+                        .font(.caption2).fontWeight(.medium)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(10)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .contentShape(Rectangle())
@@ -198,6 +231,7 @@ private struct TripsSettingsSheet: View {
 private struct TripCard: View {
     @EnvironmentObject var api: APIClient
     let event: TripEventV1
+    var showBadge: Bool = false
 
     var subtitle: String {
         let span = event.days > 1 ? "\(event.days) Tage" : "1 Tag"
@@ -205,8 +239,6 @@ private struct TripCard: View {
     }
 
     var body: some View {
-        // Fixed 16:9 card — Color.clear sets the size, the image fills + is clipped,
-        // so cards never overflow into each other.
         Color.clear
             .aspectRatio(16.0/9.0, contentMode: .fit)
             .overlay {
@@ -226,8 +258,18 @@ private struct TripCard: View {
                 }
                 .foregroundStyle(.white).padding(12)
             }
+            .overlay(alignment: .topTrailing) {
+                if showBadge {
+                    Label("Automatisch", systemImage: "sparkles")
+                        .font(.caption2).fontWeight(.medium)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.indigo.opacity(0.8), in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(10)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .contentShape(Rectangle())   // make the whole card tappable (Color.clear base)
+            .contentShape(Rectangle())
     }
 }
 
