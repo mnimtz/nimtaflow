@@ -3,7 +3,8 @@
 access_config (JSON on User) may contain:
   visible_from / visible_until : ISO date strings — restrict by photo date
   folder_whitelist / folder_blacklist : list of path prefixes
-  visible_person_ids : list of person ids (only photos containing them); null = all
+  hidden_person_ids  : list of person ids (photos containing them are hidden); null = all visible
+  visible_person_ids : legacy whitelist — superseded by hidden_person_ids
   allow_download / allow_map / allow_share / allow_pipeline : feature flags
   self_restrict : bool — Admins können sich damit freiwillig ihr eigenes Bild einschränken.
     Ohne self_restrict=true sind Admins immer unrestricted.
@@ -56,8 +57,11 @@ def photo_conditions(user: Optional[User]) -> List:
         if p:
             conds.append(~Photo.path.like(f"{_esc(p.rstrip('/'))}/%", escape="\\"))
     pids = cfg.get("visible_person_ids")
-    if pids:  # null/empty = all
+    if pids:  # legacy whitelist: null/empty = all
         conds.append(Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(pids))))
+    hidden_pids = cfg.get("hidden_person_ids")
+    if hidden_pids:  # blacklist: Fotos MIT diesen Personen ausblenden
+        conds.append(~Photo.id.in_(select(Face.photo_id).where(Face.person_id.in_(hidden_pids))))
     return conds
 
 
@@ -105,10 +109,14 @@ def visible_person_subquery(user: Optional[User]):
         return None
     cfg = user.access_config or {}
     pids = cfg.get("visible_person_ids")
-    if pids:
+    if pids:  # legacy whitelist
         from app.models.person import Person
         return select(Person.id).where(Person.id.in_(pids))
-    # Kein Personen-Whitelist (nur Ordner-/Datums-Scope) → Personen in zugänglichen Fotos.
+    hidden_pids = cfg.get("hidden_person_ids")
+    if hidden_pids:  # blacklist: alle außer den ausgeblendeten
+        from app.models.person import Person
+        return select(Person.id).where(~Person.id.in_(hidden_pids))
+    # Nur Ordner-/Datums-Scope → Personen aus zugänglichen Fotos ableiten.
     return select(Face.person_id).where(
         Face.photo_id.in_(select(Photo.id).where(*photo_conditions(user)))
     )

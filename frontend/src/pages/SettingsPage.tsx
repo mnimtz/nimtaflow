@@ -2916,12 +2916,12 @@ function UsersSection() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrOnlyPersons')}</label>
+                      <label className="block text-xs text-zinc-500 mb-1">{t('settings.usrHidePersons')}</label>
                       <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
                         {namedPeople.map(p => {
-                          const on = (acc.visible_person_ids || []).includes(p.id)
-                          return <button key={p.id} type="button" onClick={() => setAcc(a => ({ ...a, visible_person_ids: toggleIn(a.visible_person_ids, p.id) }))}
-                            className={`px-2 py-0.5 rounded-full text-xs ${on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{p.name}</button>
+                          const hidden = (acc.hidden_person_ids || []).includes(p.id)
+                          return <button key={p.id} type="button" onClick={() => setAcc(a => ({ ...a, hidden_person_ids: toggleIn(a.hidden_person_ids, p.id) }))}
+                            className={`px-2 py-0.5 rounded-full text-xs ${hidden ? 'bg-rose-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'}`}>{p.name}</button>
                         })}
                         {namedPeople.length === 0 && <span className="text-xs text-zinc-400">{t('settings.usrNoNamedPersons')}</span>}
                       </div>
