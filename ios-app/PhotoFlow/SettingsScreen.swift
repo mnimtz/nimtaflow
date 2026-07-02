@@ -300,7 +300,7 @@ private struct HighlightsMusicSection: View {
                 if source == "library" {
                     Button(libGen ? "Erzeuge…" : "Bibliothek erzeugen") {
                         Task { libGen = true; defer { libGen = false }
-                            try? await api.action("api/highlights/music-library/generate", method: "POST") }
+                            _ = try? await api.action("api/highlights/music-library/generate", method: "POST") }
                     }.disabled(libGen)
                 }
             }

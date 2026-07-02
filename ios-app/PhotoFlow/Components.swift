@@ -96,8 +96,7 @@ func imageCacheSizeMB() -> Int {
 private struct ShimmerView: View {
     @State private var phase: CGFloat = -1
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
+        GeometryReader { _ in
             LinearGradient(
                 stops: [
                     .init(color: Color(white: 0.18, opacity: 1), location: 0),

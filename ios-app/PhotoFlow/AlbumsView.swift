@@ -41,7 +41,7 @@ struct AlbumsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         Task { petsBusy = true; defer { petsBusy = false }
-                            try? await api.action("api/albums/enable-pets", method: "POST"); await load() }
+                            _ = try? await api.action("api/albums/enable-pets", method: "POST"); await load() }
                     } label: {
                         if petsBusy { ProgressView() } else { Image(systemName: "pawprint.fill") }
                     }.disabled(petsBusy)

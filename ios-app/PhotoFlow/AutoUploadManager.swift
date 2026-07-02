@@ -27,7 +27,7 @@ final class AutoUploadManager: ObservableObject {
     @AppStorage("autoUpload.nightOnly") var nightOnly = false
     @AppStorage("autoUpload.nightHour") var nightHour = 2
 
-    static let bgTaskID = "com.photoflow.upload"
+    nonisolated(unsafe) static let bgTaskID = "com.photoflow.upload"
 
     @Published var running = false
     @Published var done = 0
@@ -70,19 +70,20 @@ final class AutoUploadManager: ObservableObject {
 
     /// True only on (non-expensive) Wi-Fi — excludes cellular and personal hotspots.
     static func onWifi() async -> Bool {
-        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+        // Box statt captured `var`: @unchecked Sendable ist korrekt, weil die
+        // pathUpdateHandler-Queue seriell ist und wir nur einmal schreiben.
+        final class Once: @unchecked Sendable { var fired = false }
+        let once = Once()
+        return await withCheckedContinuation { cont in
             let m = NWPathMonitor()
-            let q = DispatchQueue(label: "pf.path.monitor")
-            var resumed = false
             m.pathUpdateHandler = { path in
-                guard !resumed else { return }
-                resumed = true
-                let wifi = path.status == .satisfied && !path.isExpensive
-                    && path.usesInterfaceType(.wifi)
+                guard !once.fired else { return }
+                once.fired = true
                 m.cancel()
-                cont.resume(returning: wifi)
+                cont.resume(returning: path.status == .satisfied
+                    && !path.isExpensive && path.usesInterfaceType(.wifi))
             }
-            m.start(queue: q)
+            m.start(queue: DispatchQueue(label: "pf.path.monitor"))
         }
     }
 
