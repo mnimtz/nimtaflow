@@ -77,7 +77,22 @@ struct MapScreen: View {
                         }
                     }
                 }
-                UserAnnotation()   // blauer "Hier bin ich"-Punkt (Live-Standort)
+                // UserAnnotation() schlägt im Imagery/Globus-Modus zuverlässig fehl —
+                // eigene Nadel aus loc.coordinate, sichtbar in allen Map-Stilen.
+                if let userCoord = loc.coordinate {
+                    Annotation("Mein Standort", coordinate: userCoord) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.25))
+                                .frame(width: 28, height: 28)
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 14, height: 14)
+                                .overlay(Circle().stroke(.white, lineWidth: 2.5))
+                                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                        }
+                    }
+                }
             }
             .mapStyle(globe ? .imagery(elevation: .realistic) : .standard(elevation: .flat))
             .onMapCameraChange(frequency: .onEnd) { ctx in

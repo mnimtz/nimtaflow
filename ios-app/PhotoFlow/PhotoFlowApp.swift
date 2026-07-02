@@ -52,18 +52,21 @@ struct RootView: View {
             .task { await store.syncServer(api); _ = await api.meName() }
 
             // Ambient-Assistent: schwebt über allen Tabs, überall erreichbar.
-            Button { showAssistant = true } label: {
-                Image(systemName: "sparkles")
+            // Toggle: erstes Tippen öffnet, zweites Tippen (oder Wischen) schließt.
+            Button { showAssistant.toggle() } label: {
+                Image(systemName: showAssistant ? "xmark" : "sparkles")
                     .font(.title2).fontWeight(.semibold).foregroundStyle(.white)
                     .frame(width: 54, height: 54)
-                    .background(Color.indigo, in: Circle())
+                    .background(showAssistant ? Color.gray.opacity(0.7) : Color.indigo, in: Circle())
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                    .animation(.easeInOut(duration: 0.2), value: showAssistant)
             }
             .padding(.trailing, 16).padding(.bottom, 68)
             .sheet(isPresented: $showAssistant) {
                 ProGate(feature: "KI-Chat") { ChatView() }
                     .presentationDetents([.large, .medium])
                     .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             }
         }
         }
