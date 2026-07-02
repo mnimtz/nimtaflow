@@ -41,6 +41,7 @@ struct SettingsScreen: View {
                 if api.loggedIn { HighlightsMusicSection() }
                 if api.loggedIn { HighlightsAISection() }
                 if api.loggedIn { MCPSection() }
+                MapSection()
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
                     let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
@@ -481,6 +482,25 @@ private struct HighlightsAISection: View {
                 budget = s["highlights.ai_budget_seconds_month"] ?? "300"
                 // key intentionally not pre-filled (write-only via SecureField)
             }
+        }
+    }
+}
+
+// MARK: - Map style settings
+
+private struct MapSection: View {
+    @AppStorage("map_style_pref") private var stylePrefRaw = MapStylePref.globus.rawValue
+
+    var body: some View {
+        Section("Karte") {
+            Picker("Standard-Kartenansicht", selection: $stylePrefRaw) {
+                ForEach(MapStylePref.allCases, id: \.rawValue) { s in
+                    Label(s.label, systemImage: s.icon).tag(s.rawValue)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            Text("Die gewählte Ansicht wird beim Öffnen der Karte voreingestellt. Du kannst sie jederzeit über das Menü links oben in der Karte wechseln.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

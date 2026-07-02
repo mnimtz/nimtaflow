@@ -2,6 +2,44 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+// MARK: - Map style preference
+
+enum MapStylePref: String, CaseIterable {
+    case standard = "standard"
+    case satellit = "satellit"
+    case hybrid   = "hybrid"
+    case globus   = "globus"
+
+    var label: String {
+        switch self {
+        case .standard: return "Standard"
+        case .satellit: return "Satellit"
+        case .hybrid:   return "Hybrid"
+        case .globus:   return "Globus (3D)"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .standard: return "map"
+        case .satellit: return "globe.europe.africa.fill"
+        case .hybrid:   return "map.fill"
+        case .globus:   return "rotate.3d"
+        }
+    }
+    var mapStyle: MapStyle {
+        switch self {
+        case .standard: return .standard(elevation: .flat)
+        case .satellit: return .imagery(elevation: .flat)
+        case .hybrid:   return .hybrid(elevation: .flat)
+        case .globus:   return .imagery(elevation: .realistic)
+        }
+    }
+    /// Kartenstil hat keine flache Oberfläche → Kamerabereich schwer erzwingbar
+    var isGlobe: Bool { self == .globus }
+}
+
+// MARK: - Location provider
+
 /// Live device location for the map: requests "when in use" permission and
 /// publishes the current position so the map can show a blue "you are here" dot
 /// and recenter on demand.
@@ -31,8 +69,8 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
 /// (finer grid) as you pan/zoom — so it's tiny and fast at any scale.
 struct MapScreen: View {
     @EnvironmentObject var api: APIClient
+    @AppStorage("map_style_pref") private var stylePrefRaw = MapStylePref.globus.rawValue
     @State private var clusters: [MapClusterV1] = []
-    @State private var globe = true   // start on the 3D globe (world view)
     @State private var selected: PhotoV1?
     @State private var camera: MapCameraPosition = .region(
         MKCoordinateRegion(center: .init(latitude: 25, longitude: 10),
@@ -43,11 +81,16 @@ struct MapScreen: View {
     @State private var clusterPhotos: [PhotoV1] = []
     @State private var showClusterSheet = false
     @StateObject private var loc = LocationProvider()
-    @State private var pendingRecenter = false   // recenter once the first GPS fix arrives
+    @State private var pendingRecenter = false
     private let gridCols = [GridItem(.adaptive(minimum: 100), spacing: 2)]
 
+    private var stylePref: MapStylePref {
+        MapStylePref(rawValue: stylePrefRaw) ?? .globus
+    }
+
     private func recenter(on c: CLLocationCoordinate2D) {
-        globe = false
+        // Beim Recenter aus dem Globus-Modus raus — sonst wirkt der Span nicht.
+        if stylePref.isGlobe { stylePrefRaw = MapStylePref.standard.rawValue }
         withAnimation(.easeInOut(duration: 0.6)) {
             camera = .region(MKCoordinateRegion(center: c,
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
@@ -94,7 +137,7 @@ struct MapScreen: View {
                     }
                 }
             }
-            .mapStyle(globe ? .imagery(elevation: .realistic) : .standard(elevation: .flat))
+            .mapStyle(stylePref.mapStyle)
             .onMapCameraChange(frequency: .onEnd) { ctx in
                 region = ctx.region
                 Task { await loadClusters(ctx.region) }
@@ -102,17 +145,24 @@ struct MapScreen: View {
             .navigationTitle("Karte")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        globe.toggle()
-                        if globe {
-                            let c = region?.center ?? CLLocationCoordinate2D(latitude: 25, longitude: 10)
-                            withAnimation(.easeInOut(duration: 0.8)) {
-                                camera = .region(MKCoordinateRegion(center: c,
-                                    span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130)))
+                    Menu {
+                        ForEach(MapStylePref.allCases, id: \.rawValue) { s in
+                            Button {
+                                stylePrefRaw = s.rawValue
+                                // Zum Globus wechseln → Kamera auf Weltansicht zoomen
+                                if s.isGlobe {
+                                    let c = region?.center ?? CLLocationCoordinate2D(latitude: 25, longitude: 10)
+                                    withAnimation(.easeInOut(duration: 0.8)) {
+                                        camera = .region(MKCoordinateRegion(center: c,
+                                            span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130)))
+                                    }
+                                }
+                            } label: {
+                                Label(s.label, systemImage: stylePref == s ? "checkmark" : s.icon)
                             }
                         }
                     } label: {
-                        Label(globe ? "Karte" : "Globus", systemImage: globe ? "map" : "globe.europe.africa.fill")
+                        Label(stylePref.label, systemImage: stylePref.icon)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -121,8 +171,6 @@ struct MapScreen: View {
                         if let c = loc.coordinate {
                             recenter(on: c)
                         } else {
-                            // No fix yet (first launch / just granted) — recenter as
-                            // soon as CoreLocation delivers one, instead of no-op'ing.
                             pendingRecenter = true
                         }
                     } label: { Label("Mein Standort", systemImage: "location.fill") }
