@@ -10,6 +10,12 @@ struct MemoriesView: View {
     @State private var selected: PhotoV1?
     @State private var pagerItems: [PhotoV1] = []
 
+    private func prefetchGroup(_ items: [PhotoV1]) {
+        for p in items where !p.is_video {
+            prefetchImage(api.url("api/photos/\(p.id)/thumbnail?size=large"), token: api.token)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -59,7 +65,12 @@ struct MemoriesView: View {
 
     func load() async {
         loading = true; defer { loading = false }
-        do { groups = try await api.memories(); loadError = nil }
+        do {
+            groups = try await api.memories()
+            loadError = nil
+            // Pre-warm thumbnails so the first tap shows the image immediately.
+            for g in groups { prefetchGroup(g.items) }
+        }
         catch { loadError = (error as NSError).localizedDescription }
     }
 }

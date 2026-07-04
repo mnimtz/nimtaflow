@@ -885,6 +885,11 @@ struct PhotoPager: View {
             index = photos.firstIndex(of: start) ?? 0
             favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
             ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
+            // Pre-warm current + neighbours (current may not be in NSCache yet when
+            // opened from Memories where the thumbnail was just requested via prefetch).
+            if !start.is_video {
+                prefetchImage(api.url("api/photos/\(start.id)/thumbnail?size=large"), token: api.token)
+            }
             prefetchNeighbors()
         }
         .onChange(of: index) { _, _ in actionNote = nil; prefetchNeighbors() }
@@ -952,12 +957,24 @@ struct PhotoPager: View {
 struct ZoomableImage: View {
     let url: URL?
     @State private var scale: CGFloat = 1
+    @EnvironmentObject var api: APIClient
+    @StateObject private var loader = AuthImageLoader()
     var body: some View {
-        Thumb(url: url)
-            .aspectRatio(contentMode: .fit)
-            .scaleEffect(scale)
-            .gesture(MagnificationGesture().onChanged { scale = max(1, $0) }.onEnded { _ in withAnimation { scale = max(1, min(scale, 4)) } })
-            .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2.5 } }
+        Group {
+            if let img = loader.image {
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(scale)
+                    .gesture(MagnificationGesture().onChanged { scale = max(1, $0) }.onEnded { _ in withAnimation { scale = max(1, min(scale, 4)) } })
+                    .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2.5 } }
+            } else if loader.failed {
+                Image(systemName: "photo").font(.system(size: 40)).foregroundStyle(.secondary)
+            } else {
+                ProgressView().tint(.white).scaleEffect(1.4)
+            }
+        }
+        .task(id: url) { loader.load(url, token: api.token) }
     }
 }
 
