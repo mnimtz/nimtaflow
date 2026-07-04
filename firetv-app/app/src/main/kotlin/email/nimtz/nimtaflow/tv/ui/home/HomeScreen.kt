@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.ui.theme.*
 
-enum class HomeTab { Gallery, Favorites, Albums, Memories }
+enum class HomeTab { Gallery, Favorites, Albums, People, Memories }
 
 private data class TabItem(val tab: HomeTab, val icon: ImageVector, val label: String)
 
@@ -27,13 +27,10 @@ private val TABS = listOf(
     TabItem(HomeTab.Gallery,   Icons.Default.GridView,    "Galerie"),
     TabItem(HomeTab.Favorites, Icons.Default.Favorite,    "Favoriten"),
     TabItem(HomeTab.Albums,    Icons.Default.PhotoAlbum,  "Alben"),
+    TabItem(HomeTab.People,    Icons.Default.People,      "Personen"),
     TabItem(HomeTab.Memories,  Icons.Default.AutoAwesome, "Erinnerungen"),
 )
 
-/**
- * Persistent left sidebar + content area.
- * D-pad LEFT/RIGHT switches focus between sidebar and content.
- */
 @Composable
 fun HomeScreen(
     selectedTab: HomeTab,
@@ -46,18 +43,38 @@ fun HomeScreen(
         // ── Left sidebar ──────────────────────────────────────────────────────
         Column(
             Modifier
-                .width(200.dp)
+                .width(210.dp)
                 .fillMaxHeight()
                 .background(Surface)
                 .padding(vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(
-                "✦ NimtaFlow",
-                color = Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-            Spacer(Modifier.height(12.dp))
+            // App logo / name
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(listOf(AccentDim, Accent)),
+                            RoundedCornerShape(8.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✦", color = Color.White, fontSize = 14.sp)
+                }
+                Text(
+                    "NimtaFlow",
+                    color = Accent,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
 
             TABS.forEach { item ->
                 SidebarItem(
@@ -69,6 +86,8 @@ fun HomeScreen(
             }
 
             Spacer(Modifier.weight(1f))
+
+            HorizontalDivider(color = SurfaceHi, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
 
             SidebarItem(
                 icon = Icons.Default.Logout,
@@ -103,7 +122,7 @@ private fun SidebarItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 10.dp)
             .background(bg, RoundedCornerShape(8.dp))
             .selectable(selected = selected, onClick = onClick)
             .onFocusChanged { focused = it.isFocused }
@@ -112,8 +131,17 @@ private fun SidebarItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = if (selected) Accent else fg, modifier = Modifier.size(20.dp))
-        Text(label, color = fg, fontSize = 15.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (selected) Accent else fg,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            label,
+            color = fg,
+            fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }

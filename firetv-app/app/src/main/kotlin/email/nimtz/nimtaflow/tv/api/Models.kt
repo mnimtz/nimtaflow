@@ -6,14 +6,23 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Photo(
     val id: Int,
-    val filename: String,
-    @SerialName("is_video") val isVideo: Boolean = false,
+    val filename: String = "",
+    @SerialName("is_video")      val isVideo: Boolean = false,
+    @SerialName("is_favorite")   val isFavorite: Boolean = false,
+    @SerialName("taken_at")      val takenAt: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    @SerialName("taken_at") val takenAt: String? = null,
+    @SerialName("location_name") val locationName: String? = null,
     val width: Int? = null,
     val height: Int? = null,
-    @SerialName("is_favorite") val isFavorite: Boolean = false,
+)
+
+@Serializable
+data class Person(
+    val id: Int,
+    val name: String,
+    @SerialName("photo_count")     val photoCount: Int = 0,
+    @SerialName("sample_photo_id") val samplePhotoId: Int? = null,
 )
 
 @Serializable

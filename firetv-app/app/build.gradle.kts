@@ -38,6 +38,7 @@ dependencies {
     implementation(bom)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
+    implementation(libs.compose.icons.extended)
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
     debugImplementation(libs.compose.ui.tooling)

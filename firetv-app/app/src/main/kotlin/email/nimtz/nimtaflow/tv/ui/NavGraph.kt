@@ -9,8 +9,10 @@ import email.nimtz.nimtaflow.tv.ui.home.HomeScreen
 import email.nimtz.nimtaflow.tv.ui.home.HomeTab
 import email.nimtz.nimtaflow.tv.ui.login.QRLoginScreen
 import email.nimtz.nimtaflow.tv.ui.memories.MemoriesScreen
+import email.nimtz.nimtaflow.tv.ui.people.PeopleScreen
 import email.nimtz.nimtaflow.tv.ui.player.MediaViewerScreen
 import email.nimtz.nimtaflow.tv.ui.setup.ServerSetupScreen
+import email.nimtz.nimtaflow.tv.ui.slideshow.SlideshowScreen
 import kotlinx.coroutines.launch
 
 enum class Screen { ServerSetup, Login, Home }
@@ -29,18 +31,21 @@ fun AppNavGraph(
     var screen by remember {
         mutableStateOf(
             when {
-                initialUrl.isEmpty() -> Screen.ServerSetup
+                initialUrl.isEmpty()   -> Screen.ServerSetup
                 initialToken.isEmpty() -> Screen.Login
-                else -> Screen.Home
+                else                   -> Screen.Home
             }
         )
     }
     var token by remember { mutableStateOf(initialToken) }
     var tab by remember { mutableStateOf(HomeTab.Gallery) }
 
-    // Viewer overlay state
+    // Media viewer overlay
     var viewerPhotos by remember { mutableStateOf<List<Photo>?>(null) }
     var viewerIndex  by remember { mutableIntStateOf(0) }
+
+    // Slideshow overlay
+    var slideshowActive by remember { mutableStateOf(false) }
 
     when (screen) {
         Screen.ServerSetup -> ServerSetupScreen { url ->
@@ -70,13 +75,31 @@ fun AppNavGraph(
                 },
             ) {
                 when (tab) {
-                    HomeTab.Gallery   -> GalleryScreen(api, token)  { p, i -> viewerPhotos = p; viewerIndex = i }
-                    HomeTab.Favorites -> GalleryScreen(api, token)  { p, i -> viewerPhotos = p; viewerIndex = i }
+                    HomeTab.Gallery   -> GalleryScreen(
+                        api = api, token = token, view = "library",
+                        onPhotoSelected = { p, i -> viewerPhotos = p; viewerIndex = i },
+                        onStartSlideshow = { slideshowActive = true },
+                    )
+                    HomeTab.Favorites -> GalleryScreen(
+                        api = api, token = token, view = "favorites",
+                        onPhotoSelected = { p, i -> viewerPhotos = p; viewerIndex = i },
+                    )
                     HomeTab.Albums    -> AlbumsScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
+                    HomeTab.People    -> PeopleScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Memories  -> MemoriesScreen(api, token) { p, i -> viewerPhotos = p; viewerIndex = i }
                 }
             }
 
+            // Slideshow overlay (full-screen, above everything)
+            if (slideshowActive) {
+                SlideshowScreen(
+                    api = api,
+                    token = token,
+                    onDismiss = { slideshowActive = false },
+                )
+            }
+
+            // Media viewer overlay
             viewerPhotos?.let { photos ->
                 MediaViewerScreen(
                     photos = photos,

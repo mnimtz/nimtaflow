@@ -50,19 +50,45 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
 
     // ── Photos ───────────────────────────────────────────────────────────────
 
-    fun photos(page: Int = 1, limit: Int = 60, view: String = "library"): PhotoListResponse =
-        json.decodeFromString(get("/api/photos?page=$page&limit=$limit&view=$view&sort=newest"))
+    fun photos(
+        page: Int = 1,
+        limit: Int = 60,
+        view: String = "library",
+        personId: Int? = null,
+        sort: String = "newest",
+    ): PhotoListResponse {
+        var url = "/api/photos?page=$page&limit=$limit&view=$view&sort=$sort"
+        if (personId != null) url += "&person_id=$personId"
+        return json.decodeFromString(get(url))
+    }
 
     fun favorites(page: Int = 1, limit: Int = 60): PhotoListResponse =
         json.decodeFromString(get("/api/photos?page=$page&limit=$limit&view=favorites&sort=newest"))
+
+    fun toggleFavorite(photoId: Int, isFavorite: Boolean) {
+        val body = """{"is_favorite":$isFavorite}"""
+        try {
+            val req = Request.Builder()
+                .url("$baseUrl/api/photos/$photoId/meta")
+                .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+                .method("PATCH", body.toRequestBody(jsonMedia))
+                .build()
+            http.newCall(req).execute().use { /* ignore body */ }
+        } catch (_: Exception) { /* best-effort */ }
+    }
 
     // ── Albums ────────────────────────────────────────────────────────────────
 
     fun albums(): List<Album> =
         json.decodeFromString(get("/api/albums"))
 
-    fun albumPhotos(albumId: Int, page: Int = 1, limit: Int = 60): PhotoListResponse =
+    fun albumPhotos(albumId: Int, page: Int = 1, limit: Int = 200): PhotoListResponse =
         json.decodeFromString(get("/api/albums/$albumId/photos?page=$page&limit=$limit"))
+
+    // ── Persons ───────────────────────────────────────────────────────────────
+
+    fun persons(): List<Person> =
+        runCatching { json.decodeFromString<List<Person>>(get("/api/persons")) }.getOrDefault(emptyList())
 
     // ── Memories ──────────────────────────────────────────────────────────────
 
