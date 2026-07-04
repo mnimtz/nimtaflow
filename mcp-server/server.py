@@ -603,6 +603,36 @@ async def gesicht_zuordnen(face_id: int, person_id: int, ctx: Context = None):
         return f"Gesicht {face_id} → Person {person_id} zugeordnet."
 
 
+@mcp.tool(description=(
+    "Setzt GPS-Koordinaten (Breitengrad, Längengrad, optional Höhe in Metern) für ein "
+    "einzelnes Foto/Video. Nützlich wenn das Bild keine GPS-Daten hat oder die vorhandenen "
+    "korrigiert werden sollen. Nur bei aktiviertem Schreibmodus."))
+async def gps_setzen(foto_id: int, breitengrad: float, laengengrad: float,
+                     hoehe_m: float = None, ctx: Context = None):
+    token = _token_from_ctx(ctx)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(base_url=API, headers=headers, timeout=30) as client:
+        try:
+            st = await _status(client); _write_guard(st)
+        except _Disabled as e:
+            return str(e)
+        payload: dict = {"latitude": float(breitengrad), "longitude": float(laengengrad)}
+        if hoehe_m is not None:
+            payload["altitude"] = float(hoehe_m)
+        try:
+            r = await client.patch(f"/api/photos/{int(foto_id)}/meta", json=payload)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = ""
+            try:
+                detail = e.response.json().get("detail", "")
+            except Exception:
+                pass
+            return f"GPS setzen fehlgeschlagen ({e.response.status_code}): {detail or e.response.text[:120]}"
+        return (f"#{foto_id} GPS gesetzt: {breitengrad:.6f}, {laengengrad:.6f}"
+                + (f", Höhe {hoehe_m:.1f} m" if hoehe_m is not None else "") + ".")
+
+
 @mcp.tool(description="Entfernt die Personen-Zuordnung eines Gesichts (face_id). Nur bei aktiviertem Schreibmodus.")
 async def gesicht_entfernen(face_id: int, ctx: Context = None):
     token = _token_from_ctx(ctx)
