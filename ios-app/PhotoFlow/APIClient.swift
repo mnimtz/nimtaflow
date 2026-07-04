@@ -265,10 +265,26 @@ final class APIClient: ObservableObject {
         try await action("api/albums/\(albumId)/photos/\(photoId)", method: "DELETE")
     }
 
-    func photosByDate(from: String, to: String, cursor: Int?) async throws -> PhotoPage {
-        var p = "api/v1/photos?limit=60&date_from=\(from)&date_to=\(to)"
+    func photosByDate(from: String, to: String, cursor: Int?,
+                      favorites: Bool = false, mediaType: String? = nil,
+                      sort: String = "newest", personId: Int? = nil) async throws -> PhotoPage {
+        var p = "api/v1/photos?limit=60&sort=\(sort)&date_from=\(from)&date_to=\(to)"
         if let cursor { p += "&cursor=\(cursor)" }
+        if favorites { p += "&favorites=true" }
+        if let mediaType { p += "&media_type=\(mediaType)" }
+        if let personId { p += "&person_id=\(personId)" }
         return try await get(p, as: PhotoPage.self)
+    }
+
+    struct TimelineBucket: Decodable {
+        let month: String
+        let count: Int
+    }
+
+    func timelineBuckets() async throws -> [TimelineBucket] {
+        struct Resp: Decodable { let buckets: [TimelineBucket] }
+        let resp = try await get("api/v1/photos/timeline/buckets", as: Resp.self)
+        return resp.buckets
     }
 
     // MARK: Trip planner (Gemini)

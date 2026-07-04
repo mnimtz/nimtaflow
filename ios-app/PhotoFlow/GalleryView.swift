@@ -44,6 +44,9 @@ struct GalleryView: View {
 
     // Timeline scrubber
     @State private var scrubProxy: ScrollViewProxy? = nil
+    @State private var timelineBuckets: [APIClient.TimelineBucket] = []
+    @State private var jumpDateFrom: String? = nil
+    @State private var jumpDateTo: String? = nil
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
     private let groupOpts: [(String, String)] = [
@@ -93,6 +96,7 @@ struct GalleryView: View {
             ZStack(alignment: .trailing) {
                 ScrollViewReader { proxy in
                     ScrollView {
+                        Color.clear.frame(height: 0).id("__gallery_top__")
                         // Chat-Filter-Banner
                         if chatFilteredPhotos != nil {
                             HStack(spacing: 8) {
@@ -135,9 +139,9 @@ struct GalleryView: View {
                     .onAppear { scrubProxy = proxy }
                 }
                 // Zeitleisten-Scrubber (rechter Rand)
-                if showTimeline && groupMode != "none" && !sections.isEmpty {
-                    TimelineScrubber(sections: sections, groupMode: groupMode) { key in
-                        withAnimation { scrubProxy?.scrollTo(key, anchor: .top) }
+                if showTimeline && groupMode != "none" && !timelineBuckets.isEmpty {
+                    TimelineScrubber(buckets: timelineBuckets) { year in
+                        Task { await jumpToYear(year) }
                     }
                 }
             }
@@ -248,6 +252,10 @@ struct GalleryView: View {
             }
             .refreshable { await reload() }
             .task { if photos.isEmpty { await load() } }
+            .task(id: showTimeline) {
+                guard showTimeline else { return }
+                await loadTimelineBuckets()
+            }
             .onChange(of: store.chatGalleryFilter) { _, ids in
                 guard let ids, !ids.isEmpty else { chatFilteredPhotos = nil; return }
                 Task { await applyChatFilter(ids) }
@@ -394,6 +402,7 @@ struct GalleryView: View {
     // the grid first — avoids the flash + a cancelled refresh keeping old photos).
     func reload() async {
         guard !loading else { return }
+        jumpDateFrom = nil; jumpDateTo = nil
         loading = true; defer { loading = false }
         do {
             // The first page MUST carry the same filters as load(); otherwise an
@@ -410,10 +419,38 @@ struct GalleryView: View {
         guard hasMore, !loading else { return }
         loading = true; defer { loading = false }
         do {
-            let page = try await api.photos(cursor: cursor, favorites: favoritesOnly,
+            let page: PhotoPage
+            if let from = jumpDateFrom, let to = jumpDateTo {
+                page = try await api.photosByDate(from: from, to: to, cursor: cursor,
+                                                  favorites: favoritesOnly, mediaType: mediaType,
+                                                  sort: sort, personId: personId)
+            } else {
+                page = try await api.photos(cursor: cursor, favorites: favoritesOnly,
                                             mediaType: mediaType, sort: sort, personId: personId)
+            }
             photos += page.items; cursor = page.next_cursor; hasMore = page.has_more
             lastTotal = page.total; loadError = nil
+        } catch { handle(error) }
+    }
+
+    private func loadTimelineBuckets() async {
+        guard let buckets = try? await api.timelineBuckets() else { return }
+        timelineBuckets = buckets
+    }
+
+    private func jumpToYear(_ year: Int) async {
+        guard !loading else { return }
+        let from = "\(year)-01-01"
+        let to   = "\(year)-12-31"
+        jumpDateFrom = from; jumpDateTo = to
+        loading = true; defer { loading = false }
+        do {
+            let page = try await api.photosByDate(from: from, to: to, cursor: nil,
+                                                  favorites: favoritesOnly, mediaType: mediaType,
+                                                  sort: sort, personId: personId)
+            photos = page.items; cursor = page.next_cursor; hasMore = page.has_more
+            lastTotal = page.total; loadError = nil
+            withAnimation { scrubProxy?.scrollTo("__gallery_top__", anchor: .top) }
         } catch { handle(error) }
     }
 
@@ -473,27 +510,37 @@ struct SelectionBadge: View {
 // MARK: - Timeline scrubber
 
 struct TimelineScrubber: View {
-    let sections: [(key: String, items: [PhotoV1])]
-    let groupMode: String
-    let onJump: (String) -> Void
+    let buckets: [APIClient.TimelineBucket]
+    let onJump: (Int) -> Void
 
     @State private var isDragging = false
     @State private var dragY: CGFloat = 0
-    @State private var dragLabel = ""
+    @State private var dragYear: Int = 0
 
-    private var total: Int { sections.reduce(0) { $0 + $1.items.count } }
+    private var total: Int { buckets.reduce(0) { $0 + $1.count } }
 
-    // Unique year markers: (year-string, first-section-key, cumulative-count-before)
-    private var yearMarkers: [(String, String, Int)] {
-        var result: [(String, String, Int)] = []
-        var seen = Set<String>()
+    // One entry per unique year: (year, cumulative-count BEFORE this year)
+    private var yearMarkers: [(year: Int, cumBefore: Int)] {
+        var result: [(Int, Int)] = []
+        var seen = Set<Int>()
         var cum = 0
-        for sec in sections {
-            let yr = String(sec.key.prefix(4))
-            if !seen.contains(yr) { seen.insert(yr); result.append((yr, sec.key, cum)) }
-            cum += sec.items.count
+        for b in buckets {
+            if let yr = Int(b.month.prefix(4)), !seen.contains(yr) {
+                seen.insert(yr); result.append((yr, cum))
+            }
+            cum += b.count
         }
         return result
+    }
+
+    private func yearAt(progress: CGFloat) -> Int {
+        let target = Int(progress * CGFloat(total))
+        var cum = 0
+        for b in buckets {
+            cum += b.count
+            if cum > target, let yr = Int(b.month.prefix(4)) { return yr }
+        }
+        return yearMarkers.last?.0 ?? 0
     }
 
     var body: some View {
@@ -502,36 +549,36 @@ struct TimelineScrubber: View {
             let t = max(1, total)
 
             ZStack(alignment: .trailing) {
-                // Sichtbarer Track (3 pt breit, volle Höhe)
+                // Track
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.white.opacity(isDragging ? 0.55 : 0.28))
+                    .fill(Color.white.opacity(isDragging ? 0.6 : 0.3))
                     .frame(width: 3, height: h)
 
-                // Jahres-Beschriftungen + Tick
-                ForEach(yearMarkers, id: \.0) { yr, _, cum in
-                    let yPos = CGFloat(cum) / CGFloat(t) * (h - 16) + 8
+                // Year tick + label
+                ForEach(yearMarkers, id: \.0) { yr, cum in
+                    let yPos = CGFloat(cum) / CGFloat(t) * h
                     HStack(spacing: 4) {
-                        Text(yr)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        Text(String(yr))
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.7), radius: 2)
+                            .shadow(color: .black.opacity(0.8), radius: 1)
                         Rectangle()
-                            .fill(Color.white.opacity(0.7))
-                            .frame(width: 6, height: 1.5)
+                            .fill(Color.white.opacity(0.65))
+                            .frame(width: 5, height: 1.5)
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .offset(y: yPos - h / 2)
                 }
 
-                // Aktives Jahr-Bubble beim Ziehen (links vom Track)
+                // Floating year bubble while dragging
                 if isDragging {
-                    Text(dragLabel)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text(String(dragYear))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Color.indigo.opacity(0.92), in: Capsule())
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                        .offset(x: -44, y: dragY - h / 2)
+                        .offset(x: -50, y: dragY - h / 2)
                 }
             }
             .contentShape(Rectangle())
@@ -540,11 +587,11 @@ struct TimelineScrubber: View {
                     .onChanged { val in
                         isDragging = true
                         dragY = max(0, min(h, val.location.y))
-                        let progress = dragY / h
-                        let idx = max(0, min(sections.count - 1,
-                                             Int(progress * CGFloat(sections.count))))
-                        dragLabel = String(sections[idx].key.prefix(4))
-                        onJump(sections[idx].key)
+                        let yr = yearAt(progress: dragY / h)
+                        if yr != dragYear {
+                            dragYear = yr
+                            onJump(yr)
+                        }
                     }
                     .onEnded { _ in isDragging = false }
             )
