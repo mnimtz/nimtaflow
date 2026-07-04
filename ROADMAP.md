@@ -30,6 +30,8 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
 
 ### 🟡 1c · Weitere Plattformen
 - **macOS (Mac Catalyst) ✅ gebaut** (v1.3): `SUPPORTS_MACCATALYST=YES` + App-Sandbox-Entitlements + `LSApplicationCategoryType` + Mac-Catalyst-Distribution-Profil (per ASC-API erzeugt). Signiertes `.pkg` baut/läuft, in ASC hochgeladen (macOS-Plattform aktiv, MAC_OS-Version angelegt). **Offen:** Mac-Screenshots + finale Mac-Einreichung. Tooling: `ios-app/appstore-upload-mac.sh` + `ExportOptions-mac-manual.plist`.
+- **Android App — geplant.** Kotlin/Jetpack Compose. Viewer + Upload + KI-Assistent, Feature-Parität mit iOS angestrebt. Gemeinsames Backend (FastAPI/REST bereits plattformagnostisch).
+- **Amazon FireTV App — geplant, „Lean-back-Viewer".** Ähnlicher Scope wie tvOS: Galerie + Alben + Highlights-Wiedergabe + Erinnerungs-Slideshow. Android-TV-Basis (Leanback-Bibliothek oder Compose for TV), D-Pad-Navigation.
 - **tvOS (Apple TV) — geplant, „Viewer".** NICHT nur Recompile (anders als Catalyst): Fokus-Navigation per Siri Remote, kein Touch/Kamera/Mikro → UI muss neu (fokusbasiert) gebaut werden. **Wiederverwendbar:** `APIClient`/`Models`/Auth/Netzwerk/Bild-Laden (~30–40 %). **Scope = Lean-back-Betrachter**, NICHT Feature-Parität: Galerie + Alben + Personen + **Highlights-Wiedergabe** + **Erinnerungs-Slideshow** (+ evtl. Karte/Reisen als Schauwert). Upload/Sprachmemos/Postkarten bewusst raus (passen nicht auf TV). Aufwand: eigenes tvOS-Target, fokusbasierte UI, tvOS-Sim-Test, eigene TV-Screenshots + eigene Review. Echtes Projekt, aber überschaubar bei Viewer-Beschränkung.
 
 ### 🟡 1d · Teilen / Sharing
