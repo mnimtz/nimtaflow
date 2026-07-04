@@ -226,6 +226,60 @@ async def list_pets_v1(request: Request, cursor: Optional[int] = Query(None),
                        total=0, has_more=has_more)
 
 
+# ── Timeline buckets ─────────────────────────────────────────────────────────
+
+@router.get("/photos/timeline/buckets")
+async def timeline_buckets_v1(
+    favorites: bool = False,
+    media_type: Optional[str] = Query(None),
+    person_id: Optional[int] = Query(None),
+    archived: bool = False,
+    trashed: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[User] = Depends(current_user_optional),
+):
+    """Monthly photo counts for the full (filtered) library — feeds the iOS
+    timeline scrubber so it covers the complete date range without loading
+    all photos first."""
+    from datetime import datetime as _dt
+    from sqlalchemy import func as _f, or_
+    from app.models.face import Face
+
+    acl = photo_conditions(user)
+    q = select(Photo).where(
+        Photo.thumb_small.isnot(None),
+        Photo.is_trashed == trashed,
+        Photo.is_archived == archived,
+        *acl,
+    )
+    if favorites:
+        q = q.where(Photo.is_favorite == True)  # noqa: E712
+    if media_type == "video":
+        q = q.where(Photo.is_video == True)  # noqa: E712
+    elif media_type == "photo":
+        q = q.where(Photo.is_video == False,  # noqa: E712
+                    or_(Photo.mime_type.is_(None), Photo.mime_type.not_like("image/raw%")))
+    elif media_type == "raw":
+        q = q.where(Photo.mime_type.like("image/raw%"))
+    if person_id:
+        q = q.where(Photo.id.in_(select(Face.photo_id).where(Face.person_id == person_id)))
+
+    sub = q.subquery()
+    month = _f.to_char(_f.date_trunc("month", sub.c.taken_at), "YYYY-MM")
+    rows = (await db.execute(
+        select(month.label("m"), _f.count().label("c"))
+        .select_from(sub)
+        .where(sub.c.taken_at.isnot(None))
+        .group_by(month)
+        .order_by(month.desc())
+    )).all()
+    undated = await db.scalar(
+        select(_f.count()).select_from(sub).where(sub.c.taken_at.is_(None))
+    ) or 0
+    buckets = [{"month": m, "count": c} for m, c in rows]
+    return {"buckets": buckets, "undated": undated, "total": sum(c for _, c in rows) + undated}
+
+
 # ── Single photo ──────────────────────────────────────────────────────────────
 
 @router.get("/photos/{photo_id}", response_model=PhotoV1)
