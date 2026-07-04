@@ -104,7 +104,7 @@ final class APIClient: ObservableObject {
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch {
-            apiLog.fault("[APIClient] decode failed for \(String(describing: T.self), privacy: .public): \(error as CVarArg, privacy: .public)")
+            apiLog.fault("[APIClient] decode failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw APIError.decode(error)
         }
     }
