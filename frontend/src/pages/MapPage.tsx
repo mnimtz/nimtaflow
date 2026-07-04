@@ -127,11 +127,23 @@ export default function MapPage() {
   const asstIds = useAssistant((s) => s.resultIds)
   const asstQuery = useAssistant((s) => s.resultQuery)
   const asstClear = useAssistant((s) => s.clearResult)
+  const mapFilter = useAssistant((s) => s.mapFilter)
+  const setMapFilter = useAssistant((s) => s.setMapFilter)
   const asstActive = !!(asstIds && asstIds.length)
 
+  const mapParams = asstActive
+    ? { ids: asstIds!.join(',') }
+    : mapFilter
+      ? {
+          ...(mapFilter.personId != null ? { person_id: String(mapFilter.personId) } : {}),
+          ...(mapFilter.dateFrom ? { date_from: mapFilter.dateFrom } : {}),
+          ...(mapFilter.dateTo ? { date_to: mapFilter.dateTo } : {}),
+        }
+      : {}
+
   const { data, isLoading } = useQuery({
-    queryKey: ['photos-map', asstActive ? asstIds : null],
-    queryFn: () => api.get('/photos/map', { params: asstActive ? { ids: asstIds!.join(',') } : {} })
+    queryKey: ['photos-map', asstActive ? asstIds : null, !asstActive ? mapFilter : null],
+    queryFn: () => api.get('/photos/map', { params: mapParams })
       .then((r) => r.data as Photo[]),
   })
 
@@ -207,6 +219,15 @@ export default function MapPage() {
               <Sparkles size={12} className="shrink-0" />
               <span className="truncate">{asstQuery || 'Assistent'} · {withGps.length} auf der Karte</span>
               <button onClick={asstClear} className="ml-0.5 p-0.5 rounded-full hover:bg-white/20 shrink-0" title="Filter aufheben">
+                <X size={13} />
+              </button>
+            </span>
+          )}
+          {!asstActive && mapFilter && (
+            <span className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-600 text-white text-xs font-medium max-w-[60vw] md:max-w-md">
+              <Sparkles size={12} className="shrink-0" />
+              <span className="truncate">{mapFilter.label} · {withGps.length} auf der Karte</span>
+              <button onClick={() => setMapFilter(null)} className="ml-0.5 p-0.5 rounded-full hover:bg-white/20 shrink-0" title="Filter aufheben">
                 <X size={13} />
               </button>
             </span>

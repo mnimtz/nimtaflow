@@ -583,14 +583,16 @@ async def trips(db: AsyncSession = Depends(get_db),
 
 @router.get("/map")
 async def map_points(ids: Optional[str] = None,
+                     person_id: Optional[int] = None,
+                     date_from: Optional[str] = None,
+                     date_to: Optional[str] = None,
                      db: AsyncSession = Depends(get_db),
                      user: Optional[User] = Depends(current_user_optional)):
-    """Lightweight: every photo with GPS as {id, latitude, longitude} — NO 500
-    cap (the gallery list capped the map at 500). Just coordinates, so the whole
-    library's points render; clicking a point fetches the photo detail by id.
-
-    Mit `ids` (kommagetrennt) nur genau diese Fotos — der Ambient-Assistent filtert
-    die Karte damit auf sein Ergebnis-Set (weiter ACL-gescoped via photo_conditions)."""
+    """Lightweight: every photo with GPS as {id, latitude, longitude}.
+    Accepts ids (comma-separated), person_id, date_from, date_to for
+    Ambient-Assistent intent filtering."""
+    from datetime import datetime as _dt, timedelta as _td
+    from app.models.face import Face
     conds = photo_conditions(user)
     extra = []
     if ids is not None:
@@ -599,9 +601,14 @@ async def map_points(ids: Optional[str] = None,
         except ValueError:
             id_list = []
         extra.append(Photo.id.in_(id_list) if id_list else Photo.id == -1)
-    # Return ALL gps points (newest first) — the 2D map clusters them
-    # (react-leaflet-cluster, zoom-adaptive); the globe slices to a renderable
-    # subset client-side. Lightweight rows (just coords), so the full set is fine.
+    if person_id:
+        extra.append(Photo.id.in_(select(Face.photo_id).where(Face.person_id == person_id)))
+    if date_from:
+        try: extra.append(Photo.taken_at >= _dt.fromisoformat(date_from))
+        except ValueError: pass
+    if date_to:
+        try: extra.append(Photo.taken_at < _dt.fromisoformat(date_to) + _td(days=1))
+        except ValueError: pass
     rows = (await db.execute(
         select(Photo.id, Photo.latitude, Photo.longitude, Photo.is_video,
                Photo.city, Photo.country, Photo.location_name).where(

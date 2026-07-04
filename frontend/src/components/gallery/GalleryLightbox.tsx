@@ -120,6 +120,19 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     queryKey: ['people-min'], queryFn: () => api.get('/people').then(r => r.data), staleTime: 300_000,
   })
   const [editFaceId, setEditFaceId] = useState<number | null>(null)
+  const [editGps, setEditGps] = useState(false)
+  const [gpsLat, setGpsLat] = useState('')
+  const [gpsLon, setGpsLon] = useState('')
+  const [gpsBusy, setGpsBusy] = useState(false)
+  const startEditGps = () => { setGpsLat(p?.latitude?.toFixed(6) ?? ''); setGpsLon(p?.longitude?.toFixed(6) ?? ''); setEditGps(true) }
+  const saveGps = async () => {
+    const lat = parseFloat(gpsLat); const lon = parseFloat(gpsLon)
+    if (isNaN(lat) || isNaN(lon)) return
+    setGpsBusy(true)
+    try { await api.patch(`/photos/${photoId}/meta`, { latitude: lat, longitude: lon }); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); setEditGps(false); toast('GPS gespeichert', 'success') }
+    catch { toast('GPS-Speichern fehlgeschlagen', 'error') }
+    finally { setGpsBusy(false) }
+  }
   const removePerson = async (faceId: number) => {
     try { await api.delete(`/people/faces/${faceId}/unassign`); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); toast(t('gallery.personRemoved'), 'success') }
     catch { toast(t('gallery.personEditFailed'), 'error') }
@@ -326,7 +339,7 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
 
         {(p.city || p.country || p.location_name) && <Row icon={MapPin} label={t('gallery.location')}>{[p.location_name, p.city, p.country].filter(Boolean).join(', ')}</Row>}
 
-        {p.latitude != null && p.longitude != null && (
+        {p.latitude != null && p.longitude != null && !editGps && (
           <div className="space-y-1.5">
             <div className="rounded-xl overflow-hidden border border-zinc-800 h-40">
               <MapContainer center={[p.latitude, p.longitude]} zoom={13} className="h-full w-full" zoomControl={false} dragging={false} scrollWheelZoom={false}>
@@ -334,8 +347,29 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
                 <CircleMarker center={[p.latitude, p.longitude]} radius={7} pathOptions={{ color: '#6366f1', fillColor: '#818cf8', fillOpacity: 0.9 }} />
               </MapContainer>
             </div>
-            <p className="text-[11px] text-zinc-500">{p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}{p.altitude != null ? ` · ${Math.round(p.altitude)} m` : ''}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] text-zinc-500 flex-1">{p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}{p.altitude != null ? ` · ${Math.round(p.altitude)} m` : ''}</p>
+              <button onClick={startEditGps} className="text-[11px] text-indigo-400 hover:text-indigo-300 shrink-0"><Pencil size={12} /></button>
+            </div>
           </div>
+        )}
+        {editGps && (
+          <div className="space-y-2 p-3 rounded-xl bg-zinc-800/60 border border-zinc-700">
+            <p className="text-[11px] font-medium text-zinc-300">GPS bearbeiten</p>
+            <div className="flex gap-2">
+              <input value={gpsLat} onChange={e => setGpsLat(e.target.value)} placeholder="Breitengrad" className="flex-1 px-2 py-1 rounded text-xs bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500" />
+              <input value={gpsLon} onChange={e => setGpsLon(e.target.value)} placeholder="Längengrad" className="flex-1 px-2 py-1 rounded text-xs bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={saveGps} disabled={gpsBusy} className="flex-1 px-2 py-1 rounded text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Speichern</button>
+              <button onClick={() => setEditGps(false)} className="px-2 py-1 rounded text-xs text-zinc-400 hover:bg-zinc-700"><X size={12} /></button>
+            </div>
+          </div>
+        )}
+        {p.latitude == null && !editGps && (
+          <button onClick={startEditGps} className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-indigo-400">
+            <MapPin size={12} /> GPS hinzufügen
+          </button>
         )}
 
         {tags.length > 0 && (

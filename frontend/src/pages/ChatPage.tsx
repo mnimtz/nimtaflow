@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { Send, Sparkles, Loader2, Cpu, Cloud } from 'lucide-react'
 import { api, thumbUrl, type Photo } from '../lib/api'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 import { useT } from '../i18n'
+import { useAssistant } from '../store/assistant'
 
 type ChatPhoto = { id: number; titel?: string | null; beschreibung?: string | null; datum?: string | null; ort?: string | null; ist_video?: boolean }
 type Msg = { role: 'user' | 'assistant'; content: string; photo_ids?: number[]; result_ids?: number[]; photos?: ChatPhoto[]; suggestions?: string[]; navigate?: string | null }
@@ -16,6 +18,8 @@ export default function ChatPage() {
     t('chat.example3'),
     t('chat.example4'),
   ]
+  const navigate = useNavigate()
+  const { setGalleryFilter, setMapFilter } = useAssistant()
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -64,6 +68,27 @@ export default function ChatPage() {
         photo_ids: d.photo_ids || [], result_ids: d.result_ids || [],
         photos: d.photos || [], suggestions: d.suggestions || [], navigate: d.navigate,
       }])
+      // Strukturierte Intents verarbeiten
+      for (const intent of d.intents || []) {
+        if (intent.type === 'filter_gallery') {
+          setGalleryFilter({
+            personId: intent.person_id,
+            dateFrom: intent.date_from,
+            dateTo: intent.date_to,
+            mediaType: intent.media_type,
+            label: [intent.date_from, intent.date_to].filter(Boolean).join(' – ') || 'Assistent-Filter',
+          })
+        } else if (intent.type === 'filter_map') {
+          setMapFilter({
+            personId: intent.person_id,
+            dateFrom: intent.date_from,
+            dateTo: intent.date_to,
+            label: [intent.date_from, intent.date_to].filter(Boolean).join(' – ') || 'Assistent-Filter',
+          })
+        } else if (intent.type === 'navigate' && intent.route) {
+          navigate(intent.route)
+        }
+      }
     } catch (e: any) {
       setMessages(m => [...m, { role: 'assistant', content: t('chat.errorPrefix') + (e?.response?.data?.detail || e?.message || t('chat.errorUnknown')) }])
     } finally { setSending(false) }
