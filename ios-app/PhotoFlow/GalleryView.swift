@@ -34,7 +34,7 @@ struct GalleryView: View {
     @State private var uploadNote: String?
     @AppStorage("gallery_group") private var groupMode = "day"   // none|day|month|year (default: Tag)
     @AppStorage("gallery_layout") private var layoutMode = "grid" // grid|justified|masonry
-    @AppStorage("gallery_timeline") private var showTimeline = false
+    @AppStorage("gallery_timeline") private var showTimeline = true
 
     // Multi-Select
     @State private var selectionMode = false
