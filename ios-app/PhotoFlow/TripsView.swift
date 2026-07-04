@@ -448,7 +448,7 @@ struct NewTripWizard: View {
             if let e = error as? APIClient.APIError {
                 switch e {
                 case .status(let c): self.error = "Server-Fehler \(c) bei der Planung."
-                case .decode: self.error = "Antwort von Gemini nicht lesbar — bitte nochmal versuchen."
+                case .decode(let underlying): self.error = "Antwort von Gemini nicht lesbar — bitte nochmal versuchen. (\(underlying.localizedDescription))"
                 case .badURL: self.error = "Server-Adresse ungültig."
                 }
             } else {

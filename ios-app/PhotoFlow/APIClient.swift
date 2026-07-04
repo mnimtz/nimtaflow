@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+import OSLog
+
+private let apiLog = Logger(subsystem: "com.nimtaflow.app", category: "APIClient")
 
 /// TLS trust handler: when the user enables "accept self-signed certificates"
 /// (Settings → Server), accept the server's certificate without system-chain
@@ -40,7 +43,7 @@ final class APIClient: ObservableObject {
 
     private var base: URL { URL(string: serverURL.trimmingCharacters(in: .whitespaces))! }
 
-    enum APIError: Error { case status(Int), badURL, decode }
+    enum APIError: Error { case status(Int), badURL, decode(Error) }
 
     /// Build an absolute URL from a relative API path. Uses plain string joining
     /// (NOT URL.appendingPathComponent, which percent-encodes "?" and "&" and so
@@ -101,10 +104,8 @@ final class APIClient: ObservableObject {
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch {
-            #if DEBUG
-            print("[APIClient] decode failed for \(T.self): \(error)")
-            #endif
-            throw APIError.decode
+            apiLog.fault("[APIClient] decode failed for \(String(describing: T.self), privacy: .public): \(error as CVarArg, privacy: .public)")
+            throw APIError.decode(error)
         }
     }
 
@@ -341,8 +342,12 @@ final class APIClient: ObservableObject {
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }
-    func mapClusters(minLat: Double, minLng: Double, maxLat: Double, maxLng: Double, grid: Int) async throws -> [MapClusterV1] {
-        let p = "api/v1/map/clusters?min_lat=\(minLat)&min_lng=\(minLng)&max_lat=\(maxLat)&max_lng=\(maxLng)&grid=\(grid)"
+    func mapClusters(minLat: Double, minLng: Double, maxLat: Double, maxLng: Double, grid: Int,
+                     personId: Int? = nil, dateFrom: String? = nil, dateTo: String? = nil) async throws -> [MapClusterV1] {
+        var p = "api/v1/map/clusters?min_lat=\(minLat)&min_lng=\(minLng)&max_lat=\(maxLat)&max_lng=\(maxLng)&grid=\(grid)"
+        if let pid = personId { p += "&person_id=\(pid)" }
+        if let df = dateFrom { p += "&date_from=\(df)" }
+        if let dt = dateTo   { p += "&date_to=\(dt)" }
         return try await get(p, as: [MapClusterV1].self)
     }
     func mapPhotos(minLat: Double, minLng: Double, maxLat: Double, maxLng: Double) async throws -> [PhotoV1] {
@@ -369,7 +374,7 @@ final class APIClient: ObservableObject {
         if code == 401 { await logout(); throw APIError.status(401) }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         let results = try JSONDecoder().decode([UploadResult].self, from: respData)
-        guard let first = results.first else { throw APIError.decode }
+        guard let first = results.first else { throw APIError.decode(URLError(.cannotParseResponse)) }
         return first
     }
 
@@ -471,11 +476,14 @@ final class APIClient: ObservableObject {
     // MARK: Chat
     func chatStatus() async throws -> ChatStatus { try await get("api/v1/chat/status", as: ChatStatus.self) }
     func chat(message: String, history: [ChatTurn], provider: String? = nil,
-              contextIDs: [Int] = []) async throws -> ChatReply {
+              contextIDs: [Int] = [], viewContext: String? = nil) async throws -> ChatReply {
         var body: [String: Any] = ["message": message,
                                    "history": history.map { ["role": $0.role, "content": $0.content] }]
         if let provider { body["provider"] = provider }
         if !contextIDs.isEmpty { body["context_ids"] = contextIDs }
+        // Phase 1: aktuellen View-Kontext mitsenden (z. B. "map", "gallery") —
+        // damit der Assistent kontextuell bessere Intents bilden kann.
+        if let vc = viewContext, !vc.isEmpty { body["view_context"] = vc }
         return try await send(makeRequest("api/v1/chat", method: "POST", json: body), as: ChatReply.self)
     }
 }

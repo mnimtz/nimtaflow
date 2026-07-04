@@ -110,6 +110,29 @@ struct ChatView: View {
         dismiss()
     }
 
+    /// Phase 1: verarbeitet strukturierte Intents aus der Backend-Antwort.
+    /// Leitet filter_map direkt an den Store weiter; filter_gallery wird über
+    /// result_ids abgedeckt (die bestehende ID-basierte Filterung reicht für Phase 1).
+    func applyIntents(_ payloads: [AssistantIntentPayload]) {
+        for payload in payloads {
+            guard let intent = AssistantIntent.from(payload) else { continue }
+            switch intent {
+            case .filterMap(let personId, let dateFrom, let dateTo):
+                let filter = AssistantMapFilter(personId: personId, dateFrom: dateFrom, dateTo: dateTo)
+                if !filter.isEmpty {
+                    store.chatMapFilter = filter
+                }
+            case .filterGallery:
+                // Galerie-Filter läuft bereits via result_ids → store.chatGalleryFilter.
+                // Keine zusätzliche Aktion nötig (ID-basiert reicht für Phase 1).
+                break
+            case .navigate:
+                // navigate kommt bereits als reply.navigate String → wird separat behandelt.
+                break
+            }
+        }
+    }
+
     /// Person-ID aus einem Pfad wie "/people?person=3" ziehen (für Deep-Select).
     private func personId(from path: String) -> Int? {
         URLComponents(string: "http://x" + path)?.queryItems?
@@ -155,6 +178,8 @@ struct ChatView: View {
             messages.append(ChatBubble(role: "assistant", text: reply.answer, photoIDs: shown,
                                        resultIDs: full,
                                        suggestions: sugg, navigate: reply.navigate))
+            // Phase 1: strukturierte Intents verarbeiten
+            applyIntents(reply.intents ?? [])
         } catch APIClient.APIError.status(401) {
             messages.append(ChatBubble(role: "assistant",
                 text: "Deine Sitzung ist abgelaufen. Bitte melde dich neu an.", photoIDs: [], isError: true))

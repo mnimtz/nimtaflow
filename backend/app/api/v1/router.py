@@ -1033,26 +1033,42 @@ async def map_clusters_v1(
     min_lat: float = Query(-90), min_lng: float = Query(-180),
     max_lat: float = Query(90), max_lng: float = Query(180),
     grid: int = Query(12, ge=2, le=40, description="cells across the viewport"),
+    person_id: Optional[int] = Query(None, description="Filter auf eine Person (Face-Join)"),
+    date_from: Optional[str] = Query(None, description="ISO-Datum Anfang (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="ISO-Datum Ende (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
     """Server-side grid clustering for the visible bbox. Buckets photos into a
     grid (≈grid×grid cells) in SQL and returns one centroid+count per cell — so
     the map transfers a few hundred clusters, not 27k points, and resolves as you
-    zoom (smaller bbox → finer cells)."""
+    zoom (smaller bbox → finer cells).
+
+    Optionale Filter (Phase 1 Assistent-Intents): person_id, date_from, date_to."""
     from sqlalchemy import func as _f
+    from datetime import date as _date
     acl = photo_conditions(user)
     cell_lat = max((max_lat - min_lat) / grid, 1e-6)
     cell_lng = max((max_lng - min_lng) / grid, 1e-6)
     gy = _f.floor(Photo.latitude / cell_lat)
     gx = _f.floor(Photo.longitude / cell_lng)
+    extra = []
+    if person_id:
+        from app.models.face import Face
+        extra.append(Photo.id.in_(select(Face.photo_id).where(Face.person_id == person_id)))
+    if date_from:
+        try: extra.append(Photo.taken_at >= _date.fromisoformat(date_from))
+        except ValueError: pass
+    if date_to:
+        try: extra.append(Photo.taken_at <= _date.fromisoformat(date_to))
+        except ValueError: pass
     rows = (await db.execute(
         select(_f.count(), _f.avg(Photo.latitude), _f.avg(Photo.longitude),
                _f.min(Photo.id), _f.bool_or(Photo.is_video))
         .where(Photo.latitude.isnot(None), Photo.longitude.isnot(None),
                Photo.latitude >= min_lat, Photo.latitude <= max_lat,
                Photo.longitude >= min_lng, Photo.longitude <= max_lng,
-               Photo.is_trashed == False, *acl)  # noqa: E712
+               Photo.is_trashed == False, *acl, *extra)  # noqa: E712
         .group_by(gy, gx)
     )).all()
     return [MapClusterV1(count=r[0], latitude=float(r[1]), longitude=float(r[2]),

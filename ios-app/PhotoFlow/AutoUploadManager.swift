@@ -205,7 +205,7 @@ final class AutoUploadManager: ObservableObject {
             : [.photo, .fullSizePhoto]
         guard let res = preferred.compactMap({ t in resources.first { $0.type == t } }).first
                 ?? resources.first else {
-            throw APIClient.APIError.decode
+            throw APIClient.APIError.decode(URLError(.cannotParseResponse))
         }
         let opts = PHAssetResourceRequestOptions()
         opts.isNetworkAccessAllowed = true

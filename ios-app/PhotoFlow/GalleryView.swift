@@ -479,7 +479,7 @@ struct GalleryView: View {
         if let e = error as? APIClient.APIError {
             switch e {
             case .status(let c): loadError = "Server antwortet mit Fehler \(c)"
-            case .decode: loadError = "Antwort nicht lesbar (Decode-Fehler)"
+            case .decode(let underlying): loadError = "Antwort nicht lesbar (Decode-Fehler: \(underlying.localizedDescription))"
             case .badURL: loadError = "Server-Adresse ungültig"
             }
         } else {
@@ -653,6 +653,7 @@ struct MasonrySection: View {
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
 
     var body: some View {
         GeometryReader { geo in
@@ -678,7 +679,10 @@ struct MasonrySection: View {
                 }
             }
         }
-        .frame(height: totalHeight())
+        .frame(height: totalHeight(width: containerWidth))
+        .background(GeometryReader { geo in
+            Color.clear.onAppear { containerWidth = geo.size.width }
+        })
     }
 
     private func pack(into colCount: Int, colWidth: CGFloat) -> [[PhotoV1]] {
@@ -693,12 +697,10 @@ struct MasonrySection: View {
     }
 
     // Approximate total height so GeometryReader gets a real height inside LazyVStack.
-    private func totalHeight() -> CGFloat {
+    private func totalHeight(width: CGFloat) -> CGFloat {
         let colCount = (sizeClass == .compact) ? 2 : 3
-        // Width unknown here; use screen width as a reasonable estimate.
         let spacing: CGFloat = 2
-        let screenW = UIScreen.main.bounds.width - 4
-        let colWidth = (screenW - spacing * CGFloat(colCount - 1)) / CGFloat(colCount)
+        let colWidth = (width - spacing * CGFloat(colCount - 1)) / CGFloat(colCount)
         var heights = Array(repeating: CGFloat(0), count: colCount)
         for p in items {
             let i = heights.firstIndex(of: heights.min()!) ?? 0
@@ -719,6 +721,7 @@ struct JustifiedSection: View {
     let onLast: (PhotoV1) -> Void
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
+    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
 
     private let targetH: CGFloat = 140
     private let spacing: CGFloat = 2
@@ -746,6 +749,9 @@ struct JustifiedSection: View {
             }
         }
         .frame(height: totalHeight())
+        .background(GeometryReader { geo in
+            Color.clear.onAppear { containerWidth = geo.size.width }
+        })
     }
 
     private struct Row { var items: [PhotoV1]; var height: CGFloat }
@@ -776,7 +782,7 @@ struct JustifiedSection: View {
     }
 
     private func totalHeight() -> CGFloat {
-        let rows = buildRows(width: UIScreen.main.bounds.width - 4)
+        let rows = buildRows(width: containerWidth)
         return rows.reduce(0) { $0 + $1.height + spacing }
     }
 }

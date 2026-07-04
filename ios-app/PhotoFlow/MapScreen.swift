@@ -69,6 +69,7 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
 /// (finer grid) as you pan/zoom — so it's tiny and fast at any scale.
 struct MapScreen: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var store: Store
     @AppStorage("map_style_pref") private var stylePrefRaw = MapStylePref.globus.rawValue
     @State private var clusters: [MapClusterV1] = []
     @State private var selected: PhotoV1?
@@ -180,11 +181,32 @@ struct MapScreen: View {
             .onReceive(loc.$coordinate.compactMap { $0 }) { c in
                 if pendingRecenter { pendingRecenter = false; recenter(on: c) }
             }
+            .overlay(alignment: .top) {
+                // Assistent-Karten-Filter-Banner (Phase 1)
+                if let f = store.chatMapFilter, !f.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles").foregroundStyle(.indigo)
+                        Text("Karte gefiltert: \(f.label)")
+                            .font(.footnote.weight(.medium))
+                        Spacer()
+                        Button { store.chatMapFilter = nil } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .padding(.top, 4)
+                }
+            }
             .overlay(alignment: .bottom) {
                 if loading || mapError != nil {
                     Text(loading ? "lädt…" : (mapError ?? "")).font(.caption).padding(8)
                         .background(.ultraThinMaterial, in: Capsule()).padding(.bottom, 4)
                 }
+            }
+            .onChange(of: store.chatMapFilter) { _, _ in
+                // Filter geändert → Cluster neu laden mit neuen Parametern
+                if let r = region { Task { await loadClusters(r) } }
             }
             .fullScreenCover(item: $selected) { p in PhotoPager(photos: [p], start: p) }
             .sheet(isPresented: $showClusterSheet) {
@@ -223,9 +245,14 @@ struct MapScreen: View {
         let minLng = r.center.longitude - r.span.longitudeDelta / 2
         let maxLng = r.center.longitude + r.span.longitudeDelta / 2
         loading = true; mapError = nil
+        // Phase 1: Assistent-Filter (person_id, Datumsbereich) weitergeben
+        let mapFilter = store.chatMapFilter
         do {
             clusters = try await api.mapClusters(minLat: minLat, minLng: minLng,
-                                                 maxLat: maxLat, maxLng: maxLng, grid: 12)
+                                                 maxLat: maxLat, maxLng: maxLng, grid: 12,
+                                                 personId: mapFilter?.personId,
+                                                 dateFrom: mapFilter?.dateFrom,
+                                                 dateTo: mapFilter?.dateTo)
         } catch is CancellationError {
         } catch {
             mapError = "Karte: \((error as NSError).localizedDescription)"

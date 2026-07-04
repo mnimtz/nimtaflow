@@ -23,6 +23,9 @@ final class Store: ObservableObject {
     // Chat-Assistent → Galerie-Filter: wenn der Nutzer "Alle N in Galerie öffnen" tippt,
     // landen die Treffer hier; GalleryView beobachtet das und schaltet in den Filtermodus.
     @Published var chatGalleryFilter: [Int]? = nil
+    // Phase 1: strukturierter Karten-Filter vom Assistenten (person_id + Datumsbereich).
+    // MapScreen beobachtet das und filtert die Cluster-Anfragen entsprechend.
+    @Published var chatMapFilter: AssistantMapFilter? = nil
 
     var promoActive: Bool { Date() < Store.promoEnd }
     var isPro: Bool { purchasedPro || serverPro || promoActive }

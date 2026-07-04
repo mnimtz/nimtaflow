@@ -376,6 +376,64 @@ struct ChatReply: Codable {
     let result_ids: [Int]?          // volles Treffer-Set (Ambient-Assistent)
     let navigate: String?           // Ansichts-Navigation (z. B. "/people?person=3")
     let suggestions: [String]?      // proaktive Folge-Vorschläge (antippbare Chips)
+    let intents: [AssistantIntentPayload]?  // Phase 1: strukturierte Intents
+}
+
+// MARK: - Ambient-Assistent Intents (Phase 1)
+
+/// Roher Intent-Payload aus dem Backend — als generischer Codable-Container,
+/// weil der `type`-Discriminator erst beim Parsen bekannt ist.
+struct AssistantIntentPayload: Codable {
+    let type: String           // "filter_gallery" | "filter_map" | "navigate"
+    let person_id: Int?
+    let date_from: String?
+    let date_to: String?
+    let media_type: String?    // "photo" | "video"
+    let route: String?         // für "navigate"
+}
+
+/// Getipptes Intent-Modell, das Views direkt konsumieren.
+enum AssistantIntent: Equatable {
+    case filterGallery(personId: Int?, dateFrom: String?, dateTo: String?, mediaType: String?)
+    case filterMap(personId: Int?, dateFrom: String?, dateTo: String?)
+    case navigate(route: String)
+
+    static func from(_ payload: AssistantIntentPayload) -> AssistantIntent? {
+        switch payload.type {
+        case "filter_gallery":
+            return .filterGallery(personId: payload.person_id, dateFrom: payload.date_from,
+                                  dateTo: payload.date_to, mediaType: payload.media_type)
+        case "filter_map":
+            return .filterMap(personId: payload.person_id, dateFrom: payload.date_from,
+                              dateTo: payload.date_to)
+        case "navigate":
+            guard let route = payload.route else { return nil }
+            return .navigate(route: route)
+        default:
+            return nil
+        }
+    }
+}
+
+/// Map-Filter, den der Assistent der Karte schickt.
+struct AssistantMapFilter: Equatable {
+    let personId: Int?
+    let dateFrom: String?
+    let dateTo: String?
+
+    var isEmpty: Bool { personId == nil && dateFrom == nil && dateTo == nil }
+
+    /// Lesbare Beschreibung für den Banner.
+    var label: String {
+        var parts: [String] = []
+        if dateFrom != nil || dateTo != nil {
+            let from = dateFrom.map { String($0.prefix(4)) } ?? ""
+            let to   = dateTo.map   { String($0.prefix(4)) } ?? ""
+            if from == to && !from.isEmpty { parts.append(from) }
+            else if !from.isEmpty || !to.isEmpty { parts.append([from, to].filter { !$0.isEmpty }.joined(separator: "–")) }
+        }
+        return parts.isEmpty ? "Assistent-Filter" : parts.joined(separator: ", ")
+    }
 }
 
 // MARK: - Leitstand / Ops-Status (admin-only)

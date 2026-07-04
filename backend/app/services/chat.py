@@ -771,6 +771,80 @@ async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) 
     return {"fehler": "Unbekanntes Ziel."}
 
 
+async def _build_intents(db: AsyncSession, search_args: dict, nav_target: Optional[str]) -> list:
+    """Erstellt strukturierte Intent-Objekte aus den Tool-Call-Argumenten des letzten Suchlaufs.
+    Gibt 0–2 Intent-Dicts zurück, die das iOS/Web-Frontend direkt als Filter anwenden kann.
+    Phase 1: filter_gallery + filter_map (person_id, date range, media type).
+    """
+    if not search_args and not nav_target:
+        return []
+
+    intents: list = []
+
+    # filter_gallery Intent: strukturierte Galerie-Filter aus suche_fotos-Argumenten.
+    person_name = search_args.get("person") or ""
+    datum_von = search_args.get("datum_von") or ""
+    datum_bis = search_args.get("datum_bis") or ""
+    jahr_von = search_args.get("jahr_von")
+    jahr_bis = search_args.get("jahr_bis")
+    medientyp = search_args.get("medientyp") or ""
+
+    # Personenname → ID auflösen (für typisierte Intents brauchen wir die ID)
+    resolved_person_id: Optional[int] = None
+    if person_name.strip():
+        row = (await db.execute(
+            select(Person.id).where(Person.name.ilike(f"%{person_name.strip()}%"))
+            .limit(1)
+        )).first()
+        if row:
+            resolved_person_id = row[0]
+
+    # Jahresfilter → ISO-Datum konvertieren wenn kein explizites datum_von/bis
+    if not datum_von and jahr_von:
+        datum_von = f"{int(jahr_von)}-01-01"
+    if not datum_bis and jahr_bis:
+        datum_bis = f"{int(jahr_bis)}-12-31"
+
+    # media_type normalisieren
+    mt = medientyp.lower()
+    media_type_norm: Optional[str] = None
+    if mt in ("video", "videos"):
+        media_type_norm = "video"
+    elif mt in ("bild", "bilder", "foto", "fotos", "image", "images"):
+        media_type_norm = "photo"
+
+    has_gallery_filter = any([resolved_person_id, datum_von, datum_bis, media_type_norm])
+    if has_gallery_filter:
+        intent: dict = {"type": "filter_gallery"}
+        if resolved_person_id:
+            intent["person_id"] = resolved_person_id
+        if datum_von:
+            intent["date_from"] = datum_von
+        if datum_bis:
+            intent["date_to"] = datum_bis
+        if media_type_norm:
+            intent["media_type"] = media_type_norm
+        intents.append(intent)
+
+    # filter_map Intent: wenn Personen- oder Datumsfilter vorhanden, auch die Karte filtern.
+    # (Ort-Filter macht auf der Karte wenig Sinn, da die Karte bereits geografisch ist.)
+    if resolved_person_id or datum_von or datum_bis:
+        map_intent: dict = {"type": "filter_map"}
+        if resolved_person_id:
+            map_intent["person_id"] = resolved_person_id
+        if datum_von:
+            map_intent["date_from"] = datum_von
+        if datum_bis:
+            map_intent["date_to"] = datum_bis
+        intents.append(map_intent)
+
+    # navigate Intent: falls oeffne_ansicht einen Pfad geliefert hat.
+    if nav_target:
+        intents.append({"type": "navigate", "route": nav_target})
+
+    return intents
+
+
 async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSession,
                         user=None, context_ids: Optional[List[int]] = None) -> dict:
     # Chat may use its OWN Gemini key (Einstellungen → KI-Chat); falls back to the
@@ -969,6 +1043,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     seen_ids: list = []
     nav_target: Optional[str] = None   # Ansichts-Navigation (oeffne_ansicht) → Frontend springt dorthin
     seen_recs: dict = {}   # id → fused record (description/date/place) for a rich gallery reply
+    # Phase 1 Intents: sammle strukturierte Filter aus Tool-Calls → als intents[] zurückgeben
+    last_search_args: dict = {}  # letzter suche_fotos/rueckblick Aufruf (für Intent-Extraktion)
     # Multimodal: send the top hits' thumbnails so Gemini can SEE them. Budget caps
     # total images across the conversation to bound token cost (chat.vision=off disables).
     vision = str(settings.get("chat.vision", "true")).lower() != "false"
@@ -1112,6 +1188,10 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     else:
+                        # Intent-Tracking: letzten suche_fotos-Aufruf merken für intents[].
+                        if any(args.get(k) for k in ("person", "datum_von", "datum_bis",
+                                                      "jahr_von", "jahr_bis", "medientyp")):
+                            last_search_args = dict(args)
                         # kontext_filtern: Folgefrage auf das letzte Suchergebnis →
                         # nur innerhalb der context_ids suchen/filtern.
                         ctx_acl = list(acl)
@@ -1192,9 +1272,11 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 uniq = list(dict.fromkeys(seen_ids))
             # result_ids = VOLLES Such-Ergebnis (alle Treffer), für den Ambient-Assistenten,
             # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
+            intents = await _build_intents(db, last_search_args, nav_target)
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
                     "result_ids": list(dict.fromkeys(seen_ids)),
                     "suggestions": suggestions, "navigate": nav_target,
+                    "intents": intents,
                     "photos": [seen_recs[i] for i in uniq if i in seen_recs]}
     _u = list(dict.fromkeys(seen_ids))
     return {"answer": "Abgebrochen (zu viele Tool-Schritte).", "photo_ids": _u,
