@@ -352,7 +352,7 @@ struct GalleryView: View {
     }
 
     private func onAppearLast(_ p: PhotoV1) {
-        if p.id == photos.last?.id { Task { await load() } }
+        if p.id == displayPhotos.last?.id && chatFilteredPhotos == nil { Task { await load() } }
     }
 
     func upload(_ items: [PhotosPickerItem]) async {
@@ -826,7 +826,7 @@ struct PhotoPager: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             HStack(spacing: 18) {
-                Button { Task { try? await api.toggleFavorite(photos[index].id); toggleLocal() } } label: {
+                Button { Task { guard let p = cur else { return }; try? await api.toggleFavorite(p.id); toggleLocal() } } label: {
                     Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .white)
                 }
                 Button { showInfo = true } label: { Image(systemName: "info.circle").foregroundStyle(.white) }
@@ -837,14 +837,14 @@ struct PhotoPager: View {
                         Button { showAnimate = true } label: { Label("Animieren / KI-Szene", systemImage: "sparkles") }
                     }
                     Button { Task { await loadProfileFaces() } } label: { Label("Als Personen-Titelbild", systemImage: "person.crop.circle.badge.checkmark") }
-                    Button { Task { try? await api.archivePhoto(photos[index].id); actionNote = "Archiviert" } } label: {
+                    Button { Task { guard let p = cur else { return }; try? await api.archivePhoto(p.id); actionNote = "Archiviert" } } label: {
                         Label("Archivieren", systemImage: "archivebox")
                     }
-                    Button { Task { try? await api.reprocess(photos[index].id); actionNote = "Wird neu verarbeitet…" } } label: {
+                    Button { Task { guard let p = cur else { return }; try? await api.reprocess(p.id); actionNote = "Wird neu verarbeitet…" } } label: {
                         Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
                     }
                     Button(role: .destructive) {
-                        let id = photos[index].id
+                        guard let id = cur?.id else { return }
                         Task { try? await api.trashPhoto(id); onRemoved?(id); dismiss() }
                     } label: { Label("In Papierkorb", systemImage: "trash") }
                     Button(role: .destructive) { showDeleteConfirm = true } label: {
@@ -867,7 +867,7 @@ struct PhotoPager: View {
                         Image(systemName: star <= curRating ? "star.fill" : "star")
                             .foregroundStyle(star <= curRating ? .yellow : .white.opacity(0.6))
                             .onTapGesture {
-                                let id = photos[index].id
+                                guard let id = cur?.id else { return }
                                 let newVal = (curRating == star) ? 0 : star   // tap same star clears
                                 ratings[id] = newVal
                                 Task { try? await api.setRating(id, rating: newVal) }
@@ -899,7 +899,8 @@ struct PhotoPager: View {
         }
         .sheet(isPresented: $showAlbumPicker) {
             AlbumPickerSheet { albumId in
-                Task { try? await api.addPhotosToAlbum(albumId, photoIds: [photos[index].id]); actionNote = "Zu Album hinzugefügt" }
+                guard let id = cur?.id else { return }
+                Task { try? await api.addPhotosToAlbum(albumId, photoIds: [id]); actionNote = "Zu Album hinzugefügt" }
             }.presentationDetents([.medium, .large])
         }
         .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
@@ -914,7 +915,7 @@ struct PhotoPager: View {
         .confirmationDialog("Dieses Medium endgültig löschen? Datei und Eintrag werden entfernt – das kann nicht rückgängig gemacht werden.",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Endgültig löschen", role: .destructive) {
-                let id = photos[index].id
+                guard let id = cur?.id else { return }
                 Task { try? await api.deletePhoto(id); onRemoved?(id); dismiss() }
             }
             Button("Abbrechen", role: .cancel) {}
@@ -945,7 +946,7 @@ struct PhotoPager: View {
         }
     }
     var curRating: Int { ratings[photos[safe: index]?.id ?? -1] ?? 0 }
-    func toggleLocal() { let id = photos[index].id; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }
+    func toggleLocal() { guard let id = cur?.id else { return }; if favs.contains(id) { favs.remove(id) } else { favs.insert(id) } }
 }
 
 struct ZoomableImage: View {

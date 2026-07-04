@@ -124,7 +124,7 @@ if OAUTH:
 
         form = await request.form()
         rid = form.get("rid", "")
-        entry = _provider.pending.pop(rid, None)
+        entry = _provider.pending.get(rid, None)
         if not entry:
             return HTMLResponse("<p>Sitzung abgelaufen – bitte neu starten.</p>", status_code=400)
         client_id, params = entry
@@ -139,6 +139,8 @@ if OAUTH:
         except Exception:
             self_rid = html.escape(rid)
             return RedirectResponse(f"/oauth/consent?rid={self_rid}&err=1", status_code=303)
+        # Login erfolgreich — Sitzung jetzt verbrauchen
+        _provider.pending.pop(rid, None)
         # Auth-Code ausstellen
         code = _secrets.token_urlsafe(24)
         self_code = AuthorizationCode(

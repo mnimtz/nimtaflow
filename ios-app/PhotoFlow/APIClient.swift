@@ -41,7 +41,7 @@ final class APIClient: ObservableObject {
 
     init() { loggedIn = !token.isEmpty }
 
-    private var base: URL { URL(string: serverURL.trimmingCharacters(in: .whitespaces))! }
+    private var base: URL { URL(string: serverURL.trimmingCharacters(in: .whitespaces)) ?? URL(string: "http://localhost:8090")! }
 
     enum APIError: Error { case status(Int), badURL, decode(Error) }
 
@@ -53,7 +53,7 @@ final class APIClient: ObservableObject {
         let b = serverURL.trimmingCharacters(in: .whitespaces)
         let base = b.hasSuffix("/") ? String(b.dropLast()) : b
         let p = path.hasPrefix("/") ? path : "/" + path
-        return URL(string: base + p) ?? URL(string: base)!
+        return URL(string: base + p) ?? self.base
     }
 
     private func makeRequest(_ path: String, method: String = "GET", json: Any? = nil) -> URLRequest {
@@ -219,7 +219,10 @@ final class APIClient: ObservableObject {
     func photoDetail(_ id: Int) async throws -> PhotoDetailV1 { try await get("api/v1/photos/\(id)/detail", as: PhotoDetailV1.self) }
     /// Raw bytes of an authed endpoint (e.g. the generated postcard PNG).
     func getData(_ path: String) async throws -> Data {
-        let (data, _) = try await pfSession.data(for: makeRequest(path))
+        let (data, resp) = try await pfSession.data(for: makeRequest(path))
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { await logout(); throw APIError.status(401) }
+        guard (200..<300).contains(code) else { throw APIError.status(code) }
         return data
     }
     struct AskAnswer: Codable { let answer: String; let provider: String?; let error: String? }

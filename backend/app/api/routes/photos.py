@@ -9,7 +9,7 @@ import os, subprocess, pathlib, mimetypes, asyncio
 
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional, require_pipeline
-from app.core.access import photo_conditions, can_see_photo, feature_allowed, _is_unrestricted
+from app.core.access import photo_conditions, can_see_photo, user_can_access_photo, feature_allowed, _is_unrestricted
 from app.models.photo import Photo, PhotoStatus
 from app.models.user import User
 from app.schemas.photo import PhotoListResponse, PhotoDetail, TimelineGroup, PhotoBase
@@ -1025,7 +1025,7 @@ async def update_meta(photo_id: int, body: MetaUpdate, db: AsyncSession = Depend
                       user: Optional[User] = Depends(current_user_optional)):
     """Edit metadata in DB and optionally write to file / XMP sidecar."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not can_see_photo(photo, user):
+    if not photo or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
 
     # Update DB fields
