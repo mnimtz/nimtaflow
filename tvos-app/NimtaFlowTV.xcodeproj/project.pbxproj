@@ -1,0 +1,449 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		007C6A6FC5DC0A669FF0F40F /* MediaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E258D33F1C0EB48B60C9DF38 /* MediaPlayerView.swift */; };
+		0B588FBB3F2E3DE7F47D281A /* SlideshowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A560C8A1B41924DE384AF6 /* SlideshowView.swift */; };
+		15A5437838ABCCFE36BB6E2A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384E35E18F54BC70DC20093A /* ContentView.swift */; };
+		2DE29049ED6D78722A5F6B19 /* AuthAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4443156F6D21376430BD4AA /* AuthAsyncImage.swift */; };
+		301F0A39BCD619E871227F24 /* AlbumsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED790B099191A1A65608C4A /* AlbumsView.swift */; };
+		4E67D057B5A8BEA0B3E1B4D8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CD401EA445AD4B10681DC5F2 /* Assets.xcassets */; };
+		4F25F0E0ED81099C5D2FF897 /* PhotoCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08C1877E75F4C3A4D0AD26B /* PhotoCard.swift */; };
+		542811328BE67CF00D6D6CBE /* PeopleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FA38EBD974E9F6709F7AC9 /* PeopleView.swift */; };
+		5758820842E3DE2F1A8C3F4B /* DateUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47441C41446530EF7831E47 /* DateUtils.swift */; };
+		6A49AC0F788450443C34B26C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39DE2424E5FCE5A2B13FC5 /* Models.swift */; };
+		6D4B101DABF550B6502A1ACF /* NimtaFlowTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53134CBC466C4836F3CC16C5 /* NimtaFlowTVApp.swift */; };
+		7306DEF488A6F325661BF132 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3597EFF6C42EB678D0A7329C /* LoginView.swift */; };
+		7E3FAD0200757D8D1E04138E /* ServerSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CE9EF6CFEDAE1577FBFE7B /* ServerSetupView.swift */; };
+		8A5AAE416E751E4F37323C84 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD51388F3CBA8032AE5CA55 /* MainTabView.swift */; };
+		90DA331D9A317DF7D6DF2E6A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DEF0EB183F9F08D920BD8E3 /* SettingsView.swift */; };
+		B236A9FC12CE865886F7C566 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FEA17D643BCCA4ABAD73E93 /* AppState.swift */; };
+		B5DC67B3D3E4DA290E9225DF /* GalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755837C15A778944F7EDBDF5 /* GalleryView.swift */; };
+		E78B86F22C3D59CA3CCCC36A /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6F83E3326AF53D7D795403 /* APIClient.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		08FA38EBD974E9F6709F7AC9 /* PeopleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleView.swift; sourceTree = "<group>"; };
+		0FEA17D643BCCA4ABAD73E93 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		16B4455C6825757600125D1E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3597EFF6C42EB678D0A7329C /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		384E35E18F54BC70DC20093A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4F6F83E3326AF53D7D795403 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		53134CBC466C4836F3CC16C5 /* NimtaFlowTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NimtaFlowTVApp.swift; sourceTree = "<group>"; };
+		59CE9EF6CFEDAE1577FBFE7B /* ServerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSetupView.swift; sourceTree = "<group>"; };
+		5E39DE2424E5FCE5A2B13FC5 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		5ED790B099191A1A65608C4A /* AlbumsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsView.swift; sourceTree = "<group>"; };
+		755837C15A778944F7EDBDF5 /* GalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryView.swift; sourceTree = "<group>"; };
+		7DEF0EB183F9F08D920BD8E3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		90A560C8A1B41924DE384AF6 /* SlideshowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowView.swift; sourceTree = "<group>"; };
+		A08C1877E75F4C3A4D0AD26B /* PhotoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCard.swift; sourceTree = "<group>"; };
+		A4443156F6D21376430BD4AA /* AuthAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAsyncImage.swift; sourceTree = "<group>"; };
+		C47441C41446530EF7831E47 /* DateUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateUtils.swift; sourceTree = "<group>"; };
+		CD401EA445AD4B10681DC5F2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E258D33F1C0EB48B60C9DF38 /* MediaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPlayerView.swift; sourceTree = "<group>"; };
+		EBD51388F3CBA8032AE5CA55 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		F94F9F31F80E32BE8AFE3BEF /* NimtaFlowTV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NimtaFlowTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		271441B96B53B8CA3920A6B8 /* Player */ = {
+			isa = PBXGroup;
+			children = (
+				E258D33F1C0EB48B60C9DF38 /* MediaPlayerView.swift */,
+			);
+			path = Player;
+			sourceTree = "<group>";
+		};
+		38F74173C32F3F6CBAB67E46 /* NimtaFlowTV */ = {
+			isa = PBXGroup;
+			children = (
+				0FEA17D643BCCA4ABAD73E93 /* AppState.swift */,
+				CD401EA445AD4B10681DC5F2 /* Assets.xcassets */,
+				384E35E18F54BC70DC20093A /* ContentView.swift */,
+				16B4455C6825757600125D1E /* Info.plist */,
+				53134CBC466C4836F3CC16C5 /* NimtaFlowTVApp.swift */,
+				F28D4D18FD8E6AAC57093D46 /* API */,
+				B36D781B4A3FF259D48E9AFE /* Shared */,
+				A22E432A8E74AF47F9DA46B9 /* Views */,
+			);
+			path = NimtaFlowTV;
+			sourceTree = "<group>";
+		};
+		3E87688C566C69C2AF71F228 /* Setup */ = {
+			isa = PBXGroup;
+			children = (
+				3597EFF6C42EB678D0A7329C /* LoginView.swift */,
+				59CE9EF6CFEDAE1577FBFE7B /* ServerSetupView.swift */,
+			);
+			path = Setup;
+			sourceTree = "<group>";
+		};
+		507E3F33FBBC680BEE9B2CB5 /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				EBD51388F3CBA8032AE5CA55 /* MainTabView.swift */,
+				7DEF0EB183F9F08D920BD8E3 /* SettingsView.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		5BA19388D71C774DEBB07986 /* Albums */ = {
+			isa = PBXGroup;
+			children = (
+				5ED790B099191A1A65608C4A /* AlbumsView.swift */,
+			);
+			path = Albums;
+			sourceTree = "<group>";
+		};
+		A22E432A8E74AF47F9DA46B9 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				5BA19388D71C774DEBB07986 /* Albums */,
+				B8658114A55CFAD045067AF0 /* Gallery */,
+				507E3F33FBBC680BEE9B2CB5 /* Main */,
+				D97313D52920842ABD791FFC /* People */,
+				271441B96B53B8CA3920A6B8 /* Player */,
+				3E87688C566C69C2AF71F228 /* Setup */,
+				C1426EBCD5739866CDC66B70 /* Slideshow */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A8881E9A7308948EABFB417D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F94F9F31F80E32BE8AFE3BEF /* NimtaFlowTV.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B36D781B4A3FF259D48E9AFE /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A4443156F6D21376430BD4AA /* AuthAsyncImage.swift */,
+				C47441C41446530EF7831E47 /* DateUtils.swift */,
+				A08C1877E75F4C3A4D0AD26B /* PhotoCard.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B8658114A55CFAD045067AF0 /* Gallery */ = {
+			isa = PBXGroup;
+			children = (
+				755837C15A778944F7EDBDF5 /* GalleryView.swift */,
+			);
+			path = Gallery;
+			sourceTree = "<group>";
+		};
+		C1426EBCD5739866CDC66B70 /* Slideshow */ = {
+			isa = PBXGroup;
+			children = (
+				90A560C8A1B41924DE384AF6 /* SlideshowView.swift */,
+			);
+			path = Slideshow;
+			sourceTree = "<group>";
+		};
+		CBC812219A33CE8A2ADF26B5 = {
+			isa = PBXGroup;
+			children = (
+				38F74173C32F3F6CBAB67E46 /* NimtaFlowTV */,
+				A8881E9A7308948EABFB417D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D97313D52920842ABD791FFC /* People */ = {
+			isa = PBXGroup;
+			children = (
+				08FA38EBD974E9F6709F7AC9 /* PeopleView.swift */,
+			);
+			path = People;
+			sourceTree = "<group>";
+		};
+		F28D4D18FD8E6AAC57093D46 /* API */ = {
+			isa = PBXGroup;
+			children = (
+				4F6F83E3326AF53D7D795403 /* APIClient.swift */,
+				5E39DE2424E5FCE5A2B13FC5 /* Models.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DF72B24006B0F0D6B6E23702 /* NimtaFlowTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B32B4FC56B3E895832849A07 /* Build configuration list for PBXNativeTarget "NimtaFlowTV" */;
+			buildPhases = (
+				44594437237217FBBA3D38EC /* Sources */,
+				80F110F408110B785F01A040 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NimtaFlowTV;
+			packageProductDependencies = (
+			);
+			productName = NimtaFlowTV;
+			productReference = F94F9F31F80E32BE8AFE3BEF /* NimtaFlowTV.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		77EB08493A423EAA0ABAA7FE /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = B8D3C79308EE02B957DA2C7A /* Build configuration list for PBXProject "NimtaFlowTV" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = CBC812219A33CE8A2ADF26B5;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A8881E9A7308948EABFB417D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DF72B24006B0F0D6B6E23702 /* NimtaFlowTV */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		80F110F408110B785F01A040 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4E67D057B5A8BEA0B3E1B4D8 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		44594437237217FBBA3D38EC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E78B86F22C3D59CA3CCCC36A /* APIClient.swift in Sources */,
+				301F0A39BCD619E871227F24 /* AlbumsView.swift in Sources */,
+				B236A9FC12CE865886F7C566 /* AppState.swift in Sources */,
+				2DE29049ED6D78722A5F6B19 /* AuthAsyncImage.swift in Sources */,
+				15A5437838ABCCFE36BB6E2A /* ContentView.swift in Sources */,
+				5758820842E3DE2F1A8C3F4B /* DateUtils.swift in Sources */,
+				B5DC67B3D3E4DA290E9225DF /* GalleryView.swift in Sources */,
+				7306DEF488A6F325661BF132 /* LoginView.swift in Sources */,
+				8A5AAE416E751E4F37323C84 /* MainTabView.swift in Sources */,
+				007C6A6FC5DC0A669FF0F40F /* MediaPlayerView.swift in Sources */,
+				6A49AC0F788450443C34B26C /* Models.swift in Sources */,
+				6D4B101DABF550B6502A1ACF /* NimtaFlowTVApp.swift in Sources */,
+				542811328BE67CF00D6D6CBE /* PeopleView.swift in Sources */,
+				4F25F0E0ED81099C5D2FF897 /* PhotoCard.swift in Sources */,
+				7E3FAD0200757D8D1E04138E /* ServerSetupView.swift in Sources */,
+				90DA331D9A317DF7D6DF2E6A /* SettingsView.swift in Sources */,
+				0B588FBB3F2E3DE7F47D281A /* SlideshowView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1EC494A1693DCE4C7B373547 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = NimtaFlowTV/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = email.nimtz.nimtaflow.tvos;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 16.0;
+			};
+			name = Debug;
+		};
+		2C5A5FE41935809E2B5A15A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = NimtaFlowTV/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = email.nimtz.nimtaflow.tvos;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 16.0;
+			};
+			name = Release;
+		};
+		66FB0CE0559CD3A59346284C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5;
+				TVOS_DEPLOYMENT_TARGET = 16.0;
+			};
+			name = Release;
+		};
+		F1CF29EF9FCB282A8EF2F803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5;
+				TVOS_DEPLOYMENT_TARGET = 16.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B32B4FC56B3E895832849A07 /* Build configuration list for PBXNativeTarget "NimtaFlowTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EC494A1693DCE4C7B373547 /* Debug */,
+				2C5A5FE41935809E2B5A15A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B8D3C79308EE02B957DA2C7A /* Build configuration list for PBXProject "NimtaFlowTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1CF29EF9FCB282A8EF2F803 /* Debug */,
+				66FB0CE0559CD3A59346284C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 77EB08493A423EAA0ABAA7FE /* Project object */;
+}
