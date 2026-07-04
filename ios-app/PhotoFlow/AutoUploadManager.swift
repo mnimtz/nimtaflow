@@ -27,7 +27,7 @@ final class AutoUploadManager: ObservableObject {
     @AppStorage("autoUpload.nightOnly") var nightOnly = false
     @AppStorage("autoUpload.nightHour") var nightHour = 2
 
-    static let bgTaskID = "com.photoflow.upload"
+    nonisolated static let bgTaskID = "com.photoflow.upload"
 
     @Published var running = false
     @Published var done = 0
