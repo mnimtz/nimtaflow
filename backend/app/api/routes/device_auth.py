@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, verify_password
-from app.core.settings import get_settings
+from app.core.config import get_settings
 from app.models.user import User
 from sqlalchemy import select
 
