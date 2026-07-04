@@ -34,6 +34,16 @@ struct GalleryView: View {
     @State private var uploadNote: String?
     @AppStorage("gallery_group") private var groupMode = "day"   // none|day|month|year (default: Tag)
     @AppStorage("gallery_layout") private var layoutMode = "grid" // grid|justified|masonry
+    @AppStorage("gallery_timeline") private var showTimeline = false
+
+    // Multi-Select
+    @State private var selectionMode = false
+    @State private var selectedIDs: Set<Int> = []
+    @State private var bulkBusy = false
+    @State private var showBulkDeleteConfirm = false
+
+    // Timeline scrubber
+    @State private var scrubProxy: ScrollViewProxy? = nil
 
     let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
     private let groupOpts: [(String, String)] = [
@@ -80,81 +90,110 @@ struct GalleryView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                // Chat-Filter-Banner: zeigt an, dass die Galerie auf Chat-Ergebnisse gefiltert ist.
-                if chatFilteredPhotos != nil {
-                    HStack(spacing: 8) {
-                        if chatFilterLoading {
-                            ProgressView().scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "sparkles").foregroundStyle(.indigo)
-                            Text("\(chatFilteredPhotos?.count ?? 0) Treffer vom Assistenten")
-                                .font(.footnote.weight(.medium))
+            ZStack(alignment: .trailing) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        // Chat-Filter-Banner
+                        if chatFilteredPhotos != nil {
+                            HStack(spacing: 8) {
+                                if chatFilterLoading {
+                                    ProgressView().scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "sparkles").foregroundStyle(.indigo)
+                                    Text("\(chatFilteredPhotos?.count ?? 0) Treffer vom Assistenten")
+                                        .font(.footnote.weight(.medium))
+                                }
+                                Spacer()
+                                Button { chatFilteredPhotos = nil; store.chatGalleryFilter = nil } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color.indigo.opacity(0.08))
                         }
-                        Spacer()
-                        Button { chatFilteredPhotos = nil; store.chatGalleryFilter = nil } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.indigo.opacity(0.08))
-                }
-                LazyVStack(alignment: .leading, spacing: 2,
-                           pinnedViews: groupMode == "none" ? [] : [.sectionHeaders]) {
-                    ForEach(sections, id: \.key) { sec in
-                        Section {
-                            sectionBody(sec.items)
-                        } header: {
-                            if !sec.key.isEmpty {
-                                Text(groupLabel(sec.key))
-                                    .font(.subheadline.weight(.semibold))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(.ultraThinMaterial)
+                        LazyVStack(alignment: .leading, spacing: 2,
+                                   pinnedViews: groupMode == "none" ? [] : [.sectionHeaders]) {
+                            ForEach(sections, id: \.key) { sec in
+                                Section {
+                                    sectionBody(sec.items)
+                                } header: {
+                                    if !sec.key.isEmpty {
+                                        Text(groupLabel(sec.key))
+                                            .font(.subheadline.weight(.semibold))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 10).padding(.vertical, 6)
+                                            .background(.ultraThinMaterial)
+                                            .id(sec.key)
+                                    }
+                                }
                             }
                         }
+                        .padding(2)
+                        if loading || chatFilterLoading { ProgressView().padding() }
+                        if !loading && !chatFilterLoading && displayPhotos.isEmpty { emptyState }
+                    }
+                    .onAppear { scrubProxy = proxy }
+                }
+                // Zeitleisten-Scrubber (rechter Rand)
+                if showTimeline && groupMode != "none" && !sections.isEmpty {
+                    TimelineScrubber(sections: sections, groupMode: groupMode) { key in
+                        withAnimation { scrubProxy?.scrollTo(key, anchor: .top) }
                     }
                 }
-                .padding(2)
-                if loading || chatFilterLoading { ProgressView().padding() }
-                if !loading && !chatFilterLoading && displayPhotos.isEmpty { emptyState }
             }
-            .navigationTitle("Galerie")
+            .navigationTitle(selectionMode ? "\(selectedIDs.count) ausgewählt" : "Galerie")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Picker("Gruppierung", selection: $groupMode) {
-                            ForEach(groupOpts, id: \.0) { Text($0.1).tag($0.0) }
-                        }
-                    } label: { Image(systemName: "calendar") }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Picker("Layout", selection: $layoutMode) {
-                            ForEach(layoutOpts, id: \.0) { opt in
-                                Label(opt.1, systemImage: opt.2).tag(opt.0)
+                if selectionMode {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Abbrechen") { selectionMode = false; selectedIDs = [] }
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu {
+                            Picker("Gruppierung", selection: $groupMode) {
+                                ForEach(groupOpts, id: \.0) { Text($0.1).tag($0.0) }
                             }
+                        } label: { Image(systemName: "calendar") }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu {
+                            Picker("Layout", selection: $layoutMode) {
+                                ForEach(layoutOpts, id: \.0) { opt in
+                                    Label(opt.1, systemImage: opt.2).tag(opt.0)
+                                }
+                            }
+                            Divider()
+                            Button {
+                                showTimeline.toggle()
+                            } label: {
+                                Label(showTimeline ? "Zeitleiste ausblenden" : "Zeitleiste anzeigen",
+                                      systemImage: showTimeline ? "timeline.selection" : "timeline.selection")
+                            }
+                        } label: {
+                            Image(systemName: layoutOpts.first { $0.0 == layoutMode }?.2 ?? "square.grid.2x2")
                         }
-                    } label: {
-                        Image(systemName: layoutOpts.first { $0.0 == layoutMode }?.2 ?? "square.grid.2x2")
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    PhotosPicker(selection: $pickerItems, maxSelectionCount: nil,
-                                 matching: .any(of: [.images, .videos])) {
-                        Image(systemName: "plus.circle")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        PhotosPicker(selection: $pickerItems, maxSelectionCount: nil,
+                                     matching: .any(of: [.images, .videos])) {
+                            Image(systemName: "plus.circle")
+                        }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { favoritesOnly.toggle(); Task { await reload() } } label: {
-                        Image(systemName: favoritesOnly ? "heart.fill" : "heart")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { favoritesOnly.toggle(); Task { await reload() } } label: {
+                            Image(systemName: favoritesOnly ? "heart.fill" : "heart")
+                        }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showFilter = true } label: {
-                        Image(systemName: filterActive ? "line.3.horizontal.decrease.circle.fill"
-                                                        : "line.3.horizontal.decrease.circle")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showFilter = true } label: {
+                            Image(systemName: filterActive ? "line.3.horizontal.decrease.circle.fill"
+                                                            : "line.3.horizontal.decrease.circle")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { selectionMode = true } label: {
+                            Image(systemName: "checkmark.circle")
+                        }
                     }
                 }
             }
@@ -163,6 +202,7 @@ struct GalleryView: View {
                                    personName: $personName, onApply: { Task { await reload() } })
             }
             .overlay(alignment: .bottom) {
+                // Upload-Banner
                 if uploading || uploadNote != nil {
                     HStack(spacing: 10) {
                         if uploading { ProgressView() }
@@ -172,6 +212,35 @@ struct GalleryView: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.bottom, 16)
+                }
+                // Bulk-Aktionen-Leiste
+                if selectionMode && !selectedIDs.isEmpty {
+                    HStack(spacing: 0) {
+                        if bulkBusy {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Button {
+                                Task { await bulkArchive() }
+                            } label: {
+                                Label("Archivieren", systemImage: "archivebox")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            Divider().frame(height: 28)
+                            Button(role: .destructive) {
+                                showBulkDeleteConfirm = true
+                            } label: {
+                                Label("Löschen", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .confirmationDialog("\(selectedIDs.count) Fotos endgültig löschen?",
+                                       isPresented: $showBulkDeleteConfirm,
+                                       titleVisibility: .visible) {
+                        Button("Löschen", role: .destructive) { Task { await bulkDelete() } }
+                    }
                 }
             }
             .onChange(of: pickerItems) { _, items in
@@ -199,18 +268,76 @@ struct GalleryView: View {
     // MARK: - Section layout dispatch
 
     @ViewBuilder private func sectionBody(_ items: [PhotoV1]) -> some View {
+        let tapHandler: (PhotoV1) -> Void = selectionMode
+            ? { p in
+                if selectedIDs.contains(p.id) { selectedIDs.remove(p.id) }
+                else { selectedIDs.insert(p.id) }
+            }
+            : { p in selected = p }
+
         switch layoutMode {
-        case "masonry":   MasonrySection(items: items, onTap: { selected = $0 }, onLast: { onAppearLast($0) })
-        case "justified": JustifiedSection(items: items, onTap: { selected = $0 }, onLast: { onAppearLast($0) })
+        case "masonry":
+            MasonrySection(items: items, onTap: tapHandler, onLast: { onAppearLast($0) },
+                           selectionMode: selectionMode, selectedIDs: selectedIDs)
+                .onLongPressGesture { if !selectionMode { selectionMode = true } }
+        case "justified":
+            JustifiedSection(items: items, onTap: tapHandler, onLast: { onAppearLast($0) },
+                             selectionMode: selectionMode, selectedIDs: selectedIDs)
+                .onLongPressGesture { if !selectionMode { selectionMode = true } }
         default:
             LazyVGrid(columns: cols, spacing: 2) {
                 ForEach(items) { p in
                     PhotoTile(photo: p)
-                        .onTapGesture { selected = p }
+                        .overlay(alignment: .topLeading) {
+                            if selectionMode {
+                                SelectionBadge(selected: selectedIDs.contains(p.id)).padding(4)
+                            }
+                        }
+                        .onTapGesture {
+                            if selectionMode {
+                                if selectedIDs.contains(p.id) { selectedIDs.remove(p.id) }
+                                else { selectedIDs.insert(p.id) }
+                            } else { selected = p }
+                        }
+                        .onLongPressGesture {
+                            if !selectionMode { selectionMode = true; selectedIDs.insert(p.id) }
+                        }
                         .onAppear { onAppearLast(p) }
                 }
             }
         }
+    }
+
+    // MARK: - Bulk actions
+
+    private func bulkArchive() async {
+        bulkBusy = true
+        defer { bulkBusy = false }
+        let ids = Array(selectedIDs)
+        for id in ids {
+            try? await api.archivePhoto(id)
+        }
+        if chatFilteredPhotos != nil {
+            chatFilteredPhotos?.removeAll { ids.contains($0.id) }
+        } else {
+            photos.removeAll { ids.contains($0.id) }
+        }
+        selectedIDs = []; selectionMode = false
+    }
+
+    private func bulkDelete() async {
+        bulkBusy = true
+        defer { bulkBusy = false }
+        let ids = Array(selectedIDs)
+        for id in ids {
+            try? await api.deletePhoto(id)
+        }
+        if chatFilteredPhotos != nil {
+            chatFilteredPhotos?.removeAll { ids.contains($0.id) }
+        } else {
+            photos.removeAll { ids.contains($0.id) }
+        }
+        selectedIDs = []; selectionMode = false
     }
 
     private func onAppearLast(_ p: PhotoV1) {
@@ -323,6 +450,72 @@ struct GalleryView: View {
 
 // MARK: - Variable-size photo cell (for masonry & justified)
 
+// MARK: - Selection badge
+
+struct SelectionBadge: View {
+    let selected: Bool
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(selected ? Color.indigo : Color.black.opacity(0.35))
+                .frame(width: 22, height: 22)
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+            } else {
+                Circle().stroke(Color.white, lineWidth: 1.5).frame(width: 20, height: 20)
+            }
+        }
+    }
+}
+
+// MARK: - Timeline scrubber
+
+struct TimelineScrubber: View {
+    let sections: [(key: String, items: [PhotoV1])]
+    let groupMode: String
+    let onJump: (String) -> Void
+
+    // Extract unique year (or month) labels for display
+    private var labels: [(label: String, key: String)] {
+        var seen = Set<String>()
+        var result: [(String, String)] = []
+        for sec in sections {
+            let lbl: String
+            if groupMode == "year" {
+                lbl = String(sec.key.prefix(4))
+            } else {
+                lbl = String(sec.key.prefix(4)) // show year always
+            }
+            if !seen.contains(lbl) {
+                seen.insert(lbl)
+                result.append((lbl, sec.key))
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(labels, id: \.key) { item in
+                Button {
+                    onJump(item.key)
+                } label: {
+                    Text(item.label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28)
+                        .padding(.vertical, 2)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.trailing, 4)
+    }
+}
+
 /// A photo cell that fills the size it is given (no forced square), reusing the
 /// same image loader + play/favorite badges as `PhotoTile`. Tapping opens the pager.
 struct VarPhotoCell: View {
@@ -370,6 +563,8 @@ struct MasonrySection: View {
     let items: [PhotoV1]
     let onTap: (PhotoV1) -> Void
     let onLast: (PhotoV1) -> Void
+    var selectionMode: Bool = false
+    var selectedIDs: Set<Int> = []
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -385,6 +580,11 @@ struct MasonrySection: View {
                             VarPhotoCell(photo: p, width: colWidth,
                                          height: colWidth / CGFloat(clampedAspect(p)),
                                          onTap: { onTap(p) })
+                                .overlay(alignment: .topLeading) {
+                                    if selectionMode {
+                                        SelectionBadge(selected: selectedIDs.contains(p.id)).padding(4)
+                                    }
+                                }
                                 .onAppear { onLast(p) }
                         }
                     }
@@ -430,6 +630,8 @@ struct JustifiedSection: View {
     let items: [PhotoV1]
     let onTap: (PhotoV1) -> Void
     let onLast: (PhotoV1) -> Void
+    var selectionMode: Bool = false
+    var selectedIDs: Set<Int> = []
 
     private let targetH: CGFloat = 140
     private let spacing: CGFloat = 2
@@ -445,6 +647,11 @@ struct JustifiedSection: View {
                                          width: CGFloat(clampedAspect(p)) * row.height,
                                          height: row.height,
                                          onTap: { onTap(p) })
+                                .overlay(alignment: .topLeading) {
+                                    if selectionMode {
+                                        SelectionBadge(selected: selectedIDs.contains(p.id)).padding(4)
+                                    }
+                                }
                                 .onAppear { onLast(p) }
                         }
                     }
