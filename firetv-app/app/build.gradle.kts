@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "email.nimtz.nimtaflow.tv"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "email.nimtz.nimtaflow.tv"
         minSdk = 22           // FireTV Stick 1st gen = API 22; Stick 4K = API 28
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
     }

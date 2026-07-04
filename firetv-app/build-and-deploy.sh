@@ -61,7 +61,7 @@ if [[ -n "$SDKMGR" ]]; then
     # Lizenzen akzeptieren (sdkmanager schreibt korrekte Hashes selbst)
     yes 2>/dev/null | "$SDKMGR" --licenses >/dev/null 2>&1 || true
     # Pakete installieren falls noch nicht vorhanden
-    "$SDKMGR" "platforms;android-34" "build-tools;34.0.0" 2>&1 \
+    "$SDKMGR" "platforms;android-35" "build-tools;35.0.0" 2>&1 \
         | grep -v "^$\|Parsing\|Warning: Failed\|^[[:space:]]*$" || true
 else
     echo "⚠ sdkmanager nicht gefunden — Lizenzen manuell schreiben..."
