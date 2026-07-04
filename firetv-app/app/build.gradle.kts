@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "email.nimtz.nimtaflow.tv"
-        minSdk = 22           // FireTV Stick 1st gen = API 22; Stick 4K = API 28
+        minSdk = 23           // tv-foundation:1.0.0 requires API 23; FireTV Stick 4K = API 28
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
