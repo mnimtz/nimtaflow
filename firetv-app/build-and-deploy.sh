@@ -39,11 +39,19 @@ echo "  Android SDK: $ANDROID_HOME"
 echo "  Gradle:      $(gradle --version | head -1)"
 echo ""
 
-# ── Lizenzen akzeptieren (idempotent) ─────────────────────────────────────────
+# ── Lizenzen sicherstellen (bekannte SHA-Hashes, idempotent) ──────────────────
+LICENSE_DIR="$ANDROID_HOME/licenses"
+mkdir -p "$LICENSE_DIR"
+# android-sdk-license
+printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
+    > "$LICENSE_DIR/android-sdk-license"
+# android-sdk-preview-license
+printf "84831b9409646a918e30573bab4c9c91346d8abd" \
+    > "$LICENSE_DIR/android-sdk-preview-license"
+
 SDKMGR="$(find "$ANDROID_HOME" -name sdkmanager 2>/dev/null | head -1)"
 if [[ -n "$SDKMGR" ]]; then
-    yes 2>/dev/null | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-    "$SDKMGR" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null 2>&1 || true
+    "$SDKMGR" --install "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
 fi
 
 # ── APK bauen ─────────────────────────────────────────────────────────────────
