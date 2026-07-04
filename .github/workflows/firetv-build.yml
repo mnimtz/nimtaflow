@@ -1,0 +1,50 @@
+name: FireTV APK Build
+
+on:
+  push:
+    paths:
+      - 'firetv-app/**'
+  workflow_dispatch:   # Manueller Auslöser per Knopfdruck auf GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Android SDK einrichten
+        uses: android-actions/setup-android@v3
+
+      - name: SDK-Komponenten installieren
+        run: |
+          sdkmanager --install \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
+          yes | sdkmanager --licenses
+
+      - name: Gradle einrichten
+        uses: gradle-actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: APK bauen
+        working-directory: firetv-app
+        run: gradle assembleDebug
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+
+      - name: APK als Artifact hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimtaflow-tv
+          path: firetv-app/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
