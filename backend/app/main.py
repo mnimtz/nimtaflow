@@ -222,6 +222,10 @@ from app.core.auth_guard import enforce_auth, block_restricted_writes
 app.include_router(auth.router, prefix="/api")
 app.include_router(users_routes.router, prefix="/api")
 
+# ── Device Authorization (TV/FireTV/tvOS QR login — no auth required) ────────
+from app.api.routes import device_auth as device_auth_routes
+app.include_router(device_auth_routes.router, prefix="/api")
+
 # ── Remote worker API (own shared-token auth, NOT user-guarded) ──────────────
 from app.api.routes import remote as remote_routes
 app.include_router(remote_routes.router, prefix="/api")
