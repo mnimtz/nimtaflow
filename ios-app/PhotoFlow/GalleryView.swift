@@ -477,42 +477,79 @@ struct TimelineScrubber: View {
     let groupMode: String
     let onJump: (String) -> Void
 
-    // Extract unique year (or month) labels for display
-    private var labels: [(label: String, key: String)] {
+    @State private var isDragging = false
+    @State private var dragY: CGFloat = 0
+    @State private var dragLabel = ""
+
+    private var total: Int { sections.reduce(0) { $0 + $1.items.count } }
+
+    // Unique year markers: (year-string, first-section-key, cumulative-count-before)
+    private var yearMarkers: [(String, String, Int)] {
+        var result: [(String, String, Int)] = []
         var seen = Set<String>()
-        var result: [(String, String)] = []
+        var cum = 0
         for sec in sections {
-            let lbl: String
-            if groupMode == "year" {
-                lbl = String(sec.key.prefix(4))
-            } else {
-                lbl = String(sec.key.prefix(4)) // show year always
-            }
-            if !seen.contains(lbl) {
-                seen.insert(lbl)
-                result.append((lbl, sec.key))
-            }
+            let yr = String(sec.key.prefix(4))
+            if !seen.contains(yr) { seen.insert(yr); result.append((yr, sec.key, cum)) }
+            cum += sec.items.count
         }
         return result
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(labels, id: \.key) { item in
-                Button {
-                    onJump(item.key)
-                } label: {
-                    Text(item.label)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28)
-                        .padding(.vertical, 2)
+        GeometryReader { geo in
+            let h = geo.size.height
+            let t = max(1, total)
+
+            ZStack(alignment: .trailing) {
+                // Sichtbarer Track (3 pt breit, volle Höhe)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color.white.opacity(isDragging ? 0.55 : 0.28))
+                    .frame(width: 3, height: h)
+
+                // Jahres-Beschriftungen + Tick
+                ForEach(yearMarkers, id: \.0) { yr, _, cum in
+                    let yPos = CGFloat(cum) / CGFloat(t) * (h - 16) + 8
+                    HStack(spacing: 4) {
+                        Text(yr)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.7), radius: 2)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.7))
+                            .frame(width: 6, height: 1.5)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .offset(y: yPos - h / 2)
+                }
+
+                // Aktives Jahr-Bubble beim Ziehen (links vom Track)
+                if isDragging {
+                    Text(dragLabel)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.indigo.opacity(0.92), in: Capsule())
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        .offset(x: -44, y: dragY - h / 2)
                 }
             }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { val in
+                        isDragging = true
+                        dragY = max(0, min(h, val.location.y))
+                        let progress = dragY / h
+                        let idx = max(0, min(sections.count - 1,
+                                             Int(progress * CGFloat(sections.count))))
+                        dragLabel = String(sections[idx].key.prefix(4))
+                        onJump(sections[idx].key)
+                    }
+                    .onEnded { _ in isDragging = false }
+            )
         }
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .padding(.trailing, 4)
+        .frame(width: 48)
     }
 }
 
