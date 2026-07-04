@@ -39,6 +39,13 @@ echo "  Android SDK: $ANDROID_HOME"
 echo "  Gradle:      $(gradle --version | head -1)"
 echo ""
 
+# ── Lizenzen akzeptieren (idempotent) ─────────────────────────────────────────
+SDKMGR="$(find "$ANDROID_HOME" -name sdkmanager 2>/dev/null | head -1)"
+if [[ -n "$SDKMGR" ]]; then
+    yes 2>/dev/null | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+    "$SDKMGR" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null 2>&1 || true
+fi
+
 # ── APK bauen ─────────────────────────────────────────────────────────────────
 cd "$SCRIPT_DIR"
 gradle assembleDebug
