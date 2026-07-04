@@ -139,7 +139,7 @@ struct GalleryView: View {
                     .onAppear { scrubProxy = proxy }
                 }
                 // Zeitleisten-Scrubber (rechter Rand)
-                if showTimeline && groupMode != "none" && !timelineBuckets.isEmpty {
+                if showTimeline && !timelineBuckets.isEmpty {
                     TimelineScrubber(buckets: timelineBuckets) { year in
                         Task { await jumpToYear(year) }
                     }
@@ -167,12 +167,13 @@ struct GalleryView: View {
                                 }
                             }
                             Divider()
-                            Button {
-                                showTimeline.toggle()
-                            } label: {
-                                Label(showTimeline ? "Zeitleiste ausblenden" : "Zeitleiste anzeigen",
-                                      systemImage: showTimeline ? "timeline.selection" : "timeline.selection")
-                            }
+                            Toggle(isOn: Binding(
+                                get: { showTimeline },
+                                set: { v in
+                                    showTimeline = v
+                                    if v && timelineBuckets.isEmpty { Task { await loadTimelineBuckets() } }
+                                }
+                            )) { Label("Zeitleiste", systemImage: "timeline.selection") }
                         } label: {
                             Image(systemName: layoutOpts.first { $0.0 == layoutMode }?.2 ?? "square.grid.2x2")
                         }
@@ -251,10 +252,12 @@ struct GalleryView: View {
                 if !items.isEmpty { Task { await upload(items) } }
             }
             .refreshable { await reload() }
-            .task { if photos.isEmpty { await load() } }
-            .task(id: showTimeline) {
-                guard showTimeline else { return }
-                await loadTimelineBuckets()
+            .task {
+                if photos.isEmpty { await load() }
+                if showTimeline && timelineBuckets.isEmpty { await loadTimelineBuckets() }
+            }
+            .onChange(of: showTimeline) { _, v in
+                if v && timelineBuckets.isEmpty { Task { await loadTimelineBuckets() } }
             }
             .onChange(of: store.chatGalleryFilter) { _, ids in
                 guard let ids, !ids.isEmpty else { chatFilteredPhotos = nil; return }
