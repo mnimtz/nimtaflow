@@ -96,6 +96,7 @@ ssh -q "$PROXMOX_HOST" "pct push $LXC_ID /tmp/nimtaflow-tv.apk /firetv.apk && \
 
 echo ""
 echo "✓ Fertig! APK verfügbar unter:"
-echo "  http://192.168.0.193:8090/firetv.apk"
+echo "  http://192.168.0.193:8090/firetv.apk   (lokales Netz)"
+echo "  http://192.168.0.193:8092/             (dedizierter Port → Cloudflare-Subdomain)"
 echo ""
 echo "Auf dem FireTV: Downloader-App öffnen → URL eingeben → Installieren"

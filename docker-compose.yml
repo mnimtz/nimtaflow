@@ -265,6 +265,7 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-8090}:80"
+      - "8092:8092"
     depends_on:
       - backend
     environment:
