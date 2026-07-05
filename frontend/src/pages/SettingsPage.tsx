@@ -3160,6 +3160,17 @@ function SoftwareSection() {
   }
 
   const [checkResult, setCheckResult] = useState<UpdateCheck | null>(null)
+
+  // Versioninfo automatisch beim Laden holen (staleTime 5 min — kein GitHub-Spam)
+  const { data: autoCheck } = useQuery<UpdateCheck>({
+    queryKey: ['software', 'firetv', 'check'],
+    queryFn: () => api.get('/v1/software/firetv/update-check').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Manueller Klick überschreibt den Auto-Check
+  const displayCheck = checkResult ?? autoCheck ?? null
+
   const checkMut = useMutation({
     mutationFn: () => api.get('/v1/software/firetv/update-check').then(r => r.data as UpdateCheck),
     onSuccess: (data) => setCheckResult(data),
@@ -3235,24 +3246,44 @@ function SoftwareSection() {
         </div>
 
         <div className="p-5 space-y-5">
-          {/* APK status */}
+          {/* APK status + Versionsübersicht */}
           {apkPending ? (
             <div className="flex items-center gap-2 text-sm text-zinc-500">
               <Loader2 size={14} className="animate-spin" /><span>{t('settings.loading')}</span>
             </div>
           ) : apk?.available ? (
-            <div className="flex items-center gap-2 text-sm flex-wrap">
-              <CircleCheck size={15} className="text-emerald-400 shrink-0" />
-              <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
-              {apk.installed_version && (
-                <span className="text-indigo-400 font-mono text-xs bg-indigo-500/10 px-1.5 py-0.5 rounded">{apk.installed_version}</span>
-              )}
-              <span className="text-zinc-500">· {apk.size_mb} MB</span>
-              {apk.updated_at && (
-                <span className="text-zinc-600 text-xs">
-                  · {t('settings.software.lastUpdated')} {new Date(apk.updated_at).toLocaleDateString()}
-                </span>
-              )}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <CircleCheck size={15} className="text-emerald-400 shrink-0" />
+                <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
+                <span className="text-zinc-500">· {apk.size_mb} MB</span>
+                {apk.updated_at && (
+                  <span className="text-zinc-600 text-xs">· {new Date(apk.updated_at).toLocaleDateString()}</span>
+                )}
+              </div>
+              {/* Versionsvergleich */}
+              <div className="flex items-center gap-3 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+                <div className="flex-1">
+                  <p className="text-zinc-500 mb-0.5">Auf Server</p>
+                  <p className="font-mono text-zinc-200">
+                    {apk.installed_version || (!displayCheck?.has_update && displayCheck?.release_name) || '—'}
+                  </p>
+                </div>
+                <div className="text-zinc-700">→</div>
+                <div className="flex-1">
+                  <p className="text-zinc-500 mb-0.5">Online (GitHub)</p>
+                  {autoCheck === undefined ? (
+                    <Loader2 size={11} className="animate-spin text-zinc-600" />
+                  ) : (
+                    <p className={`font-mono ${displayCheck?.has_update ? 'text-amber-300' : 'text-zinc-400'}`}>
+                      {displayCheck?.release_name || '—'}
+                    </p>
+                  )}
+                </div>
+                {displayCheck?.has_update && (
+                  <span className="text-amber-400 text-xs font-medium">↑ Neu</span>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-4">
@@ -3329,44 +3360,23 @@ function SoftwareSection() {
             </div>
 
             {/* Update check result */}
-            {checkResult && (
-              <div className={`rounded-lg px-3 py-2.5 text-sm flex items-start gap-2.5 ${
-                checkResult.has_update ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-emerald-500/10 border border-emerald-500/20'
-              }`}>
-                {checkResult.has_update
-                  ? <AlertCircle size={14} className="text-amber-400 mt-0.5 shrink-0" />
-                  : <CircleCheck size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                }
+            {displayCheck?.has_update && (
+              <div className="rounded-lg px-3 py-2.5 text-sm flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20">
+                <AlertCircle size={14} className="text-amber-400 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  {checkResult.has_update ? (
-                    <>
-                      <p className="text-amber-200">{t('settings.software.updateAvail')}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {apk?.installed_version && <span className="text-zinc-500 text-xs">{apk.installed_version}</span>}
-                        {apk?.installed_version && checkResult.release_name && <span className="text-zinc-600 text-xs">→</span>}
-                        {checkResult.release_name && <span className="text-indigo-300 text-xs font-mono">{checkResult.release_name}</span>}
-                      </div>
-                      {checkResult.release_date && (
-                        <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.releaseDate')} {new Date(checkResult.release_date).toLocaleString()}</p>
-                      )}
-                    </>
-                  ) : (
-                    <div>
-                      <p className="text-emerald-200">{t('settings.software.upToDate')}</p>
-                      {checkResult.release_name && <p className="text-xs text-zinc-500 mt-0.5 font-mono">{checkResult.release_name}</p>}
-                    </div>
+                  <p className="text-amber-200">{t('settings.software.updateAvail')}</p>
+                  {displayCheck.release_date && (
+                    <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.releaseDate')} {new Date(displayCheck.release_date).toLocaleString()}</p>
                   )}
                 </div>
-                {checkResult.has_update && (
-                  <button
-                    onClick={() => updateNowMut.mutate()}
-                    disabled={updateNowMut.isPending}
-                    className="shrink-0 px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-medium text-white transition-colors flex items-center gap-1"
-                  >
-                    {updateNowMut.isPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-                    {t('settings.software.installUpdate')}
-                  </button>
-                )}
+                <button
+                  onClick={() => updateNowMut.mutate()}
+                  disabled={updateNowMut.isPending}
+                  className="shrink-0 px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-medium text-white transition-colors flex items-center gap-1"
+                >
+                  {updateNowMut.isPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                  {t('settings.software.installUpdate')}
+                </button>
               </div>
             )}
 
