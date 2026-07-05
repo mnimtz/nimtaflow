@@ -25,6 +25,11 @@ async def get_settings(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
     return out
 
 
+@router.patch("")
+async def patch_settings(data: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+    return await update_settings(data, db)
+
+
 @router.put("")
 async def update_settings(data: Dict[str, Any], db: AsyncSession = Depends(get_db)):
     for key, value in data.items():

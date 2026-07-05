@@ -3334,7 +3334,7 @@ function SoftwareSection() {
             {/* Check now button */}
             <button
               onClick={() => checkMut.mutate()}
-              disabled={checkMut.isPending || busy}
+              disabled={checkMut.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300 transition-colors disabled:opacity-50"
             >
               {checkMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
