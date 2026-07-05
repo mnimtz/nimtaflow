@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # Für softprops/action-gh-release (Tag + Release erstellen)
+      contents: write
 
     steps:
       - name: Checkout
@@ -28,7 +28,26 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
 
-      - name: APK bauen
+      # Signed release build when secrets are present, debug otherwise
+      - name: Keystore dekodieren
+        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
+        run: echo "${{ secrets.FIRETV_KEYSTORE_BASE64 }}" | base64 -d > firetv-app/nimtaflow-firetv.jks
+
+      - name: Release-APK bauen (signiert)
+        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
+        working-directory: firetv-app
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          SIGNING_KEY_ALIAS: ${{ secrets.FIRETV_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.FIRETV_KEY_PASSWORD }}
+          SIGNING_STORE_FILE: nimtaflow-firetv.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.FIRETV_STORE_PASSWORD }}
+
+      - name: Debug-APK bauen (Fallback ohne Secrets)
+        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 == '' }}
         working-directory: firetv-app
         run: |
           chmod +x gradlew
@@ -36,11 +55,22 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
 
+      - name: APK-Pfad ermitteln
+        id: apk
+        run: |
+          if [ -f "firetv-app/app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "path=firetv-app/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_OUTPUT
+            echo "name=nimtaflow-tv-release" >> $GITHUB_OUTPUT
+          else
+            echo "path=firetv-app/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_OUTPUT
+            echo "name=nimtaflow-tv-debug" >> $GITHUB_OUTPUT
+          fi
+
       - name: APK als CI-Artifact hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: nimtaflow-tv
-          path: firetv-app/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
           retention-days: 30
 
       - name: Release 'firetv-latest' aktualisieren
@@ -50,7 +80,8 @@ jobs:
           name: "FireTV App — latest build"
           body: |
             Automatisch gebaut von GitHub Actions.
-            Commit: ${{ github.sha }}
+            Version: ${{ github.sha }}
+            Signed: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
           prerelease: true
-          files: firetv-app/app/build/outputs/apk/debug/app-debug.apk
+          files: ${{ steps.apk.outputs.path }}
           token: ${{ secrets.GITHUB_TOKEN }}
