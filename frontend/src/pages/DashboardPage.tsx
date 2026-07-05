@@ -79,7 +79,7 @@ export default function DashboardPage() {
         <StatTile icon={MapPin} label={t('dashboard.statGps')} value={data.stats?.with_gps} color="emerald" onClick={() => nav('/map')} />
       </div>
 
-      {/* Highlight der Woche — rendered recap video */}
+      {/* 1. Highlight der Woche */}
       {data.weekly_highlight && (
         <Section icon={Sparkles} title={data.weekly_highlight.title || t('dashboard.weeklyHighlight')}
           sub={t('dashboard.weeklyHighlightSub')} onMore={() => nav('/highlights')}>
@@ -92,15 +92,14 @@ export default function DashboardPage() {
         </Section>
       )}
 
-      {/* On this day */}
-      {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
-        <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
-          sub={prettyDate(m.date)}>
-          <Strip>{m.items.map((p, i) => <Tile key={p.id} p={p} items={m.items} idx={i} />)}</Strip>
+      {/* 2. Highlights-Strip (KI-kuratierte Fotos) */}
+      {data.highlights?.length > 0 && (
+        <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
+          <Strip>{data.highlights.map((p, i) => <Tile key={p.id} p={p} items={data.highlights} idx={i} />)}</Strip>
         </Section>
-      ))}
+      )}
 
-      {/* Person of the week */}
+      {/* 3. Person der Woche */}
       {data.person_of_week && (
         <Section icon={Star} title={t('dashboard.personOfWeek')}>
           <div className="flex flex-col sm:flex-row gap-4 items-start">
@@ -114,28 +113,15 @@ export default function DashboardPage() {
         </Section>
       )}
 
-      {/* Highlights */}
-      {data.highlights?.length > 0 && (
-        <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
-          <Strip>{data.highlights.map((p, i) => <Tile key={p.id} p={p} items={data.highlights} idx={i} />)}</Strip>
+      {/* 4. Rückblicke: Heute vor X Jahren */}
+      {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
+        <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
+          sub={prettyDate(m.date)}>
+          <Strip>{m.items.map((p, i) => <Tile key={p.id} p={p} items={m.items} idx={i} />)}</Strip>
         </Section>
-      )}
+      ))}
 
-      {/* Featured people */}
-      {data.featured_people?.length > 0 && (
-        <Section icon={Users} title={t('dashboard.people')} onMore={() => nav('/people')}>
-          <Strip>
-            {data.featured_people.map(p => (
-              <button key={p.id} onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 w-20 group">
-                <img src={p.avatar_url} className="w-16 h-16 rounded-full object-cover ring-1 ring-zinc-300 dark:ring-zinc-700 group-hover:ring-indigo-500" />
-                <span className="mt-1 text-xs text-zinc-700 dark:text-zinc-300 truncate w-full text-center">{p.name}</span>
-              </button>
-            ))}
-          </Strip>
-        </Section>
-      )}
-
-      {/* Featured albums */}
+      {/* 5. Alben */}
       {data.featured_albums?.length > 0 && (
         <Section icon={BookImage} title={t('dashboard.albums')} onMore={() => nav('/albums')}>
           <Strip>
@@ -152,7 +138,21 @@ export default function DashboardPage() {
         </Section>
       )}
 
-      {/* Recent */}
+      {/* 6. Personen */}
+      {data.featured_people?.length > 0 && (
+        <Section icon={Users} title={t('dashboard.people')} onMore={() => nav('/people')}>
+          <Strip>
+            {data.featured_people.map(p => (
+              <button key={p.id} onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 w-20 group">
+                <img src={p.avatar_url} className="w-16 h-16 rounded-full object-cover ring-1 ring-zinc-300 dark:ring-zinc-700 group-hover:ring-indigo-500" />
+                <span className="mt-1 text-xs text-zinc-700 dark:text-zinc-300 truncate w-full text-center">{p.name}</span>
+              </button>
+            ))}
+          </Strip>
+        </Section>
+      )}
+
+      {/* 7. Zuletzt hinzugefügt */}
       {data.recent?.length > 0 && (
         <Section icon={Clock} title={t('dashboard.recent')} onMore={() => nav('/gallery')}>
           <Strip>{data.recent.map((p, i) => <Tile key={p.id} p={p} items={data.recent} idx={i} />)}</Strip>

@@ -36,16 +36,23 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         header
                         statTiles(d.stats)
+                        // 1. Highlight der Woche
                         if let wh = d.weekly_highlight { weeklyHighlightCard(wh) }
+                        // 2. Highlights-Strip
+                        photoStrip(title: "Highlights", items: d.highlights)
+                        // 3. Person der Woche
+                        if let pow = d.person_of_week { personOfWeek(pow) }
+                        // 4. Rückblicke: Heute vor X Jahren
                         ForEach(d.on_this_day) { day in
                             photoStrip(title: day.years_ago == 1 ? "Heute vor 1 Jahr"
                                                                   : "Heute vor \(day.years_ago) Jahren",
                                        items: day.items)
                         }
-                        if let pow = d.person_of_week { personOfWeek(pow) }
-                        photoStrip(title: "Highlights", items: d.highlights)
-                        peopleStrip(d.featured_people)
+                        // 5. Alben
                         albumsStrip(d.featured_albums)
+                        // 6. Personen
+                        peopleStrip(d.featured_people)
+                        // 7. Zuletzt hinzugefügt
                         photoStrip(title: "Zuletzt hinzugefügt", items: d.recent)
                     }
                     .padding(.vertical, 12)
