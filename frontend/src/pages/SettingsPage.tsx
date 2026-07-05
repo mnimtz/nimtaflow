@@ -3210,9 +3210,19 @@ function SoftwareSection() {
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-sm text-zinc-500">
-              <AlertCircle size={14} className="text-amber-400" />
-              <span>{t('settings.software.apkMissing')}</span>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm text-zinc-500">
+                <AlertCircle size={14} className="text-amber-400" />
+                <span>{t('settings.software.apkMissing')}</span>
+              </div>
+              <button
+                onClick={() => updateNowMut.mutate()}
+                disabled={updateNowMut.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors shrink-0"
+              >
+                {updateNowMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {t('settings.software.deployNow')}
+              </button>
             </div>
           )}
 

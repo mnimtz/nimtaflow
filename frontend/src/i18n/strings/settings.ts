@@ -68,6 +68,7 @@ export const settings = {
     'settings.software.upToDate': 'APK ist aktuell',
     'settings.software.installUpdate': 'Installieren',
     'settings.software.manual': 'Manuell',
+    'settings.software.deployNow': 'FireTV bereitstellen',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Modell eingeben oder aus Liste wählen',
@@ -693,6 +694,7 @@ export const settings = {
     'settings.software.upToDate': 'APK is up to date',
     'settings.software.installUpdate': 'Install',
     'settings.software.manual': 'Manual',
+    'settings.software.deployNow': 'Deploy FireTV',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Enter a model or pick from the list',
