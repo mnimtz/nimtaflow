@@ -4,13 +4,13 @@ on:
   push:
     paths:
       - 'firetv-app/**'
-  workflow_dispatch:   # Manueller Auslöser per Knopfdruck auf GitHub
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # softprops/action-gh-release braucht write um Tags/Releases zu erstellen
+      contents: write   # Für softprops/action-gh-release (Tag + Release erstellen)
 
     steps:
       - name: Checkout
@@ -21,21 +21,20 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
-      - name: Android SDK einrichten
-        uses: android-actions/setup-android@v3
-
-      - name: SDK-Komponenten installieren
-        run: |
-          sdkmanager --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
-          yes | sdkmanager --licenses
+      - name: Android SDK Lizenzen akzeptieren
+        run: yes | sdkmanager --licenses || true
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
 
       - name: APK bauen
         working-directory: firetv-app
-        run: ./gradlew assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
 
       - name: APK als CI-Artifact hochladen
         uses: actions/upload-artifact@v4
@@ -44,8 +43,6 @@ jobs:
           path: firetv-app/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      # Erstellt / überschreibt den Tag 'firetv-latest' mit der frisch gebauten APK.
-      # Server-Instanzen können damit täglich per GitHub API prüfen ob ein Update vorliegt.
       - name: Release 'firetv-latest' aktualisieren
         uses: softprops/action-gh-release@v2
         with:
