@@ -32,6 +32,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
+private data class AdbDevice(val id: String, val model: String, val state: String)
+
 @Composable
 fun FireTVSettingsScreen(api: APIClient) {
     val scope = rememberCoroutineScope()
@@ -66,8 +68,6 @@ fun FireTVSettingsScreen(api: APIClient) {
     var scanning     by remember { mutableStateOf(false) }
     var installing   by remember { mutableStateOf<String?>(null) }
     var installMsg   by remember { mutableStateOf<String?>(null) }
-
-    data class AdbDevice(val id: String, val model: String, val state: String)
 
     // Beim Start: Server-APK-Status + Settings laden
     LaunchedEffect(Unit) {

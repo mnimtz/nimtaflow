@@ -13,8 +13,8 @@ android {
         applicationId = "email.nimtz.nimtaflow.tv"
         minSdk = 23           // tv-foundation:1.0.0 requires API 23; FireTV Stick 4K = API 28
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
     }
 
     buildTypes {
@@ -48,6 +48,9 @@ dependencies {
 
     implementation(libs.nav.compose)
     implementation(libs.activity.compose)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.savedstate)
     implementation(libs.coil.compose)
 
     implementation(libs.media3.exoplayer)

@@ -20,12 +20,17 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.ViewTreeLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import email.nimtz.nimtaflow.tv.NimtaFlowApp
@@ -50,14 +55,13 @@ class NimtaFlowDreamService : DreamService() {
         isInteractive = false
         composeLifecycleOwner.onStart()
 
-        val view = ComposeView(this).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            setViewTreeLifecycleOwner(composeLifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(composeLifecycleOwner)
-            setContent {
-                CompositionLocalProvider(LocalViewModelStoreOwner provides composeLifecycleOwner) {
-                    ScreensaverSlideshow(applicationContext)
-                }
+        val view = ComposeView(this)
+        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        ViewTreeLifecycleOwner.set(view, composeLifecycleOwner)
+        ViewTreeSavedStateRegistryOwner.set(view, composeLifecycleOwner)
+        view.setContent {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides composeLifecycleOwner) {
+                ScreensaverSlideshow(applicationContext)
             }
         }
         setContentView(view)
