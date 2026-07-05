@@ -154,6 +154,52 @@ def watch_sources_task(self):
     return _run(_check())
 
 
+@celery_app.task(bind=True, name="sweep_pending_video_ai")
+def sweep_pending_video_ai_task(self):
+    """Periodic sweep for videos stuck without AI description:
+    - No webm yet: dispatch transcode_video_task so the remote can claim them after.
+    - Has webm but unclaimed / claim stale: dispatch ai_photo_task to restart the pipeline.
+    Runs regardless of remote-worker state — fills the gap that reclaim_ai misses."""
+    async def _run():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.settings_loader import load_settings
+        from sqlalchemy import select, or_
+        from datetime import timedelta
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=600)
+            # Videos without webm — need transcode first
+            q_no_webm = select(Photo.id).where(
+                Photo.is_video == True,                     # noqa: E712
+                Photo.description.is_(None),
+                Photo.ai_error == False,                    # noqa: E712
+                Photo.thumb_large.isnot(None),
+                Photo.video_webm_path.is_(None),
+                Photo.is_missing == False,                  # noqa: E712
+                Photo.is_trashed == False,                  # noqa: E712
+            ).limit(200)
+            no_webm_ids = [r[0] for r in (await db.execute(q_no_webm)).all()]
+            for pid in no_webm_ids:
+                transcode_video_task.delay(pid, 1080)
+            # Videos with webm but stale/no claim (remote didn't pick them up)
+            q_stale = select(Photo.id).where(
+                Photo.is_video == True,                     # noqa: E712
+                Photo.description.is_(None),
+                Photo.ai_error == False,                    # noqa: E712
+                Photo.video_webm_path.isnot(None),
+                Photo.is_missing == False,                  # noqa: E712
+                Photo.is_trashed == False,                  # noqa: E712
+                or_(Photo.ai_claimed_at.is_(None), Photo.ai_claimed_at < cutoff),
+            ).limit(200)
+            stale_ids = [r[0] for r in (await db.execute(q_stale)).all()]
+            for pid in stale_ids:
+                ai_photo_task.delay(pid)
+            return {"transcoded": len(no_webm_ids), "reclaimed": len(stale_ids)}
+    return _run(_run())
+
+
 @celery_app.task(bind=True, name="reclaim_ai")
 def reclaim_ai_task(self):
     """Fallback for the remote-worker flow: ai_photo yields its job when a remote

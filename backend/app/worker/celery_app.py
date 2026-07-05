@@ -60,6 +60,7 @@ celery_app.conf.update(
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
+        "sweep_pending_video_ai": {"queue": "cpu"},  # self-heal videos stuck without description
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
         "write_faces":        {"queue": "cpu"},   # MWG face regions (button + nightly incremental)
@@ -144,6 +145,11 @@ celery_app.conf.beat_schedule = {
     "warm-face-crops": {
         "task": "warm_face_crops",
         "schedule": 1800.0,
+    },
+    # Sweep for videos stuck without description: no webm → transcode; has webm → reclaim.
+    "sweep-pending-video-ai": {
+        "task": "sweep_pending_video_ai",
+        "schedule": 600.0,
     },
     # Fallback for the remote-worker flow (re-queue locally if a worker vanished).
     "reclaim-ai": {
