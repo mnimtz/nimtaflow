@@ -34,6 +34,7 @@ import email.nimtz.nimtaflow.tv.api.Photo
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.formatDate
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen photo/video viewer.
@@ -302,6 +303,3 @@ private fun HintText(text: String) {
     Text(text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
 }
 
-// Minimal coroutine launcher from non-composable lambdas
-private fun kotlinx.coroutines.CoroutineScope.launch(block: suspend () -> Unit) =
-    kotlinx.coroutines.launch(block = block)

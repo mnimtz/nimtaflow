@@ -91,7 +91,7 @@ fun GalleryScreen(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 220.dp),
         state = gridState,
-        contentPadding = PaddingValues(horizontal = 20.dp, bottom = 20.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
