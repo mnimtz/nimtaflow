@@ -18,71 +18,90 @@ struct PeopleView: View {
 
     private func isNamed(_ p: PersonV1) -> Bool { !p.name.isEmpty && p.name != "Unbekannt" }
     private func count(_ p: PersonV1) -> Int { p.photo_count > 0 ? p.photo_count : p.face_count }
-    private var filtered: [PersonV1] {
-        let base: [PersonV1]
-        switch filter {
-        case "named":   base = people.filter { isNamed($0) }
-        case "unknown": base = people.filter { !isNamed($0) && $0.face_count > 1 }
-        case "single":  base = people.filter { $0.face_count == 1 }
-        default:        base = people   // "all"
-        }
-        // Default: most pictures first (server already sorts so, but re-sort locally
-        // so the toggle is instant and stable). "name" = alphabetical.
+    private func sorted(_ list: [PersonV1]) -> [PersonV1] {
         if sortMode == "name" {
-            return base.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
-        return base.sorted { count($0) != count($1) ? count($0) > count($1)
+        return list.sorted { count($0) != count($1) ? count($0) > count($1)
                              : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
-    private let filters: [(String, String)] = [
-        ("named", "Erkannte Personen"), ("unknown", "Unbekannte Personen"),
-        ("single", "Einzelgesichter"), ("all", "Alle"),
-    ]
+    private var namedPeople: [PersonV1] { sorted(people.filter { isNamed($0) }) }
+    private var unknownPeople: [PersonV1] { sorted(people.filter { !isNamed($0) }) }
     private let sorts: [(String, String)] = [("count", "Nach Anzahl"), ("name", "Nach Name")]
+
+    @ViewBuilder
+    private func personCell(_ p: PersonV1) -> some View {
+        VStack(spacing: 6) {
+            Avatar(url: api.url(p.avatar_url), initials: p.name.firstInitial, size: 72)
+                .overlay {
+                    if mergeMode && selection.contains(p.id) {
+                        Circle().stroke(Color.indigo, lineWidth: 3)
+                    }
+                }
+            Text(p.name.isEmpty ? "Unbekannt" : p.name).font(.caption).lineLimit(1)
+            Text("\(p.photo_count > 0 ? p.photo_count : p.face_count) Fotos")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $navPath) {
             ScrollView {
-                LazyVGrid(columns: cols, spacing: 16) {
-                    ForEach(filtered) { p in
-                        let cell = VStack(spacing: 6) {
-                            Avatar(url: api.url(p.avatar_url), initials: p.name.firstInitial, size: 72)
-                                .overlay {
-                                    if mergeMode && selection.contains(p.id) {
-                                        Circle().stroke(Color.indigo, lineWidth: 3)
+                VStack(alignment: .leading, spacing: 0) {
+                    // ── Benannte Personen ────────────────────────────────────
+                    if !namedPeople.isEmpty {
+                        LazyVGrid(columns: cols, spacing: 16) {
+                            ForEach(namedPeople) { p in
+                                if mergeMode {
+                                    personCell(p).contentShape(Rectangle()).onTapGesture { toggle(p.id) }
+                                } else {
+                                    NavigationLink(value: p) { personCell(p) }.buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+
+                    // ── Unbekannte Personen ──────────────────────────────────
+                    if !unknownPeople.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack {
+                                Text("Unbekannte Personen")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.secondary)
+                                Text("(\(unknownPeople.count))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, namedPeople.isEmpty ? 16 : 4)
+                            .padding(.bottom, 12)
+
+                            LazyVGrid(columns: cols, spacing: 16) {
+                                ForEach(unknownPeople) { p in
+                                    if mergeMode {
+                                        personCell(p).contentShape(Rectangle()).onTapGesture { toggle(p.id) }
+                                    } else {
+                                        NavigationLink(value: p) { personCell(p) }.buttonStyle(.plain)
                                     }
                                 }
-                            Text(p.name).font(.caption).lineLimit(1)
-                            Text("\(p.photo_count > 0 ? p.photo_count : p.face_count) Fotos")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        if mergeMode {
-                            cell.contentShape(Rectangle()).onTapGesture { toggle(p.id) }
-                        } else {
-                            NavigationLink(value: p) { cell }.buttonStyle(.plain)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 16)
                         }
                     }
                 }
-                .padding()
             }
             .navigationTitle("Personen")
             .navigationDestination(for: PersonV1.self) { p in PersonDetailView(person: p) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
-                        // Filter (Unbekannte/Einzelgesichter) ist Gesichts-Verwaltung → nur Admins.
-                        if api.isAdmin {
-                            Picker("Filter", selection: $filter) {
-                                ForEach(filters, id: \.0) { Text($0.1).tag($0.0) }
-                            }
-                            Divider()
-                        }
                         Picker("Sortierung", selection: $sortMode) {
                             ForEach(sorts, id: \.0) { Text($0.1).tag($0.0) }
                         }
                     } label: {
-                        Label(api.isAdmin ? (filters.first { $0.0 == filter }?.1 ?? "Filter") : "Sortierung",
-                              systemImage: "line.3.horizontal.decrease.circle")
+                        Label("Sortierung", systemImage: "line.3.horizontal.decrease.circle")
                     }
                 }
                 // Zusammenführen + Vorschläge (Gesichts-Verwaltung) nur für Admins.
@@ -126,7 +145,6 @@ struct PeopleView: View {
 
     func toggle(_ id: Int) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
     func load() async {
-        if !api.isAdmin { filter = "named" }   // eingeschränkte Nutzer: nur benannte Personen
         do {
             people = try await api.people()
             // Deep-Select: direkt zur angefragten Person springen (statt nur die Liste).

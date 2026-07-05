@@ -76,7 +76,13 @@ fun PeopleScreen(
             }
         }
 
-        selectedPerson == null -> PersonGrid(persons, api, token, onSelect = { selectedPerson = it })
+        selectedPerson == null -> PersonGrid(
+            named   = persons.filter { it.name.isNotBlank() },
+            unknown = persons.filter { it.name.isBlank() },
+            api = api,
+            token = token,
+            onSelect = { selectedPerson = it },
+        )
 
         else -> PersonPhotos(
             person = selectedPerson!!,
@@ -94,7 +100,8 @@ fun PeopleScreen(
 
 @Composable
 private fun PersonGrid(
-    persons: List<Person>,
+    named: List<Person>,
+    unknown: List<Person>,
     api: APIClient,
     token: String,
     onSelect: (Person) -> Unit,
@@ -106,8 +113,40 @@ private fun PersonGrid(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(persons, key = { it.id }) { person ->
+        items(named, key = { it.id }) { person ->
             PersonCard(person, api, token, onClick = { onSelect(person) })
+        }
+
+        if (unknown.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 4.dp),
+                ) {
+                    Text(
+                        "Unbekannte Personen",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    Text(
+                        "(${unknown.size})",
+                        color = Muted.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    HorizontalDivider(
+                        modifier = Modifier.weight(3f),
+                        color = Muted.copy(alpha = 0.25f),
+                    )
+                }
+            }
+            items(unknown, key = { it.id }) { person ->
+                PersonCard(person, api, token, onClick = { onSelect(person) })
+            }
         }
     }
 }

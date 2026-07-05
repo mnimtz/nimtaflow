@@ -48,6 +48,7 @@ export const people = {
 
     // Tabs
     'people.tabPeople': 'Personen ({count})',
+    'people.tabUnknown': 'Unbekannte ({count})',
     'people.tabSuggestions': 'Vorschläge',
     'people.tabSuggestionsCount': 'Vorschläge ({count})',
     'people.tabUnknownFaces': 'Unbekannte Gesichter',
@@ -318,6 +319,7 @@ export const people = {
 
     // Tabs
     'people.tabPeople': 'People ({count})',
+    'people.tabUnknown': 'Unknown ({count})',
     'people.tabSuggestions': 'Suggestions',
     'people.tabSuggestionsCount': 'Suggestions ({count})',
     'people.tabUnknownFaces': 'Unknown faces',

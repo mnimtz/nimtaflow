@@ -90,7 +90,7 @@ export default function PeoplePage() {
   // Click a suggestion/face → see the FULL photo big (verify even when the face crop
   // is a low-quality video frame). Holds {face_id, photo_id, name, score}.
   const [bigFace, setBigFace] = useState<{ id: number; photo_id: number; name?: string; score?: number } | null>(null)
-  const [pview, setPview] = useState<'personen' | 'vorschlaege' | 'gesichter' | 'verborgen'>('personen')
+  const [pview, setPview] = useState<'personen' | 'unbekannte' | 'vorschlaege' | 'gesichter' | 'verborgen'>('personen')
   const toggleFace = (id: number) =>
     setFaceSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const ignoreFaces = useMutation({
@@ -334,7 +334,9 @@ export default function PeoplePage() {
         <div className="space-y-10">
           <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 -mt-2 overflow-x-auto">
             {([
-              ['personen', t('people.tabPeople', { count: known.length + unknown.length })],
+              ['personen', t('people.tabPeople', { count: known.length })],
+              // Unbekannte Personen — für alle Nutzer sichtbar
+              ...(unknown.length > 0 ? [['unbekannte', t('people.tabUnknown', { count: unknown.length })]] : []),
               // Verwaltungs-Tabs nur für Admins/unbeschränkte Konten.
               ...(canManage ? [
                 ['vorschlaege', sugGroups.reduce((a, g) => a + g.count, 0) ? t('people.tabSuggestionsCount', { count: sugGroups.reduce((a, g) => a + g.count, 0) }) : t('people.tabSuggestions')],
@@ -407,11 +409,13 @@ export default function PeoplePage() {
           )}
           {pview === 'personen' && known.length > 0 && (
             <section>
-              <SectionHeader title={t('people.namedPeople')} count={known.length} />
               <div className={GRID}>{known.map(renderCard)}</div>
             </section>
           )}
-          {pview === 'personen' && unknown.length > 0 && (
+          {pview === 'personen' && known.length === 0 && (
+            <p className="text-sm text-zinc-400 py-8 text-center">Noch keine Personen benannt.</p>
+          )}
+          {pview === 'unbekannte' && (
             <section>
               <SectionHeader title={t('people.unknownPeople')} count={unknown.length}
                 hint={t('people.unknownPeopleHint')} />
