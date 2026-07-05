@@ -6,6 +6,7 @@ import {
   Loader2, CircleCheck, CircleX,
   Eye, Zap, Brain, Download, Shield, Lock, KeyRound, Network, Clock,
   MessageCircle, Image as ImageIcon, Plane, Share2, Copy, Sparkles, Music, Plug,
+  Tv, Upload, ExternalLink, AlertCircle,
 } from 'lucide-react'
 import { api, type Source } from '../lib/api'
 import FolderBrowser from '../components/ui/FolderBrowser'
@@ -49,6 +50,7 @@ const SECTIONS = [
   { id: 'map',       icon: Map,       navKey: 'nav.map' },
   { id: 'users',     icon: Shield,    navKey: 'nav.users' },
   { id: 'logs',      icon: Terminal,  navKey: 'nav.logs' },
+  { id: 'software',  icon: Tv,        navKey: 'nav.software' },
 ] as const
 
 type SectionId = typeof SECTIONS[number]['id']
@@ -3114,6 +3116,173 @@ function LogsSection() {
   )
 }
 
+// ─── Software Section ──────────────────────────────────────────────────────────
+
+type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; updated_at: string | null }
+
+function SoftwareSection() {
+  const t = useT()
+  const qc = useQueryClient()
+  const [fetchUrl, setFetchUrl] = useState('')
+  const [fetchUrlVisible, setFetchUrlVisible] = useState(false)
+
+  const { data: apk, isPending } = useQuery<ApkInfo>({
+    queryKey: ['software', 'firetv'],
+    queryFn: () => api.get('/v1/software/firetv').then(r => r.data),
+    refetchInterval: 0,
+  })
+
+  const fetchMut = useMutation({
+    mutationFn: () => api.post('/v1/software/firetv/fetch', { url: fetchUrl || undefined }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['software', 'firetv'] }); setFetchUrl(''); setFetchUrlVisible(false) },
+  })
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData(); form.append('file', file)
+      return api.post('/v1/software/firetv/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['software', 'firetv'] }),
+  })
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) uploadMut.mutate(f)
+    e.target.value = ''
+  }
+
+  const localUrl = '/firetv.apk'
+  const cloudUrl = 'https://firetv.nimtaflow.com'
+
+  const busy = fetchMut.isPending || uploadMut.isPending
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <h2 className="text-lg font-semibold">{t('settings.nav.software')}</h2>
+
+      {/* ── FireTV ────────────────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+          <div className="rounded-lg bg-indigo-500/15 p-2">
+            <Tv size={18} className="text-indigo-400" />
+          </div>
+          <div>
+            <p className="font-medium text-sm">{t('settings.software.firetv')}</p>
+            <p className="text-xs text-zinc-500">Amazon Fire TV Stick / Cube</p>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* APK status */}
+          {isPending ? (
+            <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <Loader2 size={14} className="animate-spin" /><span>{t('settings.loading')}</span>
+            </div>
+          ) : apk?.available ? (
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <CircleCheck size={15} className="text-emerald-400 shrink-0" />
+                <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
+                <span className="text-zinc-500">· {apk.size_mb} MB</span>
+                {apk.updated_at && (
+                  <span className="text-zinc-600 text-xs">
+                    · {t('settings.software.lastUpdated')} {new Date(apk.updated_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <AlertCircle size={14} className="text-amber-400" />
+              <span>{t('settings.software.apkMissing')}</span>
+            </div>
+          )}
+
+          {/* Download links */}
+          {apk?.available && (
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">Download</p>
+              <div className="flex flex-col gap-2">
+                <a
+                  href={localUrl}
+                  download="nimtaflow-tv.apk"
+                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <Download size={13} />
+                  <span>{t('settings.software.localLink')}</span>
+                  <code className="text-xs text-zinc-600 ml-1">/firetv.apk</code>
+                </a>
+                <a
+                  href={cloudUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <ExternalLink size={13} />
+                  <span>{t('settings.software.cloudLink')}</span>
+                </a>
+              </div>
+              <p className="text-xs text-zinc-600 mt-2">{t('settings.software.howTo')}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex flex-wrap gap-2 pt-1 border-t border-white/5">
+            {/* Upload */}
+            <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors
+              ${busy ? 'opacity-50 pointer-events-none' : ''}
+              bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
+            >
+              {uploadMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+              {uploadMut.isPending ? t('settings.software.uploading') : t('settings.software.uploadBtn')}
+              <input type="file" accept=".apk" className="hidden" onChange={handleFile} disabled={busy} />
+            </label>
+
+            {/* Fetch from URL */}
+            <button
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                ${busy ? 'opacity-50' : ''}
+                bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
+              onClick={() => setFetchUrlVisible(v => !v)}
+              disabled={busy}
+            >
+              {fetchMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              {fetchMut.isPending ? t('settings.software.downloading') : t('settings.software.fetchBtn')}
+            </button>
+          </div>
+
+          {/* URL input for fetch */}
+          {fetchUrlVisible && (
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-500">{t('settings.software.fetchUrlLabel')}</label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={fetchUrl}
+                  onChange={e => setFetchUrl(e.target.value)}
+                  placeholder={t('settings.software.fetchUrlPh')}
+                  className="flex-1 bg-zinc-800 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50"
+                />
+                <button
+                  onClick={() => fetchMut.mutate()}
+                  disabled={busy}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium text-white transition-colors"
+                >
+                  {fetchMut.isPending ? <Loader2 size={14} className="animate-spin" /> : 'OK'}
+                </button>
+              </div>
+              {fetchMut.isError && (
+                <p className="text-xs text-red-400">{(fetchMut.error as any)?.response?.data?.detail ?? 'Fehler'}</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -3179,6 +3348,7 @@ export default function SettingsPage() {
         {section === 'map'      && <MapSection />}
         {section === 'users'    && <UsersSection />}
         {section === 'logs'     && <LogsSection />}
+        {section === 'software' && <SoftwareSection />}
       </div>
     </div>
   )

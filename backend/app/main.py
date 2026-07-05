@@ -193,6 +193,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         import logging
         logging.getLogger("photoflow").error(f"Admin-Seeding übersprungen: {e}")
+    # Auto-fetch FireTV APK if FIRETV_APK_URL is set and file is missing (non-fatal).
+    import asyncio as _asyncio
+    from app.api.routes.software import auto_fetch_if_missing as _auto_apk
+    _asyncio.ensure_future(_auto_apk())
+
     yield
     if _engine:
         await _engine.dispose()
@@ -248,6 +253,8 @@ app.include_router(ai_api.router, prefix="/api", dependencies=_guard)
 app.include_router(logs.router, prefix="/api", dependencies=_guard)
 from app.core.auth_guard import require_admin as _require_admin
 app.include_router(backup.router, prefix="/api", dependencies=[Depends(_require_admin)])
+from app.api.routes import software as software_routes
+app.include_router(software_routes.router)
 app.include_router(albums.router, prefix="/api", dependencies=_guard_ro)
 from app.api.routes import relationships as relationships_routes
 app.include_router(relationships_routes.router, prefix="/api", dependencies=_guard_ro)

@@ -44,6 +44,22 @@ export const settings = {
     'settings.nav.map': 'Karte',
     'settings.nav.users': 'Benutzer & Login',
     'settings.nav.logs': 'Logs',
+    'settings.nav.software': 'Software',
+
+    // ── Software / FireTV ──
+    'settings.software.firetv': 'FireTV App',
+    'settings.software.apkAvail': 'APK verfügbar',
+    'settings.software.apkMissing': 'Keine APK vorhanden',
+    'settings.software.uploadBtn': 'APK hochladen',
+    'settings.software.fetchBtn': 'Von URL laden',
+    'settings.software.fetchUrlLabel': 'Download-URL (optional)',
+    'settings.software.fetchUrlPh': 'https://…/nimtaflow-tv.apk',
+    'settings.software.downloading': 'Wird geladen…',
+    'settings.software.uploading': 'Wird hochgeladen…',
+    'settings.software.localLink': 'Lokales Netz',
+    'settings.software.cloudLink': 'Cloudflare (firetv.nimtaflow.com)',
+    'settings.software.howTo': 'Öffne auf dem FireTV die "Downloader"-App und gib die URL ein.',
+    'settings.software.lastUpdated': 'Aktualisiert',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Modell eingeben oder aus Liste wählen',
@@ -645,6 +661,22 @@ export const settings = {
     'settings.nav.map': 'Map',
     'settings.nav.users': 'Users & Login',
     'settings.nav.logs': 'Logs',
+    'settings.nav.software': 'Software',
+
+    // ── Software / FireTV ──
+    'settings.software.firetv': 'FireTV App',
+    'settings.software.apkAvail': 'APK available',
+    'settings.software.apkMissing': 'No APK present',
+    'settings.software.uploadBtn': 'Upload APK',
+    'settings.software.fetchBtn': 'Fetch from URL',
+    'settings.software.fetchUrlLabel': 'Download URL (optional)',
+    'settings.software.fetchUrlPh': 'https://…/nimtaflow-tv.apk',
+    'settings.software.downloading': 'Downloading…',
+    'settings.software.uploading': 'Uploading…',
+    'settings.software.localLink': 'Local network',
+    'settings.software.cloudLink': 'Cloudflare (firetv.nimtaflow.com)',
+    'settings.software.howTo': 'Open the "Downloader" app on your FireTV and enter the URL.',
+    'settings.software.lastUpdated': 'Updated',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Enter a model or pick from the list',
