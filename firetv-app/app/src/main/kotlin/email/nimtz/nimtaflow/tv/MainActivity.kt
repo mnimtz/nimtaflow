@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         val initialToken = runBlocking { prefs.token.first() }
 
         // Apply stored URL/token to the API client
-        if (initialUrl.isNotEmpty()) api.setBaseUrl(initialUrl)
+        if (initialUrl.isNotEmpty()) api.baseUrl = initialUrl.trimEnd('/')
         if (initialToken.isNotEmpty()) api.setToken(initialToken)
 
         setContent {

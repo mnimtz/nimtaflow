@@ -82,7 +82,7 @@ fun AppNavGraph(
 
     when (screen) {
         Screen.ServerSetup -> ServerSetupScreen { url ->
-            api.setBaseUrl(url)
+            api.baseUrl = url.trimEnd('/')
             scope.launch { onServerSaved(url) }
             screen = Screen.Login
         }

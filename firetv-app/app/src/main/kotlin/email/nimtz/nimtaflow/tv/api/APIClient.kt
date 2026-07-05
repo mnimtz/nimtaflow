@@ -29,7 +29,6 @@ class APIClient(var baseUrl: String, private var token: String = "") {
         })
         .build()
 
-    fun setBaseUrl(url: String) { baseUrl = url.trimEnd('/') }
     fun setToken(t: String) { token = t }
     fun hasToken() = token.isNotBlank()
 
