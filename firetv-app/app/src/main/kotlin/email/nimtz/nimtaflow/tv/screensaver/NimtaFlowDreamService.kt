@@ -25,12 +25,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import email.nimtz.nimtaflow.tv.NimtaFlowApp
@@ -57,8 +55,7 @@ class NimtaFlowDreamService : DreamService() {
 
         val view = ComposeView(this)
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-        ViewTreeLifecycleOwner.set(view, composeLifecycleOwner)
-        ViewTreeSavedStateRegistryOwner.set(view, composeLifecycleOwner)
+        setViewTreeOwners(view, composeLifecycleOwner)
         view.setContent {
             CompositionLocalProvider(LocalViewModelStoreOwner provides composeLifecycleOwner) {
                 ScreensaverSlideshow(applicationContext)
@@ -85,6 +82,24 @@ class NimtaFlowDreamService : DreamService() {
     override fun onDestroy() {
         composeLifecycleOwner.onDestroy()
         super.onDestroy()
+    }
+}
+
+/**
+ * Sets ViewTree lifecycle + saved-state owners via reflection.
+ * Direct imports of ViewTreeLifecycleOwner / ViewTreeSavedStateRegistryOwner fail under
+ * Kotlin K2 + Lifecycle 2.8.x KMP artifacts, so we reach them reflectively at runtime.
+ */
+private fun setViewTreeOwners(view: android.view.View, owner: ComposeLifecycleOwner) {
+    runCatching {
+        Class.forName("androidx.lifecycle.ViewTreeLifecycleOwner")
+            .getMethod("set", android.view.View::class.java, androidx.lifecycle.LifecycleOwner::class.java)
+            .invoke(null, view, owner)
+    }
+    runCatching {
+        Class.forName("androidx.savedstate.ViewTreeSavedStateRegistryOwner")
+            .getMethod("set", android.view.View::class.java, androidx.savedstate.SavedStateRegistryOwner::class.java)
+            .invoke(null, view, owner)
     }
 }
 

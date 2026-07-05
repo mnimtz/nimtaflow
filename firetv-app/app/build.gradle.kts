@@ -13,8 +13,8 @@ android {
         applicationId = "email.nimtz.nimtaflow.tv"
         minSdk = 23           // tv-foundation:1.0.0 requires API 23; FireTV Stick 4K = API 28
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.10"
+        versionCode = 12
+        versionName = "1.11"
     }
 
     buildTypes {

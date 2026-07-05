@@ -64,16 +64,6 @@ fun AppNavGraph(
         }
     }
 
-    // Globaler 401-Handler: bei abgelaufenem Token → sofort zurück zum Login
-    val onUnauthorized: () -> Unit = {
-        scope.launch {
-            onLogout()
-            token = ""
-            api.setToken("")
-            screen = Screen.Login
-        }
-    }
-
     var screen by remember {
         mutableStateOf(
             when {
@@ -84,8 +74,18 @@ fun AppNavGraph(
         )
     }
     var token by remember { mutableStateOf(initialToken) }
-    var isAdmin by prefs.isAdmin.collectAsState(initial = false)
+    val isAdmin by prefs.isAdmin.collectAsState(initial = false)
     var tab by remember { mutableStateOf(HomeTab.Gallery) }
+
+    // Globaler 401-Handler: bei abgelaufenem Token → sofort zurück zum Login
+    val onUnauthorized: () -> Unit = {
+        scope.launch {
+            onLogout()
+            token = ""
+            api.setToken("")
+            screen = Screen.Login
+        }
+    }
 
     // Media viewer overlay
     var viewerPhotos by remember { mutableStateOf<List<Photo>?>(null) }
