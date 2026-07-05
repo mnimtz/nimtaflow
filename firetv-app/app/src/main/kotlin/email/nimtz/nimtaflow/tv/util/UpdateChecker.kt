@@ -35,8 +35,14 @@ object UpdateChecker {
             val apkAsset = json["assets"]?.jsonArray
                 ?.firstOrNull { it.jsonObject["name"]?.jsonPrimitive?.content?.endsWith(".apk") == true }
                 ?: return@withContext null
+            // Use asset updated_at — this changes on every CI push.
+            // The release published_at is fixed for a rolling 'firetv-latest' tag.
+            val assetDate = apkAsset.jsonObject["updated_at"]?.jsonPrimitive?.content
+                ?: apkAsset.jsonObject["created_at"]?.jsonPrimitive?.content
+                ?: json["published_at"]?.jsonPrimitive?.content
+                ?: return@withContext null
             ReleaseInfo(
-                publishedAt  = json["published_at"]?.jsonPrimitive?.content ?: return@withContext null,
+                publishedAt  = assetDate,
                 downloadUrl  = apkAsset.jsonObject["browser_download_url"]?.jsonPrimitive?.content ?: return@withContext null,
                 releaseName  = json["name"]?.jsonPrimitive?.content ?: "Update",
             )

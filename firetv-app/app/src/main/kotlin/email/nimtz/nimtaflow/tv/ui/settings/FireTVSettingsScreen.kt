@@ -227,7 +227,13 @@ fun FireTVSettingsScreen(api: APIClient) {
                     scope.launch {
                         scanning = true; adbDevices = emptyList(); installMsg = null
                         try {
-                            val result = api.getJson("api/v1/software/firetv/adb-devices")
+                            // Subnet aus der Server-URL ableiten (z.B. http://192.168.0.193:8090 → 192.168.0)
+                            val subnetParam = run {
+                                val m = Regex("""(?:https?://)(\d+\.\d+\.\d+)\.\d+""")
+                                    .find(api.baseUrl)
+                                m?.groupValues?.get(1)?.let { "?subnet=$it" } ?: ""
+                            }
+                            val result = api.getJson("api/v1/software/firetv/adb-devices$subnetParam")
                             val list = result["devices"]?.jsonArray ?: JsonArray(emptyList())
                             adbDevices = list.mapNotNull { el ->
                                 val obj = el.jsonObject

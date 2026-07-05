@@ -19,7 +19,7 @@ private val jsonMedia = "application/json".toMediaType()
 /** Wird geworfen wenn der Server 401 zurückgibt — löst in der UI einen Re-Login aus. */
 class UnauthorizedException : Exception("Token abgelaufen oder ungültig")
 
-class APIClient(private var baseUrl: String, private var token: String = "") {
+class APIClient(var baseUrl: String, private var token: String = "") {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)

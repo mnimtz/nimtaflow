@@ -4,8 +4,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- NimtaFlow sparkle mark ✦ -->
+    <!-- NimtaFlow sparkle mark ✦ — klassischer 4-Zacker-Stern, kräftig -->
     <path
         android:fillColor="#A78BFA"
-        android:pathData="M54,20 L57,47 L84,44 L57,51 L60,78 L54,53 L48,78 L51,51 L24,44 L51,47 Z" />
+        android:pathData="M54,16 L62,44 L90,48 L62,56 L54,82 L46,56 L18,48 L46,44 Z" />
+    <!-- Innerer Highlight für Tiefe -->
+    <path
+        android:fillColor="#C4B5FD"
+        android:alpha="0.55"
+        android:pathData="M54,30 L59,48 L72,50 L59,54 L54,70 L49,54 L36,50 L49,48 Z" />
 </vector>

@@ -3205,7 +3205,10 @@ function SoftwareSection() {
   const scanAdb = async () => {
     setAdbScanning(true); setAdbDevices([]); setAdbMsg(null)
     try {
-      const res = await api.get('/v1/software/firetv/adb-devices')
+      // Subnet aus dem Browser-Hostname ableiten (z.B. 192.168.0.193 → 192.168.0)
+      const m = window.location.hostname.match(/^(\d+\.\d+\.\d+)\.\d+$/)
+      const subnetParam = m ? `?subnet=${m[1]}` : ''
+      const res = await api.get(`/v1/software/firetv/adb-devices${subnetParam}`)
       const devs: AdbDevice[] = res.data.devices ?? []
       setAdbDevices(devs)
       if (devs.length === 0) setAdbMsg({ text: 'Keine Geräte gefunden', ok: false })

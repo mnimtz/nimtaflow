@@ -226,9 +226,17 @@ def _local_subnet() -> str | None:
 
 
 @router.get("/firetv/adb-devices")
-async def firetv_adb_devices(_: None = Depends(require_admin)):
-    """Scant das /24-Subnetz auf ADB-Geräte (Port 5555)."""
-    subnet = _local_subnet()
+async def firetv_adb_devices(
+    subnet: str | None = None,
+    _: None = Depends(require_admin),
+):
+    """Scant das /24-Subnetz auf ADB-Geräte (Port 5555).
+
+    subnet: z.B. '192.168.0' — wird vom Client übergeben damit der Server
+    das richtige Heimnetz scannt (nicht die Docker-Bridge).
+    """
+    if not subnet:
+        subnet = _local_subnet()
     if not subnet:
         return {"devices": [], "error": "Subnetz nicht erkennbar"}
 
