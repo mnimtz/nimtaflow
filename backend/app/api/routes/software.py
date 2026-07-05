@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import socket
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from app.core.auth_guard import require_admin
 
 APK_PATH = Path(os.getenv("APK_PATH", "/apk/nimtaflow-tv.apk"))
+META_PATH = APK_PATH.with_suffix(".meta")
 
 # Serialisiert konkurrierende Downloads — verhindert Race bei parallelem Startup-Hook + API-Request
 _download_lock = asyncio.Lock()
@@ -21,19 +23,33 @@ def _parse_gh_date(s: str) -> datetime:
     """GitHub gibt 'Z'-suffixe zurück; fromisoformat braucht '+00:00'."""
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
+
+def _save_meta(release_name: str) -> None:
+    META_PATH.write_text(json.dumps({"installed_version": release_name}))
+
+
+def _read_meta() -> dict:
+    try:
+        return json.loads(META_PATH.read_text())
+    except Exception:
+        return {}
+
+
 router = APIRouter(prefix="/api/v1/software", tags=["software"])
 
 
 def _apk_info() -> dict:
     if APK_PATH.exists():
         stat = APK_PATH.stat()
+        meta = _read_meta()
         return {
             "available": True,
             "size_bytes": stat.st_size,
             "size_mb": round(stat.st_size / 1024 / 1024, 1),
             "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            "installed_version": meta.get("installed_version") or "",
         }
-    return {"available": False, "size_bytes": 0, "size_mb": 0.0, "updated_at": None}
+    return {"available": False, "size_bytes": 0, "size_mb": 0.0, "updated_at": None, "installed_version": None}
 
 
 def _gh_headers() -> dict:
@@ -105,6 +121,7 @@ async def firetv_update_now(_: None = Depends(require_admin)):
     if not asset_url:
         raise HTTPException(404, "Kein APK-Asset im Release gefunden")
     await _download_apk(asset_url, extra_headers=_gh_headers())
+    _save_meta(release.get("name") or release.get("tag_name") or "")
     return _apk_info()
 
 
@@ -118,6 +135,7 @@ async def firetv_fetch(body: FetchBody, _: None = Depends(require_admin)):
     if not url:
         raise HTTPException(400, "Keine URL angegeben und FIRETV_APK_URL nicht konfiguriert")
     await _download_apk(url)
+    _save_meta("Manuell geladen")
     return _apk_info()
 
 
@@ -133,6 +151,7 @@ async def firetv_upload(file: UploadFile = File(...), _: None = Depends(require_
                     break
                 await f.write(chunk)
         tmp.replace(APK_PATH)
+        _save_meta("Manuell hochgeladen")
     except Exception as e:
         tmp.unlink(missing_ok=True)
         raise HTTPException(500, str(e))

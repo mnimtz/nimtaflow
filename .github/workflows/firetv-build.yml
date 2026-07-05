@@ -28,6 +28,13 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
 
+      - name: versionName lesen
+        id: ver
+        working-directory: firetv-app
+        run: |
+          VER=$(grep 'versionName\s*=' app/build.gradle.kts | head -1 | grep -o '"[^"]*"' | tr -d '"')
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
       - name: APK bauen
         working-directory: firetv-app
         run: |
@@ -47,7 +54,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: firetv-latest
-          name: "FireTV App — latest build"
+          name: "NimtaFlow TV v${{ steps.ver.outputs.version }}"
           body: |
             Automatisch gebaut von GitHub Actions.
             Commit: ${{ github.sha }}

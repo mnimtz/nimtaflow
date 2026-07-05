@@ -3118,7 +3118,7 @@ function LogsSection() {
 
 // ─── Software Section ──────────────────────────────────────────────────────────
 
-type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; updated_at: string | null }
+type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; updated_at: string | null; installed_version?: string | null }
 type UpdateCheck = { has_update: boolean; release_name?: string; release_date?: string; download_url?: string; current_updated_at?: string; reason?: string }
 
 type AdbDevice = { id: string; model: string; state: string; ip: string }
@@ -3241,9 +3241,12 @@ function SoftwareSection() {
               <Loader2 size={14} className="animate-spin" /><span>{t('settings.loading')}</span>
             </div>
           ) : apk?.available ? (
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm flex-wrap">
               <CircleCheck size={15} className="text-emerald-400 shrink-0" />
               <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
+              {apk.installed_version && (
+                <span className="text-indigo-400 font-mono text-xs bg-indigo-500/10 px-1.5 py-0.5 rounded">{apk.installed_version}</span>
+              )}
               <span className="text-zinc-500">· {apk.size_mb} MB</span>
               {apk.updated_at && (
                 <span className="text-zinc-600 text-xs">
@@ -3337,13 +3340,21 @@ function SoftwareSection() {
                 <div className="flex-1 min-w-0">
                   {checkResult.has_update ? (
                     <>
-                      <p className="text-amber-200">{t('settings.software.updateAvail')} <span className="text-zinc-400 text-xs">{checkResult.release_name}</span></p>
+                      <p className="text-amber-200">{t('settings.software.updateAvail')}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {apk?.installed_version && <span className="text-zinc-500 text-xs">{apk.installed_version}</span>}
+                        {apk?.installed_version && checkResult.release_name && <span className="text-zinc-600 text-xs">→</span>}
+                        {checkResult.release_name && <span className="text-indigo-300 text-xs font-mono">{checkResult.release_name}</span>}
+                      </div>
                       {checkResult.release_date && (
                         <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.releaseDate')} {new Date(checkResult.release_date).toLocaleString()}</p>
                       )}
                     </>
                   ) : (
-                    <p className="text-emerald-200">{t('settings.software.upToDate')}</p>
+                    <div>
+                      <p className="text-emerald-200">{t('settings.software.upToDate')}</p>
+                      {checkResult.release_name && <p className="text-xs text-zinc-500 mt-0.5 font-mono">{checkResult.release_name}</p>}
+                    </div>
                   )}
                 </div>
                 {checkResult.has_update && (
