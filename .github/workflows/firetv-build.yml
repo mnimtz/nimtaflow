@@ -31,16 +31,9 @@ jobs:
             "platform-tools"
           yes | sdkmanager --licenses
 
-      - name: Gradle einrichten
-        uses: gradle-actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
       - name: APK bauen
         working-directory: firetv-app
-        run: gradle assembleDebug
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+        run: ./gradlew assembleDebug
 
       - name: APK als Artifact hochladen
         uses: actions/upload-artifact@v4
