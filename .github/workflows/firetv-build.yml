@@ -28,48 +28,48 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
 
-      # Signed release build when secrets are present, debug otherwise
-      - name: Keystore dekodieren
-        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
-        run: echo "${{ secrets.FIRETV_KEYSTORE_BASE64 }}" | base64 -d > firetv-app/nimtaflow-firetv.jks
-
-      - name: Release-APK bauen (signiert)
-        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
-        working-directory: firetv-app
+      - name: Keystore dekodieren (wenn Secret vorhanden)
+        env:
+          KEYSTORE_B64: ${{ secrets.FIRETV_KEYSTORE_BASE64 }}
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > firetv-app/nimtaflow-firetv.jks
+            echo "HAS_KEYSTORE=true" >> $GITHUB_ENV
+          else
+            echo "HAS_KEYSTORE=false" >> $GITHUB_ENV
+          fi
+
+      - name: APK bauen
+        working-directory: firetv-app
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           SIGNING_KEY_ALIAS: ${{ secrets.FIRETV_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.FIRETV_KEY_PASSWORD }}
           SIGNING_STORE_FILE: nimtaflow-firetv.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.FIRETV_STORE_PASSWORD }}
-
-      - name: Debug-APK bauen (Fallback ohne Secrets)
-        if: ${{ secrets.FIRETV_KEYSTORE_BASE64 == '' }}
-        working-directory: firetv-app
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
+          if [ "$HAS_KEYSTORE" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
 
       - name: APK-Pfad ermitteln
         id: apk
         run: |
           if [ -f "firetv-app/app/build/outputs/apk/release/app-release.apk" ]; then
             echo "path=firetv-app/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_OUTPUT
-            echo "name=nimtaflow-tv-release" >> $GITHUB_OUTPUT
+            echo "label=nimtaflow-tv-release" >> $GITHUB_OUTPUT
           else
             echo "path=firetv-app/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_OUTPUT
-            echo "name=nimtaflow-tv-debug" >> $GITHUB_OUTPUT
+            echo "label=nimtaflow-tv-debug" >> $GITHUB_OUTPUT
           fi
 
       - name: APK als CI-Artifact hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.apk.outputs.name }}
+          name: ${{ steps.apk.outputs.label }}
           path: ${{ steps.apk.outputs.path }}
           retention-days: 30
 
@@ -80,8 +80,7 @@ jobs:
           name: "FireTV App — latest build"
           body: |
             Automatisch gebaut von GitHub Actions.
-            Version: ${{ github.sha }}
-            Signed: ${{ secrets.FIRETV_KEYSTORE_BASE64 != '' }}
+            Commit: ${{ github.sha }}
           prerelease: true
           files: ${{ steps.apk.outputs.path }}
           token: ${{ secrets.GITHUB_TOKEN }}
