@@ -3126,6 +3126,7 @@ function SoftwareSection() {
   const qc = useQueryClient()
   const [fetchUrl, setFetchUrl] = useState('')
   const [fetchUrlVisible, setFetchUrlVisible] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const { data: apk, isPending: apkPending } = useQuery<ApkInfo>({
     queryKey: ['software', 'firetv'],
@@ -3137,11 +3138,20 @@ function SoftwareSection() {
     queryFn: () => api.get('/settings').then(r => r.data),
   })
   const autoUpdate = settings?.['software.firetv_auto_update'] === 'true'
+  const defaultPublicUrl = typeof window !== 'undefined' ? `${window.location.origin}/firetv.apk` : '/firetv.apk'
+  const publicUrl = settings?.['software.firetv_public_url'] || defaultPublicUrl
+  const [editingUrl, setEditingUrl] = useState<string | null>(null)
 
   const settingMut = useMutation({
-    mutationFn: (val: boolean) => api.patch('/settings', { 'software.firetv_auto_update': String(val) }),
+    mutationFn: (patch: Record<string, string>) => api.patch('/settings', patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   })
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(publicUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const [checkResult, setCheckResult] = useState<UpdateCheck | null>(null)
   const checkMut = useMutation({
@@ -3226,24 +3236,43 @@ function SoftwareSection() {
             </div>
           )}
 
-          {/* Download links */}
+          {/* Public URL + Share */}
           {apk?.available && (
             <div className="space-y-2">
-              <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">Download</p>
-              <div className="flex flex-col gap-2">
-                <a href="/firetv.apk" download="nimtaflow-tv.apk"
-                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
-                  <Download size={13} />
-                  <span>{t('settings.software.localLink')}</span>
-                  <code className="text-xs text-zinc-600 ml-1">/firetv.apk</code>
-                </a>
-                <a href="https://firetv.nimtaflow.com" target="_blank" rel="noreferrer"
-                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
-                  <ExternalLink size={13} />
-                  <span>{t('settings.software.cloudLink')}</span>
-                </a>
-              </div>
-              <p className="text-xs text-zinc-600 mt-2">{t('settings.software.howTo')}</p>
+              <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">{t('settings.software.publicUrl')}</p>
+              {editingUrl !== null ? (
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={editingUrl}
+                    onChange={e => setEditingUrl(e.target.value)}
+                    autoFocus
+                    className="flex-1 bg-zinc-800 border border-indigo-500/50 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => { settingMut.mutate({ 'software.firetv_public_url': editingUrl }); setEditingUrl(null) }}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button onClick={() => setEditingUrl(null)} className="px-2 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors">
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-zinc-800 rounded-lg px-3 py-2 text-zinc-300 truncate">{publicUrl}</code>
+                  <button onClick={copyUrl} title={t('settings.software.copyUrl')}
+                    className="p-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300 transition-colors shrink-0">
+                    {copied ? <CircleCheck size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                  <button onClick={() => setEditingUrl(publicUrl)} title={t('settings.software.editUrl')}
+                    className="p-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.10] text-zinc-400 transition-colors shrink-0">
+                    <Cog size={14} />
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-zinc-600">{t('settings.software.howTo')}</p>
             </div>
           )}
 
@@ -3255,7 +3284,7 @@ function SoftwareSection() {
                 <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.autoUpdateSub')}</p>
               </div>
               <button
-                onClick={() => settingMut.mutate(!autoUpdate)}
+                onClick={() => settingMut.mutate({ 'software.firetv_auto_update': String(!autoUpdate) })}
                 disabled={settingMut.isPending}
                 className={`relative w-10 h-5.5 rounded-full transition-colors ${autoUpdate ? 'bg-indigo-500' : 'bg-zinc-700'}`}
                 style={{ width: 40, height: 22 }}

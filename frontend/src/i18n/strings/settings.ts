@@ -69,6 +69,9 @@ export const settings = {
     'settings.software.installUpdate': 'Installieren',
     'settings.software.manual': 'Manuell',
     'settings.software.deployNow': 'FireTV bereitstellen',
+    'settings.software.publicUrl': 'Öffentliche URL',
+    'settings.software.copyUrl': 'URL kopieren',
+    'settings.software.editUrl': 'URL anpassen',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Modell eingeben oder aus Liste wählen',
@@ -695,6 +698,9 @@ export const settings = {
     'settings.software.installUpdate': 'Install',
     'settings.software.manual': 'Manual',
     'settings.software.deployNow': 'Deploy FireTV',
+    'settings.software.publicUrl': 'Public URL',
+    'settings.software.copyUrl': 'Copy URL',
+    'settings.software.editUrl': 'Edit URL',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Enter a model or pick from the list',
