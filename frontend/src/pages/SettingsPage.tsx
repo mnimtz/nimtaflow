@@ -3121,12 +3121,18 @@ function LogsSection() {
 type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; updated_at: string | null }
 type UpdateCheck = { has_update: boolean; release_name?: string; release_date?: string; download_url?: string; current_updated_at?: string; reason?: string }
 
+type AdbDevice = { id: string; model: string; state: string; ip: string }
+
 function SoftwareSection() {
   const { t } = useT()
   const qc = useQueryClient()
   const [fetchUrl, setFetchUrl] = useState('')
   const [fetchUrlVisible, setFetchUrlVisible] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [adbDevices, setAdbDevices] = useState<AdbDevice[]>([])
+  const [adbScanning, setAdbScanning] = useState(false)
+  const [adbInstalling, setAdbInstalling] = useState<string | null>(null)
+  const [adbMsg, setAdbMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   const { data: apk, isPending: apkPending } = useQuery<ApkInfo>({
     queryKey: ['software', 'firetv'],
@@ -3184,6 +3190,32 @@ function SoftwareSection() {
   }
 
   const busy = fetchMut.isPending || uploadMut.isPending || updateNowMut.isPending
+
+  const scanAdb = async () => {
+    setAdbScanning(true); setAdbDevices([]); setAdbMsg(null)
+    try {
+      const res = await api.get('/v1/software/firetv/adb-devices')
+      const devs: AdbDevice[] = res.data.devices ?? []
+      setAdbDevices(devs)
+      if (devs.length === 0) setAdbMsg({ text: 'Keine Geräte gefunden', ok: false })
+    } catch {
+      setAdbMsg({ text: 'Scan fehlgeschlagen', ok: false })
+    } finally {
+      setAdbScanning(false)
+    }
+  }
+
+  const installAdb = async (deviceId: string, model: string) => {
+    setAdbInstalling(deviceId); setAdbMsg(null)
+    try {
+      await api.post('/v1/software/firetv/adb-install', { device_id: deviceId })
+      setAdbMsg({ text: `Installation auf ${model} gestartet — bitte am Gerät bestätigen`, ok: true })
+    } catch (e: any) {
+      setAdbMsg({ text: e?.response?.data?.detail ?? 'Installation fehlgeschlagen', ok: false })
+    } finally {
+      setAdbInstalling(null)
+    }
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -3387,6 +3419,46 @@ function SoftwareSection() {
                   <p className="text-xs text-red-400">{(fetchMut.error as any)?.response?.data?.detail ?? 'Fehler'}</p>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* ── ADB Push ────────────────────────────────────────────────── */}
+          <div className="border-t border-white/5 pt-4 space-y-3">
+            <div>
+              <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">APK auf FireTV pushen</p>
+              <p className="text-xs text-zinc-600 mt-0.5">Scannt das WLAN nach Geräten mit aktiviertem Netzwerk-ADB (Port 5555).</p>
+            </div>
+            <button
+              onClick={scanAdb}
+              disabled={adbScanning || !apk?.available}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300 transition-colors disabled:opacity-50"
+            >
+              {adbScanning ? <Loader2 size={13} className="animate-spin" /> : <Network size={13} />}
+              {adbScanning ? 'Suche läuft…' : 'Geräte suchen'}
+            </button>
+
+            {adbDevices.map(dev => (
+              <div key={dev.id} className="flex items-center justify-between gap-3 bg-zinc-900 rounded-lg px-3 py-2.5">
+                <div>
+                  <p className="text-sm text-zinc-200 font-medium">{dev.model}</p>
+                  <p className="text-xs text-zinc-500">{dev.id}</p>
+                </div>
+                <button
+                  onClick={() => installAdb(dev.id, dev.model)}
+                  disabled={adbInstalling !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors shrink-0"
+                >
+                  {adbInstalling === dev.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  Installieren
+                </button>
+              </div>
+            ))}
+
+            {adbMsg && (
+              <p className={`text-xs ${adbMsg.ok ? 'text-emerald-400' : 'text-zinc-500'}`}>{adbMsg.text}</p>
+            )}
+            {!apk?.available && (
+              <p className="text-xs text-amber-500/80">APK muss zuerst bereitgestellt werden.</p>
             )}
           </div>
         </div>
