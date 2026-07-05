@@ -49,8 +49,8 @@ const SECTIONS = [
   { id: 'backup',    icon: HardDrive, navKey: 'nav.backup' },
   { id: 'map',       icon: Map,       navKey: 'nav.map' },
   { id: 'users',     icon: Shield,    navKey: 'nav.users' },
-  { id: 'logs',      icon: Terminal,  navKey: 'nav.logs' },
   { id: 'software',  icon: Tv,        navKey: 'nav.software' },
+  { id: 'logs',      icon: Terminal,  navKey: 'nav.logs' },
 ] as const
 
 type SectionId = typeof SECTIONS[number]['id']
