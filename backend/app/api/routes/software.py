@@ -73,7 +73,7 @@ async def _fetch_latest_release() -> dict | None:
 
 
 @router.get("/firetv")
-async def firetv_info():
+async def firetv_info(_: None = Depends(require_admin)):
     return _apk_info()
 
 
@@ -125,8 +125,8 @@ async def firetv_update_now(_: None = Depends(require_admin)):
     )
     if not asset_url:
         raise HTTPException(404, "Kein APK-Asset im Release gefunden")
-    await _download_apk(asset_url, extra_headers=_gh_headers())
-    _save_meta(release.get("name") or release.get("tag_name") or "")
+    release_name = release.get("name") or release.get("tag_name") or ""
+    await _download_apk(asset_url, extra_headers=_gh_headers(), release_name=release_name)
     return _apk_info()
 
 
@@ -139,8 +139,7 @@ async def firetv_fetch(body: FetchBody, _: None = Depends(require_admin)):
     url = body.url or os.getenv("FIRETV_APK_URL", "")
     if not url:
         raise HTTPException(400, "Keine URL angegeben und FIRETV_APK_URL nicht konfiguriert")
-    await _download_apk(url)
-    _save_meta("Manuell geladen")
+    await _download_apk(url, release_name="Manuell geladen")
     return _apk_info()
 
 
@@ -163,12 +162,12 @@ async def firetv_upload(file: UploadFile = File(...), _: None = Depends(require_
     return _apk_info()
 
 
-async def _download_apk(url: str, extra_headers: dict | None = None) -> None:
+async def _download_apk(url: str, extra_headers: dict | None = None, release_name: str | None = None) -> None:
     async with _download_lock:
-        await _do_download_apk(url, extra_headers)
+        await _do_download_apk(url, extra_headers, release_name)
 
 
-async def _do_download_apk(url: str, extra_headers: dict | None = None) -> None:
+async def _do_download_apk(url: str, extra_headers: dict | None = None, release_name: str | None = None) -> None:
     APK_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = APK_PATH.with_suffix(".tmp")
     headers = extra_headers or {}
@@ -180,6 +179,8 @@ async def _do_download_apk(url: str, extra_headers: dict | None = None) -> None:
                     async for chunk in resp.aiter_bytes(1024 * 1024):
                         await f.write(chunk)
         tmp.replace(APK_PATH)
+        if release_name is not None:
+            _save_meta(release_name)
     except httpx.HTTPStatusError as e:
         tmp.unlink(missing_ok=True)
         raise HTTPException(502, f"Download fehlgeschlagen: HTTP {e.response.status_code}")

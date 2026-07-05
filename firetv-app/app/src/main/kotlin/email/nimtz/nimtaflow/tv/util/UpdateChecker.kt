@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 data class ReleaseInfo(
     val publishedAt: String,
@@ -21,14 +22,18 @@ object UpdateChecker {
     private const val RELEASE_API =
         "https://api.github.com/repos/mnimtz/nimtaflow/releases/tags/firetv-latest"
 
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     suspend fun fetchLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
         try {
-            val client = OkHttpClient()
             val req = Request.Builder()
                 .url(RELEASE_API)
                 .header("Accept", "application/vnd.github+json")
                 .build()
-            val resp = client.newCall(req).execute()
+            val resp = http.newCall(req).execute()
             if (!resp.isSuccessful) return@withContext null
             val body = resp.body?.string() ?: return@withContext null
             val json = Json.parseToJsonElement(body).jsonObject
@@ -39,8 +44,7 @@ object UpdateChecker {
             // The release published_at is fixed for a rolling 'firetv-latest' tag.
             val assetDate = apkAsset.jsonObject["updated_at"]?.jsonPrimitive?.content
                 ?: apkAsset.jsonObject["created_at"]?.jsonPrimitive?.content
-                ?: json["published_at"]?.jsonPrimitive?.content
-                ?: return@withContext null
+                ?: return@withContext null  // kein Fallback auf published_at — wäre bei rolling Tag immer dasselbe
             ReleaseInfo(
                 publishedAt  = assetDate,
                 downloadUrl  = apkAsset.jsonObject["browser_download_url"]?.jsonPrimitive?.content ?: return@withContext null,
@@ -61,25 +65,31 @@ object UpdateChecker {
         downloadUrl: String,
         onProgress: (Int) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        val client = OkHttpClient()
         val req = Request.Builder().url(downloadUrl).build()
-        val resp = client.newCall(req).execute()
+        val resp = http.newCall(req).execute()
         if (!resp.isSuccessful) throw Exception("Download fehlgeschlagen: ${resp.code}")
         val responseBody = resp.body ?: throw Exception("Leere Antwort")
         val total = responseBody.contentLength()
+        val tmpFile = File(context.cacheDir, "nimtaflow-update.apk.tmp")
         val apkFile = File(context.cacheDir, "nimtaflow-update.apk")
 
-        responseBody.byteStream().use { input ->
-            apkFile.outputStream().use { output ->
-                val buffer = ByteArray(8 * 1024)
-                var downloaded = 0L
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    if (total > 0) onProgress((downloaded * 100 / total).toInt())
+        try {
+            responseBody.byteStream().use { input ->
+                tmpFile.outputStream().use { output ->
+                    val buffer = ByteArray(8 * 1024)
+                    var downloaded = 0L
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (total > 0) onProgress((downloaded * 100 / total).toInt())
+                    }
                 }
             }
+            tmpFile.renameTo(apkFile)
+        } catch (e: Exception) {
+            tmpFile.delete()
+            throw e
         }
 
         val uri = FileProvider.getUriForFile(

@@ -33,6 +33,7 @@ jobs:
         working-directory: firetv-app
         run: |
           VER=$(grep 'versionName\s*=' app/build.gradle.kts | head -1 | grep -o '"[^"]*"' | tr -d '"')
+          if [ -z "$VER" ]; then echo "ERROR: versionName nicht in build.gradle.kts gefunden" && exit 1; fi
           echo "version=$VER" >> $GITHUB_OUTPUT
 
       - name: APK bauen
