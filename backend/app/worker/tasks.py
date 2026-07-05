@@ -176,7 +176,6 @@ def reclaim_ai_task(self):
                 return {"skipped": "worker alive"}
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=300)
             q = select(Photo.id).where(
-                Photo.is_video == False,                    # noqa: E712
                 Photo.description.is_(None),
                 Photo.ai_error == False,                    # noqa: E712
                 Photo.thumb_large.isnot(None),
