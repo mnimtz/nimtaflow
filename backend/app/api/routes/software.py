@@ -42,7 +42,7 @@ def _gh_headers() -> dict:
 
 async def _fetch_latest_release() -> dict | None:
     """Returns the GitHub release info dict for tag 'firetv-latest', or None."""
-    repo = os.getenv("FIRETV_GITHUB_REPO", "mnimtz/photoflow")
+    repo = os.getenv("FIRETV_GITHUB_REPO", "mnimtz/nimtaflow")
     url = f"https://api.github.com/repos/{repo}/releases/tags/firetv-latest"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
