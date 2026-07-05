@@ -1,5 +1,6 @@
 import asyncio
 import os
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -161,6 +162,85 @@ async def _do_download_apk(url: str, extra_headers: dict | None = None) -> None:
     except Exception as e:
         tmp.unlink(missing_ok=True)
         raise HTTPException(502, f"Download fehlgeschlagen: {e}")
+
+
+# ── ADB Autodiscover ─────────────────────────────────────────────────────────
+
+async def _adb(*args: str, timeout: float = 15) -> tuple[int, str]:
+    proc = await asyncio.create_subprocess_exec(
+        "adb", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return proc.returncode or 0, stdout.decode(errors="replace")
+    except asyncio.TimeoutError:
+        proc.kill()
+        return -1, "timeout"
+
+
+async def _port_open(ip: str, port: int = 5555, timeout: float = 0.25) -> bool:
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except Exception:
+        return False
+
+
+def _local_subnet() -> str | None:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ".".join(ip.split(".")[:3])
+    except Exception:
+        return None
+
+
+@router.get("/firetv/adb-devices")
+async def firetv_adb_devices(_: None = Depends(require_admin)):
+    """Scant das /24-Subnetz auf ADB-Geräte (Port 5555)."""
+    subnet = _local_subnet()
+    if not subnet:
+        return {"devices": [], "error": "Subnetz nicht erkennbar"}
+
+    ips = [f"{subnet}.{i}" for i in range(1, 255)]
+    open_flags = await asyncio.gather(*[_port_open(ip) for ip in ips])
+    open_ips = [ip for ip, ok in zip(ips, open_flags) if ok]
+
+    devices = []
+    for ip in open_ips:
+        addr = f"{ip}:5555"
+        await _adb("connect", addr, timeout=5)
+        _, output = await _adb("devices", "-l")
+        for line in output.splitlines():
+            if ip in line and "device" in line:
+                parts = line.split()
+                state = parts[1] if len(parts) > 1 else "unknown"
+                model = next((p.split(":")[-1] for p in parts if p.startswith("model:")), addr)
+                devices.append({"id": addr, "model": model, "state": state, "ip": ip})
+                break
+
+    return {"devices": devices}
+
+
+class AdbInstallBody(BaseModel):
+    device_id: str
+
+
+@router.post("/firetv/adb-install")
+async def firetv_adb_install(body: AdbInstallBody, _: None = Depends(require_admin)):
+    """Schickt das APK via ADB auf ein Gerät."""
+    if not APK_PATH.exists():
+        raise HTTPException(404, "APK fehlt — zuerst bereitstellen")
+    rc, output = await _adb("-s", body.device_id, "install", "-r", "-t", str(APK_PATH), timeout=120)
+    if rc != 0:
+        raise HTTPException(500, f"ADB-Install fehlgeschlagen: {output[:500]}")
+    return {"success": True, "device_id": body.device_id, "output": output[:300]}
 
 
 async def auto_fetch_if_missing() -> None:

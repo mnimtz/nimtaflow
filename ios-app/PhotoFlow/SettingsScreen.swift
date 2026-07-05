@@ -41,6 +41,7 @@ struct SettingsScreen: View {
                 if api.loggedIn { HighlightsMusicSection() }
                 if api.loggedIn { HighlightsAISection() }
                 if api.loggedIn { MCPSection() }
+                if api.loggedIn { FireTVSection() }
                 MapSection()
                 Section {
                     let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -487,6 +488,189 @@ private struct HighlightsAISection: View {
                 provider = s["highlights.ai_provider"] ?? "fal"
                 budget = s["highlights.ai_budget_seconds_month"] ?? "300"
                 // key intentionally not pre-filled (write-only via SecureField)
+            }
+        }
+    }
+}
+
+// MARK: - FireTV
+
+private struct ApkInfo: Decodable {
+    let available: Bool
+    let size_mb: Double?
+    let updated_at: String?
+}
+
+private struct UpdateCheck: Decodable {
+    let has_update: Bool
+    let release_name: String?
+    let release_date: String?
+    let download_url: String?
+}
+
+private struct AdbDeviceList: Decodable {
+    let devices: [AdbDeviceInfo]
+    let error: String?
+}
+
+private struct AdbDeviceInfo: Decodable, Identifiable {
+    var id: String { deviceId }
+    let deviceId: String
+    let model: String
+    let state: String
+    enum CodingKeys: String, CodingKey { case deviceId = "id", model, state }
+}
+
+private struct FireTVSection: View {
+    @EnvironmentObject var api: APIClient
+    @State private var apkInfo: ApkInfo?
+    @State private var autoUpdate = false
+    @State private var publicUrl = ""
+    @State private var copiedUrl = false
+    @State private var checking = false
+    @State private var checkResult: String?
+    @State private var fetching = false
+    @State private var scanning = false
+    @State private var adbDevices: [AdbDeviceInfo] = []
+    @State private var installing: String?
+    @State private var installMsg: String?
+    @State private var loaded = false
+
+    private var apkPublicUrl: String {
+        guard publicUrl.isEmpty else { return publicUrl }
+        if let u = URL(string: api.serverURL), let host = u.host {
+            return "\(u.scheme ?? "https")://\(host):8092"
+        }
+        return ""
+    }
+
+    var body: some View {
+        Section("FireTV") {
+            // APK-Status
+            if let info = apkInfo {
+                HStack {
+                    Image(systemName: info.available ? "checkmark.circle.fill" : "xmark.circle")
+                        .foregroundStyle(info.available ? .green : .secondary)
+                    Text(info.available ? "APK bereit" : "Kein APK vorhanden")
+                    Spacer()
+                    if let mb = info.size_mb { Text(String(format: "%.1f MB", mb)).foregroundStyle(.secondary) }
+                }
+            }
+
+            // Öffentliche URL
+            if !apkPublicUrl.isEmpty {
+                HStack {
+                    Text(apkPublicUrl).font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button {
+                        UIPasteboard.general.string = apkPublicUrl
+                        copiedUrl = true
+                        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copiedUrl = false }
+                    } label: {
+                        Image(systemName: copiedUrl ? "checkmark" : "doc.on.doc").foregroundStyle(.blue)
+                    }
+                    ShareLink(item: apkPublicUrl) {
+                        Image(systemName: "square.and.arrow.up").foregroundStyle(.blue)
+                    }
+                }
+            }
+
+            // Auto-Update Toggle
+            Toggle("Auto-Update (täglich)", isOn: $autoUpdate)
+                .onChange(of: autoUpdate) { _, v in
+                    Task { try? await api.saveSettings(["firetv.auto_update": v ? "true" : "false"]) }
+                }
+
+            // Update prüfen
+            Button {
+                Task {
+                    checking = true; defer { checking = false }
+                    if let info = try? await api.get("api/v1/software/firetv/update-check", as: UpdateCheck.self) {
+                        checkResult = info.has_update
+                            ? "Update verfügbar: \(info.release_name ?? "?")"
+                            : "Aktuell — kein Update nötig"
+                    }
+                }
+            } label: {
+                HStack {
+                    if checking { ProgressView().controlSize(.small) }
+                    Text("Jetzt prüfen")
+                }
+            }.disabled(checking)
+
+            // Von GitHub bereitstellen
+            Button {
+                Task {
+                    fetching = true; defer { fetching = false }
+                    _ = try? await api.action("api/v1/software/firetv/update-now", method: "POST")
+                    apkInfo = try? await api.get("api/v1/software/firetv", as: ApkInfo.self)
+                    checkResult = "APK erfolgreich geladen"
+                }
+            } label: {
+                HStack {
+                    if fetching { ProgressView().controlSize(.small) }
+                    Text("Von GitHub laden")
+                }
+            }.disabled(fetching || checking)
+
+            if let r = checkResult { Text(r).font(.caption).foregroundStyle(.secondary) }
+
+            Divider()
+
+            // ADB Autodiscover
+            Button {
+                Task {
+                    scanning = true; adbDevices = []; defer { scanning = false }
+                    if let list = try? await api.get("api/v1/software/firetv/adb-devices", as: AdbDeviceList.self) {
+                        adbDevices = list.devices
+                        if adbDevices.isEmpty { installMsg = "Keine Geräte gefunden" }
+                    }
+                }
+            } label: {
+                HStack {
+                    if scanning { ProgressView().controlSize(.small) }
+                    Label("Geräte suchen (ADB)", systemImage: "wifi")
+                }
+            }.disabled(scanning)
+
+            ForEach(adbDevices) { device in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(device.model).font(.subheadline).lineLimit(1)
+                        Text(device.id).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            installing = device.id; defer { installing = nil }
+                            _ = try? await api.action(
+                                "api/v1/software/firetv/adb-install", method: "POST",
+                                json: ["device_id": device.id])
+                            installMsg = "Installation auf \(device.model) gestartet — bitte am Gerät bestätigen"
+                        }
+                    } label: {
+                        if installing == device.id {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Installieren", systemImage: "arrow.down.to.line.circle.fill")
+                                .labelStyle(.iconOnly).foregroundStyle(.blue)
+                        }
+                    }.disabled(installing != nil)
+                }
+            }
+
+            if let m = installMsg { Text(m).font(.caption).foregroundStyle(.secondary) }
+
+            Text("Auto-Update lädt täglich um 06:05 das APK von GitHub. Geräte suchen findet FireTV-Sticks im WLAN per ADB — Developer-Modus + Netzwerk-ADB muss am FireTV aktiviert sein.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .task {
+            guard !loaded else { return }; loaded = true
+            apkInfo = try? await api.get("api/v1/software/firetv", as: ApkInfo.self)
+            if let s = try? await api.appSettings() {
+                autoUpdate = (s["firetv.auto_update"] ?? "false") == "true"
+                publicUrl = s["firetv.public_url"] ?? ""
             }
         }
     }

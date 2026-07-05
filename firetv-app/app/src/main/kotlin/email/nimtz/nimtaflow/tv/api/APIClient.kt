@@ -1,6 +1,11 @@
 package email.nimtz.nimtaflow.tv.api
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -102,4 +107,26 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
 
     fun pollDeviceToken(deviceCode: String): DeviceTokenResponse =
         json.decodeFromString(get("/api/device/token?device_code=$deviceCode"))
+
+    // ── Generic JSON helpers (suspend, für Settings-Screen) ───────────────────
+
+    suspend fun getJson(path: String): JsonObject = withContext(Dispatchers.IO) {
+        val raw = get(if (path.startsWith("/")) path else "/$path")
+        json.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap())
+    }
+
+    suspend fun postJson(path: String, body: JsonObject = buildJsonObject {}): JsonObject = withContext(Dispatchers.IO) {
+        val raw = post(if (path.startsWith("/")) path else "/$path", body.toString())
+        json.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap())
+    }
+
+    suspend fun patchSettings(settings: Map<String, String>): Unit = withContext(Dispatchers.IO) {
+        val bodyStr = buildJsonObject { settings.forEach { (k, v) -> put(k, v) } }.toString()
+        val req = Request.Builder()
+            .url("$baseUrl/api/settings")
+            .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+            .method("PATCH", bodyStr.toRequestBody(jsonMedia))
+            .build()
+        http.newCall(req).execute().use { /* ignore body */ }
+    }
 }

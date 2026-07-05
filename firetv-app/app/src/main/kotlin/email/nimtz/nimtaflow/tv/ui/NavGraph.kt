@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.Photo
 import email.nimtz.nimtaflow.tv.ui.albums.AlbumsScreen
+import email.nimtz.nimtaflow.tv.ui.settings.FireTVSettingsScreen
 import email.nimtz.nimtaflow.tv.ui.gallery.GalleryScreen
 import email.nimtz.nimtaflow.tv.ui.home.HomeScreen
 import email.nimtz.nimtaflow.tv.ui.home.HomeTab
@@ -119,6 +120,7 @@ fun AppNavGraph(
                     HomeTab.Albums    -> AlbumsScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.People    -> PeopleScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Memories  -> MemoriesScreen(api, token) { p, i -> viewerPhotos = p; viewerIndex = i }
+                    HomeTab.Settings  -> FireTVSettingsScreen(api)
                 }
             }
 

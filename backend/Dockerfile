@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     build-essential \
     cmake \
+    android-tools-adb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

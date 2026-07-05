@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.ui.theme.*
 
-enum class HomeTab { Gallery, Favorites, Albums, People, Memories }
+enum class HomeTab { Gallery, Favorites, Albums, People, Memories, Settings }
 
 private data class TabItem(val tab: HomeTab, val icon: ImageVector, val label: String)
 
@@ -89,6 +89,12 @@ fun HomeScreen(
 
             HorizontalDivider(color = SurfaceHi, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
 
+            SidebarItem(
+                icon = Icons.Default.Settings,
+                label = "Einstellungen",
+                selected = selectedTab == HomeTab.Settings,
+                onClick = { onTabSelect(HomeTab.Settings) },
+            )
             SidebarItem(
                 icon = Icons.Default.Logout,
                 label = "Abmelden",
