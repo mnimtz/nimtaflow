@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -87,9 +88,9 @@ fun AlbumsScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>, I
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(albumPhotos, key = { it.id }) { photo ->
+                itemsIndexed(albumPhotos, key = { _, p -> p.id }) { idx, photo ->
                     PhotoCard(photo, api, token,
-                        onClick = { onPhotoSelected(albumPhotos, albumPhotos.indexOf(photo)) })
+                        onClick = { onPhotoSelected(albumPhotos, idx) })
                 }
             }
         }

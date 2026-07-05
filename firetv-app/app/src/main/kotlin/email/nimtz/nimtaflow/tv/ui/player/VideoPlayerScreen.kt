@@ -203,7 +203,7 @@ private fun PhotoItem(photoId: Int, api: APIClient, token: String) {
 @Composable
 private fun VideoItem(streamUrl: String, token: String) {
     val ctx = LocalContext.current
-    val player = remember {
+    val player = remember(streamUrl) {
         ExoPlayer.Builder(ctx).build().also { p ->
             val item = MediaItem.Builder()
                 .setUri(Uri.parse(streamUrl))
@@ -213,7 +213,7 @@ private fun VideoItem(streamUrl: String, token: String) {
             p.playWhenReady = true
         }
     }
-    DisposableEffect(Unit) { onDispose { player.release() } }
+    DisposableEffect(player) { onDispose { player.release() } }
 
     AndroidView(
         factory = { c ->

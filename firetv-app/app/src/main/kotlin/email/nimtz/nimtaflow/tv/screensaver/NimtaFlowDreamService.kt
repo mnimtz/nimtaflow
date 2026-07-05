@@ -150,16 +150,23 @@ private fun ScreensaverSlideshow(context: Context) {
         val api = APIClient(serverUrl, token)
         photos = withContext(Dispatchers.IO) {
             runCatching {
+                val allPhotos by lazy { api.photos(limit = 200).items.filter { !it.isVideo }.shuffled() }
                 when (mode) {
-                    "persons" -> ssPrefs.personIdSet(personRaw)
-                        .flatMap { id -> api.photos(limit = 100, personId = id).items }
-                        .filter { !it.isVideo }.shuffled()
-                    "albums" -> ssPrefs.albumIdSet(albumRaw)
-                        .flatMap { id -> api.albumPhotos(id, limit = 200).items }
-                        .filter { !it.isVideo }.shuffled()
+                    "persons" -> {
+                        val ids = ssPrefs.personIdSet(personRaw)
+                        if (ids.isEmpty()) allPhotos
+                        else ids.flatMap { id -> api.photos(limit = 100, personId = id).items }
+                            .filter { !it.isVideo }.shuffled()
+                    }
+                    "albums" -> {
+                        val ids = ssPrefs.albumIdSet(albumRaw)
+                        if (ids.isEmpty()) allPhotos
+                        else ids.flatMap { id -> api.albumPhotos(id, limit = 200).items }
+                            .filter { !it.isVideo }.shuffled()
+                    }
                     "highlights" -> api.photos(limit = 100, view = "favorites").items
                         .filter { !it.isVideo }.shuffled()
-                    else -> api.photos(limit = 200).items.filter { !it.isVideo }.shuffled()
+                    else -> allPhotos
                 }
             }.getOrDefault(emptyList())
         }

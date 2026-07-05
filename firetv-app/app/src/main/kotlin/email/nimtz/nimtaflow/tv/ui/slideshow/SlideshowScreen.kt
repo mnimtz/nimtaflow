@@ -64,8 +64,8 @@ fun SlideshowScreen(
         photos = loaded.shuffled()   // random order for screensaver feel
     }
 
-    // Auto-advance
-    LaunchedEffect(currentIndex, paused, speedIndex) {
+    // Auto-advance — photos.size in keys so the effect restarts when photos finish loading
+    LaunchedEffect(currentIndex, paused, speedIndex, photos.size) {
         if (!paused && photos.isNotEmpty()) {
             delay(intervalMs)
             currentIndex = (currentIndex + 1) % photos.size
