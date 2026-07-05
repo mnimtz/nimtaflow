@@ -30,6 +30,10 @@ class APIClient: ObservableObject {
 
     // MARK: Requests
 
+    func buildRequest(_ path: String, method: String = "GET", json: Any? = nil) -> URLRequest {
+        makeRequest(path, method: method, json: json)
+    }
+
     private func makeRequest(_ path: String, method: String = "GET", json: Any? = nil) -> URLRequest {
         let base = serverURL.isEmpty ? "http://localhost:8090" : serverURL
         let p = path.hasPrefix("/") ? path : "/" + path

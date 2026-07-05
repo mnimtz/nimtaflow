@@ -11,5 +11,7 @@
     <true/>
     <key>com.apple.security.personal-information.photos-library</key>
     <true/>
+    <key>com.apple.security.device.microphone</key>
+    <true/>
 </dict>
 </plist>

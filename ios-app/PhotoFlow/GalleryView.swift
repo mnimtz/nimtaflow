@@ -653,7 +653,7 @@ struct MasonrySection: View {
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
+    @State private var containerWidth: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -721,7 +721,7 @@ struct JustifiedSection: View {
     let onLast: (PhotoV1) -> Void
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
-    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
+    @State private var containerWidth: CGFloat = 0
 
     private let targetH: CGFloat = 140
     private let spacing: CGFloat = 2
@@ -996,13 +996,17 @@ struct VideoPlayerView: View {
                         // Play audio even when the ring/silent switch is on — without
                         // this AVPlayer uses the default (soloAmbient) session and stays
                         // muted on silent, so highlight music + video sound were silent.
+                        #if os(iOS)
                         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
                         try? AVAudioSession.sharedInstance().setActive(true)
+                        #endif
                         player.play()
                     }
                     .onDisappear {
                         player.pause()
+                        #if os(iOS)
                         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                        #endif
                     }
             } else {
                 Color.black.overlay(ProgressView().tint(.white))
