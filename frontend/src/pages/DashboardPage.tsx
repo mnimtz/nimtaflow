@@ -94,6 +94,7 @@ export default function DashboardPage() {
   }
 
   function renderSection(id: SectionId) {
+    if (!data) return null
     switch (id) {
       case 'weeklyHighlight':
         return data.weekly_highlight ? (

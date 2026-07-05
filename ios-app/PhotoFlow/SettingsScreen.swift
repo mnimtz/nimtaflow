@@ -622,7 +622,16 @@ private struct FireTVSection: View {
             Button {
                 Task {
                     scanning = true; adbDevices = []; defer { scanning = false }
-                    if let list = try? await api.get("api/v1/software/firetv/adb-devices", as: AdbDeviceList.self) {
+                    // Subnet aus Server-URL ableiten damit Backend das Heimnetz scannt
+                    // (nicht die Docker-Bridge-Adresse, die es sonst selbst erkennt)
+                    let subnetSuffix: String = {
+                        guard let host = URL(string: api.serverURL)?.host else { return "" }
+                        let parts = host.components(separatedBy: ".")
+                        guard parts.count == 4, parts.allSatisfy({ Int($0) != nil }) else { return "" }
+                        return "?subnet=\(parts[0]).\(parts[1]).\(parts[2])"
+                    }()
+                    let adbPath = "api/v1/software/firetv/adb-devices\(subnetSuffix)"
+                    if let list = try? await api.get(adbPath, as: AdbDeviceList.self) {
                         adbDevices = list.devices
                         if adbDevices.isEmpty { installMsg = "Keine Geräte gefunden" }
                     }
