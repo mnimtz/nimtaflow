@@ -34,6 +34,7 @@ import email.nimtz.nimtaflow.tv.api.Photo
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.formatDate
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen photo/video viewer.
