@@ -89,7 +89,10 @@ echo "✓ APK gebaut: $APK_SIZE"
 # ── Auf Server laden ──────────────────────────────────────────────────────────
 echo "↑ Auf Server laden..."
 scp -q "$APK_SRC" "$PROXMOX_HOST:/tmp/nimtaflow-tv.apk"
-ssh -q "$PROXMOX_HOST" "pct push $LXC_ID /tmp/nimtaflow-tv.apk /firetv.apk && rm /tmp/nimtaflow-tv.apk"
+# pct push → LXC-Root; docker cp → in den Frontend-Container (nginx alias /firetv.apk)
+ssh -q "$PROXMOX_HOST" "pct push $LXC_ID /tmp/nimtaflow-tv.apk /firetv.apk && \
+    pct exec $LXC_ID -- docker cp /firetv.apk photoflow-frontend-1:/firetv.apk && \
+    rm /tmp/nimtaflow-tv.apk"
 
 echo ""
 echo "✓ Fertig! APK verfügbar unter:"
