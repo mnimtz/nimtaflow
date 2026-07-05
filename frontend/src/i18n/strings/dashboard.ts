@@ -24,6 +24,10 @@ export const dashboard = {
     'dashboard.albums': 'Alben',
     'dashboard.recent': 'Zuletzt hinzugefügt',
     'dashboard.all': 'Alle →',
+    'dashboard.memories': 'Rückblicke',
+    'dashboard.editLayout': 'Anpassen',
+    'dashboard.editLayoutTitle': 'Reihenfolge der Sektionen',
+    'dashboard.editDone': 'Fertig',
   } as Record<string, string>,
   en: {
     'dashboard.loading': 'Loading home…',
@@ -50,5 +54,9 @@ export const dashboard = {
     'dashboard.albums': 'Albums',
     'dashboard.recent': 'Recently added',
     'dashboard.all': 'All →',
+    'dashboard.memories': 'Memories',
+    'dashboard.editLayout': 'Arrange',
+    'dashboard.editLayoutTitle': 'Section order',
+    'dashboard.editDone': 'Done',
   } as Record<string, string>,
 }

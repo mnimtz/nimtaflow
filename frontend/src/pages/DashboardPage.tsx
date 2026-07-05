@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { Images, Sparkles, Users, BookImage, Video, MapPin, Clock, Star } from 'lucide-react'
+import { Images, Sparkles, Users, BookImage, Video, MapPin, Clock, Star, Pencil, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import { useT } from '../i18n'
 import GalleryLightbox from '../components/gallery/GalleryLightbox'
 
@@ -22,10 +22,29 @@ type Dash = {
   weekly_highlight: WeeklyHighlight | null
 }
 
+const SECTION_IDS = ['weeklyHighlight', 'highlights', 'personOfWeek', 'memories', 'albums', 'people', 'recent'] as const
+type SectionId = typeof SECTION_IDS[number]
+
+function loadOrder(): SectionId[] {
+  try {
+    const saved = localStorage.getItem('dashboard_section_order')
+    if (saved) {
+      const parsed = JSON.parse(saved) as string[]
+      const valid = parsed.filter((id): id is SectionId => (SECTION_IDS as readonly string[]).includes(id))
+      const missing = SECTION_IDS.filter(id => !valid.includes(id))
+      return [...valid, ...missing]
+    }
+  } catch {}
+  return [...SECTION_IDS]
+}
+
 export default function DashboardPage() {
   const { t } = useT()
   const nav = useNavigate()
   const [lightbox, setLightbox] = useState<{ photos: Ph[]; index: number } | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [sectionOrder, setSectionOrder] = useState<SectionId[]>(loadOrder)
+
   const { data, isLoading } = useQuery<Dash>({
     queryKey: ['dashboard'],
     queryFn: () => api.get('/v1/dashboard').then(r => r.data),
@@ -55,21 +74,173 @@ export default function DashboardPage() {
     </button>
   )
 
+  function move(idx: number, dir: -1 | 1) {
+    const target = idx + dir
+    if (target < 0 || target >= sectionOrder.length) return
+    const next = [...sectionOrder]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    setSectionOrder(next)
+    localStorage.setItem('dashboard_section_order', JSON.stringify(next))
+  }
+
+  const SECTION_LABELS: Record<SectionId, string> = {
+    weeklyHighlight: t('dashboard.weeklyHighlight'),
+    highlights:      t('dashboard.highlights'),
+    personOfWeek:    t('dashboard.personOfWeek'),
+    memories:        t('dashboard.memories'),
+    albums:          t('dashboard.albums'),
+    people:          t('dashboard.people'),
+    recent:          t('dashboard.recent'),
+  }
+
+  function renderSection(id: SectionId) {
+    switch (id) {
+      case 'weeklyHighlight':
+        return data.weekly_highlight ? (
+          <Section icon={Sparkles} title={data.weekly_highlight.title || t('dashboard.weeklyHighlight')}
+            sub={t('dashboard.weeklyHighlightSub')} onMore={() => nav('/highlights')}>
+            <div className="rounded-2xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 max-w-2xl">
+              <video controls playsInline
+                poster={data.weekly_highlight.cover_url || undefined}
+                src={data.weekly_highlight.video_url.startsWith('/api') ? data.weekly_highlight.video_url : `/api${data.weekly_highlight.video_url}`}
+                className="w-full aspect-video bg-black" />
+            </div>
+          </Section>
+        ) : null
+
+      case 'highlights':
+        return data.highlights?.length > 0 ? (
+          <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
+            <Strip>{data.highlights.map((p, i) => <Tile key={p.id} p={p} items={data.highlights} idx={i} />)}</Strip>
+          </Section>
+        ) : null
+
+      case 'personOfWeek':
+        return data.person_of_week ? (
+          <Section icon={Star} title={t('dashboard.personOfWeek')}>
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              <button onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 group">
+                <img src={data.person_of_week.avatar_url} className="w-24 h-24 rounded-full object-cover ring-2 ring-indigo-400 group-hover:ring-indigo-500" />
+                <span className="mt-2 font-medium text-zinc-900 dark:text-white">{data.person_of_week.name}</span>
+                <span className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: data.person_of_week.face_count })}</span>
+              </button>
+              <Strip>{(data.person_of_week.items ?? []).map((p, i, arr) => <Tile key={p.id} p={p} items={arr} idx={i} />)}</Strip>
+            </div>
+          </Section>
+        ) : null
+
+      case 'memories':
+        return data.on_this_day?.length > 0 ? (
+          <>
+            {data.on_this_day.map(m => (
+              <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
+                sub={prettyDate(m.date)}>
+                <Strip>{m.items.map((p, i) => <Tile key={p.id} p={p} items={m.items} idx={i} />)}</Strip>
+              </Section>
+            ))}
+          </>
+        ) : null
+
+      case 'albums':
+        return data.featured_albums?.length > 0 ? (
+          <Section icon={BookImage} title={t('dashboard.albums')} onMore={() => nav('/albums')}>
+            <Strip>
+              {data.featured_albums.map(a => (
+                <button key={a.id} onClick={() => nav('/albums')} className="shrink-0 w-40 group text-left">
+                  <div className="w-40 h-28 rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                    {a.cover_url && <img src={a.cover_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />}
+                  </div>
+                  <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-white truncate">{a.name}</p>
+                  <p className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: a.photo_count })}</p>
+                </button>
+              ))}
+            </Strip>
+          </Section>
+        ) : null
+
+      case 'people':
+        return data.featured_people?.length > 0 ? (
+          <Section icon={Users} title={t('dashboard.people')} onMore={() => nav('/people')}>
+            <Strip>
+              {data.featured_people.map(p => (
+                <button key={p.id} onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 w-20 group">
+                  <img src={p.avatar_url} className="w-16 h-16 rounded-full object-cover ring-1 ring-zinc-300 dark:ring-zinc-700 group-hover:ring-indigo-500" />
+                  <span className="mt-1 text-xs text-zinc-700 dark:text-zinc-300 truncate w-full text-center">{p.name}</span>
+                </button>
+              ))}
+            </Strip>
+          </Section>
+        ) : null
+
+      case 'recent':
+        return data.recent?.length > 0 ? (
+          <Section icon={Clock} title={t('dashboard.recent')} onMore={() => nav('/gallery')}>
+            <Strip>{data.recent.map((p, i) => <Tile key={p.id} p={p} items={data.recent} idx={i} />)}</Strip>
+          </Section>
+        ) : null
+
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-9">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{greeting} 👋</h1>
-        {data.stats && (
-          <p className="text-sm text-zinc-500 mt-1">
-            {t('dashboard.statsLine', {
-              total: data.stats.total?.toLocaleString('de'),
-              images: data.stats.images?.toLocaleString('de'),
-              videos: data.stats.videos?.toLocaleString('de'),
-            })}
-            {data.stats.date_min && t('dashboard.statsSince', { year: String(data.stats.date_min).slice(0, 4) })}
-          </p>
-        )}
+      {/* Header + Edit-Button */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{greeting} 👋</h1>
+          {data.stats && (
+            <p className="text-sm text-zinc-500 mt-1">
+              {t('dashboard.statsLine', {
+                total: data.stats.total?.toLocaleString('de'),
+                images: data.stats.images?.toLocaleString('de'),
+                videos: data.stats.videos?.toLocaleString('de'),
+              })}
+              {data.stats.date_min && t('dashboard.statsSince', { year: String(data.stats.date_min).slice(0, 4) })}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => setEditing(e => !e)}
+          className={`flex items-center gap-1.5 shrink-0 mt-1 px-3 py-1.5 rounded-xl text-sm font-medium transition-colors ${
+            editing
+              ? 'bg-indigo-500 text-white'
+              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+          }`}
+        >
+          {editing ? <Check size={15} /> : <Pencil size={15} />}
+          {editing ? t('dashboard.editDone') : t('dashboard.editLayout')}
+        </button>
       </div>
+
+      {/* Reorder panel */}
+      {editing && (
+        <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-4">
+          <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wide mb-3">{t('dashboard.editLayoutTitle')}</p>
+          <div className="space-y-1.5">
+            {sectionOrder.map((id, idx) => (
+              <div key={id} className="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2">
+                <span className="flex-1 text-sm text-zinc-800 dark:text-zinc-200">{SECTION_LABELS[id]}</span>
+                <button
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  className="p-1 rounded text-zinc-400 hover:text-indigo-500 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronUp size={16} />
+                </button>
+                <button
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === sectionOrder.length - 1}
+                  className="p-1 rounded text-zinc-400 hover:text-indigo-500 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronDown size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -79,87 +250,11 @@ export default function DashboardPage() {
         <StatTile icon={MapPin} label={t('dashboard.statGps')} value={data.stats?.with_gps} color="emerald" onClick={() => nav('/map')} />
       </div>
 
-      {/* 1. Highlight der Woche */}
-      {data.weekly_highlight && (
-        <Section icon={Sparkles} title={data.weekly_highlight.title || t('dashboard.weeklyHighlight')}
-          sub={t('dashboard.weeklyHighlightSub')} onMore={() => nav('/highlights')}>
-          <div className="rounded-2xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 max-w-2xl">
-            <video controls playsInline
-              poster={data.weekly_highlight.cover_url || undefined}
-              src={data.weekly_highlight.video_url.startsWith('/api') ? data.weekly_highlight.video_url : `/api${data.weekly_highlight.video_url}`}
-              className="w-full aspect-video bg-black" />
-          </div>
-        </Section>
-      )}
-
-      {/* 2. Highlights-Strip (KI-kuratierte Fotos) */}
-      {data.highlights?.length > 0 && (
-        <Section icon={Sparkles} title={t('dashboard.highlights')} sub={t('dashboard.highlightsSub')}>
-          <Strip>{data.highlights.map((p, i) => <Tile key={p.id} p={p} items={data.highlights} idx={i} />)}</Strip>
-        </Section>
-      )}
-
-      {/* 3. Person der Woche */}
-      {data.person_of_week && (
-        <Section icon={Star} title={t('dashboard.personOfWeek')}>
-          <div className="flex flex-col sm:flex-row gap-4 items-start">
-            <button onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 group">
-              <img src={data.person_of_week.avatar_url} className="w-24 h-24 rounded-full object-cover ring-2 ring-indigo-400 group-hover:ring-indigo-500" />
-              <span className="mt-2 font-medium text-zinc-900 dark:text-white">{data.person_of_week.name}</span>
-              <span className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: data.person_of_week.face_count })}</span>
-            </button>
-            <Strip>{(data.person_of_week.items ?? []).map((p, i, arr) => <Tile key={p.id} p={p} items={arr} idx={i} />)}</Strip>
-          </div>
-        </Section>
-      )}
-
-      {/* 4. Rückblicke: Heute vor X Jahren */}
-      {data.on_this_day?.length > 0 && data.on_this_day.map(m => (
-        <Section key={m.years_ago} icon={Clock} title={m.years_ago === 1 ? t('dashboard.onThisDay1') : t('dashboard.onThisDayN', { n: m.years_ago })}
-          sub={prettyDate(m.date)}>
-          <Strip>{m.items.map((p, i) => <Tile key={p.id} p={p} items={m.items} idx={i} />)}</Strip>
-        </Section>
+      {/* Sections in user-defined order */}
+      {sectionOrder.map(id => (
+        <Fragment key={id}>{renderSection(id)}</Fragment>
       ))}
 
-      {/* 5. Alben */}
-      {data.featured_albums?.length > 0 && (
-        <Section icon={BookImage} title={t('dashboard.albums')} onMore={() => nav('/albums')}>
-          <Strip>
-            {data.featured_albums.map(a => (
-              <button key={a.id} onClick={() => nav('/albums')} className="shrink-0 w-40 group text-left">
-                <div className="w-40 h-28 rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                  {a.cover_url && <img src={a.cover_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />}
-                </div>
-                <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-white truncate">{a.name}</p>
-                <p className="text-xs text-zinc-500">{t('dashboard.photosCount', { n: a.photo_count })}</p>
-              </button>
-            ))}
-          </Strip>
-        </Section>
-      )}
-
-      {/* 6. Personen */}
-      {data.featured_people?.length > 0 && (
-        <Section icon={Users} title={t('dashboard.people')} onMore={() => nav('/people')}>
-          <Strip>
-            {data.featured_people.map(p => (
-              <button key={p.id} onClick={() => nav('/people')} className="flex flex-col items-center shrink-0 w-20 group">
-                <img src={p.avatar_url} className="w-16 h-16 rounded-full object-cover ring-1 ring-zinc-300 dark:ring-zinc-700 group-hover:ring-indigo-500" />
-                <span className="mt-1 text-xs text-zinc-700 dark:text-zinc-300 truncate w-full text-center">{p.name}</span>
-              </button>
-            ))}
-          </Strip>
-        </Section>
-      )}
-
-      {/* 7. Zuletzt hinzugefügt */}
-      {data.recent?.length > 0 && (
-        <Section icon={Clock} title={t('dashboard.recent')} onMore={() => nav('/gallery')}>
-          <Strip>{data.recent.map((p, i) => <Tile key={p.id} p={p} items={data.recent} idx={i} />)}</Strip>
-        </Section>
-      )}
-
-      {/* Lightbox — die echte Galerie-Lightbox (zuverlässiges Laden + Optionen/Details) */}
       {lightbox && (
         <GalleryLightbox
           photos={lightbox.photos as any}

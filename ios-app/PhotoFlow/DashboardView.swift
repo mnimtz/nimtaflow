@@ -12,6 +12,20 @@ struct DashboardView: View {
     @State private var selected: PhotoV1?
     @State private var playWeekly: DashboardWeeklyHighlight?
     @State private var userName = ""
+    @State private var editingLayout = false
+
+    // Section order — stored as comma-separated IDs in AppStorage
+    @AppStorage("dashboardSectionOrder") private var sectionOrderRaw: String = ""
+
+    private static let allSections = ["weeklyHighlight", "highlights", "personOfWeek", "memories", "albums", "people", "recent"]
+
+    private var sectionOrder: [String] {
+        guard !sectionOrderRaw.isEmpty else { return Self.allSections }
+        let saved = sectionOrderRaw.split(separator: ",").map(String.init)
+        let valid = saved.filter { Self.allSections.contains($0) }
+        let missing = Self.allSections.filter { !valid.contains($0) }
+        return valid + missing
+    }
 
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
@@ -25,35 +39,27 @@ struct DashboardView: View {
         return userName.isEmpty ? base : "\(base), \(userName)"
     }
 
+    private static let sectionLabels: [String: String] = [
+        "weeklyHighlight": "Highlight der Woche",
+        "highlights":      "Highlights",
+        "personOfWeek":    "Person der Woche",
+        "memories":        "Rückblicke",
+        "albums":          "Alben",
+        "people":          "Personen",
+        "recent":          "Zuletzt hinzugefügt",
+    ]
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                // Only surface the error when there's nothing to show. A failed
-                // pull-to-refresh while data is already on screen shouldn't slap a
-                // scary "konnte nicht geladen werden" over a fully-populated page.
                 if let error, data == nil { Text(error).foregroundStyle(.secondary).padding() }
                 if let d = data {
                     VStack(alignment: .leading, spacing: 24) {
                         header
                         statTiles(d.stats)
-                        // 1. Highlight der Woche
-                        if let wh = d.weekly_highlight { weeklyHighlightCard(wh) }
-                        // 2. Highlights-Strip
-                        photoStrip(title: "Highlights", items: d.highlights)
-                        // 3. Person der Woche
-                        if let pow = d.person_of_week { personOfWeek(pow) }
-                        // 4. Rückblicke: Heute vor X Jahren
-                        ForEach(d.on_this_day) { day in
-                            photoStrip(title: day.years_ago == 1 ? "Heute vor 1 Jahr"
-                                                                  : "Heute vor \(day.years_ago) Jahren",
-                                       items: day.items)
+                        ForEach(sectionOrder, id: \.self) { id in
+                            sectionView(id: id, d: d)
                         }
-                        // 5. Alben
-                        albumsStrip(d.featured_albums)
-                        // 6. Personen
-                        peopleStrip(d.featured_people)
-                        // 7. Zuletzt hinzugefügt
-                        photoStrip(title: "Zuletzt hinzugefügt", items: d.recent)
                     }
                     .padding(.vertical, 12)
                 }
@@ -63,6 +69,14 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Image("Logo").resizable().scaledToFit().frame(height: 26)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        editingLayout = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.body)
+                    }
                 }
             }
             .navigationDestination(for: PersonV1.self) { PersonDetailView(person: $0) }
@@ -83,11 +97,44 @@ struct DashboardView: View {
                     }
                 }
             }
+            .sheet(isPresented: $editingLayout) {
+                SectionOrderSheet(order: sectionOrder) { newOrder in
+                    sectionOrderRaw = newOrder.joined(separator: ",")
+                }
+            }
         }
     }
 
-    // All photos shown anywhere on the dashboard — so swiping in the pager has a
-    // sensible pool to move through regardless of which strip was tapped.
+    // ── Section dispatcher ─────────────────────────────────────────────────────
+
+    @ViewBuilder
+    private func sectionView(id: String, d: DashboardV1) -> some View {
+        switch id {
+        case "weeklyHighlight":
+            if let wh = d.weekly_highlight { weeklyHighlightCard(wh) }
+        case "highlights":
+            photoStrip(title: "Highlights", items: d.highlights)
+        case "personOfWeek":
+            if let pow = d.person_of_week { personOfWeek(pow) }
+        case "memories":
+            ForEach(d.on_this_day) { day in
+                photoStrip(title: day.years_ago == 1 ? "Heute vor 1 Jahr"
+                                                      : "Heute vor \(day.years_ago) Jahren",
+                           items: day.items)
+            }
+        case "albums":
+            albumsStrip(d.featured_albums)
+        case "people":
+            peopleStrip(d.featured_people)
+        case "recent":
+            photoStrip(title: "Zuletzt hinzugefügt", items: d.recent)
+        default:
+            EmptyView()
+        }
+    }
+
+    // ── Photo pool for pager ───────────────────────────────────────────────────
+
     private var pagerPool: [PhotoV1] {
         guard let d = data else { return [] }
         var seen = Set<Int>(); var out: [PhotoV1] = []
@@ -97,6 +144,8 @@ struct DashboardView: View {
         }
         return out
     }
+
+    // ── Sub-views ──────────────────────────────────────────────────────────────
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -277,6 +326,76 @@ struct DashboardView: View {
         if userName.isEmpty {
             let n = await api.meName()
             if !n.isEmpty { userName = n.split(separator: " ").first.map(String.init) ?? n }
+        }
+    }
+}
+
+// ── Reorder Sheet ──────────────────────────────────────────────────────────────
+
+private struct SectionOrderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var items: [String]
+    private let onSave: ([String]) -> Void
+
+    private static let labels: [String: String] = [
+        "weeklyHighlight": "Highlight der Woche",
+        "highlights":      "Highlights",
+        "personOfWeek":    "Person der Woche",
+        "memories":        "Rückblicke",
+        "albums":          "Alben",
+        "people":          "Personen",
+        "recent":          "Zuletzt hinzugefügt",
+    ]
+
+    init(order: [String], onSave: @escaping ([String]) -> Void) {
+        _items = State(initialValue: order)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(items, id: \.self) { id in
+                        Label(Self.labels[id] ?? id, systemImage: iconFor(id))
+                            .foregroundStyle(.primary)
+                    }
+                    .onMove { from, to in
+                        items.move(fromOffsets: from, toOffset: to)
+                    }
+                } footer: {
+                    Text("Halte und ziehe eine Zeile, um sie zu verschieben.")
+                        .font(.caption)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Startseite anpassen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") {
+                        onSave(items)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Abbrechen") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func iconFor(_ id: String) -> String {
+        switch id {
+        case "weeklyHighlight": return "sparkles"
+        case "highlights":      return "star.fill"
+        case "personOfWeek":    return "person.crop.circle.badge.checkmark"
+        case "memories":        return "clock.arrow.circlepath"
+        case "albums":          return "rectangle.stack.fill"
+        case "people":          return "person.2.fill"
+        case "recent":          return "clock.fill"
+        default:                return "square.grid.2x2"
         }
     }
 }
