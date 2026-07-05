@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.NavigationDrawer
 import androidx.tv.material3.NavigationDrawerItem
 import androidx.tv.material3.NavigationDrawerItemDefaults
@@ -50,33 +49,29 @@ fun HomeScreen(
 ) {
     NavigationDrawer(
         drawerContent = {
-            // Logo — nur wenn Drawer offen
-            if (currentValue == DrawerValue.Open) {
-                Row(
-                    Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+            // Logo
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .background(
+                            Brush.linearGradient(listOf(AccentDim, Accent)),
+                            RoundedCornerShape(8.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(
-                        Modifier
-                            .size(32.dp)
-                            .background(
-                                Brush.linearGradient(listOf(AccentDim, Accent)),
-                                RoundedCornerShape(8.dp),
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("✦", color = Color.White, fontSize = 14.sp)
-                    }
-                    Text(
-                        "NimtaFlow",
-                        color = Accent,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Text("✦", color = Color.White, fontSize = 14.sp)
                 }
-            } else {
-                Spacer(Modifier.height(24.dp))
+                Text(
+                    "NimtaFlow",
+                    color = Accent,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
 
             // Hauptnavigation
@@ -101,7 +96,7 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(32.dp))
 
             HorizontalDivider(
                 color = SurfaceHi,
