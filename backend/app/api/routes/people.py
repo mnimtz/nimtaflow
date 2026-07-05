@@ -166,6 +166,9 @@ async def get_person(person_id: int, db: AsyncSession = Depends(get_db),
     person = await db.get(Person, person_id)
     if not person:
         raise HTTPException(404)
+    from app.core.access import _is_unrestricted
+    if person.name == "" and not _is_unrestricted(user):
+        raise HTTPException(404)
     psq = visible_person_subquery(user)
     if psq is not None and not await db.scalar(select(Person.id).where(Person.id == person_id, Person.id.in_(psq))):
         raise HTTPException(404)
@@ -421,9 +424,12 @@ async def person_photos(
     if not person:
         raise HTTPException(404)
 
+    from app.core.access import photo_conditions, _is_unrestricted
+    if person.name == "" and not _is_unrestricted(_acc_user):
+        raise HTTPException(404)
+
     from app.models.photo import Photo
     from app.schemas.photo import PhotoBase
-    from app.core.access import photo_conditions
 
     # nullslast so undated photos don't pile up at the very top of "newest".
     order = Photo.taken_at.asc().nullslast() if sort == "oldest" else Photo.taken_at.desc().nullslast()
@@ -457,6 +463,11 @@ async def person_faces(person_id: int, page: int = 1, limit: int = 120,
     all of them as on-demand crops froze the page. Best faces first.
     Restricted accounts only see faces from photos they may access."""
     from app.core.access import photo_conditions, _is_unrestricted
+    person = await db.get(Person, person_id)
+    if not person:
+        raise HTTPException(404)
+    if person.name == "" and not _is_unrestricted(user):
+        raise HTTPException(404)
     from app.models.photo import Photo
     limit = max(1, min(limit, 500))
     conds = [Face.person_id == person_id]

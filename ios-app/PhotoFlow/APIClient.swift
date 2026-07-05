@@ -366,7 +366,7 @@ final class APIClient: ObservableObject {
         if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var body = Data()
-        func add(_ s: String) { body.append(s.data(using: .utf8)!) }
+        func add(_ s: String) { body.append(s.data(using: .utf8) ?? Data()) }
         add("--\(boundary)\r\n")
         add("Content-Disposition: form-data; name=\"files\"; filename=\"\(filename)\"\r\n")
         add("Content-Type: \(mime)\r\n\r\n")
@@ -396,7 +396,7 @@ final class APIClient: ObservableObject {
         if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var body = Data()
-        func add(_ s: String) { body.append(s.data(using: .utf8)!) }
+        func add(_ s: String) { body.append(s.data(using: .utf8) ?? Data()) }
         add("--\(boundary)\r\n")
         add("Content-Disposition: form-data; name=\"file\"; filename=\"memo.m4a\"\r\n")
         add("Content-Type: audio/mp4\r\n\r\n")

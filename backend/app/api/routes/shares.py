@@ -161,10 +161,14 @@ class ShareUpdate(BaseModel):
 
 @router.patch("/{share_id}", response_model=ShareOut)
 async def update_share(share_id: int, body: ShareUpdate, request: Request,
-                       db: AsyncSession = Depends(get_db)):
+                       db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     share = await db.get(Share, share_id)
     if not share:
         raise HTTPException(404)
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user) and share.created_by != (user.id if user else None):
+        raise HTTPException(403)
     if body.title is not None:
         share.title = body.title
     if body.allow_download is not None:
@@ -180,11 +184,16 @@ async def update_share(share_id: int, body: ShareUpdate, request: Request,
 
 
 @router.delete("/{share_id}", status_code=204)
-async def delete_share(share_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_share(share_id: int, db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
     share = await db.get(Share, share_id)
-    if share:
-        await db.delete(share)
-        await db.commit()
+    if not share:
+        return
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user) and share.created_by != (user.id if user else None):
+        raise HTTPException(403)
+    await db.delete(share)
+    await db.commit()
 
 
 # ── Public token access (no login) ────────────────────────────────────────────

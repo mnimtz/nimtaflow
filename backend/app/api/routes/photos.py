@@ -800,7 +800,7 @@ class TripPlanRequest(_BM):
     trip_type: Optional[str] = None  # kreuzfahrt | pauschalurlaub | flugreise | roadtrip | …
 
 
-@router.post("/plan-trip")
+@router.post("/plan-trip", dependencies=[Depends(require_pipeline)])
 async def plan_trip_endpoint(body: TripPlanRequest, db: AsyncSession = Depends(get_db)):
     """AI trip planner: rough text → structured itinerary (waypoints with coords +
     dates) via Gemini with Google-Search grounding. Used by the 'Reise anlegen'-Assistent."""
@@ -819,7 +819,7 @@ class CreateTripRequest(_BM):
     trip_type: Optional[str] = None
 
 
-@router.post("/create-trip")
+@router.post("/create-trip", dependencies=[Depends(require_pipeline)])
 async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db)):
     """Create a trip = a MANUAL album (photos materialised → removable) whose route
     (waypoints) is stored in smart_criteria. Auto-fills with all photos in the
@@ -861,7 +861,7 @@ async def create_trip(body: CreateTripRequest, db: AsyncSession = Depends(get_db
     return {"album_id": album.id, "added": added, "name": album.name}
 
 
-@router.get("/error-report")
+@router.get("/error-report", dependencies=[Depends(require_pipeline)])
 async def error_report(db: AsyncSession = Depends(get_db),
                        user: Optional[User] = Depends(current_user_optional)):
     """Full report of the error queue: which files failed and why (status=error =
@@ -1129,10 +1129,13 @@ async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = 
 
 
 @router.get("/{photo_id}/preview")
-async def get_video_preview(photo_id: int, db: AsyncSession = Depends(get_db)):
+async def get_video_preview(photo_id: int, db: AsyncSession = Depends(get_db),
+                            user: Optional[User] = Depends(current_user_optional)):
     """Animated hover preview clip for a video (webp/gif)."""
     photo = await db.get(Photo, photo_id)
-    if not photo or not photo.video_preview_path or not os.path.exists(photo.video_preview_path):
+    if not photo or not can_see_photo(photo, user):
+        raise HTTPException(404, "Preview not ready")
+    if not photo.video_preview_path or not os.path.exists(photo.video_preview_path):
         raise HTTPException(404, "Preview not ready")
     ext = os.path.splitext(photo.video_preview_path)[1].lower()
     media = "image/gif" if ext == ".gif" else "image/webp"

@@ -34,7 +34,6 @@ import email.nimtz.nimtaflow.tv.api.Photo
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.formatDate
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Full-screen photo/video viewer.
@@ -55,6 +54,7 @@ fun MediaViewerScreen(
     var showInfo by remember { mutableStateOf(false) }
     // Local copy of isFavorite so we can toggle optimistically without reloading the list
     val favoriteMap = remember { mutableStateMapOf<Int, Boolean>().also { m -> photos.forEach { m[it.id] = it.isFavorite } } }
+    val scope = rememberCoroutineScope()
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -88,7 +88,7 @@ fun MediaViewerScreen(
                         val newVal = !(favoriteMap[photo.id] ?: photo.isFavorite)
                         favoriteMap[photo.id] = newVal
                         // Fire-and-forget
-                        kotlinx.coroutines.MainScope().launch { api.toggleFavorite(photo.id, newVal) }
+                        scope.launch { api.toggleFavorite(photo.id, newVal) }
                         true
                     }
                     else -> false
@@ -142,7 +142,7 @@ fun MediaViewerScreen(
                         photo ?: return@OverlayIconButton
                         val newVal = !isFav
                         favoriteMap[photo.id] = newVal
-                        kotlinx.coroutines.MainScope().launch { api.toggleFavorite(photo.id, newVal) }
+                        scope.launch { api.toggleFavorite(photo.id, newVal) }
                     },
                 )
             }

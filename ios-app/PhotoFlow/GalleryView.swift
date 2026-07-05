@@ -79,8 +79,8 @@ struct GalleryView: View {
     }
     private func groupLabel(_ key: String) -> String {
         if key == "—" { return "Ohne Datum" }
-        let f = DateFormatter(); f.locale = Locale(identifier: "de_DE")
-        let o = DateFormatter(); o.locale = Locale(identifier: "de_DE")
+        let f = DateFormatter(); f.locale = Locale.current
+        let o = DateFormatter(); o.locale = Locale.current
         switch groupMode {
         case "day":   f.dateFormat = "yyyy-MM-dd"; o.dateFormat = "EEEE, d. MMMM yyyy"
         case "month": f.dateFormat = "yyyy-MM";    o.dateFormat = "LLLL yyyy"
@@ -689,7 +689,7 @@ struct MasonrySection: View {
         var cols = Array(repeating: [PhotoV1](), count: colCount)
         var heights = Array(repeating: CGFloat(0), count: colCount)
         for p in items {
-            let i = heights.firstIndex(of: heights.min()!) ?? 0
+            let i = heights.firstIndex(of: heights.min() ?? 0) ?? 0
             cols[i].append(p)
             heights[i] += colWidth / CGFloat(clampedAspect(p)) + 2
         }
@@ -703,7 +703,7 @@ struct MasonrySection: View {
         let colWidth = (width - spacing * CGFloat(colCount - 1)) / CGFloat(colCount)
         var heights = Array(repeating: CGFloat(0), count: colCount)
         for p in items {
-            let i = heights.firstIndex(of: heights.min()!) ?? 0
+            let i = heights.firstIndex(of: heights.min() ?? 0) ?? 0
             heights[i] += colWidth / CGFloat(clampedAspect(p)) + spacing
         }
         return (heights.max() ?? 0)
@@ -1077,7 +1077,7 @@ struct PhotoInfoView: View {
         guard let t = photo.taken_at else { return "—" }
         let iso = ISO8601DateFormatter()
         guard let d = iso.date(from: t) ?? ISO8601DateFormatter().date(from: String(t.prefix(19)) + "Z") else { return t }
-        let o = DateFormatter(); o.locale = Locale(identifier: "de_DE"); o.dateStyle = .long; o.timeStyle = .short
+        let o = DateFormatter(); o.locale = Locale.current; o.dateStyle = .long; o.timeStyle = .short
         return o.string(from: d)
     }
     private var placeStr: String? {

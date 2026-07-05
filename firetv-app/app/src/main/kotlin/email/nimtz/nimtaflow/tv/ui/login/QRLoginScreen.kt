@@ -65,7 +65,9 @@ fun QRLoginScreen(
                 val resp = withContext(Dispatchers.IO) { api.pollDeviceToken(deviceCode) }
                 when (resp.status) {
                     "approved" -> {
-                        onApproved(resp.accessToken!!, resp.refreshToken!!)
+                        val accessToken = resp.accessToken ?: ""
+                        val refreshToken = resp.refreshToken ?: ""
+                        onApproved(accessToken, refreshToken)
                         return@LaunchedEffect
                     }
                     "expired"  -> { error = "Code abgelaufen. Bitte neu laden."; return@LaunchedEffect }

@@ -46,7 +46,7 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
             .build()
         return http.newCall(req).execute().use { resp ->
             if (resp.code == 401) throw UnauthorizedException()
-            resp.body!!.string()
+            resp.body?.string() ?: ""
         }
     }
 
@@ -58,7 +58,7 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
             .build()
         return http.newCall(req).execute().use { resp ->
             if (resp.code == 401) throw UnauthorizedException()
-            resp.body!!.string()
+            resp.body?.string() ?: ""
         }
     }
 

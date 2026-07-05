@@ -131,7 +131,11 @@ async def get_album(album_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/{album_id}", response_model=AlbumOut)
-async def update_album(album_id: int, body: AlbumUpdate, db: AsyncSession = Depends(get_db)):
+async def update_album(album_id: int, body: AlbumUpdate, db: AsyncSession = Depends(get_db),
+                       user=Depends(_current_user_optional)):
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Nur Administratoren können Alben bearbeiten.")
     album = await db.get(Album, album_id)
     if not album:
         raise HTTPException(404)
@@ -156,7 +160,11 @@ async def update_album(album_id: int, body: AlbumUpdate, db: AsyncSession = Depe
 
 
 @router.delete("/{album_id}", status_code=204)
-async def delete_album(album_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_album(album_id: int, db: AsyncSession = Depends(get_db),
+                       user=Depends(_current_user_optional)):
+    from app.core.access import _is_unrestricted
+    if not _is_unrestricted(user):
+        raise HTTPException(403, "Nur Administratoren können Alben löschen.")
     album = await db.get(Album, album_id)
     if not album:
         raise HTTPException(404)
