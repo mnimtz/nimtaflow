@@ -63,3 +63,12 @@ data class DeviceTokenResponse(
     @SerialName("access_token") val accessToken: String? = null,
     @SerialName("refresh_token") val refreshToken: String? = null,
 )
+
+@Serializable
+data class UserMe(
+    val id: Int,
+    val role: String,            // "admin" | "user"
+    val name: String = "",
+    val email: String = "",
+    @SerialName("is_active") val isActive: Boolean = true,
+)

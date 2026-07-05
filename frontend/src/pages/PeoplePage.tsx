@@ -335,8 +335,8 @@ export default function PeoplePage() {
           <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 -mt-2 overflow-x-auto">
             {([
               ['personen', t('people.tabPeople', { count: known.length })],
-              // Unbekannte Personen — für alle Nutzer sichtbar
-              ...(unknown.length > 0 ? [['unbekannte', t('people.tabUnknown', { count: unknown.length })]] : []),
+              // Unbekannte Personen — nur für Admins/unbeschränkte Konten
+              ...(canManage && unknown.length > 0 ? [['unbekannte', t('people.tabUnknown', { count: unknown.length })]] : []),
               // Verwaltungs-Tabs nur für Admins/unbeschränkte Konten.
               ...(canManage ? [
                 ['vorschlaege', sugGroups.reduce((a, g) => a + g.count, 0) ? t('people.tabSuggestionsCount', { count: sugGroups.reduce((a, g) => a + g.count, 0) }) : t('people.tabSuggestions')],

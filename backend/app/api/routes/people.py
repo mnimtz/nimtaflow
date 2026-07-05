@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
 from app.models.person import Person
+from app.models.user import UserRole
 from app.models.face import Face
 from app.schemas.person import PersonCreate, PersonUpdate, PersonOut, PersonDetail
 
@@ -82,6 +83,9 @@ async def list_people(include_hidden: bool = False, sort: str = "name",
     psq = visible_person_subquery(user)
     if psq is not None:
         q = q.where(Person.id.in_(psq))
+    # Nicht-Admins sehen nur benannte Personen — unbenannte (name == "") bleiben verborgen.
+    if user is not None and user.role != UserRole.admin:
+        q = q.where(Person.name != "")
     persons = (await db.execute(q)).scalars().all()
     ids = [p.id for p in persons]
     faces, photos = {}, {}

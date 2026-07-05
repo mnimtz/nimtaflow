@@ -62,8 +62,8 @@ struct PeopleView: View {
                         .padding()
                     }
 
-                    // ── Unbekannte Personen ──────────────────────────────────
-                    if !unknownPeople.isEmpty {
+                    // ── Unbekannte Personen — nur für Admins ─────────────────
+                    if !unknownPeople.isEmpty && api.isAdmin {
                         VStack(alignment: .leading, spacing: 0) {
                             HStack {
                                 Text("Unbekannte Personen")

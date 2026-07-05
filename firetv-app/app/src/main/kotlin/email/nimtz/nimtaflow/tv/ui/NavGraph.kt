@@ -31,8 +31,10 @@ import email.nimtz.nimtaflow.tv.ui.slideshow.SlideshowScreen
 import email.nimtz.nimtaflow.tv.ui.theme.Accent
 import email.nimtz.nimtaflow.tv.util.ReleaseInfo
 import email.nimtz.nimtaflow.tv.util.UpdateChecker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class Screen { ServerSetup, Login, Home }
 
@@ -82,6 +84,7 @@ fun AppNavGraph(
         )
     }
     var token by remember { mutableStateOf(initialToken) }
+    var isAdmin by prefs.isAdmin.collectAsState(initial = false)
     var tab by remember { mutableStateOf(HomeTab.Gallery) }
 
     // Media viewer overlay
@@ -101,7 +104,12 @@ fun AppNavGraph(
         Screen.Login -> QRLoginScreen(api) { access, refresh ->
             token = access
             api.setToken(access)
-            scope.launch { onTokensSaved(access, refresh) }
+            scope.launch {
+                onTokensSaved(access, refresh)
+                // Admin-Status nach Login ermitteln und speichern
+                val me = withContext(Dispatchers.IO) { api.me() }
+                prefs.saveIsAdmin(me?.role == "admin")
+            }
             screen = Screen.Home
         }
 
@@ -129,7 +137,7 @@ fun AppNavGraph(
                         onPhotoSelected = { p, i -> viewerPhotos = p; viewerIndex = i },
                     )
                     HomeTab.Albums    -> AlbumsScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
-                    HomeTab.People    -> PeopleScreen(api, token)   { p, i -> viewerPhotos = p; viewerIndex = i }
+                    HomeTab.People    -> PeopleScreen(api, token, isAdmin) { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Memories  -> MemoriesScreen(api, token) { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Settings  -> FireTVSettingsScreen(api)
                 }

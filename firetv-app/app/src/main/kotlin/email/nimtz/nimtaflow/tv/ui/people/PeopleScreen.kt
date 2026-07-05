@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 fun PeopleScreen(
     api: APIClient,
     token: String,
+    isAdmin: Boolean = false,
     onPhotoSelected: (List<Photo>, Int) -> Unit,
 ) {
     var persons by remember { mutableStateOf<List<Person>>(emptyList()) }
@@ -78,7 +79,7 @@ fun PeopleScreen(
 
         selectedPerson == null -> PersonGrid(
             named   = persons.filter { it.name.isNotBlank() },
-            unknown = persons.filter { it.name.isBlank() },
+            unknown = if (isAdmin) persons.filter { it.name.isBlank() } else emptyList(),
             api = api,
             token = token,
             onSelect = { selectedPerson = it },

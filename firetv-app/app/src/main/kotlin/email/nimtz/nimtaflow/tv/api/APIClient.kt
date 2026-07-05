@@ -104,6 +104,11 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
     fun persons(): List<Person> =
         runCatching { json.decodeFromString<List<Person>>(get("/api/persons")) }.getOrDefault(emptyList())
 
+    // ── Auth/Me ───────────────────────────────────────────────────────────────
+
+    fun me(): UserMe? =
+        runCatching { json.decodeFromString<UserMe>(get("/api/auth/me")) }.getOrNull()
+
     // ── Memories ──────────────────────────────────────────────────────────────
 
     fun memories(): List<MemoryGroup> =
