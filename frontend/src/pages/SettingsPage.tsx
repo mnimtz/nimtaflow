@@ -3250,7 +3250,7 @@ function SoftwareSection() {
                     className="flex-1 bg-zinc-800 border border-indigo-500/50 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none"
                   />
                   <button
-                    onClick={() => { settingMut.mutate({ 'software.firetv_public_url': editingUrl }); setEditingUrl(null) }}
+                    onClick={() => { settingMut.mutate({ 'software.firetv_public_url': editingUrl ?? '' }); setEditingUrl(null) }}
                     className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
                   >
                     <Check size={13} />
