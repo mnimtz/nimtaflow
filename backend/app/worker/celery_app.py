@@ -83,6 +83,7 @@ celery_app.conf.update(
         "reap_stuck_highlights": {"queue": "cpu"},  # self-heal jobs killed mid-render
         "reap_stuck_photos":  {"queue": "cpu"},   # self-heal photos stuck in 'processing'
         "apply_hidden_folders": {"queue": "cpu"}, # sync Photo.is_hidden to the setting
+        "firetv_auto_update":   {"queue": "cpu"}, # täglich APK-Update via GitHub
     },
 )
 

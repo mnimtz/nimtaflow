@@ -2774,11 +2774,11 @@ def firetv_auto_update_task(self):
             return {"skipped": "no_release"}
         release_date = release.get("published_at") or release.get("created_at")
         if APK_PATH.exists() and release_date:
-            from datetime import timezone
+            from datetime import datetime, timezone
+            from app.api.routes.software import _parse_gh_date
             mtime = APK_PATH.stat().st_mtime
-            from datetime import datetime
-            current_dt = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
-            if release_date <= current_dt:
+            current_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            if _parse_gh_date(release_date) <= current_dt:
                 return {"skipped": "already_current", "release_date": release_date}
         asset_url = next(
             (a["browser_download_url"] for a in release.get("assets", []) if a["name"].endswith(".apk")),

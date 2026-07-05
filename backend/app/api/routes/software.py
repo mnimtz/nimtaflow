@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,14 @@ from pydantic import BaseModel
 from app.core.auth_guard import require_admin
 
 APK_PATH = Path(os.getenv("APK_PATH", "/apk/nimtaflow-tv.apk"))
+
+# Serialisiert konkurrierende Downloads — verhindert Race bei parallelem Startup-Hook + API-Request
+_download_lock = asyncio.Lock()
+
+
+def _parse_gh_date(s: str) -> datetime:
+    """GitHub gibt 'Z'-suffixe zurück; fromisoformat braucht '+00:00'."""
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 router = APIRouter(prefix="/api/v1/software", tags=["software"])
 
@@ -65,7 +74,7 @@ async def firetv_update_check(_: None = Depends(require_admin)):
     if not apk["available"]:
         has_update = True
     elif release_date and apk["updated_at"]:
-        has_update = release_date > apk["updated_at"]
+        has_update = _parse_gh_date(release_date) > _parse_gh_date(apk["updated_at"])
 
     # Find the APK asset download URL
     asset_url = next(
@@ -130,6 +139,11 @@ async def firetv_upload(file: UploadFile = File(...), _: None = Depends(require_
 
 
 async def _download_apk(url: str, extra_headers: dict | None = None) -> None:
+    async with _download_lock:
+        await _do_download_apk(url, extra_headers)
+
+
+async def _do_download_apk(url: str, extra_headers: dict | None = None) -> None:
     APK_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = APK_PATH.with_suffix(".tmp")
     headers = extra_headers or {}
