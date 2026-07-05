@@ -60,6 +60,14 @@ export const settings = {
     'settings.software.cloudLink': 'Cloudflare (firetv.nimtaflow.com)',
     'settings.software.howTo': 'Öffne auf dem FireTV die "Downloader"-App und gib die URL ein.',
     'settings.software.lastUpdated': 'Aktualisiert',
+    'settings.software.autoUpdate': 'Auto-Update (täglich)',
+    'settings.software.autoUpdateSub': 'Server prüft täglich auf neue APK-Versionen via GitHub und lädt automatisch',
+    'settings.software.checkNow': 'Jetzt prüfen',
+    'settings.software.updateAvail': 'Update verfügbar:',
+    'settings.software.releaseDate': 'Veröffentlicht:',
+    'settings.software.upToDate': 'APK ist aktuell',
+    'settings.software.installUpdate': 'Installieren',
+    'settings.software.manual': 'Manuell',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Modell eingeben oder aus Liste wählen',
@@ -677,6 +685,14 @@ export const settings = {
     'settings.software.cloudLink': 'Cloudflare (firetv.nimtaflow.com)',
     'settings.software.howTo': 'Open the "Downloader" app on your FireTV and enter the URL.',
     'settings.software.lastUpdated': 'Updated',
+    'settings.software.autoUpdate': 'Auto-Update (daily)',
+    'settings.software.autoUpdateSub': 'Server checks GitHub daily for new APK versions and downloads automatically',
+    'settings.software.checkNow': 'Check now',
+    'settings.software.updateAvail': 'Update available:',
+    'settings.software.releaseDate': 'Released:',
+    'settings.software.upToDate': 'APK is up to date',
+    'settings.software.installUpdate': 'Install',
+    'settings.software.manual': 'Manual',
 
     // ── ModelSelect / HealthBadge ──
     'settings.modelEnterOrPick': 'Enter a model or pick from the list',

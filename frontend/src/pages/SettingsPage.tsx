@@ -3119,6 +3119,7 @@ function LogsSection() {
 // ─── Software Section ──────────────────────────────────────────────────────────
 
 type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; updated_at: string | null }
+type UpdateCheck = { has_update: boolean; release_name?: string; release_date?: string; download_url?: string; current_updated_at?: string; reason?: string }
 
 function SoftwareSection() {
   const t = useT()
@@ -3126,10 +3127,31 @@ function SoftwareSection() {
   const [fetchUrl, setFetchUrl] = useState('')
   const [fetchUrlVisible, setFetchUrlVisible] = useState(false)
 
-  const { data: apk, isPending } = useQuery<ApkInfo>({
+  const { data: apk, isPending: apkPending } = useQuery<ApkInfo>({
     queryKey: ['software', 'firetv'],
     queryFn: () => api.get('/v1/software/firetv').then(r => r.data),
-    refetchInterval: 0,
+  })
+
+  const { data: settings } = useQuery<Record<string, string>>({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(r => r.data),
+  })
+  const autoUpdate = settings?.['software.firetv_auto_update'] === 'true'
+
+  const settingMut = useMutation({
+    mutationFn: (val: boolean) => api.patch('/settings', { 'software.firetv_auto_update': String(val) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+  })
+
+  const [checkResult, setCheckResult] = useState<UpdateCheck | null>(null)
+  const checkMut = useMutation({
+    mutationFn: () => api.get('/v1/software/firetv/update-check').then(r => r.data as UpdateCheck),
+    onSuccess: (data) => setCheckResult(data),
+  })
+
+  const updateNowMut = useMutation({
+    mutationFn: () => api.post('/v1/software/firetv/update-now'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['software', 'firetv'] }); setCheckResult(null) },
   })
 
   const fetchMut = useMutation({
@@ -3151,10 +3173,7 @@ function SoftwareSection() {
     e.target.value = ''
   }
 
-  const localUrl = '/firetv.apk'
-  const cloudUrl = 'https://firetv.nimtaflow.com'
-
-  const busy = fetchMut.isPending || uploadMut.isPending
+  const busy = fetchMut.isPending || uploadMut.isPending || updateNowMut.isPending
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -3175,22 +3194,20 @@ function SoftwareSection() {
 
         <div className="p-5 space-y-5">
           {/* APK status */}
-          {isPending ? (
+          {apkPending ? (
             <div className="flex items-center gap-2 text-sm text-zinc-500">
               <Loader2 size={14} className="animate-spin" /><span>{t('settings.loading')}</span>
             </div>
           ) : apk?.available ? (
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <CircleCheck size={15} className="text-emerald-400 shrink-0" />
-                <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
-                <span className="text-zinc-500">· {apk.size_mb} MB</span>
-                {apk.updated_at && (
-                  <span className="text-zinc-600 text-xs">
-                    · {t('settings.software.lastUpdated')} {new Date(apk.updated_at).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-2 text-sm">
+              <CircleCheck size={15} className="text-emerald-400 shrink-0" />
+              <span className="text-zinc-200">{t('settings.software.apkAvail')}</span>
+              <span className="text-zinc-500">· {apk.size_mb} MB</span>
+              {apk.updated_at && (
+                <span className="text-zinc-600 text-xs">
+                  · {t('settings.software.lastUpdated')} {new Date(apk.updated_at).toLocaleDateString()}
+                </span>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -3204,21 +3221,14 @@ function SoftwareSection() {
             <div className="space-y-2">
               <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">Download</p>
               <div className="flex flex-col gap-2">
-                <a
-                  href={localUrl}
-                  download="nimtaflow-tv.apk"
-                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
+                <a href="/firetv.apk" download="nimtaflow-tv.apk"
+                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
                   <Download size={13} />
                   <span>{t('settings.software.localLink')}</span>
                   <code className="text-xs text-zinc-600 ml-1">/firetv.apk</code>
                 </a>
-                <a
-                  href={cloudUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
+                <a href="https://firetv.nimtaflow.com" target="_blank" rel="noreferrer"
+                  className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
                   <ExternalLink size={13} />
                   <span>{t('settings.software.cloudLink')}</span>
                 </a>
@@ -3227,56 +3237,119 @@ function SoftwareSection() {
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-2 pt-1 border-t border-white/5">
-            {/* Upload */}
-            <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors
-              ${busy ? 'opacity-50 pointer-events-none' : ''}
-              bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
-            >
-              {uploadMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-              {uploadMut.isPending ? t('settings.software.uploading') : t('settings.software.uploadBtn')}
-              <input type="file" accept=".apk" className="hidden" onChange={handleFile} disabled={busy} />
-            </label>
+          {/* ── Auto-Update ────────────────────────────────────────────── */}
+          <div className="border-t border-white/5 pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-zinc-200">{t('settings.software.autoUpdate')}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.autoUpdateSub')}</p>
+              </div>
+              <button
+                onClick={() => settingMut.mutate(!autoUpdate)}
+                disabled={settingMut.isPending}
+                className={`relative w-10 h-5.5 rounded-full transition-colors ${autoUpdate ? 'bg-indigo-500' : 'bg-zinc-700'}`}
+                style={{ width: 40, height: 22 }}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-transform ${autoUpdate ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+              </button>
+            </div>
 
-            {/* Fetch from URL */}
+            {/* Update check result */}
+            {checkResult && (
+              <div className={`rounded-lg px-3 py-2.5 text-sm flex items-start gap-2.5 ${
+                checkResult.has_update ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-emerald-500/10 border border-emerald-500/20'
+              }`}>
+                {checkResult.has_update
+                  ? <AlertCircle size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                  : <CircleCheck size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                }
+                <div className="flex-1 min-w-0">
+                  {checkResult.has_update ? (
+                    <>
+                      <p className="text-amber-200">{t('settings.software.updateAvail')} <span className="text-zinc-400 text-xs">{checkResult.release_name}</span></p>
+                      {checkResult.release_date && (
+                        <p className="text-xs text-zinc-500 mt-0.5">{t('settings.software.releaseDate')} {new Date(checkResult.release_date).toLocaleString()}</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-emerald-200">{t('settings.software.upToDate')}</p>
+                  )}
+                </div>
+                {checkResult.has_update && (
+                  <button
+                    onClick={() => updateNowMut.mutate()}
+                    disabled={updateNowMut.isPending}
+                    className="shrink-0 px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-medium text-white transition-colors flex items-center gap-1"
+                  >
+                    {updateNowMut.isPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                    {t('settings.software.installUpdate')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {updateNowMut.isError && (
+              <p className="text-xs text-red-400">{(updateNowMut.error as any)?.response?.data?.detail ?? 'Update fehlgeschlagen'}</p>
+            )}
+
+            {/* Check now button */}
             <button
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                ${busy ? 'opacity-50' : ''}
-                bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
-              onClick={() => setFetchUrlVisible(v => !v)}
-              disabled={busy}
+              onClick={() => checkMut.mutate()}
+              disabled={checkMut.isPending || busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300 transition-colors disabled:opacity-50"
             >
-              {fetchMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              {fetchMut.isPending ? t('settings.software.downloading') : t('settings.software.fetchBtn')}
+              {checkMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              {t('settings.software.checkNow')}
             </button>
           </div>
 
-          {/* URL input for fetch */}
-          {fetchUrlVisible && (
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-500">{t('settings.software.fetchUrlLabel')}</label>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={fetchUrl}
-                  onChange={e => setFetchUrl(e.target.value)}
-                  placeholder={t('settings.software.fetchUrlPh')}
-                  className="flex-1 bg-zinc-800 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50"
-                />
-                <button
-                  onClick={() => fetchMut.mutate()}
-                  disabled={busy}
-                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium text-white transition-colors"
-                >
-                  {fetchMut.isPending ? <Loader2 size={14} className="animate-spin" /> : 'OK'}
-                </button>
-              </div>
-              {fetchMut.isError && (
-                <p className="text-xs text-red-400">{(fetchMut.error as any)?.response?.data?.detail ?? 'Fehler'}</p>
-              )}
+          {/* ── Manuell ─────────────────────────────────────────────────── */}
+          <div className="border-t border-white/5 pt-4 space-y-3">
+            <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide">{t('settings.software.manual')}</p>
+            <div className="flex flex-wrap gap-2">
+              <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors
+                ${busy ? 'opacity-50 pointer-events-none' : ''}
+                bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
+              >
+                {uploadMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                {uploadMut.isPending ? t('settings.software.uploading') : t('settings.software.uploadBtn')}
+                <input type="file" accept=".apk" className="hidden" onChange={handleFile} disabled={busy} />
+              </label>
+
+              <button
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                  ${busy ? 'opacity-50' : ''}
+                  bg-white/[0.06] hover:bg-white/[0.10] text-zinc-300`}
+                onClick={() => setFetchUrlVisible(v => !v)}
+                disabled={busy}
+              >
+                {fetchMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {fetchMut.isPending ? t('settings.software.downloading') : t('settings.software.fetchBtn')}
+              </button>
             </div>
-          )}
+
+            {fetchUrlVisible && (
+              <div className="space-y-2">
+                <label className="text-xs text-zinc-500">{t('settings.software.fetchUrlLabel')}</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={fetchUrl}
+                    onChange={e => setFetchUrl(e.target.value)}
+                    placeholder={t('settings.software.fetchUrlPh')}
+                    className="flex-1 bg-zinc-800 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50"
+                  />
+                  <button onClick={() => fetchMut.mutate()} disabled={busy}
+                    className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium text-white transition-colors">
+                    {fetchMut.isPending ? <Loader2 size={14} className="animate-spin" /> : 'OK'}
+                  </button>
+                </div>
+                {fetchMut.isError && (
+                  <p className="text-xs text-red-400">{(fetchMut.error as any)?.response?.data?.detail ?? 'Fehler'}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

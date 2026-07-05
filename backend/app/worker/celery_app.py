@@ -230,4 +230,11 @@ celery_app.conf.beat_schedule = {
         "task": "reembed_imported",
         "schedule": crontab(hour=3, minute=10),
     },
+    # Täglich 06:05: FireTV APK Auto-Update — prüft ob ein neueres 'firetv-latest'
+    # GitHub-Release vorliegt und lädt es. No-op wenn software.firetv_auto_update != true.
+    "firetv-auto-update": {
+        "task": "firetv_auto_update",
+        "schedule": crontab(hour=6, minute=5),
+        "options": {"queue": "cpu"},
+    },
 }

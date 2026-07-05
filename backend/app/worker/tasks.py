@@ -2750,3 +2750,45 @@ def reap_stuck_highlights_task(self):
             flog("highlights", "INFO", f"Reaper: {len(requeue_ids)} neu eingereiht, {failed} als Fehler markiert")
         return {"requeued": len(requeue_ids), "failed": failed}
     return _run(_main())
+
+
+@celery_app.task(bind=True, name="firetv_auto_update")
+def firetv_auto_update_task(self):
+    """Beat task: täglich die firetv-latest GitHub-Release-APK holen wenn neuer.
+    Nur aktiv wenn Einstellung 'software.firetv_auto_update' = 'true'."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.services.settings_loader import load_settings
+        from app.api.routes.software import _fetch_latest_release, _download_apk, APK_PATH, _gh_headers
+        import logging
+        log = logging.getLogger("photoflow")
+        init_db()
+        async for db in get_db():
+            s = await load_settings(db)
+            if str(s.get("software.firetv_auto_update", "false")).lower() != "true":
+                return {"skipped": "disabled"}
+            break
+        release = await _fetch_latest_release()
+        if not release:
+            log.warning("FireTV Auto-Update: kein 'firetv-latest'-Release gefunden")
+            return {"skipped": "no_release"}
+        release_date = release.get("published_at") or release.get("created_at")
+        if APK_PATH.exists() and release_date:
+            from datetime import timezone
+            mtime = APK_PATH.stat().st_mtime
+            from datetime import datetime
+            current_dt = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+            if release_date <= current_dt:
+                return {"skipped": "already_current", "release_date": release_date}
+        asset_url = next(
+            (a["browser_download_url"] for a in release.get("assets", []) if a["name"].endswith(".apk")),
+            None,
+        )
+        if not asset_url:
+            log.warning("FireTV Auto-Update: kein APK-Asset im Release")
+            return {"skipped": "no_asset"}
+        log.info("FireTV Auto-Update: lade neue APK von %s", asset_url)
+        await _download_apk(asset_url, extra_headers=_gh_headers())
+        log.info("FireTV Auto-Update: APK erfolgreich aktualisiert")
+        return {"updated": True, "release_date": release_date}
+    return _run(_main())

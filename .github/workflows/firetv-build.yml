@@ -35,9 +35,23 @@ jobs:
         working-directory: firetv-app
         run: ./gradlew assembleDebug
 
-      - name: APK als Artifact hochladen
+      - name: APK als CI-Artifact hochladen
         uses: actions/upload-artifact@v4
         with:
           name: nimtaflow-tv
           path: firetv-app/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Erstellt / überschreibt den Tag 'firetv-latest' mit der frisch gebauten APK.
+      # Server-Instanzen können damit täglich per GitHub API prüfen ob ein Update vorliegt.
+      - name: Release 'firetv-latest' aktualisieren
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firetv-latest
+          name: "FireTV App — latest build"
+          body: |
+            Automatisch gebaut von GitHub Actions.
+            Commit: ${{ github.sha }}
+          prerelease: true
+          files: firetv-app/app/build/outputs/apk/debug/app-debug.apk
+          token: ${{ secrets.GITHUB_TOKEN }}

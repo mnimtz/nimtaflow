@@ -26,8 +26,75 @@ def _apk_info() -> dict:
     return {"available": False, "size_bytes": 0, "size_mb": 0.0, "updated_at": None}
 
 
+def _gh_headers() -> dict:
+    token = os.getenv("FIRETV_GITHUB_TOKEN", "")
+    return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"} if token else {"Accept": "application/vnd.github+json"}
+
+
+async def _fetch_latest_release() -> dict | None:
+    """Returns the GitHub release info dict for tag 'firetv-latest', or None."""
+    repo = os.getenv("FIRETV_GITHUB_REPO", "mnimtz/photoflow")
+    url = f"https://api.github.com/repos/{repo}/releases/tags/firetv-latest"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, headers=_gh_headers())
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            return r.json()
+    except Exception:
+        return None
+
+
 @router.get("/firetv")
 async def firetv_info():
+    return _apk_info()
+
+
+@router.get("/firetv/update-check")
+async def firetv_update_check(_: None = Depends(require_admin)):
+    """Compare current APK mtime with the firetv-latest GitHub Release date."""
+    release = await _fetch_latest_release()
+    if not release:
+        return {"has_update": False, "reason": "no_release", "release": None}
+
+    release_date = release.get("published_at") or release.get("created_at")
+    apk = _apk_info()
+
+    has_update = False
+    if not apk["available"]:
+        has_update = True
+    elif release_date and apk["updated_at"]:
+        has_update = release_date > apk["updated_at"]
+
+    # Find the APK asset download URL
+    asset_url = next(
+        (a["browser_download_url"] for a in release.get("assets", []) if a["name"].endswith(".apk")),
+        None,
+    )
+
+    return {
+        "has_update": has_update,
+        "release_name": release.get("name") or release.get("tag_name"),
+        "release_date": release_date,
+        "download_url": asset_url,
+        "current_updated_at": apk["updated_at"],
+    }
+
+
+@router.post("/firetv/update-now")
+async def firetv_update_now(_: None = Depends(require_admin)):
+    """Pull the firetv-latest GitHub Release APK right now."""
+    release = await _fetch_latest_release()
+    if not release:
+        raise HTTPException(404, "Kein 'firetv-latest'-Release auf GitHub gefunden")
+    asset_url = next(
+        (a["browser_download_url"] for a in release.get("assets", []) if a["name"].endswith(".apk")),
+        None,
+    )
+    if not asset_url:
+        raise HTTPException(404, "Kein APK-Asset im Release gefunden")
+    await _download_apk(asset_url, extra_headers=_gh_headers())
     return _apk_info()
 
 
@@ -62,12 +129,13 @@ async def firetv_upload(file: UploadFile = File(...), _: None = Depends(require_
     return _apk_info()
 
 
-async def _download_apk(url: str) -> None:
+async def _download_apk(url: str, extra_headers: dict | None = None) -> None:
     APK_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = APK_PATH.with_suffix(".tmp")
+    headers = extra_headers or {}
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=120) as client:
-            async with client.stream("GET", url) as resp:
+            async with client.stream("GET", url, headers=headers) as resp:
                 resp.raise_for_status()
                 async with aiofiles.open(tmp, "wb") as f:
                     async for chunk in resp.aiter_bytes(1024 * 1024):
