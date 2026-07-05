@@ -3122,7 +3122,7 @@ type ApkInfo = { available: boolean; size_bytes: number; size_mb: number; update
 type UpdateCheck = { has_update: boolean; release_name?: string; release_date?: string; download_url?: string; current_updated_at?: string; reason?: string }
 
 function SoftwareSection() {
-  const t = useT()
+  const { t } = useT()
   const qc = useQueryClient()
   const [fetchUrl, setFetchUrl] = useState('')
   const [fetchUrlVisible, setFetchUrlVisible] = useState(false)
