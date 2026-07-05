@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit
 private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 private val jsonMedia = "application/json".toMediaType()
 
+/** Wird geworfen wenn der Server 401 zurückgibt — löst in der UI einen Re-Login aus. */
+class UnauthorizedException : Exception("Token abgelaufen oder ungültig")
+
 class APIClient(private var baseUrl: String, private var token: String = "") {
 
     private val http = OkHttpClient.Builder()
@@ -41,7 +44,10 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
             .url("$baseUrl$path")
             .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
             .build()
-        return http.newCall(req).execute().use { it.body!!.string() }
+        return http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) throw UnauthorizedException()
+            resp.body!!.string()
+        }
     }
 
     private fun post(path: String, body: String): String {
@@ -50,7 +56,10 @@ class APIClient(private var baseUrl: String, private var token: String = "") {
             .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
             .post(body.toRequestBody(jsonMedia))
             .build()
-        return http.newCall(req).execute().use { it.body!!.string() }
+        return http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) throw UnauthorizedException()
+            resp.body!!.string()
+        }
     }
 
     // ── Photos ───────────────────────────────────────────────────────────────

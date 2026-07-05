@@ -32,6 +32,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Bildschirmschoner (DreamService) -->
+        <service
+            android:name=".screensaver.NimtaFlowDreamService"
+            android:exported="true"
+            android:label="NimtaFlow"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

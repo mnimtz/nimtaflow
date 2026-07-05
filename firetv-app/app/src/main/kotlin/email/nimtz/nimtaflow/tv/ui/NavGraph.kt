@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.Photo
+import email.nimtz.nimtaflow.tv.api.UnauthorizedException
 import email.nimtz.nimtaflow.tv.ui.albums.AlbumsScreen
 import email.nimtz.nimtaflow.tv.ui.settings.FireTVSettingsScreen
 import email.nimtz.nimtaflow.tv.ui.gallery.GalleryScreen
@@ -58,6 +59,16 @@ fun AppNavGraph(
         val release = UpdateChecker.fetchLatestRelease() ?: return@LaunchedEffect
         if (UpdateChecker.isNewer(release.publishedAt, lastInstalled)) {
             availableRelease = release
+        }
+    }
+
+    // Globaler 401-Handler: bei abgelaufenem Token → sofort zurück zum Login
+    val onUnauthorized: () -> Unit = {
+        scope.launch {
+            onLogout()
+            token = ""
+            api.setToken("")
+            screen = Screen.Login
         }
     }
 

@@ -21,10 +21,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.api.APIClient
+import email.nimtz.nimtaflow.tv.api.Album
+import email.nimtz.nimtaflow.tv.api.Person
+import email.nimtz.nimtaflow.tv.screensaver.ScreensaverPrefs
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.ReleaseInfo
 import email.nimtz.nimtaflow.tv.util.UpdateChecker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
 @Composable
@@ -286,6 +291,153 @@ fun FireTVSettingsScreen(api: APIClient) {
             }
 
             installMsg?.let { Spacer(Modifier.height(4.dp)); Text(it, color = Muted, fontSize = 13.sp) }
+        }
+
+        // ── Bildschirmschoner ────────────────────────────────────────────────
+        ScreensaverSettingsCard(api)
+    }
+}
+
+@Composable
+private fun ScreensaverSettingsCard(api: APIClient) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val ssPrefs = remember { ScreensaverPrefs(context) }
+
+    val mode        by ssPrefs.mode.collectAsState(initial = "all")
+    val personRaw   by ssPrefs.personIds.collectAsState(initial = "")
+    val albumRaw    by ssPrefs.albumIds.collectAsState(initial = "")
+    val intervalSec by ssPrefs.intervalSec.collectAsState(initial = 10)
+    val showInfo    by ssPrefs.showInfo.collectAsState(initial = false)
+
+    var persons by remember { mutableStateOf<List<Person>>(emptyList()) }
+    var albums  by remember { mutableStateOf<List<Album>>(emptyList()) }
+
+    // Personen + Alben einmalig laden (für Auswahl)
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { persons = api.persons() }
+            runCatching { albums  = api.albums() }
+        }
+    }
+
+    val selectedPersons = ssPrefs.personIdSet(personRaw)
+    val selectedAlbums  = ssPrefs.albumIdSet(albumRaw)
+
+    val MODES = listOf(
+        "all"        to "Alle Fotos",
+        "highlights" to "Highlights",
+        "persons"    to "Personen",
+        "albums"     to "Alben",
+    )
+    val INTERVALS = listOf(5 to "5 s", 10 to "10 s", 30 to "30 s", 60 to "1 min")
+
+    SettingsCard("Bildschirmschoner") {
+        Text(
+            "Wird aktiv wenn FireTV den Bildschirmschoner startet " +
+            "(Einstellungen → Anzeige & Ton → Bildschirmschoner).",
+            color = Muted, fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(4.dp))
+
+        // Modus
+        Text("Quelle", color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MODES.forEach { (key, label) ->
+                val selected = mode == key
+                Button(
+                    onClick = { scope.launch { ssPrefs.saveMode(key) } },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (selected) Accent else Surface,
+                    ),
+                ) { Text(label, fontSize = 13.sp) }
+            }
+        }
+
+        // Personen-Auswahl
+        if (mode == "persons" && persons.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text("Personen auswählen", color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            persons.forEach { person ->
+                val checked = person.id in selectedPersons
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(BgDark, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(person.name, color = OnSurface, fontSize = 14.sp)
+                    Checkbox(
+                        checked = checked,
+                        onCheckedChange = { on ->
+                            val newSet = if (on) selectedPersons + person.id else selectedPersons - person.id
+                            scope.launch { ssPrefs.savePersonIds(newSet.joinToString(",")) }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = Accent),
+                    )
+                }
+            }
+        }
+
+        // Alben-Auswahl
+        if (mode == "albums" && albums.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text("Alben auswählen", color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            albums.forEach { album ->
+                val checked = album.id in selectedAlbums
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(BgDark, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        Text(album.name, color = OnSurface, fontSize = 14.sp)
+                        Text("${album.photoCount} Fotos", color = Muted, fontSize = 12.sp)
+                    }
+                    Checkbox(
+                        checked = checked,
+                        onCheckedChange = { on ->
+                            val newSet = if (on) selectedAlbums + album.id else selectedAlbums - album.id
+                            scope.launch { ssPrefs.saveAlbumIds(newSet.joinToString(",")) }
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = Accent),
+                    )
+                }
+            }
+        }
+
+        // Intervall
+        Spacer(Modifier.height(4.dp))
+        Text("Intervall", color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            INTERVALS.forEach { (sec, label) ->
+                val selected = intervalSec == sec
+                Button(
+                    onClick = { scope.launch { ssPrefs.saveIntervalSec(sec) } },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (selected) Accent else Surface,
+                    ),
+                ) { Text(label, fontSize = 13.sp) }
+            }
+        }
+
+        // Info anzeigen
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Datum & Ort einblenden", color = OnSurface, fontSize = 15.sp)
+            Switch(
+                checked = showInfo,
+                onCheckedChange = { scope.launch { ssPrefs.saveShowInfo(it) } },
+                colors = SwitchDefaults.colors(checkedThumbColor = Accent, checkedTrackColor = AccentDim),
+            )
         }
     }
 }
