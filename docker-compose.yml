@@ -60,6 +60,9 @@ services:
       JINA_DEVICE: cpu     # no GPU on this host — query/trickle embedding on CPU
       # Run as root so XMP write-back can modify the root-owned photo library.
       PHOTOFLOW_USER: root
+      # Heimnetz-Subnetz für ADB-Autodiscover (Backend läuft in Docker 172.x, kennt
+      # das Heimnetz nicht). iOS-App übergibt ?subnet= ab v1.7; als Fallback hier.
+      ADB_SUBNET: "192.168.0"
 
   worker:
     build: ./backend

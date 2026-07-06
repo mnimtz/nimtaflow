@@ -216,6 +216,11 @@ async def _port_open(ip: str, port: int = 5555, timeout: float = 0.25) -> bool:
 
 
 def _local_subnet() -> str | None:
+    # Explizit konfiguriertes Subnetz hat Vorrang — wichtig wenn Backend in Docker
+    # läuft und nur die Bridge-IP (172.x) sieht, nicht das Heimnetz.
+    hint = os.environ.get("ADB_SUBNET", "").strip()
+    if hint:
+        return hint
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
