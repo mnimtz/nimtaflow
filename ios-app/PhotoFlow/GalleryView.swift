@@ -613,7 +613,7 @@ struct VarPhotoCell: View {
     let onTap: () -> Void
 
     var body: some View {
-        Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"))
+        Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"), blurData: photo.blur_data)
             .frame(width: width, height: height)
             .clipped()
             .overlay(alignment: .bottomLeading) {

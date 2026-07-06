@@ -23,6 +23,7 @@ struct PhotoV1: Codable, Identifiable, Hashable {
     let original_url: String
     let video_url: String?
     let preview_url: String?
+    let blur_data: String?      // base64 micro-JPEG LQIP placeholder
 }
 
 struct PhotoPage: Codable {

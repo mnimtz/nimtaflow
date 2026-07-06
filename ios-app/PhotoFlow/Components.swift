@@ -117,8 +117,14 @@ private struct ShimmerView: View {
 struct Thumb: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    var blurData: String? = nil
     @EnvironmentObject var api: APIClient
     @StateObject private var loader = AuthImageLoader()
+
+    private var blurPlaceholder: UIImage? {
+        guard let b64 = blurData, let data = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: data)
+    }
 
     var body: some View {
         Group {
@@ -127,6 +133,9 @@ struct Thumb: View {
             } else if loader.failed {
                 Color(white: 0.15)
                     .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+            } else if let blur = blurPlaceholder {
+                Image(uiImage: blur).resizable().aspectRatio(contentMode: contentMode)
+                    .overlay(ShimmerView().opacity(0.35))
             } else {
                 ShimmerView()
             }
@@ -259,7 +268,7 @@ struct PhotoTile: View {
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
-            .overlay { Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium")) }
+            .overlay { Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"), blurData: photo.blur_data) }
             .clipped()
             .overlay(alignment: .bottomLeading) {
                 if photo.is_video {
