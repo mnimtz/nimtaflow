@@ -39,7 +39,7 @@ struct RoutePlayerView: View {
 
                 if idx < photos.count {
                     HStack(spacing: 10) {
-                        Thumb(url: api.url(photos[idx].thumb_url))
+                        Thumb(url: api.url(photos[idx].thumb_url), blurData: photos[idx].blur_data)
                             .frame(width: 56, height: 56)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 2) {

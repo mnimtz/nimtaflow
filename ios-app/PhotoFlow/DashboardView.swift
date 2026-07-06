@@ -220,7 +220,7 @@ struct DashboardView: View {
     }
 
     private func stripTile(_ p: PhotoV1) -> some View {
-        Thumb(url: api.url("api/photos/\(p.id)/thumbnail?size=medium"))
+        Thumb(url: api.url("api/photos/\(p.id)/thumbnail?size=medium"), blurData: p.blur_data)
             .frame(width: 130, height: 130)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(alignment: .bottomLeading) {
