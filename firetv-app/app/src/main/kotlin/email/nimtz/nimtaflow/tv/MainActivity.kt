@@ -7,10 +7,10 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import email.nimtz.nimtaflow.tv.ui.AppNavGraph
 import email.nimtz.nimtaflow.tv.ui.theme.NimtaFlowTheme
-import email.nimtz.nimtaflow.tv.util.Prefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,24 +20,24 @@ class MainActivity : ComponentActivity() {
         val api  = app.api
         val prefs = app.prefs
 
-        // Read persisted values synchronously so we can set the initial screen correctly
-        val initialUrl   = runBlocking { prefs.serverUrl.first() }
-        val initialToken = runBlocking { prefs.token.first() }
+        lifecycleScope.launch {
+            val initialUrl   = withContext(Dispatchers.IO) { prefs.serverUrl.first() }
+            val initialToken = withContext(Dispatchers.IO) { prefs.token.first() }
 
-        // Apply stored URL/token to the API client
-        if (initialUrl.isNotEmpty()) api.baseUrl = initialUrl.trimEnd('/')
-        if (initialToken.isNotEmpty()) api.setToken(initialToken)
+            if (initialUrl.isNotEmpty()) api.baseUrl = initialUrl.trimEnd('/')
+            if (initialToken.isNotEmpty()) api.setToken(initialToken)
 
-        setContent {
-            NimtaFlowTheme {
-                AppNavGraph(
-                    api          = api,
-                    initialUrl   = initialUrl,
-                    initialToken = initialToken,
-                    onServerSaved  = { url -> prefs.saveServerUrl(url) },
-                    onTokensSaved  = { access, refresh -> prefs.saveTokens(access, refresh) },
-                    onLogout       = { prefs.clearTokens() },
-                )
+            setContent {
+                NimtaFlowTheme {
+                    AppNavGraph(
+                        api          = api,
+                        initialUrl   = initialUrl,
+                        initialToken = initialToken,
+                        onServerSaved  = { url -> prefs.saveServerUrl(url) },
+                        onTokensSaved  = { access, refresh -> prefs.saveTokens(access, refresh) },
+                        onLogout       = { prefs.clearTokens() },
+                    )
+                }
             }
         }
     }

@@ -36,7 +36,7 @@ class APIClient(var baseUrl: String, private var token: String = "") {
         "$baseUrl/api/photos/$photoId/thumbnail?size=$size"
 
     fun streamUrl(photoId: Int) =
-        "$baseUrl/api/v1/photos/$photoId/stream?access_token=$token"
+        "$baseUrl/api/photos/$photoId/stream?access_token=$token"
 
     private fun get(path: String): String {
         val req = Request.Builder()
