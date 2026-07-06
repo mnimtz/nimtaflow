@@ -3212,8 +3212,10 @@ function SoftwareSection() {
       const devs: AdbDevice[] = res.data.devices ?? []
       setAdbDevices(devs)
       if (devs.length === 0) setAdbMsg({ text: 'Keine Geräte gefunden', ok: false })
-    } catch {
-      setAdbMsg({ text: 'Scan fehlgeschlagen', ok: false })
+    } catch (e: any) {
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail
+      setAdbMsg({ text: detail ?? (status ? `Scan fehlgeschlagen (HTTP ${status})` : 'Scan fehlgeschlagen'), ok: false })
     } finally {
       setAdbScanning(false)
     }
@@ -3463,18 +3465,23 @@ function SoftwareSection() {
 
             {adbDevices.map(dev => (
               <div key={dev.id} className="flex items-center justify-between gap-3 bg-zinc-900 rounded-lg px-3 py-2.5">
-                <div>
-                  <p className="text-sm text-zinc-200 font-medium">{dev.model}</p>
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-200 font-medium truncate">{dev.model}</p>
                   <p className="text-xs text-zinc-500">{dev.id}</p>
+                  {dev.state === 'unauthorized' && (
+                    <p className="text-xs text-amber-400/90 mt-0.5">⚠️ Nicht autorisiert — am FireTV bestätigen</p>
+                  )}
                 </div>
-                <button
-                  onClick={() => installAdb(dev.id, dev.model)}
-                  disabled={adbInstalling !== null}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors shrink-0"
-                >
-                  {adbInstalling === dev.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                  Installieren
-                </button>
+                {dev.state === 'device' && (
+                  <button
+                    onClick={() => installAdb(dev.id, dev.model)}
+                    disabled={adbInstalling !== null}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors shrink-0"
+                  >
+                    {adbInstalling === dev.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    Installieren
+                  </button>
+                )}
               </div>
             ))}
 
