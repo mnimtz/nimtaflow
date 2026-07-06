@@ -201,7 +201,7 @@ private struct HighlightPlayerView: View {
                     Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white.opacity(0.85))
                 }
             }
-            .padding(.horizontal).padding(.top, 8)
+            .padding(.horizontal).padding(.top, 8).safeAreaPadding(.top)
         }
     }
 

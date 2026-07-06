@@ -95,6 +95,7 @@ struct DashboardView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title).foregroundStyle(.white.opacity(0.85)).padding()
                     }
+                    .safeAreaPadding(.top)
                 }
             }
             .sheet(isPresented: $editingLayout) {
