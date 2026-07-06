@@ -201,7 +201,10 @@ async def _adb(*args: str, timeout: float = 15) -> tuple[int, str]:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode or 0, stdout.decode(errors="replace")
     except asyncio.TimeoutError:
-        proc.kill()
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass  # Prozess hat sich kurz vor dem kill()-Aufruf selbst beendet
         return -1, "timeout"
 
 
