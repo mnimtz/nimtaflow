@@ -648,24 +648,30 @@ private struct FireTVSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(device.model).font(.subheadline).lineLimit(1)
                         Text(device.id).font(.caption).foregroundStyle(.secondary)
+                        if device.state == "unauthorized" {
+                            Text("⚠️ Nicht autorisiert — am FireTV bestätigen")
+                                .font(.caption2).foregroundStyle(.orange)
+                        }
                     }
                     Spacer()
-                    Button {
-                        Task {
-                            installing = device.id; defer { installing = nil }
-                            _ = try? await api.action(
-                                "api/v1/software/firetv/adb-install", method: "POST",
-                                json: ["device_id": device.id])
-                            installMsg = "Installation auf \(device.model) gestartet — bitte am Gerät bestätigen"
-                        }
-                    } label: {
-                        if installing == device.id {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Label("Installieren", systemImage: "arrow.down.to.line.circle.fill")
-                                .labelStyle(.iconOnly).foregroundStyle(.blue)
-                        }
-                    }.disabled(installing != nil)
+                    if device.state == "device" {
+                        Button {
+                            Task {
+                                installing = device.id; defer { installing = nil }
+                                _ = try? await api.action(
+                                    "api/v1/software/firetv/adb-install", method: "POST",
+                                    json: ["device_id": device.id])
+                                installMsg = "Installation auf \(device.model) gestartet — bitte am Gerät bestätigen"
+                            }
+                        } label: {
+                            if installing == device.id {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Installieren", systemImage: "arrow.down.to.line.circle.fill")
+                                    .labelStyle(.iconOnly).foregroundStyle(.blue)
+                            }
+                        }.disabled(installing != nil)
+                    }
                 }
             }
 

@@ -35,6 +35,7 @@ services:
       - photoflow-config:/config
       - photoflow-models:/models     # persist jina-clip-v2 / e5 across rebuilds (search query + everyday embedding)
       - apk-store:/apk              # shared with frontend/nginx for APK downloads
+      - adb-keys:/root/.android     # ADB RSA-Schlüsselpaar persistieren — sonst neue Keys bei jedem Deploy → FireTV muss jedes Mal neu autorisieren
     depends_on:
       db:
         condition: service_healthy
@@ -302,3 +303,4 @@ volumes:
   photoflow-config:
   photoflow-models:
   apk-store:                        # FireTV/TV APK downloads shared between backend + nginx
+  adb-keys:                         # ADB RSA-Keys — persistiert damit FireTV-Autorisierung nach Deploy erhalten bleibt

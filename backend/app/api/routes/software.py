@@ -256,7 +256,10 @@ async def firetv_adb_devices(
         await _adb("connect", addr, timeout=5)
         _, output = await _adb("devices", "-l")
         for line in output.splitlines():
-            if ip in line and "device" in line:
+            # Matche alle bekannten ADB-Zustände, nicht nur "device" — "unauthorized"
+            # tritt auf wenn der Container neue Keys hat und der FireTV noch nicht
+            # zugestimmt hat. "offline" bedeutet Verbindung unterbrochen.
+            if ip in line and any(s in line for s in ("device", "unauthorized", "offline")):
                 parts = line.split()
                 state = parts[1] if len(parts) > 1 else "unknown"
                 model = next((p.split(":")[-1] for p in parts if p.startswith("model:")), addr)
