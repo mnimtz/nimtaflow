@@ -104,8 +104,10 @@
   .react-photo-album--photo:hover img { transform: none; }
 }
 
-/* Lightbox on phones: bigger tap targets for the toolbar + push it below the
-   notch/status bar (env safe-area), so the photo's options are easy to reach. */
+/* Lightbox toolbar: push below native title bar on macOS Catalyst and iOS notch.
+   On regular desktop browsers env(safe-area-inset-top) returns 0 — no effect. */
+.yarl__toolbar { padding-top: env(safe-area-inset-top, 0px); }
+
 @media (max-width: 640px) {
   .yarl__toolbar { padding-top: max(10px, env(safe-area-inset-top)); padding-right: 6px; gap: 2px; }
   .yarl__button { padding: 11px; }
