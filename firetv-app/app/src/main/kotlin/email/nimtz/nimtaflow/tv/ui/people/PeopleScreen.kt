@@ -52,17 +52,25 @@ fun PeopleScreen(
     var personLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        persons = withContext(Dispatchers.IO) { api.persons() }
-        loading = false
+        try {
+            persons = withContext(Dispatchers.IO) { api.persons() }
+        } catch (_: Exception) { /* show empty list on error */ } finally {
+            loading = false
+        }
     }
 
     LaunchedEffect(selectedPerson) {
         val p = selectedPerson ?: return@LaunchedEffect
         personLoading = true
-        personPhotos = withContext(Dispatchers.IO) {
-            api.photos(personId = p.id, limit = 200).items
+        try {
+            personPhotos = withContext(Dispatchers.IO) {
+                api.photos(personId = p.id, limit = 200).items
+            }
+        } catch (_: Exception) {
+            personPhotos = emptyList()
+        } finally {
+            personLoading = false
         }
-        personLoading = false
     }
 
     when {

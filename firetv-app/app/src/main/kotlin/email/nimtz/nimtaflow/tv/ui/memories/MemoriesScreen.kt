@@ -28,8 +28,11 @@ fun MemoriesScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>,
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        groups = withContext(Dispatchers.IO) { api.memories() }
-        loading = false
+        try {
+            groups = withContext(Dispatchers.IO) { api.memories() }
+        } catch (_: Exception) { /* show empty state on error */ } finally {
+            loading = false
+        }
     }
 
     if (loading) {

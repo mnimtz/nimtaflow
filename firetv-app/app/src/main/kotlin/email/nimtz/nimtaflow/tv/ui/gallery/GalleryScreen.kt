@@ -50,10 +50,15 @@ fun GalleryScreen(
     val gridState = rememberLazyGridState()
 
     suspend fun loadPage(p: Int) {
-        val resp = withContext(Dispatchers.IO) { api.photos(page = p, limit = 60, view = view) }
-        photos = if (p == 1) resp.items else photos + resp.items
-        hasMore = resp.items.size >= resp.limit
-        loading = false
+        try {
+            val resp = withContext(Dispatchers.IO) { api.photos(page = p, limit = 60, view = view) }
+            photos = if (p == 1) resp.items else photos + resp.items
+            hasMore = resp.items.size >= resp.limit
+        } catch (_: Exception) {
+            hasMore = false
+        } finally {
+            loading = false
+        }
     }
 
     LaunchedEffect(view) { page = 1; hasMore = true; loadPage(1) }

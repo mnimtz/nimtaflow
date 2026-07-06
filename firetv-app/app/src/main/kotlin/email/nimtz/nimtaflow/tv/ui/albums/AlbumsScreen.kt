@@ -40,13 +40,18 @@ fun AlbumsScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>, I
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        albums = withContext(Dispatchers.IO) { api.albums() }
-        loading = false
+        try {
+            albums = withContext(Dispatchers.IO) { api.albums() }
+        } catch (_: Exception) { /* show empty list on error */ } finally {
+            loading = false
+        }
     }
 
     LaunchedEffect(selectedAlbum) {
         val alb = selectedAlbum ?: return@LaunchedEffect
-        albumPhotos = withContext(Dispatchers.IO) { api.albumPhotos(alb.id).items }
+        try {
+            albumPhotos = withContext(Dispatchers.IO) { api.albumPhotos(alb.id).items }
+        } catch (_: Exception) { albumPhotos = emptyList() }
     }
 
     if (loading) {
