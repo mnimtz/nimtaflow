@@ -621,9 +621,8 @@ private struct FireTVSection: View {
             // ADB Autodiscover
             Button {
                 Task {
-                    scanning = true; adbDevices = []; defer { scanning = false }
-                    // Subnet aus Server-URL ableiten damit Backend das Heimnetz scannt
-                    // (nicht die Docker-Bridge-Adresse, die es sonst selbst erkennt)
+                    scanning = true; adbDevices = []; installMsg = nil
+                    defer { scanning = false }
                     let subnetSuffix: String = {
                         guard let host = URL(string: api.serverURL)?.host else { return "" }
                         let parts = host.components(separatedBy: ".")
@@ -631,9 +630,18 @@ private struct FireTVSection: View {
                         return "?subnet=\(parts[0]).\(parts[1]).\(parts[2])"
                     }()
                     let adbPath = "api/v1/software/firetv/adb-devices\(subnetSuffix)"
-                    if let list = try? await api.get(adbPath, as: AdbDeviceList.self) {
+                    do {
+                        let list = try await api.get(adbPath, as: AdbDeviceList.self)
                         adbDevices = list.devices
-                        if adbDevices.isEmpty { installMsg = "Keine Geräte gefunden" }
+                        if let backendError = list.error {
+                            installMsg = "Scan-Fehler: \(backendError)"
+                        } else if adbDevices.isEmpty {
+                            installMsg = "Keine Geräte gefunden — FireTV einschalten + ADB über Netzwerk aktivieren"
+                        }
+                    } catch APIClient.APIError.status(let code) {
+                        installMsg = "Scan fehlgeschlagen (HTTP \(code))"
+                    } catch {
+                        installMsg = "Scan fehlgeschlagen: \(error.localizedDescription)"
                     }
                 }
             } label: {
