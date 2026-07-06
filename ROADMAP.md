@@ -5,20 +5,22 @@
 > Server-Zugang/Infra-Fallen stehen in `CLAUDE.md`.
 > **Next-Gen-/KI-Ideen (modern, einzigartig, interaktiv): `docs/roadmap-vision.md`.**
 
-**Stand: v1.318 (2026-06-23).** Security komplett (inkl. `/v1/chat`-ACL). Kleinkram +
-Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Public sauber.
-**Einziger großer offener Block: iOS-Parität → App Store.**
+**Stand: v1.484 (2026-07-06).** FireTV-App live (Amazon Appstore, Auto-Update, ADB-Push,
+Bildschirmschoner, Personen). tvOS-App vollständig (Galerie, Personen, Alben, Diashow). iOS v1.8 gebaut.
+iOS-Bugs behoben: Map-Autocenter, Masonry/Justified Pagination, Postkarte (Fotos+Videos), getData-Token-Refresh.
+**Offene Blöcke: iOS v1.8 → App Store (warte auf User-Freigabe), M3-LTX, MCP-Ph4.**
 
 ---
 
 ## 🎯 Offene Punkte (priorisiert)
 
-### 🔴 1 · iOS-App in den App Store (größtes Ziel)
+### 🔴 1 · iOS-App in den App Store (nächstes Ziel)
+- **iOS v1.8 gebaut** — bereit für Einreichung sobald User grünes Licht gibt. Xcode-Archiv mit MARKETING_VERSION=1.8 (macOS=1.7) neu erstellen, dann via ASC-API einreichen.
 - **iOS-Parität (`ios-app/`)** — alle Web-Features nachziehen (zuletzt offen: Person-Detail-Redesign, Karte-Routen/Orts-Panel, Reisen-Foto-add, Erinnerungen, Highlights-Fixes). Web-only per User-Entscheidung: Karte-Routen + Reisen-Foto-add (iOS-Datenmodell weicht ab).
 - **iOS-Bugs (Code-Check):**
-  - `GalleryView` Masonry/Justified-Layout (`GeometryReader` in `LazyVStack`, Höhe aus `UIScreen.width` ≠ geo) → Clipping/Pagination, braucht Geräte-Test
-  - `APIError.decode` verschluckt `DecodingError` (nur Debug-Print)
-  - **Karten-Eigenposition „immer Grönland"** (iOS-MapKit; Web hat keinen Geolocation-Code)
+  - ✅ `GalleryView` Masonry/Justified-Layout: `containerWidth` startet jetzt mit `UIScreen.main.bounds.width` → Pagination-Bug behoben (v1.484.0)
+  - ✅ **Karten-Eigenposition**: Map öffnet jetzt auf echtem Foto-Schwerpunkt (v1.484.0)
+  - `APIError.decode` — fault-Level-Log vorhanden, wird korrekt geworfen; `try?` an Call-Sites verschluckt Fehler aber ist dort oft intentional
 - **Store-Einreichung:** Screenshots/Metadaten (teils durch Website-Vorschau-Screenshots abgedeckt), finale Einreichung.
 - **Push-Konzept + Release-Readiness-Audit** — Konzept-Doku da (`docs/push-und-release-audit-konzept.md`), Umsetzung offen.
 
@@ -29,10 +31,10 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
 - **Offen (Ph4):** async/kostenbewusst (Highlights/Video erzeugen), GPS-Einzel-Setzen, Postkarte. Multi-User: Token-Verwaltung/Rotation in Settings.
 
 ### 🟡 1c · Weitere Plattformen
-- **macOS (Mac Catalyst) ✅ gebaut** (v1.3): `SUPPORTS_MACCATALYST=YES` + App-Sandbox-Entitlements + `LSApplicationCategoryType` + Mac-Catalyst-Distribution-Profil (per ASC-API erzeugt). Signiertes `.pkg` baut/läuft, in ASC hochgeladen (macOS-Plattform aktiv, MAC_OS-Version angelegt). **Offen:** Mac-Screenshots + finale Mac-Einreichung. Tooling: `ios-app/appstore-upload-mac.sh` + `ExportOptions-mac-manual.plist`.
+- **macOS (Mac Catalyst) ✅ gebaut** (v1.3 / macOS v1.7): `SUPPORTS_MACCATALYST=YES` + App-Sandbox-Entitlements + `LSApplicationCategoryType` + Mac-Catalyst-Distribution-Profil (per ASC-API erzeugt). Signiertes `.pkg` baut/läuft, in ASC hochgeladen. **Offen:** Mac-Screenshots + finale Mac-Einreichung. Tooling: `ios-app/appstore-upload-mac.sh` + `ExportOptions-mac-manual.plist`.
+- **Amazon FireTV App ✅ LIVE** (v1.14+, `firetv-app/`): Galerie + Alben + Personen (benannt/unbekannt getrennt) + Bildschirmschoner (DreamService) + In-App-Auto-Update (prüft GitHub `firetv-latest`-Release) + ADB-Autodiscover+Push (Web-UI + iOS, persistente ADB-Keys in Docker-Volume). CI-Build via GitHub Actions (`firetv-build.yml`) → `firetv-latest`-Release auf mnimtz/nimtaflow. Einstellungen-Sektion im Backend (FireTV-APK-Management, Update-Check, ADB-Push). **Offen:** Amazon Appstore-Listing ausbauen, Karte/Reisen auf TV sinnvoll?
+- **tvOS (Apple TV) ✅ LIVE** (v1.476.0, `ios-app/` tvOS-Target): vollständige SwiftUI-App mit Galerie, Personen, Alben, Diashow/Slideshow. Fokus-Navigation per Siri Remote. **Offen:** tvOS-Screenshots + App-Store-Einreichung für Apple TV.
 - **Android App — geplant.** Kotlin/Jetpack Compose. Viewer + Upload + KI-Assistent, Feature-Parität mit iOS angestrebt. Gemeinsames Backend (FastAPI/REST bereits plattformagnostisch).
-- **Amazon FireTV App — geplant, „Lean-back-Viewer".** Ähnlicher Scope wie tvOS: Galerie + Alben + Highlights-Wiedergabe + Erinnerungs-Slideshow. Android-TV-Basis (Leanback-Bibliothek oder Compose for TV), D-Pad-Navigation.
-- **tvOS (Apple TV) — geplant, „Viewer".** NICHT nur Recompile (anders als Catalyst): Fokus-Navigation per Siri Remote, kein Touch/Kamera/Mikro → UI muss neu (fokusbasiert) gebaut werden. **Wiederverwendbar:** `APIClient`/`Models`/Auth/Netzwerk/Bild-Laden (~30–40 %). **Scope = Lean-back-Betrachter**, NICHT Feature-Parität: Galerie + Alben + Personen + **Highlights-Wiedergabe** + **Erinnerungs-Slideshow** (+ evtl. Karte/Reisen als Schauwert). Upload/Sprachmemos/Postkarten bewusst raus (passen nicht auf TV). Aufwand: eigenes tvOS-Target, fokusbasierte UI, tvOS-Sim-Test, eigene TV-Screenshots + eigene Review. Echtes Projekt, aber überschaubar bei Viewer-Beschränkung.
 
 ### 🟡 1d · Teilen / Sharing
 - **Alles teilbar (erledigt, web + iOS):** Einzel-**Fotos & Videos** (Teilen-Button in der Lightbox), **Alben**, **Reisen**, **Highlights** (öffentliche Video-Seite mit Download) und **Postkarten** — alles per login-freiem, geheimem Link (`shares.py`, ShareTypes photo/album/trip/highlight/postcard; optional Passwort/Ablauf/Download; MCP-Tool `teilen_link_erstellen`).
@@ -65,6 +67,17 @@ Feature-Politur abgearbeitet (außer M3-LTX + KI-Clip-Verschmelzung). GitHub-Pub
   - **Wartung:** „wie viele ohne Beschreibung?", „Gesichtserkennung starten", „Namen in Dateien schreiben", „verwaiste Duplikate aufräumen".
   - **Navigation/Hilfe:** „zu den Musik-Einstellungen", „erklär mir das Teilen".
   - **Verbindendes Konzept:** gemeinsames **„Ergebnis-Set + View-Intent"-State** — Assistent liefert strukturierte Kommandos, das Frontend führt sie in der aktuellen Ansicht aus → jede Ansicht ist „assistierbar", ohne dass der Chat sie kennen muss.
+
+### ✅ Features & Fixes (v1.319–v1.484, 2026-06-23 bis 2026-07-06)
+- **FireTV-App** komplett aufgebaut: CI/CD (GitHub Actions → `firetv-latest`-Release), In-App-Auto-Update, ADB-Autodiscover+Push (Web+iOS), Bildschirmschoner, Personen (benannte/unbekannte getrennt), Icon-Fixes, Sicherheitsfix (Unbekannte nur für Admins).
+- **tvOS-App** vollständig: Galerie, Personen, Alben, Diashow/Slideshow.
+- **Software-Einstellungen (Web + iOS):** APK-Verwaltung, Update-Check, ADB-Push-Sektion mit Gerätestatus (authorized/unauthorized), persistente ADB-Keys (Docker-Volume `adb-keys`).
+- **Dashboard/Startseite:** Sektionen-Reihenfolge anpassbar (Web + iOS, v1.464.0).
+- **iOS Postkarte:** für Videos sichtbar + Share-URL (kopierbar/teilbar) + `getData()` Token-Refresh (v1.480/v1.481).
+- **iOS v1.6 → v1.8** (MARKETING_VERSION), macOS v1.7. iOS v1.7-Einreichung von Apple abgelehnt (Archiv-Versionsmismatch → behoben).
+- **Backend-Fixes:** Apple QuickTime CreationDate-Bug (v1.477), Video-AI-Deadlock (v1.466), `reclaim_ai_task` Video-Totzone (v1.465), Leitstand Admin-Prüfung (v1.479).
+- **iOS Map auto-center** auf echte Foto-Schwerpunkte + **Gallery Masonry/Justified Pagination-Fix** (v1.484).
+- **Web-UI ADB:** Gerätestatus anzeigen, Installieren-Button nur für autorisierte Geräte (v1.483).
 
 ### ✅ 2 · GitHub-Public (erledigt 2026-06-23)
 - **Zwei Repos:** `mnimtz/photoflow` (PRIVAT, Dev, volle bereinigte History) vs. `mnimtz/nimtaflow` (PUBLIC, kuratierter Snapshot). Public ist **sauber**: kein CLAUDE.md, keine internen IPs, kein Demo-PW, **0 Claude-Trailer**; Beschreibung/Website/Topics gesetzt; README mit Screenshots + Demo-Links; aktuell auf v1.315. Refresh-Prozedur: siehe Memory `keep-public-repo-current`.
