@@ -1143,29 +1143,29 @@ struct PhotoInfoView: View {
                 if let tags = detail?.tags, !tags.isEmpty {
                     Section("Tags") { Text(tags.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary) }
                 }
-                if !photo.is_video {
-                    Section("🖼️ Postkarte") {
-                        Picker("Layout", selection: $pcTheme) {
-                            Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
-                            Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
-                            Text("Vintage").tag("vintage")
-                        }
-                        Picker("Schriftfarbe", selection: $pcColor) {
-                            Text("Standard").tag(""); Text("Weiß").tag("#ffffff")
-                            Text("Schwarz").tag("#1c1a18"); Text("Gold").tag("#e8b54a")
-                        }
-                        Button {
-                            Task { await makePostcard() }
-                        } label: {
-                            HStack {
-                                if pcBusy { ProgressView().controlSize(.small) }
-                                Text("Postkarte erstellen")
-                            }
-                        }.disabled(pcBusy)
-                        if let u = postcardURL {
-                            ShareLink(item: u) { Label("Postkarte teilen", systemImage: "square.and.arrow.up") }
-                        }
+                Section("🖼️ Postkarte") {
+                    Picker("Layout", selection: $pcTheme) {
+                        Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
+                        Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
+                        Text("Vintage").tag("vintage")
                     }
+                    Picker("Schriftfarbe", selection: $pcColor) {
+                        Text("Standard").tag(""); Text("Weiß").tag("#ffffff")
+                        Text("Schwarz").tag("#1c1a18"); Text("Gold").tag("#e8b54a")
+                    }
+                    Button {
+                        Task { await makePostcard() }
+                    } label: {
+                        HStack {
+                            if pcBusy { ProgressView().controlSize(.small) }
+                            Text("Postkarte erstellen")
+                        }
+                    }.disabled(pcBusy)
+                    if let u = postcardURL {
+                        ShareLink(item: u) { Label("Postkarte teilen", systemImage: "square.and.arrow.up") }
+                    }
+                }
+                if !photo.is_video {
                     Section("💬 Frag-das-Foto") {
                         TextField("z. B. Wo wurde das aufgenommen?", text: $askQ)
                             .autocorrectionDisabled()

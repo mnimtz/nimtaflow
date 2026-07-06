@@ -218,10 +218,21 @@ final class APIClient: ObservableObject {
     func deletePhoto(_ id: Int) async throws { try await action("api/v1/photos/\(id)", method: "DELETE") }
     func photoDetail(_ id: Int) async throws -> PhotoDetailV1 { try await get("api/v1/photos/\(id)/detail", as: PhotoDetailV1.self) }
     /// Raw bytes of an authed endpoint (e.g. the generated postcard PNG).
+    /// Retries once with a refreshed token on 401 — same behaviour as send().
     func getData(_ path: String) async throws -> Data {
-        let (data, resp) = try await pfSession.data(for: makeRequest(path))
+        let req = makeRequest(path)
+        let (data, resp) = try await pfSession.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { await logout(); throw APIError.status(401) }
+        if code == 401 {
+            if await refreshToken() {
+                var r = req; r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data2, resp2) = try await pfSession.data(for: r)
+                let code2 = (resp2 as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(code2) else { await logout(); throw APIError.status(code2) }
+                return data2
+            }
+            await logout(); throw APIError.status(401)
+        }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         return data
     }
