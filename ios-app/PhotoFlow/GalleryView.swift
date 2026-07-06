@@ -1034,6 +1034,7 @@ struct PhotoInfoView: View {
     @State private var pcBusy = false
     @State private var pcTheme = "classic"
     @State private var pcColor = ""   // "" = Standard, sonst #rrggbb
+    @State private var pcError: String?
     @State private var allPeople: [PersonV1] = []
 
     private func reassignFace(_ faceId: Int, to personId: Int) async {
@@ -1058,13 +1059,22 @@ struct PhotoInfoView: View {
 
     private func makePostcard() async {
         pcBusy = true; defer { pcBusy = false }
-        var path = "api/v1/photos/\(photo.id)/postcard?theme=\(pcTheme)"
-        if !pcColor.isEmpty {
-            path += "&text_color=" + (pcColor.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
-        }
-        if let data = try? await api.getData(path) {
-            let u = FileManager.default.temporaryDirectory.appendingPathComponent("nimtaflow-postkarte-\(photo.id).png")
-            try? data.write(to: u); postcardURL = u
+        pcError = nil; postcardURL = nil
+        var params: [String: Any] = ["theme": pcTheme, "lang": "de"]
+        if !pcColor.isEmpty { params["text_color"] = pcColor }
+        do {
+            let share = try await api.createShare([
+                "share_type": "postcard",
+                "photo_id": photo.id,
+                "params": params,
+                "allow_download": false
+            ])
+            // share.url = "{base}/s/{token}" — öffentlicher Postcard-Endpunkt liegt unter /api/public/{token}/postcard
+            let urlStr = share.url.replacingOccurrences(of: "/s/\(share.token)", with: "/api/public/\(share.token)/postcard")
+            postcardURL = URL(string: urlStr)
+            if postcardURL == nil { pcError = "Ungültige Postkarten-URL." }
+        } catch {
+            pcError = "Postkarte konnte nicht erstellt werden."
         }
     }
 
@@ -1161,8 +1171,12 @@ struct PhotoInfoView: View {
                             Text("Postkarte erstellen")
                         }
                     }.disabled(pcBusy)
+                    if let e = pcError { Text(e).font(.caption).foregroundStyle(.red) }
                     if let u = postcardURL {
-                        ShareLink(item: u) { Label("Postkarte teilen", systemImage: "square.and.arrow.up") }
+                        ShareLink(item: u) { Label("Link teilen", systemImage: "square.and.arrow.up") }
+                        Button {
+                            UIPasteboard.general.string = u.absoluteString
+                        } label: { Label("Link kopieren", systemImage: "doc.on.doc") }
                     }
                 }
                 if !photo.is_video {
