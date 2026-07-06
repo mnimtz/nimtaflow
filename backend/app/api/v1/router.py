@@ -1248,8 +1248,9 @@ async def ops_status_v1(db: AsyncSession = Depends(get_db),
                         user: Optional[User] = Depends(current_user_optional)):
     """Betriebs-/Leitstand-Status für die iOS-App: Queue-Tiefen, Worker-Liveness,
     globaler Backlog, grobe Restzeit — NUR für Administratoren (system-weite Daten)."""
-    from app.core.access import _is_unrestricted
-    if not _is_unrestricted(user):
+    # Echte Admin-Prüfung (role == admin), NICHT _is_unrestricted — die gibt für
+    # Admins mit self_restrict=true False zurück und würde admins aussperren.
+    if not user or user.role != UserRole.admin:
         raise HTTPException(403, "Nur für Administratoren.")
     from app.services.chat import _ops_status
     return await _ops_status(db)
