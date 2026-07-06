@@ -1240,8 +1240,8 @@ def backfill_xmp_task(self, full: bool = False):
                                     title=it["title"], city=it["city"], country=it["country"])
                     if mode in ("file_sidecar", "sidecar"):
                         cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
-                        if cap and it["taken_at"] is None and new_taken is None:
-                            new_taken = cap
+                        # KEIN new_taken = cap: file_capture_date() liefert os.path.getmtime()
+                        # (= Sync-/Transcode-Zeit), darf nie als Aufnahmedatum in die DB.
                         xmp_path = write_sidecar(
                             it["path"], description=it["description"], title=it["title"],
                             keywords=it["kw"] or None, latitude=it["latitude"], longitude=it["longitude"],
@@ -2080,10 +2080,10 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                     flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
                                 if photo.is_video or xmp_mode in ("file_sidecar", "sidecar"):
                                     from app.services.xmp_sidecar import write_sidecar, file_capture_date
+                                    # Nur taken_at für den Sidecar-Header verwenden — nie das DB-Feld
+                                    # überschreiben, weil file_capture_date() das Datei-Modifikationsdatum
+                                    # liefert (= Sync-Datum, nicht Aufnahmedatum).
                                     cap = photo.taken_at or file_capture_date(photo.path)
-                                    if cap and photo.taken_at is None:
-                                        photo.taken_at = cap
-                                        flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt (Sidecar): {photo.filename} → {cap}")
                                     xmp_path = write_sidecar(
                                         photo.path,
                                         description=description,

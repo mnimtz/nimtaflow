@@ -167,7 +167,10 @@ def _exiftool_fallback(path: str, result: "ExifData") -> None:
                 except (TypeError, ValueError):
                     pass
         if result.taken_at is None:
-            for key in ("DateTimeOriginal", "CreateDate"):
+            # CreationDate = com.apple.quicktime.creationdate — actual recording time
+            # with timezone offset; must be preferred over CreateDate which is the
+            # MP4 container's UTC creation_time (set to the sync/transcode time).
+            for key in ("DateTimeOriginal", "CreationDate", "CreateDate"):
                 v = d.get(key)
                 if v:
                     try:
