@@ -276,12 +276,23 @@ class AdbInstallBody(BaseModel):
     device_id: str
 
 
+FIRETV_PKG = "email.nimtz.nimtaflow.tv"
+
+
 @router.post("/firetv/adb-install")
 async def firetv_adb_install(body: AdbInstallBody, _: None = Depends(require_admin)):
-    """Schickt das APK via ADB auf ein Gerät."""
+    """Schickt das APK via ADB auf ein Gerät.
+
+    Bei Signatur-Konflikt (INSTALL_FAILED_UPDATE_INCOMPATIBLE) wird die alte
+    Version automatisch deinstalliert und danach neu installiert.
+    """
     if not APK_PATH.exists():
         raise HTTPException(404, "APK fehlt — zuerst bereitstellen")
     rc, output = await _adb("-s", body.device_id, "install", "-r", "-t", str(APK_PATH), timeout=120)
+    if rc != 0 and "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in output:
+        # Alte Version mit anderem Signing-Key → erst deinstallieren, dann neu
+        await _adb("-s", body.device_id, "uninstall", FIRETV_PKG, timeout=30)
+        rc, output = await _adb("-s", body.device_id, "install", "-t", str(APK_PATH), timeout=120)
     if rc != 0:
         raise HTTPException(500, f"ADB-Install fehlgeschlagen: {output[:500]}")
     return {"success": True, "device_id": body.device_id, "output": output[:300]}
