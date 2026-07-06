@@ -653,7 +653,9 @@ struct MasonrySection: View {
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var containerWidth: CGFloat = 0
+    // Bildschirmbreite als Startwert — vermeidet height=0 beim ersten Render,
+    // was in LazyVStack alle onAppear gleichzeitig triggert (Pagination-Bug).
+    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
 
     var body: some View {
         GeometryReader { geo in
@@ -721,7 +723,8 @@ struct JustifiedSection: View {
     let onLast: (PhotoV1) -> Void
     var selectionMode: Bool = false
     var selectedIDs: Set<Int> = []
-    @State private var containerWidth: CGFloat = 0
+    // Bildschirmbreite als Startwert — gleicher Fix wie MasonrySection.
+    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width
 
     private let targetH: CGFloat = 140
     private let spacing: CGFloat = 2

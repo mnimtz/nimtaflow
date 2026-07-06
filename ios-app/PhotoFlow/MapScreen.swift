@@ -83,6 +83,7 @@ struct MapScreen: View {
     @State private var showClusterSheet = false
     @StateObject private var loc = LocationProvider()
     @State private var pendingRecenter = false
+    @State private var autocentered = false
     private let gridCols = [GridItem(.adaptive(minimum: 100), spacing: 2)]
 
     private var stylePref: MapStylePref {
@@ -177,7 +178,17 @@ struct MapScreen: View {
                     } label: { Label("Mein Standort", systemImage: "location.fill") }
                 }
             }
-            .onAppear { loc.request() }
+            .onAppear {
+                loc.request()
+                // Cluster sofort laden — onMapCameraChange feuert erst nach Nutzerinteraktion,
+                // daher initiale Weltansicht manuell anfragen und dann autocenter.
+                if !autocentered {
+                    let worldRegion = MKCoordinateRegion(
+                        center: .init(latitude: 25, longitude: 10),
+                        span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130))
+                    Task { await loadClusters(worldRegion) }
+                }
+            }
             .onReceive(loc.$coordinate.compactMap { $0 }) { c in
                 if pendingRecenter { pendingRecenter = false; recenter(on: c) }
             }
@@ -245,7 +256,6 @@ struct MapScreen: View {
         let minLng = r.center.longitude - r.span.longitudeDelta / 2
         let maxLng = r.center.longitude + r.span.longitudeDelta / 2
         loading = true; mapError = nil
-        // Phase 1: Assistent-Filter (person_id, Datumsbereich) weitergeben
         let mapFilter = store.chatMapFilter
         do {
             clusters = try await api.mapClusters(minLat: minLat, minLng: minLng,
@@ -253,11 +263,36 @@ struct MapScreen: View {
                                                  personId: mapFilter?.personId,
                                                  dateFrom: mapFilter?.dateFrom,
                                                  dateTo: mapFilter?.dateTo)
+            // Beim ersten Laden auf den Schwerpunkt der echten Fotos zentrieren
+            // statt bei einem hardcodierten Globus-Startpunkt zu bleiben.
+            if !autocentered, !clusters.isEmpty {
+                autocentered = true
+                autofitClusters()
+            }
         } catch is CancellationError {
         } catch {
             mapError = "Karte: \((error as NSError).localizedDescription)"
         }
         loading = false
+    }
+
+    private func autofitClusters() {
+        let lats = clusters.map(\.latitude)
+        let lngs = clusters.map(\.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(),
+              let minLng = lngs.min(), let maxLng = lngs.max() else { return }
+        let centerLat = (minLat + maxLat) / 2
+        let centerLng = (minLng + maxLng) / 2
+        // Padding-Faktor 1.5, Mindest-Span 8° damit man nicht blind reinzoomt
+        let spanLat = max((maxLat - minLat) * 1.5, 8)
+        let spanLng = max((maxLng - minLng) * 1.5, 8)
+        if stylePref.isGlobe { stylePrefRaw = MapStylePref.standard.rawValue }
+        withAnimation(.easeInOut(duration: 1.0)) {
+            camera = .region(MKCoordinateRegion(
+                center: .init(latitude: centerLat, longitude: centerLng),
+                span: MKCoordinateSpan(latitudeDelta: min(spanLat, 100),
+                                      longitudeDelta: min(spanLng, 150))))
+        }
     }
 
     private func zoomIn(_ c: CLLocationCoordinate2D) {
