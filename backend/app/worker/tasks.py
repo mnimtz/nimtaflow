@@ -553,6 +553,55 @@ def retry_missing_thumbnails_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="sweep_missing_video_previews")
+def sweep_missing_video_previews_task(self, limit: int = 30):
+    """Backfill animated hover-previews (video_preview_path) for videos that were
+    transcoded but never got their WebP preview generated. Runs on the video worker
+    every 5 min until the backlog is cleared; idempotent and safe to re-run."""
+    async def _main():
+        import os
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.core.config import get_settings
+        from app.services.feature_log import log as flog
+        from app.services.processing.thumbnails import generate_video_preview_webp
+        from sqlalchemy import select
+        init_db()
+        settings = get_settings()
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Photo.id, Photo.path, Photo.video_webm_path).where(
+                    Photo.is_video == True,                          # noqa: E712
+                    Photo.video_webm_path.isnot(None),
+                    Photo.video_preview_path.is_(None),
+                    Photo.is_missing == False,                       # noqa: E712
+                    Photo.is_trashed == False,                       # noqa: E712
+                ).order_by(Photo.id).limit(limit)
+            )).all()
+            if not rows:
+                return {"done": 0}
+            ok = err = 0
+            for photo_id, path, webm_path in rows:
+                vsrc = webm_path if webm_path and os.path.exists(webm_path) else None
+                try:
+                    preview = generate_video_preview_webp(path, settings.cache_path,
+                                                          force=False, source_path=vsrc)
+                    if preview:
+                        photo = await db.get(Photo, photo_id)
+                        if photo:
+                            photo.video_preview_path = preview
+                        ok += 1
+                    else:
+                        err += 1
+                except Exception as e:
+                    flog("video", "WARNING", f"Hover-Preview fehlgeschlagen ({photo_id}): {str(e)[:120]}")
+                    err += 1
+            await db.commit()
+            flog("video", "INFO", f"sweep_missing_video_previews: {ok} erstellt, {err} fehlgeschlagen")
+            return {"done": ok, "errors": err}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="backfill_blur")
 def backfill_blur_task(self, limit: int = 4000):
     """Compute the tiny LQIP placeholder for existing photos that don't have one yet

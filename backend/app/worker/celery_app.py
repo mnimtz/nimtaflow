@@ -75,6 +75,7 @@ celery_app.conf.update(
         # never occupy the worker-cpu slots that make image thumbnails — those two
         # now run fully in parallel. worker-video has /dev/dri for QSV.
         "transcode_video":    {"queue": "video"},
+        "sweep_missing_video_previews": {"queue": "video"},  # backfill hover-WebP für transkodierte Videos
         "mirror_originals":   {"queue": "cpu"},   # rclone one-way mirror of originals
         # Highlight slideshow rendering (ffmpeg xfade/concat from cached thumbs).
         # On the video queue/worker so a long render never blocks the fast cpu work.
@@ -145,6 +146,11 @@ celery_app.conf.beat_schedule = {
     "warm-face-crops": {
         "task": "warm_face_crops",
         "schedule": 1800.0,
+    },
+    # Backfill animated hover-WebP for videos that have a webm but no preview.
+    "sweep-missing-video-previews": {
+        "task": "sweep_missing_video_previews",
+        "schedule": 300.0,
     },
     # Sweep for videos stuck without description: no webm → transcode; has webm → reclaim.
     "sweep-pending-video-ai": {
