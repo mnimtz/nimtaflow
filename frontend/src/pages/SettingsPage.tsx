@@ -1973,6 +1973,47 @@ function fmtEta(sec: number | null | undefined): string {
   return `${s}s`
 }
 
+// ── Preset definitions for the worker setup wizard ─────────────────────────
+type WorkerPreset = {
+  id: string; emoji: string; title: string; desc: string
+  mode: string; media: string; backend: 'ollama' | 'docker'; model?: string
+  steps: string[]
+}
+const WORKER_PRESETS: WorkerPreset[] = [
+  {
+    id: 'mac-images', emoji: '🍎', title: 'Mac — Bilder beschreiben',
+    desc: 'Mac mit Ollama (M3/M4/M5 empfohlen). Beschreibt neue Fotos automatisch.',
+    mode: 'describe', media: 'images', backend: 'ollama', model: 'gemma4:27b',
+    steps: ['Ollama installieren (ollama.ai)', 'Modell laden: ollama pull gemma4:27b', 'setup.sh herunterladen & ausführen'],
+  },
+  {
+    id: 'mac-videos', emoji: '🎬', title: 'Mac — Videos beschreiben',
+    desc: 'Mac mit Ollama. Beschreibt neue Videos (Qwen VL empfohlen).',
+    mode: 'describe', media: 'videos', backend: 'ollama', model: 'qwen2.5vl:7b',
+    steps: ['Ollama installieren (ollama.ai)', 'Modell laden: ollama pull qwen2.5vl:7b', 'setup.sh herunterladen & ausführen'],
+  },
+  {
+    id: 'mac-both', emoji: '🍎🎬', title: 'Mac — Bilder + Videos',
+    desc: 'Mac mit Ollama. Beschreibt sowohl Fotos als auch Videos.',
+    mode: 'describe', media: 'both', backend: 'ollama', model: 'gemma4:27b',
+    steps: ['Ollama installieren (ollama.ai)', 'Modelle laden (gemma4:27b + qwen2.5vl:7b)', 'setup.sh herunterladen & ausführen'],
+  },
+  {
+    id: 'linux-faces', emoji: '🐧', title: 'Linux/Server — Gesichter',
+    desc: 'Linux-Server mit Docker. Erkennt Gesichter in neuen Fotos (CPU).',
+    mode: 'faces', media: 'images', backend: 'docker',
+    steps: ['Docker installieren', 'Nimtaflow-Repo klonen', 'docker compose Befehl ausführen'],
+  },
+]
+
+function downloadBlob(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 function RemoteWorkerSection() {
   const { t } = useT()
   const qc = useQueryClient()
@@ -1988,11 +2029,11 @@ function RemoteWorkerSection() {
   }>({
     queryKey: ['remote-status'], queryFn: () => api.get('/remote/status').then(r => r.data), refetchInterval: 3000,
   })
-  // ── Worker command builder (self-service: add any worker type) ──────────────
-  const [wType, setWType] = useState<'ollama' | 'bundled'>('ollama')
+  // ── Setup wizard state ──────────────────────────────────────────────────────
+  const [selectedPreset, setSelectedPreset] = useState<string>('mac-images')
   const [wMode, setWMode] = useState('describe')       // describe | faces | embed | all
   const [wMedia, setWMedia] = useState('images')       // both | images | videos
-  const [wModel, setWModel] = useState('gemma4:26b')   // ollama model OR bundled model
+  const [wModel, setWModel] = useState('gemma4:27b')
   const [wName, setWName] = useState('mac-describe')
   const save = useMutation({
     mutationFn: (s: Settings) => api.put('/settings', s),
@@ -2008,19 +2049,103 @@ function RemoteWorkerSection() {
   }
   const now = Math.floor(Date.now() / 1000)
   const srvHost = `http://${window.location.hostname}:${window.location.port || 8090}`
-  const SEL = "w-full px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm"
   const tok = token || '<TOKEN>'
-  // Generate the start command for the chosen worker type/mode/media/model.
-  const cmd = wType === 'ollama'
-    ? `# Mac: Ollama läuft + Modell da (ollama pull ${wModel}); mac_describe_agent.py aus dem Repo.\n`
-      + `# Einmalig falls nötig: sudo xcodebuild -license\n`
-      + `PHOTOFLOW_SERVER=${srvHost} \\\n  PHOTOFLOW_REMOTE_TOKEN=${tok} \\\n`
-      + `  WORKER_NAME=${wName} WORKER_MODE=${wMode} WORKER_MEDIA=${wMedia} \\\n`
-      + `  OLLAMA_MODEL=${wModel} \\\n  python3 mac_describe_agent.py`
-    : `cd /opt/photoflow\n`
-      + `PHOTOFLOW_SERVER=${srvHost} PHOTOFLOW_REMOTE_TOKEN=${tok} \\\n`
-      + `  WORKER_NAME=${wName} WORKER_MODE=${wMode} WORKER_MEDIA=${wMedia} \\\n`
-      + `  docker compose -p photoflow-${wName} -f docker-compose.remote-worker.yml up -d --build`
+  const SEL = "w-full px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm"
+
+  const preset = WORKER_PRESETS.find(p => p.id === selectedPreset) ?? WORKER_PRESETS[0]
+  const effectiveMode = selectedPreset === 'custom' ? wMode : preset.mode
+  const effectiveMedia = selectedPreset === 'custom' ? wMedia : preset.media
+  const effectiveModel = (selectedPreset === 'custom' || preset.backend === 'ollama') ? wModel : ''
+  const effectiveBackend = selectedPreset === 'custom' ? 'ollama' : preset.backend
+
+  const setupScript = effectiveBackend === 'docker'
+    ? [
+        '#!/bin/bash',
+        `# NimtaFlow Worker Setup — ${preset.title}`,
+        '# Voraussetzung: Docker installiert, Nimtaflow-Repo vorhanden',
+        '',
+        `SERVER="${srvHost}"`,
+        `TOKEN="${tok}"`,
+        `WORKER_NAME="${wName}"`,
+        '',
+        'cd /opt/photoflow',
+        'PHOTOFLOW_SERVER="$SERVER" \\',
+        '  PHOTOFLOW_REMOTE_TOKEN="$TOKEN" \\',
+        `  WORKER_NAME="$WORKER_NAME" WORKER_MODE="${effectiveMode}" WORKER_MEDIA="${effectiveMedia}" \\`,
+        `  docker compose -p nimtaflow-"$WORKER_NAME" -f docker-compose.remote-faces.yml up -d --build`,
+      ].join('\n')
+    : [
+        '#!/bin/bash',
+        `# NimtaFlow Worker Setup — ${preset.title}`,
+        '# Voraussetzung: Ollama installiert (ollama.ai), Nimtaflow-Repo geklont',
+        '# Ausführen: bash setup_nimtaflow_worker.sh [/pfad/zum/repo]',
+        '',
+        'set -e',
+        `REPO_DIR="\${1:-$HOME/nimtaflow}"`,
+        `SERVER="${srvHost}"`,
+        `TOKEN="${tok}"`,
+        `WORKER_NAME="${wName}"`,
+        `MODEL="${effectiveModel}"`,
+        '',
+        '# Prüfungen',
+        'if [ ! -f "$REPO_DIR/backend/app/remote_worker/agent.py" ]; then',
+        '  echo "❌ Nimtaflow-Backend nicht gefunden unter: $REPO_DIR/backend"',
+        '  echo "   Bitte Pfad übergeben: bash setup_nimtaflow_worker.sh /pfad/zu/repo"',
+        '  exit 1',
+        'fi',
+        'if ! command -v ollama &>/dev/null; then',
+        '  echo "❌ Ollama fehlt → https://ollama.ai installieren"; exit 1',
+        'fi',
+        '',
+        `echo "📦 Lade Modell ($MODEL)..."`,
+        'ollama pull "$MODEL"',
+        '',
+        'LABEL="com.nimtaflow.$WORKER_NAME"',
+        'PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"',
+        'SCRIPT="$REPO_DIR/backend/start_$WORKER_NAME.sh"',
+        'LOG="$HOME/Library/Logs/nimtaflow-$WORKER_NAME.log"',
+        '',
+        '# Start-Skript',
+        'cat > "$SCRIPT" << STARTSCRIPT',
+        '#!/bin/bash',
+        'export PHOTOFLOW_SERVER="$SERVER"',
+        'export PHOTOFLOW_REMOTE_TOKEN="$TOKEN"',
+        'export WORKER_NAME="$WORKER_NAME"',
+        `export WORKER_MODE="${effectiveMode}"`,
+        `export WORKER_MEDIA="${effectiveMedia}"`,
+        'export WORKER_BACKEND="ollama"',
+        'export OLLAMA_MODEL="$MODEL"',
+        'export OLLAMA_URL="http://localhost:11434"',
+        'cd "$REPO_DIR/backend"',
+        'exec python3 -m app.remote_worker.agent',
+        'STARTSCRIPT',
+        'chmod +x "$SCRIPT"',
+        '',
+        '# Launchd Plist',
+        'mkdir -p "$HOME/Library/LaunchAgents"',
+        'cat > "$PLIST" << PLISTEOF',
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0"><dict>',
+        '  <key>Label</key><string>$LABEL</string>',
+        '  <key>ProgramArguments</key>',
+        '  <array><string>/bin/bash</string><string>$SCRIPT</string></array>',
+        '  <key>RunAtLoad</key><true/>',
+        '  <key>KeepAlive</key><true/>',
+        '  <key>StandardOutPath</key><string>$LOG</string>',
+        '  <key>StandardErrorPath</key><string>$LOG</string>',
+        '</dict></plist>',
+        'PLISTEOF',
+        '',
+        'launchctl unload "$PLIST" 2>/dev/null || true',
+        'launchctl load "$PLIST"',
+        '',
+        'echo ""',
+        'echo "✅ Worker \'$WORKER_NAME\' läuft!"',
+        'echo "📋 Logs:   tail -f $LOG"',
+        'echo "🔍 Status: launchctl list | grep nimtaflow"',
+        `echo "📊 Leitstand: ${srvHost}"`,
+      ].join('\n')
 
   return (
     <div>
@@ -2053,40 +2178,6 @@ function RemoteWorkerSection() {
           </div>
         </div>
 
-        {/* Worker-Builder: stell zusammen, was für ein Worker auf welchem Gerät laufen soll */}
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
-          <Label>{t('settings.rwBuilder')}</Label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwType')}</span>
-              <select value={wType} onChange={e => setWType(e.target.value as any)} className={SEL}>
-                <option value="ollama">{t('settings.rwTypeOllama')}</option>
-                <option value="bundled">{t('settings.rwTypeBundled')}</option>
-              </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwTask')}</span>
-              <select value={wMode} onChange={e => setWMode(e.target.value)} className={SEL}>
-                <option value="describe">{t('settings.rwTaskDescribe')}</option>
-                <option value="embed">{t('settings.rwTaskEmbed')}</option>
-                <option value="faces">{t('settings.rwTaskFaces')}</option>
-                <option value="all">{t('settings.rwTaskAll')}</option>
-              </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwMedia')}</span>
-              <select value={wMedia} onChange={e => setWMedia(e.target.value)} className={SEL}>
-                <option value="images">{t('settings.rwMediaImages')}</option>
-                <option value="videos">{t('settings.rwMediaVideos')}</option>
-                <option value="both">{t('settings.rwMediaBoth')}</option>
-              </select></label>
-            <label className="space-y-1"><span className="text-xs text-zinc-500">{t('settings.rwWorkerName')}</span>
-              <input value={wName} onChange={e => setWName(e.target.value)} className={SEL} /></label>
-            {wType === 'ollama' && (
-              <label className="space-y-1 col-span-2"><span className="text-xs text-zinc-500">{t('settings.rwOllamaModel')}</span>
-                <input value={wModel} onChange={e => setWModel(e.target.value)} placeholder={t('settings.rwOllamaModelPlaceholder')} className={SEL} /></label>
-            )}
-          </div>
-          <p className="text-[11px] text-zinc-400">
-            {t('settings.rwBuilderHint')}
-          </p>
-        </div>
-
         <button onClick={() => save.mutate(settings)} disabled={save.isPending}
           className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-50">
           {saved ? t('settings.savedCheck') : t('settings.save')}
@@ -2098,8 +2189,6 @@ function RemoteWorkerSection() {
             <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t('settings.rwProcessingLive')}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${status?.enabled ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-500/15 text-zinc-400'}`}>{status?.enabled ? t('settings.rwActive') : t('settings.rwInactive')}</span>
           </div>
-          {/* Pro Rolle getrennt — je eigener Backlog, eigenes Ø, eigene Restzeit.
-              (Beschreibung ~10s vs Gesichter ~1s NICHT mehr zusammen gemittelt.) */}
           <div className="space-y-2">
             {(status?.roles ?? []).filter(r => r.pending > 0 || r.workers > 0).map(r => {
               const color = r.role === 'describe' ? 'text-violet-500' : r.role === 'embed' ? 'text-sky-500' : 'text-emerald-500'
@@ -2141,26 +2230,118 @@ function RemoteWorkerSection() {
           </div>
         </div>
 
-        {/* Schritt-für-Schritt + generierter Start-Befehl */}
-        <div>
-          <Label>{t('settings.rwHowToAdd')}</Label>
-          {wType === 'ollama' ? (
-            <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
-              <li>{t('settings.rwOllamaStep1a')} <a className="text-indigo-500" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> {t('settings.rwOllamaStep1b')}</li>
-              <li>{t('settings.rwOllamaStep2')} <code>ollama pull {wModel}</code></li>
-              <li><code>mac_describe_agent.py</code> {t('settings.rwOllamaStep3')} <code>~/photoflow_worker/</code>).</li>
-              <li>{t('settings.rwOllamaStep4')}</li>
-              <li>{t('settings.rwOllamaStep5a')} <code>launchctl</code>{t('settings.rwOllamaStep5b')}</li>
-            </ol>
-          ) : (
-            <ol className="text-xs text-zinc-500 list-decimal ml-4 space-y-1 mb-2">
-              <li>{t('settings.rwBundledStep1a')} <code>/opt/photoflow</code> {t('settings.rwBundledStep1b')}</li>
-              <li>{t('settings.rwBundledStep2')}</li>
-              <li>{t('settings.rwBundledStep3')} <code>docker compose -p photoflow-{wName} -f docker-compose.remote-worker.yml down</code></li>
-            </ol>
-          )}
-          <pre className="text-[11px] bg-zinc-900 text-zinc-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{cmd}</pre>
-          {!token && <p className="text-[11px] text-amber-500 mt-1">{t('settings.rwNoTokenWarn')}</p>}
+        {/* ── Setup-Assistent ─────────────────────────────────────────────────── */}
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+          <div className="bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+            <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Neuen Worker einrichten</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Einen weiteren Rechner als KI-Helfer einbinden — automatisch, ohne Konfigurationsdateien manuell bearbeiten zu müssen.</p>
+          </div>
+          <div className="p-4 space-y-4">
+
+            {/* Preset-Karten */}
+            <div>
+              <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Gerät & Aufgabe wählen</p>
+              <div className="grid grid-cols-2 gap-2">
+                {WORKER_PRESETS.map(p => (
+                  <button key={p.id} onClick={() => {
+                    setSelectedPreset(p.id)
+                    setWName(p.id === 'custom' ? wName : p.id)
+                    if (p.model) setWModel(p.model)
+                    if (p.id !== 'custom') { setWMode(p.mode); setWMedia(p.media) }
+                  }}
+                    className={`text-left rounded-xl border p-3 transition-all ${selectedPreset === p.id
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
+                      : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'}`}>
+                    <div className="text-base mb-1">{p.emoji}</div>
+                    <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 leading-tight">{p.title}</div>
+                    <div className="text-[11px] text-zinc-400 mt-0.5 leading-tight">{p.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Erweiterte Optionen für Eigene Konfig */}
+            {selectedPreset === 'custom' && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs text-zinc-500">Aufgabe</span>
+                  <select value={wMode} onChange={e => setWMode(e.target.value)} className={SEL}>
+                    <option value="describe">Beschreiben</option>
+                    <option value="faces">Gesichter</option>
+                    <option value="embed">Embeddings</option>
+                    <option value="all">Alles</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs text-zinc-500">Medientyp</span>
+                  <select value={wMedia} onChange={e => setWMedia(e.target.value)} className={SEL}>
+                    <option value="images">Nur Bilder</option>
+                    <option value="videos">Nur Videos</option>
+                    <option value="both">Beides</option>
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {/* Worker-Name + Modell */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-sm">
+                <span className="text-xs text-zinc-500">Worker-Name</span>
+                <input value={wName} onChange={e => setWName(e.target.value)} className={SEL} placeholder="z.B. m5-describe" />
+              </label>
+              {effectiveBackend === 'ollama' && (
+                <label className="space-y-1 text-sm">
+                  <span className="text-xs text-zinc-500">Ollama-Modell</span>
+                  <input value={wModel} onChange={e => setWModel(e.target.value)} className={SEL} placeholder="gemma4:27b" />
+                </label>
+              )}
+            </div>
+
+            {!token && (
+              <p className="text-[11px] text-amber-500 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2">
+                ⚠️ Zuerst oben einen Token generieren und speichern — er wird ins Setup-Skript eingebettet.
+              </p>
+            )}
+
+            {/* Schritt-für-Schritt */}
+            <div>
+              <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Einrichtung</p>
+              <ol className="space-y-2">
+                {preset.steps.map((step, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                    {step}
+                  </li>
+                ))}
+                <li className="flex items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-bold">✓</span>
+                  Worker erscheint im Leitstand (Live-Status oben)
+                </li>
+              </ol>
+            </div>
+
+            {/* Download-Buttons */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                onClick={() => downloadBlob(setupScript, `setup_${wName}.sh`)}
+                disabled={!token}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors">
+                ↓ setup_{wName}.sh herunterladen
+              </button>
+              <button
+                onClick={() => { navigator.clipboard.writeText(setupScript) }}
+                disabled={!token}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+                Kopieren
+              </button>
+            </div>
+
+            {/* Script-Vorschau */}
+            <details className="group">
+              <summary className="text-xs text-indigo-500 cursor-pointer hover:underline list-none">Skript anzeigen ▾</summary>
+              <pre className="mt-2 text-[10px] bg-zinc-900 text-zinc-300 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-64">{setupScript}</pre>
+            </details>
+          </div>
         </div>
       </div>
 
