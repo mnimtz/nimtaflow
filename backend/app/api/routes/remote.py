@@ -11,9 +11,10 @@ import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Request, Query
+from fastapi.responses import FileResponse, PlainTextResponse
 import os
+import pathlib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func, delete as sql_delete
 from pydantic import BaseModel
@@ -1029,3 +1030,135 @@ async def video_job_fail(job_id: int, error: Optional[str] = None,
     job.error_message = (error or "Lokale Generierung (M3) fehlgeschlagen.")[:500]
     await db.commit()
     return {"ok": True}
+
+
+# ── Standalone worker installer (curl | bash) ──────────────────────────────────
+
+@router.get("/worker.py", response_class=PlainTextResponse)
+async def serve_worker_py():
+    """Serves the self-contained standalone worker script (no repo clone needed)."""
+    p = pathlib.Path(__file__).parent.parent / "remote_worker" / "standalone.py"
+    return PlainTextResponse(p.read_text(), media_type="text/plain")
+
+
+@router.get("/install", response_class=PlainTextResponse)
+async def install_script(
+    request: Request,
+    token: str = Query(""),
+    name: str = Query("mac-describe"),
+    media: str = Query("images"),
+    model: str = Query("gemma4:27b"),
+):
+    """Returns a complete bash installer. Pipe to bash:
+       curl -sSL 'http://server:8090/api/remote/install?token=...&name=mac-describe' | bash
+    """
+    base = str(request.base_url).rstrip("/")
+    plist_label = f"com.nimtaflow.{name}"
+    script = f"""#!/bin/bash
+# NimtaFlow Remote-Worker Installer
+# Automatisch generiert — einfach pipen: curl -sSL '...' | bash
+set -e
+
+SERVER="{base}"
+TOKEN="{token}"
+WORKER_NAME="{name}"
+WORKER_MEDIA="{media}"
+OLLAMA_MODEL="{model}"
+DIR="$HOME/nimtaflow-worker"
+PLIST="$HOME/Library/LaunchAgents/{plist_label}.plist"
+
+echo "=== NimtaFlow Worker Setup: $WORKER_NAME ==="
+echo "Server: $SERVER"
+echo "Modell: $OLLAMA_MODEL"
+echo ""
+
+# ── 1. Prüfe Python 3.10+ ─────────────────────────────────────────────────────
+if ! command -v python3 &>/dev/null; then
+  echo "❌ python3 fehlt. Bitte Python 3.10+ installieren."; exit 1
+fi
+PY_VER=$(python3 -c "import sys; print(sys.version_info.minor)")
+if [ "$PY_VER" -lt 10 ]; then
+  echo "❌ Python 3.10+ benötigt (gefunden: 3.$PY_VER)"; exit 1
+fi
+
+# ── 2. Prüfe Ollama ────────────────────────────────────────────────────────────
+if ! command -v ollama &>/dev/null; then
+  echo "❌ Ollama fehlt → https://ollama.ai installieren und nochmal ausführen."
+  exit 1
+fi
+
+# ── 3. Worker-Verzeichnis & venv ───────────────────────────────────────────────
+mkdir -p "$DIR"
+if [ ! -d "$DIR/venv" ]; then
+  echo "→ Erstelle venv …"
+  python3 -m venv "$DIR/venv"
+fi
+echo "→ Installiere Abhängigkeiten (httpx, pillow) …"
+"$DIR/venv/bin/pip" install -q --upgrade httpx pillow
+
+# ── 4. worker.py herunterladen ─────────────────────────────────────────────────
+echo "→ Lade worker.py herunter …"
+curl -sSL "$SERVER/api/remote/worker.py" -o "$DIR/worker.py"
+
+# ── 5. Ollama-Modell laden ─────────────────────────────────────────────────────
+echo "→ Lade Ollama-Modell: $OLLAMA_MODEL …"
+ollama pull "$OLLAMA_MODEL"
+
+# ── 6. Launchd-Plist schreiben ─────────────────────────────────────────────────
+echo "→ Schreibe LaunchAgent: $PLIST …"
+cat > "$PLIST" << 'PLIST_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+PLIST_EOF
+
+cat >> "$PLIST" << PLIST_EOF
+  <key>Label</key>
+  <string>{plist_label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$DIR/venv/bin/python</string>
+    <string>$DIR/worker.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PHOTOFLOW_SERVER</key>
+    <string>$SERVER</string>
+    <key>PHOTOFLOW_REMOTE_TOKEN</key>
+    <string>$TOKEN</string>
+    <key>WORKER_NAME</key>
+    <string>$WORKER_NAME</string>
+    <key>WORKER_MEDIA</key>
+    <string>$WORKER_MEDIA</string>
+    <key>OLLAMA_URL</key>
+    <string>http://localhost:11434</string>
+    <key>OLLAMA_MODEL</key>
+    <string>$OLLAMA_MODEL</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$DIR/worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>$DIR/worker.log</string>
+PLIST_EOF
+
+cat >> "$PLIST" << 'PLIST_EOF'
+</dict>
+</plist>
+PLIST_EOF
+
+# ── 7. Dienst (neu) starten ────────────────────────────────────────────────────
+launchctl unload "$PLIST" 2>/dev/null || true
+launchctl load -w "$PLIST"
+
+echo ""
+echo "✅ Worker '$WORKER_NAME' läuft!"
+echo "   Logs:  tail -f $DIR/worker.log"
+echo "   Stop:  launchctl unload $PLIST"
+echo "   Start: launchctl load -w $PLIST"
+"""
+    return PlainTextResponse(script, media_type="text/plain")

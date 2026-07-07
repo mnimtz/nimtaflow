@@ -2320,27 +2320,50 @@ function RemoteWorkerSection() {
               </ol>
             </div>
 
-            {/* Download-Buttons */}
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                onClick={() => downloadBlob(setupScript, `setup_${wName}.sh`)}
-                disabled={!token}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors">
-                ↓ setup_{wName}.sh herunterladen
-              </button>
-              <button
-                onClick={() => { navigator.clipboard.writeText(setupScript) }}
-                disabled={!token}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors">
-                Kopieren
-              </button>
-            </div>
-
-            {/* Script-Vorschau */}
-            <details className="group">
-              <summary className="text-xs text-indigo-500 cursor-pointer hover:underline list-none">Skript anzeigen ▾</summary>
-              <pre className="mt-2 text-[10px] bg-zinc-900 text-zinc-300 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-64">{setupScript}</pre>
-            </details>
+            {/* curl one-liner (Ollama) or download (Docker) */}
+            {effectiveBackend === 'ollama' ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Installer — einmal ausführen</p>
+                <div className="flex items-stretch gap-2">
+                  <code className="flex-1 text-[11px] bg-zinc-900 text-emerald-300 rounded-lg px-3 py-2.5 overflow-x-auto whitespace-nowrap select-all">
+                    {`curl -sSL "${srvHost}/api/remote/install?token=${tok}&name=${wName}&media=${effectiveMedia}&model=${encodeURIComponent(effectiveModel)}" | bash`}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(
+                      `curl -sSL "${srvHost}/api/remote/install?token=${tok}&name=${wName}&media=${effectiveMedia}&model=${encodeURIComponent(effectiveModel)}" | bash`
+                    )}
+                    disabled={!token}
+                    className="shrink-0 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+                    Kopieren
+                  </button>
+                </div>
+                <details className="group">
+                  <summary className="text-xs text-indigo-500 cursor-pointer hover:underline list-none">Installiertes Skript anzeigen ▾</summary>
+                  <pre className="mt-2 text-[10px] bg-zinc-900 text-zinc-300 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-64">{setupScript}</pre>
+                </details>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => downloadBlob(setupScript, `setup_${wName}.sh`)}
+                    disabled={!token}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors">
+                    ↓ setup_{wName}.sh herunterladen
+                  </button>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(setupScript)}
+                    disabled={!token}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+                    Kopieren
+                  </button>
+                </div>
+                <details className="group">
+                  <summary className="text-xs text-indigo-500 cursor-pointer hover:underline list-none">Skript anzeigen ▾</summary>
+                  <pre className="mt-2 text-[10px] bg-zinc-900 text-zinc-300 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-64">{setupScript}</pre>
+                </details>
+              </div>
+            )}
           </div>
         </div>
       </div>
