@@ -1245,17 +1245,14 @@ def backfill_xmp_task(self, full: bool = False):
             photos = (await db.execute(
                 select(Photo).where(*conds).order_by(Photo.id)
             )).scalars().all()
-            tagmap = defaultdict(list)
-            for pid, name in (await db.execute(
-                select(PhotoTag.photo_id, Tag.name).join(Tag, Tag.id == PhotoTag.tag_id)
-            )).all():
-                tagmap[pid].append(name)
+            # Tags werden NICHT vorab geladen (1.8 Mio Rows → minutenlanger RAM-Dump).
+            # Stattdessen pro Chunk live aus DB holen (siehe Phase 2).
             items = [{
                 "id": p.id, "path": p.path, "filename": p.filename, "description": p.description,
                 "title": p.title, "city": p.city, "country": p.country,
                 "latitude": p.latitude, "longitude": p.longitude,
                 "user_rating": p.user_rating, "is_favorite": p.is_favorite,
-                "taken_at": p.taken_at, "kw": tagmap.get(p.id, []),
+                "taken_at": p.taken_at,
             } for p in photos]
             break
         total = len(items)
@@ -1288,6 +1285,19 @@ def backfill_xmp_task(self, full: bool = False):
         CH = 100
         for start in range(0, len(items), CH):
             chunk = items[start:start + CH]
+            # Tags für diesen Chunk aus DB holen (vermeidet 1.8-Mio-Row-Vorladen)
+            chunk_ids = [it["id"] for it in chunk]
+            async for db in get_db():
+                tagmap: dict = defaultdict(list)
+                for pid, name in (await db.execute(
+                    select(PhotoTag.photo_id, Tag.name)
+                    .join(Tag, Tag.id == PhotoTag.tag_id)
+                    .where(PhotoTag.photo_id.in_(chunk_ids))
+                )).all():
+                    tagmap[pid].append(name)
+                break
+            for it in chunk:
+                it["kw"] = tagmap.get(it["id"], [])
             stamps = []  # (id, taken_at_or_None, xmp_path_or_None)
             for it in chunk:
                 try:
