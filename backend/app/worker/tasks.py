@@ -1264,30 +1264,65 @@ def backfill_xmp_task(self, full: bool = False):
         import redis as _redis_sync
         from datetime import timezone as _tz
         _rkey = "backfill_xmp:progress"
+        # started_at: aus Redis lesen (Resume) oder neu setzen.
+        # Fallback wenn Redis weg: aus DB-Settings lesen (überlebt Server-Neustart).
+        _settings_key = "backfill_xmp.started_at"
+        _started_at = None
         try:
             _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
-            # Resume: falls ein laufender/abgebrochener Run noch im Key steckt, dessen
-            # started_at wiederverwenden → bereits beschriebene Fotos werden übersprungen.
             _existing = _rc.get(_rkey)
             if _existing:
                 _prev = _json.loads(_existing)
                 if not _prev.get("finished") and _prev.get("full") == full:
                     _started_at = _prev["started_at"]
-                    flog("ai", "INFO", f"XMP-Backfill: Resume von started_at={_started_at}")
-                else:
-                    _started_at = _time.time()
-            else:
-                _started_at = _time.time()
-            def _push_progress(done, failed, finished=False):
-                _rc.setex(_rkey, 86400, _json.dumps({
-                    "total": total, "done": done, "failed": failed,
-                    "full": full, "finished": finished,
-                    "started_at": _started_at,
-                }))
+                    flog("ai", "INFO", f"XMP-Backfill: Resume via Redis, started_at={_started_at}")
         except Exception:
             _rc = None
+
+        if _started_at is None:
+            # Redis leer oder weg → DB-Settings als Fallback
+            async for db in get_db():
+                from app.services.settings_loader import load_settings as _ls
+                _s = await _ls(db)
+                _db_ts = _s.get(_settings_key)
+                if _db_ts and full:
+                    try:
+                        _started_at = float(_db_ts)
+                        flog("ai", "INFO", f"XMP-Backfill: Resume via DB-Settings, started_at={_started_at}")
+                    except (ValueError, TypeError):
+                        pass
+                break
+
+        if _started_at is None:
             _started_at = _time.time()
-            def _push_progress(done, failed, finished=False): pass
+            # Neuen Run in DB-Settings merken
+            async for db in get_db():
+                from app.services.settings_loader import save_setting as _ss
+                await _ss(db, _settings_key, str(_started_at))
+                break
+
+        def _push_progress(done, failed, finished=False):
+            payload = _json.dumps({
+                "total": total, "done": done, "failed": failed,
+                "full": full, "finished": finished, "started_at": _started_at,
+            })
+            try:
+                if _rc:
+                    _rc.setex(_rkey, 86400, payload)
+            except Exception:
+                pass
+            if finished:
+                # Run fertig → started_at aus DB-Settings löschen
+                async def _clear():
+                    async for db in get_db():
+                        from app.services.settings_loader import save_setting as _ss
+                        await _ss(db, _settings_key, "")
+                        break
+                import asyncio as _aio
+                try:
+                    _aio.get_event_loop().run_until_complete(_clear())
+                except Exception:
+                    pass
 
         # Resume-Filter: Fotos überspringen die bereits in DIESEM Run beschrieben wurden
         # (xmp_last_written_at >= started_at). Nur bei full=True relevant.
