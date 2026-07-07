@@ -2,7 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
-import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw } from 'lucide-react'
+import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw, FileCode } from 'lucide-react'
 import PipelinePage from './PipelinePage'
 
 type Role = {
@@ -47,6 +47,11 @@ export default function LeitstandPage() {
     queryKey: ['leitstand'],
     queryFn: () => api.get('/remote/status').then(r => r.data),
     refetchInterval: 3000,
+  })
+  const { data: backfill } = useQuery<any>({
+    queryKey: ['backfill-progress'],
+    queryFn: () => api.get('/remote/backfill-progress').then(r => r.data),
+    refetchInterval: (q) => (q.state.data?.running ? 4000 : 15000),
   })
   const { data: stats, refetch: refetchStats } = useQuery<any>({
     queryKey: ['photo-stats-leitstand'],
@@ -155,6 +160,40 @@ export default function LeitstandPage() {
                 style={{ width: `${Math.max(2, Math.round(100 * (1 - stats.metadata_pending / stats.total_indexed)))}%` }} />
             </div>
           )}
+        </section>
+      )}
+
+      {/* Panel 0b: EXIF/Sidecar Backfill-Fortschritt */}
+      {backfill && (backfill.running || backfill.finished || backfill.total > 0) && (
+        <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <FileCode className={`w-5 h-5 shrink-0 ${backfill.running ? 'text-violet-500 animate-pulse' : backfill.finished ? 'text-emerald-500' : 'text-zinc-400'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  {t('leitstand.backfillTitle')}
+                  <span className="ml-2 text-xs font-normal text-zinc-400">
+                    {backfill.full ? t('leitstand.backfillFull') : t('leitstand.backfillIncr')}
+                  </span>
+                </h2>
+                <div className="flex items-center gap-3 text-xs text-zinc-500 tabular-nums">
+                  <span><b className="text-zinc-700 dark:text-zinc-300">{(backfill.done ?? 0).toLocaleString('de')}</b> / {(backfill.total ?? 0).toLocaleString('de')}</span>
+                  {backfill.failed > 0 && <span className="text-amber-500">{t('leitstand.backfillFailed', { n: backfill.failed })}</span>}
+                  {backfill.running && backfill.eta_s != null && <span className="text-violet-500">{t('leitstand.backfillEta', { eta: fmtEta(backfill.eta_s) })}</span>}
+                  {backfill.running && backfill.elapsed_s != null && <span className="text-zinc-400">{t('leitstand.backfillElapsed', { t: fmtEta(backfill.elapsed_s) })}</span>}
+                </div>
+              </div>
+              <p className="text-xs mt-0.5 text-zinc-500">
+                {backfill.running ? t('leitstand.backfillRunning') : backfill.finished ? t('leitstand.backfillDone') : t('leitstand.backfillIdle')}
+              </p>
+            </div>
+          </div>
+          <div className="h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+            <div
+              className={`h-full transition-all ${backfill.finished ? 'bg-emerald-500' : 'bg-violet-500'}`}
+              style={{ width: `${Math.max(backfill.total > 0 ? 1 : 0, backfill.pct ?? 0)}%` }}
+            />
+          </div>
         </section>
       )}
 

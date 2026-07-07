@@ -1162,3 +1162,37 @@ echo "   Stop:  launchctl unload $PLIST"
 echo "   Start: launchctl load -w $PLIST"
 """
     return PlainTextResponse(script, media_type="text/plain")
+
+
+@router.get("/backfill-progress")
+async def backfill_progress():
+    """Live-Fortschritt des laufenden backfill_xmp-Tasks aus Redis."""
+    import json
+    try:
+        import redis as _redis
+        from app.core.config import get_settings
+        rc = _redis.from_url(get_settings().redis_url, decode_responses=True)
+        raw = rc.get("backfill_xmp:progress")
+        if not raw:
+            return {"running": False, "total": 0, "done": 0, "failed": 0, "pct": 0, "finished": False}
+        d = json.loads(raw)
+        total = d.get("total", 0)
+        done = d.get("done", 0)
+        pct = round(100 * done / total) if total else 0
+        elapsed = time.time() - d.get("started_at", time.time())
+        eta = None
+        if done > 0 and not d.get("finished"):
+            eta = int(elapsed / done * (total - done))
+        return {
+            "running": not d.get("finished", False),
+            "finished": d.get("finished", False),
+            "full": d.get("full", False),
+            "total": total,
+            "done": done,
+            "failed": d.get("failed", 0),
+            "pct": pct,
+            "elapsed_s": int(elapsed),
+            "eta_s": eta,
+        }
+    except Exception:
+        return {"running": False, "total": 0, "done": 0, "failed": 0, "pct": 0, "finished": False}

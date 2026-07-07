@@ -1258,7 +1258,26 @@ def backfill_xmp_task(self, full: bool = False):
                 "taken_at": p.taken_at, "kw": tagmap.get(p.id, []),
             } for p in photos]
             break
-        flog("ai", "INFO", f"XMP-Backfill gestartet: {len(items)} Fotos (Modus={mode})")
+        total = len(items)
+        flog("ai", "INFO", f"XMP-Backfill gestartet: {total} Fotos (Modus={mode})")
+
+        # Progress-Key in Redis so the Leitstand can poll it live.
+        import json as _json, time as _time
+        import redis as _redis_sync
+        _rkey = "backfill_xmp:progress"
+        try:
+            _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+            def _push_progress(done, failed, finished=False):
+                _rc.setex(_rkey, 86400, _json.dumps({
+                    "total": total, "done": done, "failed": failed,
+                    "full": full, "finished": finished,
+                    "started_at": _started_at,
+                }))
+        except Exception:
+            _rc = None
+            def _push_progress(done, failed, finished=False): pass
+        _started_at = _time.time()
+        _push_progress(0, 0)
 
         # ── phase 2: write files in CHUNKS — write a chunk (no session), then stamp
         # just that chunk in a short session. Progress is visible live (stamped count
@@ -1313,7 +1332,9 @@ def backfill_xmp_task(self, full: bool = False):
                     await db.execute(_upd(Photo).where(Photo.id == pid).values(**vals))
                 await db.commit()
                 break
-            flog("ai", "INFO", f"XMP-Backfill: {done}/{len(items)} geschrieben ({failed} Fehler)")
+            _push_progress(done, failed)
+            flog("ai", "INFO", f"XMP-Backfill: {done}/{total} geschrieben ({failed} Fehler)")
+        _push_progress(done, failed, finished=True)
         flog("ai", "INFO", f"XMP-Backfill fertig: {done} geschrieben, {failed} Fehler")
         # NOTE: person names (XMP:PersonInImage) are intentionally NOT written
         # here — they are persisted separately via the explicit "Namen schreiben"
