@@ -280,7 +280,7 @@ export default function GalleryPage() {
       if (entries[0].isIntersecting && infiniteQuery.hasNextPage && !infiniteQuery.isFetchingNextPage) {
         infiniteQuery.fetchNextPage()
       }
-    }, { rootMargin: '600px' })
+    }, { rootMargin: '2000px' })
     io.observe(el)
     return () => io.disconnect()
   }, [infiniteQuery.hasNextPage, infiniteQuery.isFetchingNextPage, viewMode])
