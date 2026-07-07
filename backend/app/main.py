@@ -45,6 +45,7 @@ _COLUMN_MIGRATIONS = [
         ADD COLUMN IF NOT EXISTS keywords             TEXT,
         ADD COLUMN IF NOT EXISTS xmp_sidecar_written  BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS xmp_sidecar_path     VARCHAR(2048),
+        ADD COLUMN IF NOT EXISTS xmp_last_written_at  TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS description_model    VARCHAR(128),
         ADD COLUMN IF NOT EXISTS video_fps            FLOAT,
         ADD COLUMN IF NOT EXISTS video_bitrate        INTEGER,

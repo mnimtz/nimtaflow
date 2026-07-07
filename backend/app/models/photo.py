@@ -81,6 +81,7 @@ class Photo(Base):
     keywords: Mapped[Optional[str]] = mapped_column(Text)
     xmp_sidecar_written: Mapped[bool] = mapped_column(Boolean, default=False)
     xmp_sidecar_path: Mapped[Optional[str]] = mapped_column(String(2048))
+    xmp_last_written_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     # ── AI ────────────────────────────────────────────────────────────────────
     description: Mapped[Optional[str]] = mapped_column(Text)

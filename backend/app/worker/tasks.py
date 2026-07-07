@@ -1253,17 +1253,31 @@ def backfill_xmp_task(self, full: bool = False):
                 "latitude": p.latitude, "longitude": p.longitude,
                 "user_rating": p.user_rating, "is_favorite": p.is_favorite,
                 "taken_at": p.taken_at,
+                "xmp_last_written_at": p.xmp_last_written_at,
             } for p in photos]
             break
         total = len(items)
         flog("ai", "INFO", f"XMP-Backfill gestartet: {total} Fotos (Modus={mode})")
 
-        # Progress-Key in Redis so the Leitstand can poll it live.
+        # Progress + Resume via Redis.
         import json as _json, time as _time
         import redis as _redis_sync
+        from datetime import timezone as _tz
         _rkey = "backfill_xmp:progress"
         try:
             _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+            # Resume: falls ein laufender/abgebrochener Run noch im Key steckt, dessen
+            # started_at wiederverwenden → bereits beschriebene Fotos werden übersprungen.
+            _existing = _rc.get(_rkey)
+            if _existing:
+                _prev = _json.loads(_existing)
+                if not _prev.get("finished") and _prev.get("full") == full:
+                    _started_at = _prev["started_at"]
+                    flog("ai", "INFO", f"XMP-Backfill: Resume von started_at={_started_at}")
+                else:
+                    _started_at = _time.time()
+            else:
+                _started_at = _time.time()
             def _push_progress(done, failed, finished=False):
                 _rc.setex(_rkey, 86400, _json.dumps({
                     "total": total, "done": done, "failed": failed,
@@ -1272,8 +1286,18 @@ def backfill_xmp_task(self, full: bool = False):
                 }))
         except Exception:
             _rc = None
+            _started_at = _time.time()
             def _push_progress(done, failed, finished=False): pass
-        _started_at = _time.time()
+
+        # Resume-Filter: Fotos überspringen die bereits in DIESEM Run beschrieben wurden
+        # (xmp_last_written_at >= started_at). Nur bei full=True relevant.
+        if full and _started_at:
+            _run_start = datetime.fromtimestamp(_started_at, tz=_tz.utc)
+            items = [it for it in items
+                     if it.get("xmp_last_written_at") is None
+                     or it["xmp_last_written_at"] < _run_start]
+            total = len(items)
+            flog("ai", "INFO", f"XMP-Backfill nach Resume-Filter: {total} Fotos verbleibend")
         _push_progress(0, 0)
 
         # ── phase 2: write files in CHUNKS — write a chunk (no session), then stamp
@@ -1333,8 +1357,9 @@ def backfill_xmp_task(self, full: bool = False):
                     flog("ai", "WARNING", f"XMP-Backfill-Fehler: {it['filename']}: {str(e)[:120]}")
             # stamp this chunk (mark written so progress shows + nightly skips it)
             async for db in get_db():
+                _now = datetime.now(tz=_tz.utc)
                 for pid, taken, xpath in stamps:
-                    vals = {"xmp_sidecar_written": True}
+                    vals = {"xmp_sidecar_written": True, "xmp_last_written_at": _now}
                     if taken is not None:
                         vals["taken_at"] = taken
                     if xpath:
