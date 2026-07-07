@@ -220,10 +220,11 @@ celery_app.conf.beat_schedule = {
         "task": "verify_unnamed_faces",
         "schedule": crontab(hour=3, minute=30),
     },
-    # Nightly video face detection (videos that gained a 1080p web version that day).
+    # Video face detection: alle 4h statt nur nightly, damit neue Transcode-Videos
+    # nicht bis zum nächsten Morgen auf ihren Gesichts-Scan warten.
     "sweep-video-faces": {
         "task": "sweep_video_faces",
-        "schedule": crontab(hour=4, minute=0),
+        "schedule": 14400.0,  # alle 4 Stunden
     },
     # Nightly trash retention: permanently delete photos that have been in the trash
     # longer than trash.retention_days (0 = keep forever). 05:15.

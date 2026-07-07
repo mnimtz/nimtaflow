@@ -170,11 +170,11 @@ def sweep_pending_video_ai_task(self):
         async for db in get_db():
             s = await load_settings(db)
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=600)
-            # Videos without webm — need transcode first
+            # Videos without webm — need transcode regardless of description status.
+            # Videos that already have a description still need a webm for streaming
+            # and for the video face-scan (which requires video_webm_path IS NOT NULL).
             q_no_webm = select(Photo.id).where(
                 Photo.is_video == True,                     # noqa: E712
-                Photo.description.is_(None),
-                Photo.ai_error == False,                    # noqa: E712
                 Photo.thumb_large.isnot(None),
                 Photo.video_webm_path.is_(None),
                 Photo.is_missing == False,                  # noqa: E712
