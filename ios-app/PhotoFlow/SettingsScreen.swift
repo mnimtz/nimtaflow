@@ -538,10 +538,8 @@ private struct FireTVSection: View {
 
     private var apkPublicUrl: String {
         guard publicUrl.isEmpty else { return publicUrl }
-        if let u = URL(string: api.serverURL), let host = u.host {
-            return "\(u.scheme ?? "https")://\(host):8092"
-        }
-        return ""
+        let base = api.serverURL.hasSuffix("/") ? String(api.serverURL.dropLast()) : api.serverURL
+        return "\(base)/firetv.apk"
     }
 
     var body: some View {

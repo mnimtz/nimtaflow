@@ -79,13 +79,11 @@ async def firetv_info(_: None = Depends(require_admin)):
 
 @router.get("/firetv/update-check")
 async def firetv_update_check(_: None = Depends(require_admin)):
-    """Compare current APK mtime with the GitHub asset upload date."""
+    """Check for a newer FireTV APK on GitHub."""
     release = await _fetch_latest_release()
     if not release:
         return {"has_update": False, "reason": "no_release", "release": None}
 
-    # Use the asset's updated_at (changes on every CI push), NOT release published_at
-    # (published_at stays fixed for a rolling 'firetv-latest' tag release)
     apk_asset = next(
         (a for a in release.get("assets", []) if a["name"].endswith(".apk")),
         None,
@@ -96,17 +94,23 @@ async def firetv_update_check(_: None = Depends(require_admin)):
         if apk_asset else
         release.get("published_at") or release.get("created_at")
     )
+    release_name = release.get("name") or release.get("tag_name") or ""
     apk = _apk_info()
 
     has_update = False
     if not apk["available"]:
         has_update = True
+    elif apk.get("installed_version") and release_name:
+        # Primary: compare stored release name with GitHub release name
+        has_update = apk["installed_version"] != release_name
     elif release_date and apk["updated_at"]:
+        # Fallback: mtime comparison (APK uploaded manually, no meta)
         has_update = _parse_gh_date(release_date) > _parse_gh_date(apk["updated_at"])
 
     return {
         "has_update": has_update,
-        "release_name": release.get("name") or release.get("tag_name"),
+        "release_name": release_name,
+        "installed_version": apk.get("installed_version") or "",
         "release_date": release_date,
         "download_url": asset_url,
         "current_updated_at": apk["updated_at"],
