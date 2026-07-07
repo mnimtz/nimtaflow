@@ -17,6 +17,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - photoflow-redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -301,6 +304,7 @@ services:
 
 volumes:
   photoflow-db:
+  photoflow-redis:
   photoflow-config:
   photoflow-models:
   apk-store:                        # FireTV/TV APK downloads shared between backend + nginx
