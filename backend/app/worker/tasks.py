@@ -2002,18 +2002,28 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
             # locally below, but still let the remote do the FACES (faces-only claim)
             # so all faces use the same engine. skip_local_faces records that.
             skip_local_faces = False
+            _defer_describe = False  # set below; checked as skip_ai override inside nested try
             try:
                 from app.services.settings_loader import load_settings as _ls
                 from app.services.ai.manager import build_video_settings as _bvs
                 _s = await _ls(db)
                 if str(_s.get("remote.enabled", "false")).lower() == "true":
                     from app.api.routes.remote import remote_worker_alive
-                    if await remote_worker_alive() > 0:
-                        eff_prov = (_bvs(_s).get("ai.provider") if photo.is_video
-                                    else _s.get("ai.provider")) or "none"
+                    _alive = await remote_worker_alive()
+                    eff_prov = (_bvs(_s).get("ai.provider") if photo.is_video
+                                else _s.get("ai.provider")) or "none"
+                    if _alive > 0:
                         if eff_prov == "local":
                             return  # remote does description + faces
                         skip_local_faces = True  # remote will do faces-only
+                    else:
+                        # No remote worker online — check no_local_fallback mode.
+                        # When enabled + provider is local: skip description on this
+                        # machine and let photos queue until M3/M5 comes online.
+                        # Face detection + embedding still run on the server GPU.
+                        no_fallback = str(_s.get("remote.no_local_fallback", "false")).lower() == "true"
+                        if no_fallback and eff_prov == "local":
+                            _defer_describe = True
             except Exception:
                 pass
 
@@ -2027,7 +2037,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                     ai_settings = await load_settings(db)
                     # Per-folder AI override: the source whose path is the longest
                     # prefix of this photo can force a provider or disable AI ('off').
-                    skip_ai = False
+                    skip_ai = _defer_describe  # remote.no_local_fallback: skip when deferred to M3/M5
                     try:
                         from app.models.source import PhotoSource
                         srcs = (await db.execute(

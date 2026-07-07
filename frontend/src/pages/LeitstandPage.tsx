@@ -2,7 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
-import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw, Cpu } from 'lucide-react'
+import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw } from 'lucide-react'
 import PipelinePage from './PipelinePage'
 
 type Role = {
@@ -65,14 +65,18 @@ export default function LeitstandPage() {
     (a, b) => CHAIN.indexOf(a.role) - CHAIN.indexOf(b.role))
   const workers = [...(data?.workers ?? [])].sort((a, b) => (a.idle_s ?? 1e9) - (b.idle_s ?? 1e9))
   const localActive = data?.local_active ?? []
-  // Group local tasks by worker_label so each server shows what it's doing
+  // Group local tasks by worker_label → virtual "server worker" cards
   const localByWorker = localActive.reduce<Record<string, LocalTask[]>>((acc, t) => {
     ;(acc[t.worker_label] ??= []).push(t); return acc
   }, {})
+  // Order local workers: GPU first, then Video, then CPU, then rest
+  const LOCAL_ORDER = ['GPU (Server)', 'Video (Server)', 'CPU (Server)', 'Scan (Server)']
+  const localWorkerCards = Object.entries(localByWorker).sort(
+    ([a], [b]) => (LOCAL_ORDER.indexOf(a) ?? 99) - (LOCAL_ORDER.indexOf(b) ?? 99))
   const lib = data?.library
   const now = Math.floor(Date.now() / 1000)
   const totalEta = Math.max(0, ...roles.map(r => r.eta_seconds ?? 0))
-  const activeWorkers = workers.filter(w => (w.idle_s ?? 999) < 30).length
+  const activeWorkers = workers.filter(w => (w.idle_s ?? 999) < 30).length + localWorkerCards.length
 
   const facesPct = lib?.faces_total ? Math.round(100 * (lib.faces_assigned ?? 0) / lib.faces_total) : 0
   const libCards: { icon: any; label: string; val: number; sub?: string }[] = lib ? [
@@ -185,13 +189,37 @@ export default function LeitstandPage() {
         </div>
       </section>
 
-      {/* Panel 2: Worker-Flotte */}
+      {/* Panel 2: Worker-Flotte — Server (lokal) + Remote (Mac, etc.) */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">{t('leitstand.workerFleet')}</h2>
-          <span className="text-xs text-zinc-400">{t('leitstand.workersStatus', { active: activeWorkers, total: workers.length })}</span>
+          <span className="text-xs text-zinc-400">{t('leitstand.workersStatus', { active: activeWorkers, total: localWorkerCards.length + workers.length })}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {/* Server-Worker (aus Celery inspect active) */}
+          {localWorkerCards.map(([label, tasks]) => (
+            <div key={label} className="rounded-xl border border-indigo-200 dark:border-indigo-800 p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-500 text-xs">●</span>
+                <b className="text-sm text-zinc-800 dark:text-zinc-200 truncate">{label}</b>
+                <span className="ml-auto text-[10px] text-indigo-400 font-medium">Server</span>
+              </div>
+              <div className="mt-1.5 space-y-1">
+                {tasks.slice(0, 3).map((task, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-[11px] text-zinc-500 tabular-nums">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate">{task.task_label}</span>
+                    {task.photo_id && <span className="text-zinc-400">#{task.photo_id}</span>}
+                    {task.started_at && <span className="ml-auto text-zinc-400">{Math.round(now - task.started_at)}s</span>}
+                  </div>
+                ))}
+                {tasks.length > 3 && (
+                  <div className="text-[10px] text-zinc-400">+{tasks.length - 3} weitere</div>
+                )}
+              </div>
+            </div>
+          ))}
+          {/* Remote-Worker (Mac, externe Maschinen via Redis-Heartbeat) */}
           {workers.map(w => {
             const idle = w.idle_s ?? Math.max(0, now - w.last_seen)
             const live = idle < 30
@@ -209,55 +237,11 @@ export default function LeitstandPage() {
               </div>
             )
           })}
-          {workers.length === 0 && <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.noWorker')}</p>}
+          {localWorkerCards.length === 0 && workers.length === 0 && (
+            <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.noWorker')}</p>
+          )}
         </div>
       </section>
-
-      {/* Panel 2b: Aktive Aufgaben — welcher Worker macht gerade was */}
-      {(localActive.length > 0 || workers.some(w => (w.idle_s ?? 999) < 30)) && (
-        <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Cpu className="w-4 h-4 text-indigo-500" />
-            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Aktive Aufgaben</h2>
-          </div>
-          <div className="space-y-2">
-            {/* Local Celery tasks grouped by worker */}
-            {Object.entries(localByWorker).map(([label, tasks]) => (
-              <div key={label} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-emerald-500 text-xs">●</span>
-                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{label}</span>
-                </div>
-                <div className="space-y-1">
-                  {tasks.map((t, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                      <span className="inline-block w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-                      <span className="font-medium text-zinc-700 dark:text-zinc-300">{t.task_label}</span>
-                      {t.photo_id && <span className="tabular-nums">#{t.photo_id}</span>}
-                      {t.started_at && (
-                        <span className="ml-auto text-zinc-400">
-                          {Math.round((Date.now() / 1000 - t.started_at))}s
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {/* Remote workers that are actively working */}
-            {workers.filter(w => (w.idle_s ?? 999) < 30).map(w => (
-              <div key={w.name} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-500 text-xs">●</span>
-                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{w.name}</span>
-                  <span className="text-xs text-zinc-400 ml-auto">{w.role}</span>
-                  <span className="text-xs tabular-nums text-zinc-500">{de(w.jobs)} Jobs</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Panel 3: Bibliothek-Kennzahlen */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">

@@ -2000,6 +2000,7 @@ function RemoteWorkerSection() {
   })
   const set = (k: string, v: string) => setSettings(s => ({ ...s, [k]: v }))
   const enabled = (settings['remote.enabled'] ?? 'false') === 'true'
+  const noLocalFallback = (settings['remote.no_local_fallback'] ?? 'false') === 'true'
   const token = settings['remote.token'] ?? ''
   const genToken = () => {
     const t = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -2032,6 +2033,16 @@ function RemoteWorkerSection() {
           </div>
           <Toggle value={enabled} onChange={v => set('remote.enabled', v ? 'true' : 'false')} />
         </label>
+
+        {enabled && (
+          <label className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-700">
+            <div>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">Beschreibungen nur von Remote-Workern (M3/M5)</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Server-GPU beschreibt keine Bilder/Videos. Neue Medien warten in der Queue bis M3 oder M5 online kommt. Gesichter + Embeddings laufen weiter auf dem Server.</p>
+            </div>
+            <Toggle value={noLocalFallback} onChange={v => set('remote.no_local_fallback', v ? 'true' : 'false')} />
+          </label>
+        )}
 
         <div>
           <Label>{t('settings.rwToken')}</Label>
