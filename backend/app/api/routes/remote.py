@@ -750,6 +750,51 @@ async def embed_result(photo_id: int, body: EmbedResultIn, db: AsyncSession = De
     return {"ok": True, "image": iv is not None, "text": tv is not None}
 
 
+async def _celery_active_tasks() -> list[dict]:
+    """Return active tasks from local Celery workers via inspect (non-blocking, 2s timeout)."""
+    import asyncio, subprocess, json as _json
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "celery", "-A", "app.worker.celery_app", "inspect", "active",
+            "--timeout", "2", "--json",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            cwd="/app",
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=4)
+        data = _json.loads(out or b"{}")
+    except Exception:
+        return []
+    result = []
+    _queue_label = {
+        "gpu": "GPU (Server)", "video": "Video (Server)", "cpu": "CPU (Server)",
+        "scan": "Scan (Server)", "celery": "Server",
+    }
+    _task_label = {
+        "detect_video_faces": "Video-Gesichter",
+        "detect_faces": "Gesichter",
+        "transcode_video": "Video-Transcode",
+        "describe_photo": "Beschreibung",
+        "generate_thumbnail": "Thumbnail",
+        "scan_source": "Quellen-Scan",
+        "backfill_blur": "Blur-Daten",
+        "cluster_faces": "Gesichts-Cluster",
+    }
+    for worker_name, tasks in data.items():
+        for t in (tasks or []):
+            q = (t.get("delivery_info") or {}).get("routing_key", "")
+            args = t.get("args") or []
+            result.append({
+                "worker": worker_name,
+                "worker_label": _queue_label.get(q, q or worker_name),
+                "queue": q,
+                "task": t.get("name", "").split(".")[-1],
+                "task_label": _task_label.get(t.get("name", "").split(".")[-1], t.get("name", "").split(".")[-1]),
+                "photo_id": args[0] if args and isinstance(args[0], int) else None,
+                "started_at": t.get("time_start"),
+            })
+    return result
+
+
 @router.get("/status")
 async def status(db: AsyncSession = Depends(get_db)):
     """For the Settings UI: enabled flag, alive worker count, pending AI count.
@@ -882,6 +927,8 @@ async def status(db: AsyncSession = Depends(get_db)):
                       "workers": 2, "avg_dur": None,
                       "eta_seconds": int(transcode_pending * 8 / 2) if transcode_pending else 0})
 
+    local_active = await _celery_active_tasks()
+
     return {
         "enabled": str(s.get("remote.enabled", "false")).lower() == "true",
         "has_token": bool((s.get("remote.token") or "").strip()),
@@ -890,6 +937,7 @@ async def status(db: AsyncSession = Depends(get_db)):
         "embed_done": embed_done or 0,
         "embed_total": embed_total or 0,
         "workers": workers,
+        "local_active": local_active,
         "roles": roles,
         "avg_dur": round(sum(durs) / len(durs), 1) if durs else None,  # legacy
         # Library headline numbers for the dashboard.

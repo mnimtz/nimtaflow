@@ -2,7 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
-import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw } from 'lucide-react'
+import { Image as ImageIcon, FileText, Film, Layers, Users, Sparkles, Clock, MapPin, RefreshCw, Cpu } from 'lucide-react'
 import PipelinePage from './PipelinePage'
 
 type Role = {
@@ -13,12 +13,16 @@ type Worker = {
   name: string; role: string; last_seen: number; idle_s: number | null
   jobs: number; last_dur: number | null; avg_dur: number | null
 }
+type LocalTask = {
+  worker: string; worker_label: string; queue: string
+  task: string; task_label: string; photo_id: number | null; started_at: number | null
+}
 type Lib = {
   photos: number; videos: number; images: number; described: number
   with_faces: number; named_persons: number; embeddings: number; thumbnails: number
   faces_total?: number; faces_assigned?: number; faces_unassigned?: number
 }
-type Status = { enabled: boolean; roles: Role[]; workers: Worker[]; library?: Lib }
+type Status = { enabled: boolean; roles: Role[]; workers: Worker[]; local_active?: LocalTask[]; library?: Lib }
 
 // Display order = the actual processing chain.
 const CHAIN = ['thumbnails', 'describe', 'transcode', 'video', 'embed', 'faces']
@@ -60,6 +64,11 @@ export default function LeitstandPage() {
   const roles = [...(data?.roles ?? [])].sort(
     (a, b) => CHAIN.indexOf(a.role) - CHAIN.indexOf(b.role))
   const workers = [...(data?.workers ?? [])].sort((a, b) => (a.idle_s ?? 1e9) - (b.idle_s ?? 1e9))
+  const localActive = data?.local_active ?? []
+  // Group local tasks by worker_label so each server shows what it's doing
+  const localByWorker = localActive.reduce<Record<string, LocalTask[]>>((acc, t) => {
+    ;(acc[t.worker_label] ??= []).push(t); return acc
+  }, {})
   const lib = data?.library
   const now = Math.floor(Date.now() / 1000)
   const totalEta = Math.max(0, ...roles.map(r => r.eta_seconds ?? 0))
@@ -203,6 +212,52 @@ export default function LeitstandPage() {
           {workers.length === 0 && <p className="text-sm text-zinc-400 col-span-full">{t('leitstand.noWorker')}</p>}
         </div>
       </section>
+
+      {/* Panel 2b: Aktive Aufgaben — welcher Worker macht gerade was */}
+      {(localActive.length > 0 || workers.some(w => (w.idle_s ?? 999) < 30)) && (
+        <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Cpu className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Aktive Aufgaben</h2>
+          </div>
+          <div className="space-y-2">
+            {/* Local Celery tasks grouped by worker */}
+            {Object.entries(localByWorker).map(([label, tasks]) => (
+              <div key={label} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-emerald-500 text-xs">●</span>
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{label}</span>
+                </div>
+                <div className="space-y-1">
+                  {tasks.map((t, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="inline-block w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">{t.task_label}</span>
+                      {t.photo_id && <span className="tabular-nums">#{t.photo_id}</span>}
+                      {t.started_at && (
+                        <span className="ml-auto text-zinc-400">
+                          {Math.round((Date.now() / 1000 - t.started_at))}s
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* Remote workers that are actively working */}
+            {workers.filter(w => (w.idle_s ?? 999) < 30).map(w => (
+              <div key={w.name} className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-500 text-xs">●</span>
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{w.name}</span>
+                  <span className="text-xs text-zinc-400 ml-auto">{w.role}</span>
+                  <span className="text-xs tabular-nums text-zinc-500">{de(w.jobs)} Jobs</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Panel 3: Bibliothek-Kennzahlen */}
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
