@@ -160,7 +160,7 @@ def sweep_pending_video_ai_task(self):
     - No webm yet: dispatch transcode_video_task so the remote can claim them after.
     - Has webm but unclaimed / claim stale: dispatch ai_photo_task to restart the pipeline.
     Runs regardless of remote-worker state — fills the gap that reclaim_ai misses."""
-    async def _run():
+    async def _body():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
         from app.services.settings_loader import load_settings
@@ -197,7 +197,7 @@ def sweep_pending_video_ai_task(self):
             for pid in stale_ids:
                 ai_photo_task.delay(pid)
             return {"transcoded": len(no_webm_ids), "reclaimed": len(stale_ids)}
-    return _run(_run())
+    return _run(_body())
 
 
 @celery_app.task(bind=True, name="reclaim_ai")
