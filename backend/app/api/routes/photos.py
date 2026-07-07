@@ -1124,6 +1124,14 @@ async def get_thumbnail(photo_id: int, size: str = "medium", db: AsyncSession = 
     # browser refetches later — otherwise it would keep the fallback (small) image
     # permanently even after the larger one is generated ("clicked photo stays small").
     served_exact = bool(exact) and os.path.exists(exact)
+    # X-Accel-Redirect: nginx serves the file directly from the SSD cache volume,
+    # bypassing Python I/O in the data path. Backend only handles auth + DB lookup.
+    # Falls back to FileResponse if the path isn't under /cache/ (shouldn't happen).
+    _cache_prefix = "/cache/"
+    if thumb.startswith(_cache_prefix):
+        accel_loc = "/internal-cache-immutable/" if served_exact else "/internal-cache-nc/"
+        accel_path = accel_loc + thumb[len(_cache_prefix):]
+        return Response(headers={"X-Accel-Redirect": accel_path, "Content-Type": "image/jpeg"})
     cache = "public, max-age=31536000, immutable" if served_exact else "no-cache, must-revalidate"
     return FileResponse(thumb, media_type="image/jpeg", headers={"Cache-Control": cache})
 

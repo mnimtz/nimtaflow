@@ -942,9 +942,9 @@ struct PhotoPager: View {
     var cur: PhotoV1? { photos[safe: index] }
     var isFav: Bool { favs.contains(photos[safe: index]?.id ?? -1) }
 
-    /// Warm the large image of the previous/next photo so swiping is instant.
+    /// Warm the large image of the ±2 neighbours so swiping is instant.
     private func prefetchNeighbors() {
-        for off in [-1, 1] {
+        for off in [-2, -1, 1, 2] {
             let i = index + off
             guard photos.indices.contains(i) else { continue }
             let p = photos[i]

@@ -274,6 +274,7 @@ services:
       - "8092:8092"
     volumes:
       - apk-store:/apk:ro           # backend writes APK; nginx serves it
+      - /cache-ssd:/cache:ro        # thumbnail/preview SSD cache for X-Accel-Redirect (backend does auth, nginx serves bytes)
     depends_on:
       - backend
     environment:
