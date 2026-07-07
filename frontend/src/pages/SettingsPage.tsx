@@ -3580,7 +3580,7 @@ function SoftwareSection() {
             </div>
 
             {/* Update check result */}
-            {displayCheck?.has_update && (
+            {displayCheck?.has_update ? (
               <div className="rounded-lg px-3 py-2.5 text-sm flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20">
                 <AlertCircle size={14} className="text-amber-400 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -3598,10 +3598,18 @@ function SoftwareSection() {
                   {t('settings.software.installUpdate')}
                 </button>
               </div>
-            )}
+            ) : displayCheck && !displayCheck.has_update ? (
+              <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                <CircleCheck size={13} /> FireTV-App ist aktuell
+              </p>
+            ) : null}
 
             {updateNowMut.isError && (
               <p className="text-xs text-red-400">{(updateNowMut.error as any)?.response?.data?.detail ?? 'Update fehlgeschlagen'}</p>
+            )}
+
+            {checkMut.isError && (
+              <p className="text-xs text-red-400">Prüfung fehlgeschlagen — GitHub erreichbar?</p>
             )}
 
             {/* Check now button */}
