@@ -156,7 +156,7 @@ struct PeopleView: View {
     func merge(target: Int) async {
         let sources = Array(selection).filter { $0 != target }
         guard !sources.isEmpty else { return }
-        do { try await api.mergePeople(target: target, sources: sources); await load() }
+        do { try await api.mergePeople(target: target, sources: sources); api.invalidatePeopleCache(); await load() }
         catch { self.error = "Zusammenführen fehlgeschlagen" }
     }
 }
@@ -244,7 +244,7 @@ struct PersonDetailView: View {
                     } label: { Label("Das bin ich", systemImage: "person.fill.checkmark") }
                         .buttonStyle(.bordered)
                     Menu {
-                        Button { Task { try? await api.hidePerson(person.id, hidden: true); dismiss() } } label: {
+                        Button { Task { try? await api.hidePerson(person.id, hidden: true); api.invalidatePeopleCache(); dismiss() } } label: {
                             Label("Ausblenden", systemImage: "eye.slash")
                         }
                         Button(role: .destructive) { showDelete = true } label: {
@@ -309,7 +309,7 @@ struct PersonDetailView: View {
         .confirmationDialog("Diese Person löschen? Die Fotos bleiben erhalten, nur die Personen-Zuordnung wird entfernt.",
                             isPresented: $showDelete, titleVisibility: .visible) {
             Button("Person löschen", role: .destructive) {
-                Task { try? await api.deletePerson(person.id); dismiss() }
+                Task { try? await api.deletePerson(person.id); api.invalidatePeopleCache(); dismiss() }
             }
             Button("Abbrechen", role: .cancel) {}
         }
@@ -328,10 +328,10 @@ struct PersonDetailView: View {
                     }) {
                         do {
                             try await api.mergePeople(target: existing.id, sources: [person.id])
-                            dismiss()
+                            api.invalidatePeopleCache(); dismiss()
                         } catch { /* keep old name shown on failure */ }
                     } else {
-                        do { try await api.renamePerson(person.id, name: target); displayName = target }
+                        do { try await api.renamePerson(person.id, name: target); api.invalidatePeopleCache(); displayName = target }
                         catch { /* keep old name shown on failure */ }
                     }
                 }

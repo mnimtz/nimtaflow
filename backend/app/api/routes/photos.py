@@ -615,7 +615,7 @@ async def map_points(ids: Optional[str] = None,
             Photo.latitude.isnot(None), Photo.longitude.isnot(None),
             Photo.is_trashed == False, Photo.is_archived == False,  # noqa: E712
             *conds, *extra,
-        ).order_by(Photo.taken_at.desc().nullslast())
+        )
     )).all()
     return [{"id": r[0], "latitude": r[1], "longitude": r[2], "is_video": r[3],
              "city": r[4], "country": r[5], "location_name": r[6]} for r in rows]

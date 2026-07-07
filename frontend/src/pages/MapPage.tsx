@@ -145,6 +145,8 @@ export default function MapPage() {
     queryKey: ['photos-map', asstActive ? asstIds : null, !asstActive ? mapFilter : null],
     queryFn: () => api.get('/photos/map', { params: mapParams })
       .then((r) => r.data as Photo[]),
+    staleTime: 5 * 60_000,   // GPS-Daten ändern sich selten — 5 min cachen
+    gcTime: 10 * 60_000,
   })
 
   // Trip routes (cruise/ship lines etc.) — albums flagged as trips with >=2 waypoints.

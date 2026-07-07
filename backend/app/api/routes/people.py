@@ -376,6 +376,10 @@ async def person_avatar(person_id: int, db: AsyncSession = Depends(get_db),
         # crop never blocks the event loop / the other ~40 parallel crop requests.
         crop_path = await asyncio.to_thread(_face_crop_path, face, photo, person_id)
         if crop_path and os.path.exists(crop_path):
+            if crop_path.startswith("/cache/"):
+                from fastapi import Response as _Resp
+                return _Resp(headers={"X-Accel-Redirect": "/internal-cache-1h/" + crop_path[len("/cache/"):],
+                                      "Content-Type": "image/jpeg"})
             return FileResponse(crop_path, media_type="image/jpeg")
         return None
 
@@ -715,6 +719,10 @@ async def face_crop_image(face_id: int, db: AsyncSession = Depends(get_db),
         raise HTTPException(404)
     path = await asyncio.to_thread(_face_crop_path, face, photo, 0)
     if path and os.path.exists(path):
+        if path.startswith("/cache/"):
+            from fastapi import Response as _Resp
+            return _Resp(headers={"X-Accel-Redirect": "/internal-cache-1h/" + path[len("/cache/"):],
+                                  "Content-Type": "image/jpeg"})
         return FileResponse(path, media_type="image/jpeg")
     raise HTTPException(404, "crop failed")
 

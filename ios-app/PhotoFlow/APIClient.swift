@@ -164,7 +164,17 @@ final class APIClient: ObservableObject {
         let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? ""
         return try await get("api/v1/search?limit=80&q=\(enc)", as: PhotoPage.self)
     }
-    func people() async throws -> [PersonV1] { try await get("api/v1/people", as: [PersonV1].self) }
+    private var _peopleCache: [PersonV1] = []
+    private var _peopleFetchedAt: Date = .distantPast
+    func people(force: Bool = false) async throws -> [PersonV1] {
+        if !force && !_peopleCache.isEmpty && Date().timeIntervalSince(_peopleFetchedAt) < 300 {
+            return _peopleCache
+        }
+        let result = try await get("api/v1/people", as: [PersonV1].self)
+        _peopleCache = result; _peopleFetchedAt = Date()
+        return result
+    }
+    func invalidatePeopleCache() { _peopleFetchedAt = .distantPast }
     func personPhotos(_ id: Int, cursor: Int?, sort: String? = nil, mediaType: String? = nil) async throws -> PhotoPage {
         var p = "api/v1/people/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
         if let sort { p += "&sort=\(sort)" }

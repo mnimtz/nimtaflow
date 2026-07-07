@@ -65,6 +65,8 @@ export default function PeoplePage() {
   const { data: people = [], isLoading } = useQuery<Person[]>({
     queryKey: ['people', showHidden, sort],
     queryFn: () => api.get('/people', { params: { include_hidden: showHidden, sort } }).then(r => r.data),
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
   })
   const [loosePage, setLoosePage] = useState(1)
   const [loosePageSize, setLoosePageSize] = useState(50)
