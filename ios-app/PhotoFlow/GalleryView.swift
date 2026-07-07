@@ -48,7 +48,16 @@ struct GalleryView: View {
     @State private var jumpDateFrom: String? = nil
     @State private var jumpDateTo: String? = nil
 
-    let cols = [GridItem(.adaptive(minimum: 110), spacing: 2)]
+    // macOS Catalyst: dynamic column count based on actual window width (forces re-layout on resize)
+    @State private var availableWidth: CGFloat = 400
+    private var cols: [GridItem] {
+        #if targetEnvironment(macCatalyst)
+        let count = max(2, Int(availableWidth / 140))
+        return Array(repeating: GridItem(.flexible(), spacing: 2), count: count)
+        #else
+        return [GridItem(.adaptive(minimum: 110), spacing: 2)]
+        #endif
+    }
     private let groupOpts: [(String, String)] = [
         ("none", "Keine Gruppierung"), ("day", "Nach Tag"), ("month", "Nach Monat"), ("year", "Nach Jahr"),
     ]
@@ -94,6 +103,10 @@ struct GalleryView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .trailing) {
+                // Track window width for adaptive column layout on macOS Catalyst
+                GeometryReader { geo in Color.clear.onAppear { availableWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, w in availableWidth = w }
+                }.frame(height: 0)
                 ScrollViewReader { proxy in
                     ScrollView {
                         Color.clear.frame(height: 0).id("__gallery_top__")
@@ -263,6 +276,20 @@ struct GalleryView: View {
                 guard let ids, !ids.isEmpty else { chatFilteredPhotos = nil; return }
                 Task { await applyChatFilter(ids) }
             }
+            // macOS Catalyst: fullScreenCover doesn't support dismiss() reliably;
+            // sheet works correctly and is dismissible via Escape / ⌘W / close button.
+            #if targetEnvironment(macCatalyst)
+            .sheet(item: $selected) { p in
+                PhotoPager(photos: displayPhotos, start: p,
+                           onRemoved: { id in
+                               if chatFilteredPhotos != nil {
+                                   chatFilteredPhotos?.removeAll { $0.id == id }
+                               } else {
+                                   photos.removeAll { $0.id == id }
+                               }
+                           })
+            }
+            #else
             .fullScreenCover(item: $selected) { p in
                 PhotoPager(photos: displayPhotos, start: p,
                            onRemoved: { id in
@@ -273,6 +300,7 @@ struct GalleryView: View {
                                }
                            })
             }
+            #endif
         }
     }
 
@@ -809,25 +837,24 @@ struct PhotoPager: View {
     @State private var showProfileDialog = false
     @State private var showAnimate = false
 
-    var body: some View {
+    @ViewBuilder
+    private var pagerContent: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { i, p in
                     Group {
                         if p.is_video {
-                            // v1 stream = proper HTTP Range for AVPlayer; auth via
-                            // ?access_token= since AVPlayer can't send a Bearer header.
                             VideoPlayerView(url: api.url("api/v1/photos/\(p.id)/stream?access_token=\(api.token)"))
                         } else {
-                            // Large thumbnail (always JPEG) — works for RAW too, where the
-                            // original isn't displayable by iOS.
                             ZoomableImage(url: api.url("api/photos/\(p.id)/thumbnail?size=large"))
                         }
                     }.tag(i)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // iOS floating button bar — not used on macOS (toolbar replaces it)
+            #if !targetEnvironment(macCatalyst)
             HStack(spacing: 18) {
                 Button { Task { guard let p = cur else { return }; try? await api.toggleFavorite(p.id); toggleLocal() } } label: {
                     Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .white)
@@ -861,8 +888,9 @@ struct PhotoPager: View {
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white) }
             }
             .font(.title2).padding().safeAreaPadding(.top)
+            #endif
 
-            // Rating stars — bottom centre, write straight through to the server.
+            // Rating stars — bottom centre
             VStack {
                 Spacer()
                 HStack(spacing: 6) {
@@ -871,7 +899,7 @@ struct PhotoPager: View {
                             .foregroundStyle(star <= curRating ? .yellow : .white.opacity(0.6))
                             .onTapGesture {
                                 guard let id = cur?.id else { return }
-                                let newVal = (curRating == star) ? 0 : star   // tap same star clears
+                                let newVal = (curRating == star) ? 0 : star
                                 ratings[id] = newVal
                                 Task { try? await api.setRating(id, rating: newVal) }
                             }
@@ -884,6 +912,60 @@ struct PhotoPager: View {
                 }
             }
         }
+    }
+
+    var body: some View {
+        #if targetEnvironment(macCatalyst)
+        // macOS: NavigationStack with proper toolbar (Escape / ⌘W also dismiss the sheet)
+        NavigationStack {
+            pagerContent
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { dismiss() } label: { Label("Schließen", systemImage: "xmark") }
+                            .keyboardShortcut(.escape, modifiers: [])
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { Task { guard let p = cur else { return }
+                            try? await api.toggleFavorite(p.id); toggleLocal()
+                        }} label: { Image(systemName: isFav ? "heart.fill" : "heart").foregroundStyle(isFav ? .red : .primary) }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showInfo = true } label: { Image(systemName: "info.circle") }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button { showShare = true } label: { Label("Teilen", systemImage: "square.and.arrow.up") }
+                            Button { showAlbumPicker = true } label: { Label("Zu Album hinzufügen", systemImage: "rectangle.stack.badge.plus") }
+                            if let c = cur, !c.is_video {
+                                Button { showAnimate = true } label: { Label("Animieren / KI-Szene", systemImage: "sparkles") }
+                            }
+                            Button { Task { await loadProfileFaces() } } label: { Label("Als Personen-Titelbild", systemImage: "person.crop.circle.badge.checkmark") }
+                            Button { Task { guard let p = cur else { return }; try? await api.archivePhoto(p.id); actionNote = "Archiviert" } } label: {
+                                Label("Archivieren", systemImage: "archivebox")
+                            }
+                            Button { Task { guard let p = cur else { return }; try? await api.reprocess(p.id); actionNote = "Wird neu verarbeitet…" } } label: {
+                                Label("Neu verarbeiten", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                guard let id = cur?.id else { return }
+                                Task { try? await api.trashPhoto(id); onRemoved?(id); dismiss() }
+                            } label: { Label("In Papierkorb", systemImage: "trash") }
+                            Button(role: .destructive) { showDeleteConfirm = true } label: {
+                                Label("Endgültig löschen", systemImage: "trash.slash")
+                            }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .sheet(isPresented: $showAnimate) {
+                            AnimateSceneSheet(isPresented: $showAnimate, photoId: cur?.id ?? 0) { actionNote = "Animation gestartet — erscheint unter Highlights." }
+                                .presentationDetents([.medium, .large])
+                        }
+                    }
+                }
+        }
+        #else
+        pagerContent
+        #endif
         .onAppear {
             index = photos.firstIndex(of: start) ?? 0
             favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
