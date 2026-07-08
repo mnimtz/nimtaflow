@@ -18,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -116,6 +118,12 @@ private fun PersonGrid(
     token: String,
     onSelect: (Person) -> Unit,
 ) {
+    val firstPersonFocus = remember { FocusRequester() }
+    LaunchedEffect(named.isNotEmpty() || unknown.isNotEmpty()) {
+        if (named.isNotEmpty() || unknown.isNotEmpty())
+            try { firstPersonFocus.requestFocus() } catch (_: Exception) {}
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(180.dp),
         contentPadding = PaddingValues(24.dp),
@@ -123,8 +131,12 @@ private fun PersonGrid(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(named, key = { it.id }) { person ->
-            PersonCard(person, api, token, onClick = { onSelect(person) })
+        itemsIndexed(named, key = { _, p -> p.id }) { idx, person ->
+            PersonCard(
+                person, api, token,
+                onClick = { onSelect(person) },
+                modifier = if (idx == 0) Modifier.focusRequester(firstPersonFocus) else Modifier,
+            )
         }
 
         if (unknown.isNotEmpty()) {
@@ -162,14 +174,20 @@ private fun PersonGrid(
 }
 
 @Composable
-private fun PersonCard(person: Person, api: APIClient, token: String, onClick: () -> Unit) {
+private fun PersonCard(
+    person: Person,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .border(2.dp, if (focused) Accent else Color.Transparent, RoundedCornerShape(16.dp))
             .background(if (focused) SurfaceHi else Surface)

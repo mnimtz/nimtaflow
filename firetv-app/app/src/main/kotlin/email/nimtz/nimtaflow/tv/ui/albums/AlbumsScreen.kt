@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -62,6 +64,18 @@ fun AlbumsScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>, I
     }
 
     if (selectedAlbum == null) {
+        val firstAlbumFocus = remember { FocusRequester() }
+        LaunchedEffect(albums.isNotEmpty()) {
+            if (albums.isNotEmpty()) try { firstAlbumFocus.requestFocus() } catch (_: Exception) {}
+        }
+
+        if (albums.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Keine Alben vorhanden", color = Muted, fontSize = 16.sp)
+            }
+            return
+        }
+
         // Album grid
         LazyVerticalGrid(
             columns = GridCells.Adaptive(260.dp),
@@ -70,8 +84,12 @@ fun AlbumsScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>, I
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(albums, key = { it.id }) { album ->
-                AlbumCard(album, api, token, onClick = { selectedAlbum = album })
+            itemsIndexed(albums, key = { _, a -> a.id }) { idx, album ->
+                AlbumCard(
+                    album, api, token,
+                    onClick = { selectedAlbum = album },
+                    modifier = if (idx == 0) Modifier.focusRequester(firstAlbumFocus) else Modifier,
+                )
             }
         }
     } else {
@@ -103,12 +121,18 @@ fun AlbumsScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>, I
 }
 
 @Composable
-private fun AlbumCard(album: Album, api: APIClient, token: String, onClick: () -> Unit) {
+private fun AlbumCard(
+    album: Album,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .border(2.dp, if (focused) Accent else Color.Transparent, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }

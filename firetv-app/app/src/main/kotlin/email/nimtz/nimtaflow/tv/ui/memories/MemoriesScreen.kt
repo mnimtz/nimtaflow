@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,13 +58,21 @@ fun MemoriesScreen(api: APIClient, token: String, onPhotoSelected: (List<Photo>,
         return
     }
 
+    val firstCardFocus = remember { FocusRequester() }
+    LaunchedEffect(groups.isNotEmpty()) {
+        if (groups.isNotEmpty()) try { firstCardFocus.requestFocus() } catch (_: Exception) {}
+    }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        itemsIndexed(groups, key = { _, g -> g.yearsAgo }) { _, group ->
-            MemoryGroupRow(group, api, token, onPhotoSelected)
+        itemsIndexed(groups, key = { _, g -> g.yearsAgo }) { rowIdx, group ->
+            MemoryGroupRow(
+                group, api, token, onPhotoSelected,
+                firstCardFocus = if (rowIdx == 0) firstCardFocus else null,
+            )
         }
     }
 }
@@ -73,6 +83,7 @@ private fun MemoryGroupRow(
     api: APIClient,
     token: String,
     onPhotoSelected: (List<Photo>, Int) -> Unit,
+    firstCardFocus: FocusRequester? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Header
@@ -120,11 +131,14 @@ private fun MemoryGroupRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(group.items, key = { _, p -> p.id }) { idx, photo ->
+                val cardMod = Modifier.size(200.dp).let {
+                    if (idx == 0 && firstCardFocus != null) it.focusRequester(firstCardFocus) else it
+                }
                 PhotoCard(
                     photo = photo,
                     api = api,
                     token = token,
-                    modifier = Modifier.size(200.dp),
+                    modifier = cardMod,
                     onClick = { onPhotoSelected(group.items, idx) },
                 )
             }

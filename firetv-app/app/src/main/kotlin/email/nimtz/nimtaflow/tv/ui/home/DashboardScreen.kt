@@ -6,7 +6,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,17 +60,26 @@ fun DashboardScreen(onNavigate: (HomeTab) -> Unit) {
 
         Spacer(Modifier.height(32.dp))
 
+        // Der Dashboard-Screen ist Landing beim App-Start UND beim Tab-Wechsel
+        // → erste Kachel bekommt initialen Fokus, sonst ist D-Pad tot bis der
+        //   User in die Sidebar zurückspringt und wieder rauskommt.
+        val firstTileFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            try { firstTileFocus.requestFocus() } catch (_: Exception) {}
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(TILES, key = { it.tab }) { tile ->
+            itemsIndexed(TILES) { idx, tile ->
                 DashboardTile(
                     icon = tile.icon,
                     label = tile.label,
                     onClick = { onNavigate(tile.tab) },
+                    modifier = if (idx == 0) Modifier.focusRequester(firstTileFocus) else Modifier,
                 )
             }
         }
@@ -76,11 +87,11 @@ fun DashboardScreen(onNavigate: (HomeTab) -> Unit) {
 }
 
 @Composable
-private fun DashboardTile(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun DashboardTile(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .aspectRatio(1.6f)
             .clip(RoundedCornerShape(16.dp))
             .background(if (focused) AccentDim.copy(alpha = 0.35f) else Surface)

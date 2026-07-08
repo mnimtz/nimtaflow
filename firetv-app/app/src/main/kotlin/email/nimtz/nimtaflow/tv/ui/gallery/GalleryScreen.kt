@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -93,6 +95,14 @@ fun GalleryScreen(
         return
     }
 
+    // Erste PhotoCard bekommt initialen Fokus, sobald Fotos geladen sind.
+    val firstCardFocus = remember { FocusRequester() }
+    LaunchedEffect(photos.isNotEmpty()) {
+        if (photos.isNotEmpty()) {
+            try { firstCardFocus.requestFocus() } catch (_: Exception) {}
+        }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 220.dp),
         state = gridState,
@@ -128,7 +138,11 @@ fun GalleryScreen(
 
             // Photos in this month
             items(indexedPhotos, key = { it.photo.id }) { (photo, globalIdx) ->
-                PhotoCard(photo, api, token, onClick = { onPhotoSelected(photos, globalIdx) })
+                PhotoCard(
+                    photo, api, token,
+                    onClick = { onPhotoSelected(photos, globalIdx) },
+                    modifier = if (globalIdx == 0) Modifier.focusRequester(firstCardFocus) else Modifier,
+                )
             }
         }
 

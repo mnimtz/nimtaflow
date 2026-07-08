@@ -1,26 +1,31 @@
 package email.nimtz.nimtaflow.tv.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.NavigationDrawer
-import androidx.tv.material3.NavigationDrawerItem
-import androidx.tv.material3.NavigationDrawerItemDefaults
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.ReleaseInfo
 
@@ -37,6 +42,14 @@ private val TABS = listOf(
     TabItem(HomeTab.Memories,  Icons.Default.AutoAwesome, "Erinnerungen"),
 )
 
+/**
+ * FireTV Home-Layout: Feste Sidebar links (immer sichtbar, 240 dp) + Content rechts.
+ *
+ * Kein TV-NavigationDrawer — der hatte in 1.0.0 Focus-Bugs (auto-expand,
+ * kein initialer Fokus), die zu "Bildschirm reagiert nicht"-Symptomen führten.
+ * Statische Sidebar ist deterministisch: D-Pad Right verlässt sie in den Content,
+ * D-Pad Left holt ihn zurück.
+ */
 @Composable
 fun HomeScreen(
     selectedTab: HomeTab,
@@ -47,11 +60,26 @@ fun HomeScreen(
     onInstallUpdate: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    NavigationDrawer(
-        drawerContent = {
+    // Initialer Fokus landet auf dem ersten Nav-Item — sonst ist D-Pad tot.
+    val firstItemFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        // kurze Verzögerung damit die View sicher in der Composition ist
+        try { firstItemFocus.requestFocus() } catch (_: Exception) {}
+    }
+
+    Row(Modifier.fillMaxSize().background(BgDark)) {
+        // ── Sidebar ────────────────────────────────────────────────────────
+        Column(
+            Modifier
+                .width(240.dp)
+                .fillMaxHeight()
+                .background(Surface)
+                .padding(vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             // Logo
             Row(
-                Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -66,51 +94,36 @@ fun HomeScreen(
                 ) {
                     Text("✦", color = Color.White, fontSize = 14.sp)
                 }
-                Text(
-                    "NimtaFlow",
-                    color = Accent,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
+                Text("NimtaFlow", color = Accent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Hauptnavigation — erstes Item bekommt den FocusRequester
+            TABS.forEachIndexed { idx, item ->
+                SidebarItem(
+                    icon = item.icon,
+                    label = item.label,
+                    selected = selectedTab == item.tab,
+                    onClick = { onTabSelect(item.tab) },
+                    modifier = if (idx == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                 )
             }
 
-            // Hauptnavigation
-            TABS.forEach { item ->
-                NavigationDrawerItem(
-                    selected = selectedTab == item.tab,
-                    onClick = { onTabSelect(item.tab) },
-                    leadingContent = {
-                        Icon(
-                            item.icon,
-                            contentDescription = item.label,
-                            tint = if (selectedTab == item.tab) Accent else Muted,
-                        )
-                    },
-                    colors = NavItemColors,
-                ) {
-                    Text(
-                        item.label,
-                        color = if (selectedTab == item.tab) Accent else OnSurface,
-                        fontWeight = if (selectedTab == item.tab) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(32.dp))
-
+            Spacer(Modifier.height(24.dp))
             HorizontalDivider(
                 color = SurfaceHi,
                 thickness = 1.dp,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
+            Spacer(Modifier.height(8.dp))
 
-            // Update-Hinweis als Nav-Item
-            updateRelease?.let { release ->
+            // Update-Hinweis
+            updateRelease?.let { _ ->
                 if (updateProgress in 0..100) {
-                    // Fortschrittsanzeige während Download
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("Herunterladen…", color = Accent, fontSize = 12.sp)
-                        Spacer(Modifier.height(4.dp))
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                        Text("Update wird geladen…", color = Accent, fontSize = 12.sp)
+                        Spacer(Modifier.height(6.dp))
                         LinearProgressIndicator(
                             progress = { updateProgress / 100f },
                             modifier = Modifier.fillMaxWidth(),
@@ -119,63 +132,90 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    NavigationDrawerItem(
+                    SidebarItem(
+                        icon = Icons.Default.SystemUpdate,
+                        label = "Update verfügbar",
                         selected = false,
+                        accent = true,
                         onClick = onInstallUpdate,
-                        leadingContent = {
-                            Icon(Icons.Default.SystemUpdate, null, tint = Accent)
-                        },
-                        colors = NavItemColors,
-                    ) {
-                        Text(
-                            "Update verfügbar",
-                            color = Accent,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                        )
-                    }
+                    )
                 }
             }
 
-            NavigationDrawerItem(
+            SidebarItem(
+                icon = Icons.Default.Settings,
+                label = "Einstellungen",
                 selected = selectedTab == HomeTab.Settings,
                 onClick = { onTabSelect(HomeTab.Settings) },
-                leadingContent = {
-                    Icon(Icons.Default.Settings, null, tint = Muted)
-                },
-                colors = NavItemColors,
-            ) {
-                Text("Einstellungen", color = OnSurface)
-            }
+            )
 
-            NavigationDrawerItem(
+            SidebarItem(
+                icon = Icons.AutoMirrored.Filled.Logout,
+                label = "Abmelden",
                 selected = false,
                 onClick = onLogout,
-                leadingContent = {
-                    Icon(Icons.Default.Logout, null, tint = Muted)
-                },
-                colors = NavItemColors,
-            ) {
-                Text("Abmelden", color = Muted)
-            }
+            )
+        }
 
-            Spacer(Modifier.height(16.dp))
-        },
-    ) {
-        Box(Modifier.fillMaxSize().background(BgDark)) {
+        // ── Content ────────────────────────────────────────────────────────
+        Box(Modifier.weight(1f).fillMaxHeight().background(BgDark)) {
             content()
         }
     }
 }
 
-// Angepasste Farben für NavigationDrawerItem auf dunklem Hintergrund
-private val NavItemColors
-    @Composable get() = NavigationDrawerItemDefaults.colors(
-        selectedContainerColor   = AccentDim.copy(alpha = 0.25f),
-        focusedContainerColor    = SurfaceHi,
-        containerColor           = Color.Transparent,
-        contentColor             = OnSurface,
-        focusedContentColor      = OnSurface,
-        selectedContentColor     = Accent,
-        pressedContainerColor    = SurfaceHi,
-    )
+@Composable
+private fun SidebarItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    accent: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+
+    val bg = when {
+        focused && selected -> Accent.copy(alpha = 0.35f)
+        focused             -> SurfaceHi
+        selected            -> AccentDim.copy(alpha = 0.20f)
+        else                -> Color.Transparent
+    }
+    val contentColor = when {
+        accent   -> Accent
+        selected -> Accent
+        focused  -> OnSurface
+        else     -> Muted
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .border(
+                width = if (focused) 1.dp else 0.dp,
+                color = if (focused) Accent else Color.Transparent,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                ) { onClick(); true } else false
+            }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(22.dp))
+        Text(
+            label,
+            color = contentColor,
+            fontSize = 15.sp,
+            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
