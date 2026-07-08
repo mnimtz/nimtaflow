@@ -860,7 +860,7 @@ async def status(db: AsyncSession = Depends(get_db)):
         Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
         Photo.thumb_large.isnot(None), Photo.is_video == False, Photo.is_trashed == False))  # noqa: E712
     vid_describe_pending = await db.scalar(select(func.count()).where(
-        Photo.description.is_(None), Photo.is_video == True,  # noqa: E712
+        Photo.description.is_(None), Photo.is_video == True, Photo.ai_error == False,  # noqa: E712
         Photo.video_webm_path.isnot(None), Photo.is_trashed == False))  # noqa: E712
     # 1080p web transcode (server-side worker-video, QSV) — the player + video-AI
     # source. "done" = has a *_1080.mp4; pending = remaining videos.
