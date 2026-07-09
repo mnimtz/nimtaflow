@@ -1381,131 +1381,31 @@ async def sidecar_repair(body: SidecarRepairBody):
 # ── XMP-Repair-Queue: persistenter, crash-fester Massen-Repair ──────────────
 
 @router.post("/xmp-repair-queue/populate")
-async def xmp_repair_populate(
-    reset_failed: bool = True,
-    db: AsyncSession = Depends(get_db),
-):
-    """Läuft den Audit über alle Fotos und legt für jedes Problem-Foto
-    eine Zeile in der xmp_repair_queue an (idempotent: bestehende Zeilen
-    werden nicht überschrieben, außer status='failed' bei reset_failed=true).
+async def xmp_repair_populate(reset_failed: bool = True):
+    """Startet den Populate-Task (Celery). Der Task scannt alle Fotos,
+    prüft Sidecars + EXIF-Embed real auf Disk und legt Problem-Fotos in
+    die xmp_repair_queue. Bei bestehenden Zeilen: kein Überschreiben.
 
-    Rückgabe:
-      audited: wie viele Fotos geprüft
-      newly_queued: wie viele neu in die Queue eingetragen
-      already_queued: wie viele waren schon drin
-      reset_failed_count: wie viele failed → pending zurückgesetzt
+    Läuft ~5-10 min bei 138k Fotos. Fortschritt via /populate-status.
     """
-    import os
-    from app.services.xmp_sidecar import sidecar_for
-    from app.models.xmp_repair import XmpRepairItem
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.worker.tasks import xmp_repair_populate_task
+    result = xmp_repair_populate_task.delay(reset_failed=reset_failed)
+    return {"task_id": result.id, "started": True}
 
-    rows = (await db.execute(
-        select(Photo.id, Photo.path, Photo.description, Photo.is_video)
-        .where(
-            Photo.description.isnot(None),
-            Photo.is_missing == False,  # noqa: E712
-            Photo.is_trashed == False,  # noqa: E712
-        )
-        .order_by(Photo.id)
-    )).all()
 
-    audited = 0
-    problems: list[tuple[int, str]] = []  # (photo_id, reason)
-
-    for row in rows:
-        audited += 1
-        pid, ppath, pdesc, is_video = row
-        needle_str = (pdesc or "")[:40].strip()
-        if not needle_str:
-            continue
-        needle_bytes = needle_str.encode("utf-8", errors="replace")
-
-        # Sidecar-Check
-        sc_ok = False
-        reason = None
-        try:
-            sc_path = sidecar_for(ppath)
-            if not os.path.exists(sc_path):
-                reason = "sidecar_missing"
-            else:
-                try:
-                    with open(sc_path, encoding="utf-8", errors="replace") as f:
-                        if needle_str in f.read():
-                            sc_ok = True
-                        else:
-                            reason = "sidecar_stale"
-                except Exception:
-                    reason = "sidecar_stale"
-        except Exception:
-            reason = "sidecar_missing"
-
-        # Embed-Check (nur bei Bildern)
-        embed_ok = True
-        if not is_video and sc_ok:
-            try:
-                size = os.path.getsize(ppath)
-                with open(ppath, "rb") as f:
-                    head = f.read(min(size, 262_144))
-                if needle_bytes not in head:
-                    embed_ok = False
-                    if size > 262_144 + 131_072:
-                        with open(ppath, "rb") as f:
-                            f.seek(max(0, size - 131_072))
-                            if needle_bytes in f.read(131_072):
-                                embed_ok = True
-                if not embed_ok:
-                    reason = "embed_missing"
-            except FileNotFoundError:
-                continue  # Datei weg — überspringen (is_missing sollte gesetzt sein)
-            except Exception:
-                pass
-
-        if reason:
-            problems.append((pid, reason))
-
-    # Bulk insert with ON CONFLICT DO NOTHING (behält bestehenden Status)
-    newly_queued = 0
-    already_queued = 0
-    if problems:
-        # Wir müssen wissen wie viele NEU eingetragen wurden vs schon existent.
-        # PostgreSQL: INSERT ... ON CONFLICT DO NOTHING RETURNING photo_id.
-        # Batches à 5000 damit Statement-Größe okay bleibt.
-        BATCH = 5000
-        for i in range(0, len(problems), BATCH):
-            slice_ = problems[i:i + BATCH]
-            values = [{"photo_id": pid, "reason": r, "status": "pending"}
-                      for pid, r in slice_]
-            stmt = (pg_insert(XmpRepairItem)
-                    .values(values)
-                    .on_conflict_do_nothing(index_elements=["photo_id"])
-                    .returning(XmpRepairItem.photo_id))
-            result = await db.execute(stmt)
-            newly = len(result.scalars().all())
-            newly_queued += newly
-            already_queued += (len(slice_) - newly)
-        await db.commit()
-
-    # Optional: failed-Zeilen zurücksetzen (falls User will dass diese
-    # nochmal probiert werden — z.B. nach Rechte-Fix)
-    reset_count = 0
-    if reset_failed:
-        result = await db.execute(
-            _sql_update := __import__("sqlalchemy", fromlist=["update"]).update(XmpRepairItem)
-            .where(XmpRepairItem.status == "failed")
-            .values(status="pending", attempts=0, last_error=None)
-            .returning(XmpRepairItem.photo_id)
-        )
-        reset_count = len(result.scalars().all())
-        await db.commit()
-
-    return {
-        "audited": audited,
-        "problems_found": len(problems),
-        "newly_queued": newly_queued,
-        "already_queued": already_queued,
-        "reset_failed_count": reset_count,
-    }
+@router.get("/xmp-repair-queue/populate-status")
+async def xmp_repair_populate_status():
+    """Live-Fortschritt des Populate-Tasks."""
+    try:
+        import redis as _redis_sync
+        import json as _json
+        _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        raw = _rc.get("xmp_repair:populate")
+        if not raw:
+            return {"running": False, "known": False}
+        return _json.loads(raw)
+    except Exception:
+        return {"running": False, "known": False}
 
 
 @router.post("/xmp-repair-queue/start")

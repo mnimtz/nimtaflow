@@ -3015,6 +3015,179 @@ def firetv_auto_update_task(self):
 # und probiert nochmal. Bei 5× Fail: status=failed, bleibt liegen.
 # ─────────────────────────────────────────────────────────────────────────────
 
+@celery_app.task(bind=True, name="xmp_repair_populate")
+def xmp_repair_populate_task(self, reset_failed: bool = True):
+    """Audit + Queue-Befüllung als Celery-Task (statt HTTP-Request), damit
+    die 5-10 Min File-Scan-Phase nicht die HTTP-Session blockieren."""
+    async def _main():
+        import os
+        import json as _json
+        import time as _time
+        import redis as _redis_sync
+        from sqlalchemy import select, update as _upd
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.models.photo import Photo
+        from app.models.xmp_repair import XmpRepairItem
+        from app.services.xmp_sidecar import sidecar_for
+        from app.services.feature_log import log as flog
+
+        init_db()
+        _rc = None
+        try:
+            _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        except Exception:
+            pass
+
+        # 1) Snapshot ALLER Photos in kurzer Session (kein File-IO drin)
+        photo_snap: list[tuple[int, str, str, bool]] = []
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Photo.id, Photo.path, Photo.description, Photo.is_video).where(
+                    Photo.description.isnot(None),
+                    Photo.is_missing == False,  # noqa: E712
+                    Photo.is_trashed == False,  # noqa: E712
+                ).order_by(Photo.id)
+            )).all()
+            photo_snap = [(r[0], r[1], r[2], r[3]) for r in rows]
+            break
+        total_photos = len(photo_snap)
+        flog("ai", "INFO", f"xmp_repair_populate: prüfe {total_photos} Fotos")
+
+        def _push_progress(phase, checked, problems):
+            if not _rc:
+                return
+            try:
+                _rc.set("xmp_repair:populate", _json.dumps({
+                    "running": True,
+                    "phase": phase,
+                    "total": total_photos,
+                    "checked": checked,
+                    "problems": problems,
+                }), ex=3600)
+            except Exception:
+                pass
+
+        # 2) File-Scan ohne DB-Session
+        problems: list[tuple[int, str]] = []
+        checked = 0
+        for pid, ppath, pdesc, is_video in photo_snap:
+            checked += 1
+            needle_str = (pdesc or "")[:40].strip()
+            if not needle_str:
+                continue
+            needle_bytes = needle_str.encode("utf-8", errors="replace")
+
+            reason = None
+            sc_ok = False
+            try:
+                sc_path = sidecar_for(ppath)
+                if not os.path.exists(sc_path):
+                    reason = "sidecar_missing"
+                else:
+                    try:
+                        with open(sc_path, encoding="utf-8", errors="replace") as f:
+                            if needle_str in f.read():
+                                sc_ok = True
+                            else:
+                                reason = "sidecar_stale"
+                    except Exception:
+                        reason = "sidecar_stale"
+            except Exception:
+                reason = "sidecar_missing"
+
+            if not is_video and sc_ok:
+                try:
+                    size = os.path.getsize(ppath)
+                    embed_ok = False
+                    with open(ppath, "rb") as f:
+                        head = f.read(min(size, 262_144))
+                    if needle_bytes in head:
+                        embed_ok = True
+                    elif size > 262_144 + 131_072:
+                        with open(ppath, "rb") as f:
+                            f.seek(max(0, size - 131_072))
+                            if needle_bytes in f.read(131_072):
+                                embed_ok = True
+                    if not embed_ok:
+                        reason = "embed_missing"
+                except FileNotFoundError:
+                    continue
+                except Exception:
+                    pass
+
+            if reason:
+                problems.append((pid, reason))
+            if checked % 2000 == 0:
+                _push_progress("scanning", checked, len(problems))
+
+        _push_progress("inserting", checked, len(problems))
+        flog("ai", "INFO",
+             f"xmp_repair_populate: {len(problems)} Problemfälle → Queue befüllen")
+
+        # 3) In DB einfügen (batchweise) — frische Sessions pro Batch
+        newly = 0
+        already = 0
+        BATCH = 2000
+        for i in range(0, len(problems), BATCH):
+            slice_ = problems[i:i + BATCH]
+            values = [{"photo_id": pid, "reason": r, "status": "pending"}
+                      for pid, r in slice_]
+            async for db in get_db():
+                stmt = (pg_insert(XmpRepairItem)
+                        .values(values)
+                        .on_conflict_do_nothing(index_elements=["photo_id"])
+                        .returning(XmpRepairItem.photo_id))
+                result = await db.execute(stmt)
+                inserted = len(result.scalars().all())
+                newly += inserted
+                already += (len(slice_) - inserted)
+                await db.commit()
+                break
+
+        # 4) Optional failed → pending zurücksetzen
+        reset_count = 0
+        if reset_failed:
+            async for db in get_db():
+                r = await db.execute(
+                    _upd(XmpRepairItem)
+                    .where(XmpRepairItem.status == "failed")
+                    .values(status="pending", attempts=0, last_error=None)
+                    .returning(XmpRepairItem.photo_id)
+                )
+                reset_count = len(r.scalars().all())
+                await db.commit()
+                break
+
+        # 5) Final progress
+        if _rc:
+            try:
+                _rc.set("xmp_repair:populate", _json.dumps({
+                    "running": False,
+                    "finished": True,
+                    "audited": total_photos,
+                    "problems_found": len(problems),
+                    "newly_queued": newly,
+                    "already_queued": already,
+                    "reset_failed": reset_count,
+                }), ex=86400)
+            except Exception:
+                pass
+
+        flog("ai", "INFO",
+             f"xmp_repair_populate fertig: neu={newly}, schon-da={already}, "
+             f"reset_failed={reset_count}")
+        return {
+            "audited": total_photos,
+            "problems_found": len(problems),
+            "newly_queued": newly,
+            "already_queued": already,
+            "reset_failed_count": reset_count,
+        }
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="xmp_repair_run")
 def xmp_repair_run_task(self, max_items: int = 0, batch_size: int = 50):
     """Arbeitet die xmp_repair_queue ab.
