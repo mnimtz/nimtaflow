@@ -18,6 +18,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -192,15 +193,24 @@ fun PhotoCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "photoCardScale",
+    )
 
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(10.dp))
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(12.dp))
             .border(
                 width = if (focused) 3.dp else 0.dp,
-                color  = if (focused) Accent else Color.Transparent,
-                shape  = RoundedCornerShape(10.dp),
+                color = if (focused) Accent else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
             )
             .onFocusChanged { focused = it.isFocused }
             .focusable()

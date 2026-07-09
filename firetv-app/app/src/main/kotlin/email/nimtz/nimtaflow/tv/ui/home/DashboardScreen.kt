@@ -4,12 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -19,67 +21,312 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import email.nimtz.nimtaflow.tv.api.APIClient
+import email.nimtz.nimtaflow.tv.api.Album
+import email.nimtz.nimtaflow.tv.api.MemoryGroup
+import email.nimtz.nimtaflow.tv.api.Person
+import email.nimtz.nimtaflow.tv.api.Photo
 import email.nimtz.nimtaflow.tv.ui.theme.*
+import email.nimtz.nimtaflow.tv.util.formatDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-private data class Tile(val tab: HomeTab, val icon: ImageVector, val label: String)
-
-private val TILES = listOf(
-    Tile(HomeTab.Gallery,   Icons.Default.GridView,    "Galerie"),
-    Tile(HomeTab.Albums,    Icons.Default.PhotoAlbum,  "Alben"),
-    Tile(HomeTab.People,    Icons.Default.People,      "Personen"),
-    Tile(HomeTab.Memories,  Icons.Default.AutoAwesome, "Erinnerungen"),
-    Tile(HomeTab.Favorites, Icons.Default.Favorite,    "Favoriten"),
-)
-
+/**
+ * Home / Startseite — Netflix-Style Content-Rails.
+ *
+ *  ┌───────────────────────────────────────────┐
+ *  │              HERO (Hintergrundfoto)        │
+ *  │  Titel-Overlay + Aktions-Hint              │
+ *  └───────────────────────────────────────────┘
+ *  ▸ Zuletzt hinzugefügt   [Rail]
+ *  ▸ Erinnerungen          [Rail]
+ *  ▸ Personen              [Rail]
+ *  ▸ Alben                 [Rail]
+ */
 @Composable
-fun DashboardScreen(onNavigate: (HomeTab) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(48.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+fun DashboardScreen(
+    api: APIClient,
+    token: String,
+    onOpenGallery: () -> Unit,
+    onOpenAlbums: () -> Unit,
+    onOpenPeople: () -> Unit,
+    onOpenMemories: () -> Unit,
+    onOpenFavorites: () -> Unit,
+    onOpenSlideshow: () -> Unit,
+    onPhotoSelected: (List<Photo>, Int) -> Unit,
+) {
+    var recent by remember { mutableStateOf<List<Photo>>(emptyList()) }
+    var memories by remember { mutableStateOf<List<MemoryGroup>>(emptyList()) }
+    var people by remember { mutableStateOf<List<Person>>(emptyList()) }
+    var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { recent = api.photos(limit = 20).items }
+            runCatching { memories = api.memories() }
+            runCatching { people = api.persons().filter { it.name.isNotBlank() }.take(20) }
+            runCatching { albums = api.albums().take(20) }
+        }
+        loading = false
+    }
+
+    if (loading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Accent)
+        }
+        return
+    }
+
+    val heroPhoto = memories.firstOrNull()?.items?.firstOrNull() ?: recent.firstOrNull()
+    val heroTitle = memories.firstOrNull()?.let {
+        if (it.yearsAgo == 1) "Vor 1 Jahr" else "Vor ${it.yearsAgo} Jahren"
+    } ?: "Willkommen"
+    val heroSubtitle = memories.firstOrNull()?.date ?: "Zuletzt aufgenommen"
+
+    // Erster Fokus geht auf die Play/Diashow-Aktion in der Hero
+    val heroFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { try { heroFocus.requestFocus() } catch (_: Exception) {} }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        Text(
-            "Willkommen",
-            color = Muted,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Light,
-        )
-        Text(
-            "NimtaFlow",
-            color = Accent,
-            fontSize = 44.sp,
-            fontWeight = FontWeight.Bold,
-        )
-
-        Spacer(Modifier.height(32.dp))
-
-        // Der Dashboard-Screen ist Landing beim App-Start UND beim Tab-Wechsel
-        // → erste Kachel bekommt initialen Fokus, sonst ist D-Pad tot bis der
-        //   User in die Sidebar zurückspringt und wieder rauskommt.
-        val firstTileFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) {
-            try { firstTileFocus.requestFocus() } catch (_: Exception) {}
+        // ── HERO ───────────────────────────────────────────────────────────
+        item {
+            HeroBanner(
+                photo = heroPhoto,
+                title = heroTitle,
+                subtitle = heroSubtitle,
+                api = api,
+                token = token,
+                actionFocus = heroFocus,
+                onOpen = {
+                    if (memories.isNotEmpty()) {
+                        val group = memories.first()
+                        onPhotoSelected(group.items, 0)
+                    } else if (recent.isNotEmpty()) {
+                        onPhotoSelected(recent, 0)
+                    }
+                },
+                onSlideshow = onOpenSlideshow,
+            )
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxWidth(),
+        // ── Zuletzt hinzugefügt ────────────────────────────────────────────
+        if (recent.isNotEmpty()) {
+            item {
+                RailHeader(
+                    title = "Zuletzt hinzugefügt",
+                    action = "Alle anzeigen",
+                    onAction = onOpenGallery,
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(recent, key = { _, p -> p.id }) { idx, photo ->
+                        SmallPhotoTile(
+                            photo = photo,
+                            api = api,
+                            token = token,
+                            onClick = { onPhotoSelected(recent, idx) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Erinnerungen ────────────────────────────────────────────────────
+        if (memories.size > 1) {
+            item {
+                RailHeader(title = "Erinnerungen", action = "Öffnen", onAction = onOpenMemories)
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(memories) { _, group ->
+                        MemoryTile(
+                            group = group,
+                            api = api,
+                            token = token,
+                            onClick = {
+                                if (group.items.isNotEmpty()) onPhotoSelected(group.items, 0)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Personen ───────────────────────────────────────────────────────
+        if (people.isNotEmpty()) {
+            item {
+                RailHeader(title = "Personen", action = "Alle", onAction = onOpenPeople)
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    itemsIndexed(people) { _, person ->
+                        PersonTile(
+                            person = person,
+                            api = api,
+                            token = token,
+                            onClick = onOpenPeople,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Alben ───────────────────────────────────────────────────────────
+        if (albums.isNotEmpty()) {
+            item {
+                RailHeader(title = "Alben", action = "Alle", onAction = onOpenAlbums)
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    itemsIndexed(albums) { _, album ->
+                        AlbumTile(
+                            album = album,
+                            api = api,
+                            token = token,
+                            onClick = onOpenAlbums,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Quick-Actions (falls Library leer ist) ─────────────────────────
+        if (recent.isEmpty() && albums.isEmpty()) {
+            item {
+                Column(
+                    Modifier.fillMaxWidth().padding(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("✦", color = Accent, fontSize = 48.sp)
+                    Text("Bibliothek ist leer", color = OnSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Sobald der Server Fotos gescannt hat, erscheinen sie hier.",
+                        color = Muted, fontSize = 14.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Hero ─────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun HeroBanner(
+    photo: Photo?,
+    title: String,
+    subtitle: String,
+    api: APIClient,
+    token: String,
+    actionFocus: FocusRequester,
+    onOpen: () -> Unit,
+    onSlideshow: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(340.dp)
+            .background(Surface),
+    ) {
+        // Hintergrundbild (leicht dunkelgemapped)
+        if (photo != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(ctx)
+                    .data(api.thumbUrl(photo.id, "large"))
+                    .addHeader("Authorization", "Bearer $token")
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f },
+            )
+        }
+        // Farbverlauf für Lesbarkeit
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(BgDark.copy(alpha = 0.85f), BgDark.copy(alpha = 0.15f))
+                    )
+                )
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, BgDark.copy(alpha = 0.85f))
+                    )
+                )
+        )
+
+        // Textblock links
+        Column(
+            Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxWidth(0.55f)
+                .padding(start = 40.dp, top = 32.dp, bottom = 32.dp, end = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(TILES) { idx, tile ->
-                DashboardTile(
-                    icon = tile.icon,
-                    label = tile.label,
-                    onClick = { onNavigate(tile.tab) },
-                    modifier = if (idx == 0) Modifier.focusRequester(firstTileFocus) else Modifier,
+            Text(
+                subtitle.uppercase(),
+                color = Accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.6.sp,
+            )
+            Text(
+                title,
+                color = OnSurface,
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 46.sp,
+            )
+            Text(
+                if (photo?.locationName?.isNotBlank() == true) photo.locationName!!
+                else "Deine Foto-Sammlung, elegant auf dem großen Schirm.",
+                color = Muted, fontSize = 14.sp,
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HeroButton(
+                    label = "Öffnen",
+                    icon = Icons.Filled.PlayArrow,
+                    primary = true,
+                    modifier = Modifier.focusRequester(actionFocus),
+                    onClick = onOpen,
+                )
+                HeroButton(
+                    label = "Diashow",
+                    icon = Icons.Filled.Slideshow,
+                    primary = false,
+                    onClick = onSlideshow,
                 )
             }
         }
@@ -87,19 +334,26 @@ fun DashboardScreen(onNavigate: (HomeTab) -> Unit) {
 }
 
 @Composable
-private fun DashboardTile(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun HeroButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    primary: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused && primary -> Accent
+        focused            -> Accent.copy(alpha = 0.3f)
+        primary            -> Accent
+        else               -> Color.White.copy(alpha = 0.12f)
+    }
+    val fg = if (primary || focused) Color.White else OnSurface
 
-    Column(
+    Row(
         modifier = modifier
-            .aspectRatio(1.6f)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (focused) AccentDim.copy(alpha = 0.35f) else Surface)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Accent else SurfaceHi,
-                shape = RoundedCornerShape(16.dp),
-            )
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { e ->
@@ -107,22 +361,290 @@ private fun DashboardTile(icon: ImageVector, label: String, onClick: () -> Unit,
                     (e.key == Key.DirectionCenter || e.key == Key.Enter)
                 ) { onClick(); true } else false
             }
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = if (focused) Accent else OnSurface,
-            modifier = Modifier.size(44.dp),
+        Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
+        Text(label, color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+// ── Rail Header ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun RailHeader(title: String, action: String?, onAction: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 40.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(title, color = OnSurface, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        if (action != null) {
+            var focused by remember { mutableStateOf(false) }
+            Text(
+                text = "$action  ›",
+                color = if (focused) Accent else Muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (focused) Accent.copy(alpha = 0.15f) else Color.Transparent)
+                    .onFocusChanged { focused = it.isFocused }
+                    .focusable()
+                    .onKeyEvent { e ->
+                        if (e.type == KeyEventType.KeyDown &&
+                            (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                        ) { onAction(); true } else false
+                    }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+// ── Kacheln ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SmallPhotoTile(
+    photo: Photo,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.08f else 1f, label = "photoTileScale",
+    )
+    val ctx = LocalContext.current
+
+    Box(
+        Modifier
+            .size(width = 200.dp, height = 130.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(10.dp))
+            .background(SurfaceHi)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Accent else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                ) { onClick(); true } else false
+            },
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(ctx)
+                .data(api.thumbUrl(photo.id, "medium"))
+                .addHeader("Authorization", "Bearer $token")
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
         )
-        Spacer(Modifier.height(12.dp))
+        if (photo.isVideo) {
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    .padding(8.dp),
+            ) {
+                Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryTile(
+    group: MemoryGroup,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f, label = "memTileScale",
+    )
+    val ctx = LocalContext.current
+    val cover = group.items.firstOrNull()
+
+    Box(
+        Modifier
+            .size(width = 240.dp, height = 150.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceHi)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Accent else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                ) { onClick(); true } else false
+            },
+    ) {
+        if (cover != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(ctx)
+                    .data(api.thumbUrl(cover.id, "medium"))
+                    .addHeader("Authorization", "Bearer $token")
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))
+                )
+        )
+        Column(
+            Modifier.align(Alignment.BottomStart).padding(12.dp),
+        ) {
+            Text(
+                if (group.yearsAgo == 1) "Vor 1 Jahr" else "Vor ${group.yearsAgo} Jahren",
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text("${group.items.size} Fotos", color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun PersonTile(
+    person: Person,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.08f else 1f, label = "personTileScale",
+    )
+    val ctx = LocalContext.current
+
+    Column(
+        Modifier
+            .width(120.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                ) { onClick(); true } else false
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .size(100.dp)
+                .clip(CircleShape)
+                .border(
+                    width = if (focused) 3.dp else 0.dp,
+                    color = if (focused) Accent else Color.Transparent,
+                    shape = CircleShape,
+                )
+                .background(SurfaceHi),
+        ) {
+            if (person.samplePhotoId != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(ctx)
+                        .data(api.thumbUrl(person.samplePhotoId, "medium"))
+                        .addHeader("Authorization", "Bearer $token")
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    Icons.Filled.Person, null,
+                    tint = Muted,
+                    modifier = Modifier.align(Alignment.Center).size(44.dp),
+                )
+            }
+        }
         Text(
-            label,
+            person.name,
             color = if (focused) Accent else OnSurface,
-            fontSize = 16.sp,
-            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
         )
+    }
+}
+
+@Composable
+private fun AlbumTile(
+    album: Album,
+    api: APIClient,
+    token: String,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f, label = "albumTileScale",
+    )
+    val ctx = LocalContext.current
+
+    Column(
+        Modifier
+            .width(220.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                ) { onClick(); true } else false
+            },
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 10f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(SurfaceHi)
+                .border(
+                    width = if (focused) 3.dp else 0.dp,
+                    color = if (focused) Accent else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                ),
+        ) {
+            if (album.coverPhotoId != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(ctx)
+                        .data(api.thumbUrl(album.coverPhotoId, "medium"))
+                        .addHeader("Authorization", "Bearer $token")
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(album.name, color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text("${album.photoCount} Fotos", color = Muted, fontSize = 12.sp)
     }
 }

@@ -133,7 +133,17 @@ fun AppNavGraph(
                 },
             ) {
                 when (tab) {
-                    HomeTab.Home      -> DashboardScreen(onNavigate = { tab = it })
+                    HomeTab.Home      -> DashboardScreen(
+                        api = api,
+                        token = token,
+                        onOpenGallery = { tab = HomeTab.Gallery },
+                        onOpenAlbums = { tab = HomeTab.Albums },
+                        onOpenPeople = { tab = HomeTab.People },
+                        onOpenMemories = { tab = HomeTab.Memories },
+                        onOpenFavorites = { tab = HomeTab.Favorites },
+                        onOpenSlideshow = { slideshowActive = true },
+                        onPhotoSelected = { p, i -> viewerPhotos = p; viewerIndex = i },
+                    )
                     HomeTab.Gallery   -> GalleryScreen(
                         api = api, token = token, view = "library",
                         onPhotoSelected = { p, i -> viewerPhotos = p; viewerIndex = i },

@@ -1,7 +1,9 @@
 package email.nimtz.nimtaflow.tv.ui.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +35,7 @@ enum class HomeTab { Home, Gallery, Favorites, Albums, People, Memories, Setting
 
 private data class TabItem(val tab: HomeTab, val icon: ImageVector, val label: String)
 
-private val TABS = listOf(
+private val PRIMARY_TABS = listOf(
     TabItem(HomeTab.Home,      Icons.Default.Home,        "Start"),
     TabItem(HomeTab.Gallery,   Icons.Default.GridView,    "Galerie"),
     TabItem(HomeTab.Favorites, Icons.Default.Favorite,    "Favoriten"),
@@ -42,13 +44,15 @@ private val TABS = listOf(
     TabItem(HomeTab.Memories,  Icons.Default.AutoAwesome, "Erinnerungen"),
 )
 
+private val RAIL_COLLAPSED = 72.dp
+private val RAIL_EXPANDED  = 240.dp
+
 /**
- * FireTV Home-Layout: Feste Sidebar links (immer sichtbar, 240 dp) + Content rechts.
+ * FireTV Home-Layout — Netflix/Prime-Style Icon-Rail links.
  *
- * Kein TV-NavigationDrawer — der hatte in 1.0.0 Focus-Bugs (auto-expand,
- * kein initialer Fokus), die zu "Bildschirm reagiert nicht"-Symptomen führten.
- * Statische Sidebar ist deterministisch: D-Pad Right verlässt sie in den Content,
- * D-Pad Left holt ihn zurück.
+ * Collapsed: 72dp, nur Icons.
+ * Expandiert on-focus: 240dp, Icons + Labels.
+ * Der Rest der Fläche bleibt für den Content — endlich Platz zum Atmen.
  */
 @Composable
 fun HomeScreen(
@@ -60,99 +64,101 @@ fun HomeScreen(
     onInstallUpdate: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    // Initialer Fokus landet auf dem ersten Nav-Item — sonst ist D-Pad tot.
+    var railFocused by remember { mutableStateOf(false) }
+    val railWidth by animateDpAsState(
+        targetValue = if (railFocused) RAIL_EXPANDED else RAIL_COLLAPSED,
+        animationSpec = tween(220),
+        label = "railWidth",
+    )
+    val railBg by animateColorAsState(
+        targetValue = if (railFocused) Surface else Color(0xFF0B0B0F),
+        animationSpec = tween(220),
+        label = "railBg",
+    )
+
     val firstItemFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        // kurze Verzögerung damit die View sicher in der Composition ist
         try { firstItemFocus.requestFocus() } catch (_: Exception) {}
     }
 
     Row(Modifier.fillMaxSize().background(BgDark)) {
-        // ── Sidebar ────────────────────────────────────────────────────────
+        // ── Rail ────────────────────────────────────────────────────────────
         Column(
             Modifier
-                .width(240.dp)
+                .width(railWidth)
                 .fillMaxHeight()
-                .background(Surface)
-                .padding(vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            // Logo
-            Row(
-                Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Box(
-                    Modifier
-                        .size(32.dp)
-                        .background(
-                            Brush.linearGradient(listOf(AccentDim, Accent)),
-                            RoundedCornerShape(8.dp),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("✦", color = Color.White, fontSize = 14.sp)
+                .background(railBg)
+                .onFocusChanged { st ->
+                    // ganze Column beobachtet Fokus ihrer Kinder
+                    railFocused = st.hasFocus
                 }
-                Text("NimtaFlow", color = Accent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            }
+                .padding(vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            // Logo — kompakt
+            RailLogo(expanded = railFocused)
+            Spacer(Modifier.height(20.dp))
 
-            Spacer(Modifier.height(16.dp))
-
-            // Hauptnavigation — erstes Item bekommt den FocusRequester
-            TABS.forEachIndexed { idx, item ->
-                SidebarItem(
+            PRIMARY_TABS.forEachIndexed { idx, item ->
+                RailItem(
                     icon = item.icon,
                     label = item.label,
                     selected = selectedTab == item.tab,
+                    expanded = railFocused,
                     onClick = { onTabSelect(item.tab) },
                     modifier = if (idx == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
             HorizontalDivider(
-                color = SurfaceHi,
+                color = SurfaceHi.copy(alpha = 0.4f),
                 thickness = 1.dp,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(8.dp))
 
-            // Update-Hinweis
+            // Update — nur wenn verfügbar
             updateRelease?.let { _ ->
                 if (updateProgress in 0..100) {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        Text("Update wird geladen…", color = Accent, fontSize = 12.sp)
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(
-                            progress = { updateProgress / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Accent,
-                            trackColor = SurfaceHi,
-                        )
+                    if (railFocused) {
+                        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                            Text("Update wird geladen…", color = Accent, fontSize = 11.sp)
+                            Spacer(Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { updateProgress / 100f },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Accent,
+                                trackColor = SurfaceHi,
+                            )
+                        }
                     }
                 } else {
-                    SidebarItem(
+                    RailItem(
                         icon = Icons.Default.SystemUpdate,
-                        label = "Update verfügbar",
+                        label = "Update",
                         selected = false,
+                        expanded = railFocused,
                         accent = true,
                         onClick = onInstallUpdate,
                     )
                 }
             }
 
-            SidebarItem(
+            RailItem(
                 icon = Icons.Default.Settings,
                 label = "Einstellungen",
                 selected = selectedTab == HomeTab.Settings,
+                expanded = railFocused,
                 onClick = { onTabSelect(HomeTab.Settings) },
             )
 
-            SidebarItem(
+            RailItem(
                 icon = Icons.AutoMirrored.Filled.Logout,
                 label = "Abmelden",
                 selected = false,
+                expanded = railFocused,
                 onClick = onLogout,
             )
         }
@@ -165,10 +171,35 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SidebarItem(
+private fun RailLogo(expanded: Boolean) {
+    Row(
+        Modifier.padding(start = 20.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier
+                .size(32.dp)
+                .background(
+                    Brush.linearGradient(listOf(AccentDim, Accent)),
+                    RoundedCornerShape(9.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("✦", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+        if (expanded) {
+            Text("NimtaFlow", color = OnSurface, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun RailItem(
     icon: ImageVector,
     label: String,
     selected: Boolean,
+    expanded: Boolean,
     onClick: () -> Unit,
     accent: Boolean = false,
     modifier: Modifier = Modifier,
@@ -176,29 +207,23 @@ private fun SidebarItem(
     var focused by remember { mutableStateOf(false) }
 
     val bg = when {
-        focused && selected -> Accent.copy(alpha = 0.35f)
-        focused             -> SurfaceHi
-        selected            -> AccentDim.copy(alpha = 0.20f)
-        else                -> Color.Transparent
+        focused           -> Accent.copy(alpha = 0.20f)
+        selected          -> AccentDim.copy(alpha = 0.18f)
+        else              -> Color.Transparent
     }
-    val contentColor = when {
-        accent   -> Accent
-        selected -> Accent
-        focused  -> OnSurface
-        else     -> Muted
+    val tint = when {
+        accent && !selected && !focused -> Accent
+        selected                        -> Accent
+        focused                         -> Accent
+        else                            -> Muted
     }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(bg)
-            .border(
-                width = if (focused) 1.dp else 0.dp,
-                color = if (focused) Accent else Color.Transparent,
-                shape = RoundedCornerShape(8.dp),
-            )
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { e ->
@@ -206,16 +231,27 @@ private fun SidebarItem(
                     (e.key == Key.DirectionCenter || e.key == Key.Enter)
                 ) { onClick(); true } else false
             }
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(22.dp))
-        Text(
-            label,
-            color = contentColor,
-            fontSize = 15.sp,
-            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
-        )
+        // Selected-Indicator: linker vertikaler Balken
+        if (selected) {
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .height(20.dp)
+                    .background(Accent, RoundedCornerShape(2.dp)),
+            )
+        }
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        if (expanded) {
+            Text(
+                label,
+                color = tint,
+                fontSize = 14.sp,
+                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
     }
 }

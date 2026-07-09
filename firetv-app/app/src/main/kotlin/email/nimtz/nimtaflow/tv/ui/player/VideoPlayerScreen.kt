@@ -1,6 +1,7 @@
 package email.nimtz.nimtaflow.tv.ui.player
 
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -38,10 +40,18 @@ import kotlinx.coroutines.launch
 
 /**
  * Full-screen photo/video viewer.
- * D-pad LEFT/RIGHT → previous/next item
- * D-pad CENTER/OK  → play/pause (video) / show info (photo)
- * D-pad UP         → toggle favorite
- * D-pad BACK       → dismiss
+ *
+ * Fotos:
+ *  ◀ ▶  vorheriges / nächstes Foto
+ *  OK   Info ein/aus
+ *  ▲    Favorit toggeln
+ *  BACK schließen
+ *
+ * Videos:
+ *  OK        Play / Pause
+ *  ◀ ▶      -10 s / +10 s Seek (nicht Foto-Wechsel!)
+ *  ▲        Favorit toggeln
+ *  ▼ / BACK schließen
  */
 @Composable
 fun MediaViewerScreen(
@@ -53,12 +63,14 @@ fun MediaViewerScreen(
 ) {
     var currentIndex by remember { mutableIntStateOf(startIndex.coerceIn(0, photos.lastIndex)) }
     var showInfo by remember { mutableStateOf(false) }
-    // Local copy of isFavorite so we can toggle optimistically without reloading the list
     val favoriteMap = remember { mutableStateMapOf<Int, Boolean>().also { m -> photos.forEach { m[it.id] = it.isFavorite } } }
     val scope = rememberCoroutineScope()
 
+    val photo = photos.getOrNull(currentIndex)
+    val isVideo = photo?.isVideo == true
+
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(currentIndex) { focusRequester.requestFocus() }
 
     // Auto-hide info after 5s
     LaunchedEffect(showInfo) {
@@ -75,33 +87,48 @@ fun MediaViewerScreen(
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (e.key) {
                     Key.Back, Key.Escape -> { onDismiss(); true }
-                    Key.DirectionLeft  -> {
-                        currentIndex = (currentIndex - 1 + photos.size) % photos.size
-                        showInfo = false; true
-                    }
-                    Key.DirectionRight -> {
-                        currentIndex = (currentIndex + 1) % photos.size
-                        showInfo = false; true
-                    }
-                    Key.DirectionCenter, Key.Enter -> { showInfo = !showInfo; true }
                     Key.DirectionUp -> {
-                        val photo = photos.getOrNull(currentIndex) ?: return@onKeyEvent false
+                        photo ?: return@onKeyEvent false
                         val newVal = !(favoriteMap[photo.id] ?: photo.isFavorite)
                         favoriteMap[photo.id] = newVal
-                        // Fire-and-forget
                         scope.launch { api.toggleFavorite(photo.id, newVal) }
                         true
                     }
-                    else -> false
+                    else -> {
+                        if (isVideo) {
+                            // Video-Modus — Foto-Blätter deaktiviert, damit Seek+Play einheitlich sind
+                            false
+                        } else {
+                            when (e.key) {
+                                Key.DirectionLeft -> {
+                                    currentIndex = (currentIndex - 1 + photos.size) % photos.size
+                                    showInfo = false; true
+                                }
+                                Key.DirectionRight -> {
+                                    currentIndex = (currentIndex + 1) % photos.size
+                                    showInfo = false; true
+                                }
+                                Key.DirectionCenter, Key.Enter -> { showInfo = !showInfo; true }
+                                else -> false
+                            }
+                        }
+                    }
                 }
             }
     ) {
-        val photo = photos.getOrNull(currentIndex)
-
         // ── Media ─────────────────────────────────────────────────────────────
         if (photo != null) {
             if (photo.isVideo) {
-                VideoItem(api.streamUrl(photo.id), token)
+                VideoItem(
+                    streamUrl = api.videoStreamUrl(photo.id),
+                    onNext = if (photos.size > 1) {
+                        { currentIndex = (currentIndex + 1) % photos.size }
+                    } else null,
+                    onPrev = if (photos.size > 1) {
+                        { currentIndex = (currentIndex - 1 + photos.size) % photos.size }
+                    } else null,
+                    onDismiss = onDismiss,
+                )
             } else {
                 PhotoItem(photo.id, api, token)
             }
@@ -122,10 +149,8 @@ fun MediaViewerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Close button
                 OverlayIconButton(Icons.Default.Close, "Schließen", onClick = onDismiss)
 
-                // Photo counter
                 if (photos.size > 1) {
                     Text(
                         "${currentIndex + 1} / ${photos.size}",
@@ -133,7 +158,6 @@ fun MediaViewerScreen(
                     )
                 }
 
-                // Favorite button
                 val isFav = favoriteMap[photo?.id] ?: photo?.isFavorite ?: false
                 OverlayIconButton(
                     if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -149,9 +173,9 @@ fun MediaViewerScreen(
             }
         }
 
-        // ── Info overlay (toggleable) ─────────────────────────────────────────
+        // ── Info overlay (nur Fotos) ─────────────────────────────────────────
         AnimatedVisibility(
-            visible = showInfo && photo != null,
+            visible = !isVideo && showInfo && photo != null,
             enter = slideInVertically(initialOffsetY = { it }),
             exit  = slideOutVertically(targetOffsetY = { it }),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -159,7 +183,7 @@ fun MediaViewerScreen(
             photo?.let { InfoPanel(it) }
         }
 
-        // ── Hint bar at bottom (if no info) ───────────────────────────────────
+        // ── Hint bar unten ─────────────────────────────────────────────────
         AnimatedVisibility(
             visible = !showInfo,
             enter = fadeIn(tween(300)),
@@ -174,9 +198,16 @@ fun MediaViewerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    HintText("◀ ▶  Blättern")
-                    HintText("OK  Info")
-                    HintText("▲  Favorit")
+                    if (isVideo) {
+                        HintText("OK  Play/Pause")
+                        HintText("◀ ▶  ±10 s")
+                        HintText("▲  Favorit")
+                        HintText("Zurück  Schließen")
+                    } else {
+                        HintText("◀ ▶  Blättern")
+                        HintText("OK  Info")
+                        HintText("▲  Favorit")
+                    }
                 }
             }
         }
@@ -200,32 +231,118 @@ private fun PhotoItem(photoId: Int, api: APIClient, token: String) {
     )
 }
 
+/**
+ * Video-Player mit ExoPlayer + eigener D-Pad-Behandlung.
+ *
+ * Die eingebettete PlayerView übernimmt Fokus, damit ihre internen Controls
+ * (Play/Pause, Seek) auf D-Pad reagieren. Zusätzlich handeln wir per
+ * setControllerDispatchAsRunnable UP zum verbergen, DOWN zum schließen, damit
+ * die Fernbedienung sich vertraut anfühlt.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun VideoItem(streamUrl: String, token: String) {
+private fun VideoItem(
+    streamUrl: String,
+    onNext: (() -> Unit)?,
+    onPrev: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
     val ctx = LocalContext.current
+    var loading by remember(streamUrl) { mutableStateOf(true) }
+    var errorText by remember(streamUrl) { mutableStateOf<String?>(null) }
+
     val player = remember(streamUrl) {
         ExoPlayer.Builder(ctx).build().also { p ->
-            val item = MediaItem.Builder()
-                .setUri(Uri.parse(streamUrl))
-                .build()
+            val item = MediaItem.Builder().setUri(Uri.parse(streamUrl)).build()
             p.setMediaItem(item)
             p.prepare()
             p.playWhenReady = true
+            p.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY || state == Player.STATE_ENDED) loading = false
+                    if (state == Player.STATE_BUFFERING) loading = true
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    loading = false
+                    errorText = "Wiedergabefehler: ${error.errorCodeName}"
+                }
+            })
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
 
-    AndroidView(
-        factory = { c ->
-            PlayerView(c).also { pv ->
-                pv.player = player
-                pv.useController = true
-                pv.setShowNextButton(false)
-                pv.setShowPreviousButton(false)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(streamUrl) {
+        try { focus.requestFocus() } catch (_: Exception) {}
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            factory = { c ->
+                PlayerView(c).also { pv ->
+                    pv.player = player
+                    pv.useController = true
+                    pv.setShowNextButton(false)
+                    pv.setShowPreviousButton(false)
+                    pv.controllerAutoShow = true
+                    pv.controllerShowTimeoutMs = 3000
+                    pv.setShowFastForwardButton(true)
+                    pv.setShowRewindButton(true)
+                    pv.isFocusable = true
+                    pv.isFocusableInTouchMode = true
+                    pv.requestFocus()
+                    // Custom Key-Handler: LEFT/RIGHT = ±10 s, UP=Foto-vor, DOWN=zurück
+                    pv.setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0))
+                                pv.showController()
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                val dur = player.duration
+                                val target = (player.currentPosition + 10_000L).coerceAtMost(if (dur > 0) dur else Long.MAX_VALUE)
+                                player.seekTo(target)
+                                pv.showController()
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                                if (player.isPlaying) player.pause() else player.play()
+                                pv.showController()
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_UP -> { onNext?.invoke(); onNext != null }
+                            KeyEvent.KEYCODE_DPAD_DOWN -> { onPrev?.invoke(); onPrev != null }
+                            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                                onDismiss(); true
+                            }
+                            else -> false
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize().focusRequester(focus),
+        )
+        if (loading && errorText == null) {
+            CircularProgressIndicator(
+                color = Accent,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+        errorText?.let { msg ->
+            Column(
+                Modifier.align(Alignment.Center).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(40.dp))
+                Text(msg, color = Color.White, fontSize = 15.sp)
+                Text("Zurück zum Schließen", color = Muted, fontSize = 13.sp)
             }
-        },
-        modifier = Modifier.fillMaxSize(),
-    )
+        }
+    }
 }
 
 @Composable
@@ -239,7 +356,6 @@ private fun InfoPanel(photo: Photo) {
             .padding(horizontal = 32.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Date
         val date = formatDate(photo.takenAt)
         if (date.isNotEmpty()) {
             Row(
@@ -251,7 +367,6 @@ private fun InfoPanel(photo: Photo) {
             }
         }
 
-        // Location
         val loc = photo.locationName
         if (!loc.isNullOrBlank()) {
             Row(
@@ -274,7 +389,6 @@ private fun InfoPanel(photo: Photo) {
             }
         }
 
-        // Resolution
         if (photo.width != null && photo.height != null) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -301,6 +415,5 @@ private fun OverlayIconButton(
 
 @Composable
 private fun HintText(text: String) {
-    Text(text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+    Text(text, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
 }
-

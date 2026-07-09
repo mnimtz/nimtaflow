@@ -35,7 +35,18 @@ class APIClient(var baseUrl: String, private var token: String = "") {
     fun thumbUrl(photoId: Int, size: String = "medium") =
         "$baseUrl/api/photos/$photoId/thumbnail?size=$size"
 
-    fun streamUrl(photoId: Int) =
+    /**
+     * URL zum abspielen eines Videos.
+     * Backend serviert unter /api/photos/{id}/video/stream die transcodete
+     * H.264-MP4 (faststart) — nativer H.264-Stream ist das einzige was ExoPlayer
+     * ohne Zusatz-Extractors zuverlässig auf FireTV Sticks abspielt.
+     * Auth: Query-Param access_token (ExoPlayer setzt kein Authorization-Header).
+     */
+    fun videoStreamUrl(photoId: Int) =
+        "$baseUrl/api/photos/$photoId/video/stream?access_token=$token"
+
+    /** Legacy — Bild-Original-Datei. Nicht für Videos verwenden. */
+    fun originalUrl(photoId: Int) =
         "$baseUrl/api/photos/$photoId/stream?access_token=$token"
 
     private fun get(path: String): String {
