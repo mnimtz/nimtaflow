@@ -1206,29 +1206,66 @@ async def backfill_progress():
 #   stale           — Sidecar existiert, aber Description in DB neuer als Sidecar-mtime
 #   no_description  — Foto hat keine Beschreibung, nichts zu prüfen (übersprungen)
 
+def _check_embed(path: str, needle_bytes: bytes) -> str:
+    """Prüft ob die Description im Datei-Header (EXIF/XMP) vorkommt.
+
+    Für JPEG/HEIC/PNG/TIFF liegt XMP praktisch immer in den ersten 256 KB —
+    exiftool schreibt es standardmäßig ganz vorn. MP4 ist Ausnahme: XMP-Chunks
+    können am Ende sitzen, deshalb schauen wir zusätzlich am Dateiende nach.
+
+    Rückgabe: "ok" | "missing" | "read_error"
+    """
+    import os
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            head = f.read(min(size, 262_144))  # 256 KB
+            if needle_bytes in head:
+                return "ok"
+            # Bei größeren Videos zusätzlich Tail lesen (letzte 128 KB)
+            if size > 262_144 + 131_072:
+                f.seek(max(0, size - 131_072))
+                tail = f.read(131_072)
+                if needle_bytes in tail:
+                    return "ok"
+            return "missing"
+    except FileNotFoundError:
+        return "read_error"
+    except Exception:
+        return "read_error"
+
+
 @router.get("/sidecar-audit")
 async def sidecar_audit(
     limit: int = 0,
     sample: bool = False,
+    with_embed: bool = True,
     db: AsyncSession = Depends(get_db),
 ):
-    """Reale Prüfung: welche Fotos haben tatsächlich saubere Sidecars auf Disk.
+    """Reale Prüfung: welche Fotos haben tatsächlich saubere Sidecars UND
+    eingebettete EXIF/XMP-Beschreibungen.
 
     limit=0: ALLE Fotos (kann Minuten dauern bei 138k). Sonst nur die ersten N.
     sample=true: Repräsentative Stichprobe von 500 quer über die DB.
+    with_embed=true (default): auch prüfen ob Description im Bild-Header steht
+      (nicht nur im Sidecar). Nur wenn false: Reine Sidecar-Prüfung.
 
-    Kategorisiert nach: ok / missing / stale.
-    Nur Photos mit description IS NOT NULL werden geprüft (der Rest hat
-    per Definition nichts zu schreiben).
+    Kategorien:
+      ok             — Sidecar + Embed enthalten die aktuelle Beschreibung
+      sidecar_missing — kein .xmp auf Disk
+      sidecar_stale  — .xmp existiert, Beschreibung veraltet
+      embed_missing  — Description NICHT im Bild-Header (Sidecar egal)
+      read_error     — Datei nicht lesbar
+
+    Ein Foto kann in MEHREREN Kategorien sein: sidecar_missing UND embed_missing
+    zählen beide. `problem_photo_ids` enthält je Kategorie die IDs (max 1000).
+    `repair_ids` = union aller Problem-IDs → an /sidecar-repair übergeben.
     """
     import os
-    from datetime import datetime, timezone as _tz
     from app.services.xmp_sidecar import sidecar_for
     from sqlalchemy import select as _sel
 
-    q = _sel(Photo.id, Photo.path, Photo.description, Photo.updated_at,
-             Photo.xmp_sidecar_written, Photo.xmp_last_written_at
-             ).where(
+    q = _sel(Photo.id, Photo.path, Photo.description, Photo.is_video).where(
         Photo.description.isnot(None),
         Photo.is_missing == False,  # noqa: E712
         Photo.is_trashed == False,  # noqa: E712
@@ -1240,46 +1277,80 @@ async def sidecar_audit(
 
     rows = (await db.execute(q)).all()
 
-    counts = {"checked": 0, "ok": 0, "missing": 0, "stale": 0, "read_error": 0}
-    missing_ids: list[int] = []
-    stale_ids: list[int] = []
+    counts = {
+        "checked": 0, "ok": 0,
+        "sidecar_missing": 0, "sidecar_stale": 0,
+        "embed_missing": 0, "read_error": 0,
+    }
+    sidecar_missing_ids: list[int] = []
+    sidecar_stale_ids: list[int] = []
+    embed_missing_ids: list[int] = []
+    repair_ids: set[int] = set()
 
     for row in rows:
         counts["checked"] += 1
-        pid, ppath, pdesc, pupd, _flag, _xmp_ts = row
+        pid, ppath, pdesc, is_video = row
+        needle_str = (pdesc or "")[:40].strip()
+        needle_bytes = needle_str.encode("utf-8", errors="replace") if needle_str else b""
+
+        problem = False
+
+        # ── Sidecar-Check ─────────────────────────────────────────────
+        sc_ok = False
         try:
             sc_path = sidecar_for(ppath)
             if not os.path.exists(sc_path):
-                counts["missing"] += 1
-                missing_ids.append(pid)
-                continue
-            # WAHRHEIT ist der Content: enthält der Sidecar wirklich die
-            # aktuelle DB-Beschreibung? Zeitstempel-Vergleich ist unbrauchbar
-            # weil photos.updated_at durch Trigger bei JEDEM UPDATE bumped wird
-            # (Faces, ai_claimed_at, is_favorite etc), das ergibt Falsch-Positive.
-            try:
-                with open(sc_path, encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-            except Exception:
-                counts["read_error"] += 1
-                continue
-            needle = (pdesc or "")[:40].strip()
-            if needle and needle not in content:
-                counts["stale"] += 1
-                stale_ids.append(pid)
-                continue
-            counts["ok"] += 1
+                counts["sidecar_missing"] += 1
+                sidecar_missing_ids.append(pid)
+                problem = True
+            else:
+                try:
+                    with open(sc_path, encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    if needle_str and needle_str not in content:
+                        counts["sidecar_stale"] += 1
+                        sidecar_stale_ids.append(pid)
+                        problem = True
+                    else:
+                        sc_ok = True
+                except Exception:
+                    counts["read_error"] += 1
+                    problem = True
         except Exception:
             counts["read_error"] += 1
+            problem = True
+
+        # ── Embed-Check (Videos übersprungen — MP4-XMP ist nicht zuverlässig
+        #    per Byte-Search auffindbar, für Videos zählt Sidecar als Wahrheit)
+        embed_ok = True
+        if with_embed and not is_video and needle_bytes:
+            embed_status = _check_embed(ppath, needle_bytes)
+            if embed_status == "missing":
+                counts["embed_missing"] += 1
+                embed_missing_ids.append(pid)
+                problem = True
+                embed_ok = False
+            elif embed_status == "read_error":
+                counts["read_error"] += 1
+                problem = True
+                embed_ok = False
+
+        if not problem:
+            counts["ok"] += 1
+        else:
+            repair_ids.add(pid)
 
     return {
         "counts": counts,
         "problem_photo_ids": {
-            "missing": missing_ids[:1000],   # cap damit Response nicht mega groß
-            "stale":   stale_ids[:1000],
+            "sidecar_missing": sidecar_missing_ids[:1000],
+            "sidecar_stale":   sidecar_stale_ids[:1000],
+            "embed_missing":   embed_missing_ids[:1000],
         },
-        "problem_count_total": len(missing_ids) + len(stale_ids),
+        "repair_ids": sorted(repair_ids)[:20_000], # cap für Repair-Endpoint-Limit
+        "problem_count_total": len(repair_ids),
         "scope": "sample" if sample else ("all" if limit == 0 else f"first_{limit}"),
+        "with_embed": with_embed,
     }
 
 
