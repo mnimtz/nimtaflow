@@ -3015,6 +3015,106 @@ def firetv_auto_update_task(self):
 # und probiert nochmal. Bei 5× Fail: status=failed, bleibt liegen.
 # ─────────────────────────────────────────────────────────────────────────────
 
+@celery_app.task(bind=True, name="xmp_repair_watchdog")
+def xmp_repair_watchdog_task(self):
+    """Watchdog fürs xmp_repair_queue: alle 5 min per Celery Beat gerufen.
+
+    Prüft:
+      1. Gibt es pending / stale-in_progress Zeilen?  Wenn nein: Idle.
+      2. Läuft gerade ein xmp_repair_run-Task aktiv?   Wenn ja: Idle.
+      3. Sonst: startet einen frischen xmp_repair_run.
+
+    Zusätzlich am Ende: wenn alles done und keine Failures übrig, wird
+    ein Redis-Flag 'xmp_repair:completed' gesetzt — nachlaufende Prozesse
+    (z.B. rclone-Upload) können darauf pollen.
+    """
+    async def _main():
+        import time as _time
+        import json as _json
+        import redis as _redis_sync
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from sqlalchemy import select, func as _sql_func
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.models.xmp_repair import XmpRepairItem
+        from app.services.feature_log import log as flog
+
+        init_db()
+
+        # Queue-Zahlen ermitteln
+        async for db in get_db():
+            rows = (await db.execute(
+                select(XmpRepairItem.status, _sql_func.count())
+                .group_by(XmpRepairItem.status)
+            )).all()
+            counts = {s: c for s, c in rows}
+            break
+        pending = counts.get("pending", 0)
+        in_prog = counts.get("in_progress", 0)
+        done = counts.get("done", 0)
+        failed = counts.get("failed", 0)
+        skipped = counts.get("skipped", 0)
+        total = pending + in_prog + done + failed + skipped
+
+        _rc = None
+        try:
+            _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        except Exception:
+            pass
+
+        # Nichts zu tun
+        if total == 0:
+            return {"idle": "queue empty"}
+
+        # Alles fertig?
+        if pending == 0 and in_prog == 0:
+            if _rc:
+                try:
+                    _rc.set("xmp_repair:completed", _json.dumps({
+                        "completed_at": _time.time(),
+                        "done": done, "failed": failed, "skipped": skipped, "total": total,
+                    }), ex=7 * 24 * 3600)
+                except Exception:
+                    pass
+            return {"idle": "queue complete", "done": done, "failed": failed}
+
+        # Läuft schon ein aktiver Run?
+        if _rc:
+            try:
+                raw = _rc.get("xmp_repair:progress")
+                if raw:
+                    d = _json.loads(raw)
+                    if d.get("running") is True:
+                        # Sanity check: der Redis-Key hat kein Auto-Refresh wenn
+                        # der Task tot ist. Falls Progress >5 min alt → als tot
+                        # betrachten und neu starten.
+                        started_at = d.get("started_at", 0)
+                        elapsed = _time.time() - started_at
+                        # Über 5 min ohne Update = wahrscheinlich tot
+                        # (Der Task pushed alle 20 Items; bei 1s/Item = alle ~20s)
+                        # Aber wir haben nur den started_at ohne last_update.
+                        # Deshalb ziehen wir 'elapsed_s' aus dem Payload heran.
+                        payload_elapsed = d.get("elapsed_s", 0)
+                        # Wenn payload_elapsed vor 5 min stehengeblieben ist,
+                        # dann muss der Push-Effekt >5min her sein.
+                        # Vergleiche: elapsed = wall clock, payload_elapsed = last push
+                        # Delta > 300s → totes progress.
+                        if elapsed - payload_elapsed < 300:
+                            return {"idle": "run already active", "elapsed_s": int(elapsed)}
+            except Exception:
+                pass
+
+        # Los: neuen Run kicken
+        from app.worker.tasks import xmp_repair_run_task
+        result = xmp_repair_run_task.delay(max_items=0)
+        flog("ai", "INFO",
+             f"xmp_repair_watchdog: neu gestartet ({pending} pending, "
+             f"{in_prog} in_progress, {done} done)")
+        return {"restarted": True, "task_id": result.id,
+                "pending": pending, "done": done}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="xmp_repair_populate")
 def xmp_repair_populate_task(self, reset_failed: bool = True):
     """Audit + Queue-Befüllung als Celery-Task (statt HTTP-Request), damit

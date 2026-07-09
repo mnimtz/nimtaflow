@@ -99,6 +99,14 @@ celery_app.conf.beat_schedule = {
         "task": "watch_sources",
         "schedule": 300.0,
     },
+    # XMP-Repair-Watchdog: startet die xmp_repair_queue-Abarbeitung immer
+    # wieder neu, wenn noch pending Zeilen da sind aber gerade kein Worker
+    # läuft. Verhindert dass ein Deploy/Crash den Repair für Stunden
+    # unterbrechen kann - alle 5 min wird wieder aufgeholt.
+    "xmp-repair-watchdog": {
+        "task": "xmp_repair_watchdog",
+        "schedule": 300.0,
+    },
     # Self-heal photos orphaned at status=processing by a deploy/restart (see task).
     "reap-stuck-photos": {
         "task": "reap_stuck_photos",
