@@ -2996,3 +2996,342 @@ def firetv_auto_update_task(self):
         log.info("FireTV Auto-Update: APK erfolgreich aktualisiert")
         return {"updated": True, "release_date": release_date}
     return _run(_main())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# XMP Repair Queue — persistenter, resumierbarer Sidecar+EXIF-Repair.
+#
+# Warum ein neuer Task: der bisherige backfill_xmp_task hielt seine "todo"-Liste
+# im RAM des Celery-Workers. Bei Deploy/Crash war der Fortschritt weg und der
+# Task startete blind neu. Bei 100k Fotos × ~2s exiftool = 55 Stunden Laufzeit
+# hat dieser Design-Fehler in der Praxis mehrfach zugeschlagen (33k done, dann
+# Deploy, dann Timestamp-Filter falsch → alles nochmal).
+#
+# Design jetzt: xmp_repair_queue-Tabelle als persistenter Backing-Store.
+# Pro File-Iteration: SELECT ... FOR UPDATE SKIP LOCKED → 1 pending Zeile;
+# exiftool schreiben; POST-VERIFY (Datei erneut lesen, Description-Substring
+# suchen); status=done + COMMIT.
+# Bei Crash mid-file: nächster Run holt sich die Zeile (locked_at abgelaufen)
+# und probiert nochmal. Bei 5× Fail: status=failed, bleibt liegen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@celery_app.task(bind=True, name="xmp_repair_run")
+def xmp_repair_run_task(self, max_items: int = 0, batch_size: int = 50):
+    """Arbeitet die xmp_repair_queue ab.
+    max_items=0: bis zur Erschöpfung. Sonst nur N Items diesen Lauf.
+    batch_size: wie viele Items pro Chunk vor commit-Barriere (nicht wichtig
+        weil wir eh nach jedem File commiten, aber für Log-Verbosity).
+
+    Post-Verify: nach exiftool wird das File neu gelesen und der Description-
+    Substring gesucht. Nur wenn beide (Sidecar + Embed) verifiziert sind,
+    zählt es als done. Sonst: Retry im nächsten Lauf.
+    """
+    async def _main():
+        import os
+        import json as _json
+        import time as _time
+        import redis as _redis_sync
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from collections import defaultdict
+        from sqlalchemy import select, update as _upd
+        from app.core.database import init_db, get_db
+        from app.core.config import get_settings
+        from app.models.photo import Photo
+        from app.models.tag import Tag, PhotoTag
+        from app.models.xmp_repair import XmpRepairItem
+        from app.services.settings_loader import load_settings
+        from app.services.feature_log import log as flog
+        from app.services.exif_edit import write_all as _wall, ensure_capture_date as _ecd
+        from app.services.xmp_sidecar import write_sidecar, sidecar_for
+
+        init_db()
+
+        # Settings holen
+        mode = "off"
+        async for db in get_db():
+            s = await load_settings(db)
+            mode = str(s.get("xmp.write_mode", "off")).lower()
+            break
+        if mode not in ("file", "file_sidecar", "sidecar"):
+            flog("ai", "WARNING", f"xmp_repair: übersprungen (xmp.write_mode={mode})")
+            return {"skipped": "write_mode_off"}
+
+        # Progress via Redis (nur für UI-Anzeige — Wahrheit liegt in DB)
+        _rc = None
+        _rkey = "xmp_repair:progress"
+        try:
+            _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        except Exception:
+            _rc = None
+
+        # Anfangs-Total ermitteln (alle IDs die je in der Queue landeten)
+        async for db in get_db():
+            total = await db.scalar(
+                select(__import__("sqlalchemy", fromlist=["func"]).func.count())
+                .select_from(XmpRepairItem)
+            ) or 0
+            done_at_start = await db.scalar(
+                select(__import__("sqlalchemy", fromlist=["func"]).func.count())
+                .select_from(XmpRepairItem)
+                .where(XmpRepairItem.status == "done")
+            ) or 0
+            break
+
+        started_at = _time.time()
+        processed = 0
+        succeeded = 0
+        failed = 0
+        skipped = 0
+        MAX_ATTEMPTS = 5
+        STALE_LOCK = _td(minutes=10)
+        WORKER_ID = str(self.request.id or "unknown")[:64]
+
+        def _push():
+            if not _rc:
+                return
+            try:
+                _rc.set(_rkey, _json.dumps({
+                    "running": True,
+                    "total": total,
+                    "done_total": done_at_start + succeeded,
+                    "this_run": {
+                        "processed": processed,
+                        "succeeded": succeeded,
+                        "failed": failed,
+                        "skipped": skipped,
+                    },
+                    "started_at": started_at,
+                    "elapsed_s": int(_time.time() - started_at),
+                    "worker_id": WORKER_ID,
+                }), ex=3600)
+            except Exception:
+                pass
+
+        _push()
+        flog("ai", "INFO",
+             f"xmp_repair Start: {total} in Queue, {done_at_start} bereits done, WORKER={WORKER_ID}")
+
+        # ── Hauptschleife ───────────────────────────────────────────────────
+        while True:
+            if max_items and processed >= max_items:
+                break
+
+            # 1) Eine pending Zeile leasen (row-lock, skip_locked für Nebenläufigkeit).
+            #    Stale locks (>10 min ohne Update) werden mit reclaimed.
+            picked = None
+            async for db in get_db():
+                stale_before = _dt.now(tz=_tz.utc) - STALE_LOCK
+                # Bevorzugt: status=pending. Fallback: in_progress mit stale lock.
+                q = (
+                    select(XmpRepairItem)
+                    .where(
+                        (XmpRepairItem.status == "pending") |
+                        (
+                            (XmpRepairItem.status == "in_progress") &
+                            (XmpRepairItem.locked_at < stale_before)
+                        )
+                    )
+                    .where(XmpRepairItem.attempts < MAX_ATTEMPTS)
+                    .order_by(XmpRepairItem.photo_id)
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
+                )
+                picked = (await db.execute(q)).scalars().first()
+                if not picked:
+                    await db.commit()
+                    break
+                picked.status = "in_progress"
+                picked.locked_at = _dt.now(tz=_tz.utc)
+                picked.locked_by = WORKER_ID
+                picked.attempts += 1
+                pid = picked.photo_id
+                await db.commit()
+                break
+            if not picked:
+                break  # Queue leer
+
+            # 2) Photo-Daten laden (frische kurze Session)
+            photo_data = None
+            async for db in get_db():
+                p = await db.get(Photo, pid)
+                if p is None:
+                    photo_data = None
+                    break
+                # Tags gleich mitziehen
+                kw_rows = (await db.execute(
+                    select(Tag.name).join(PhotoTag, PhotoTag.tag_id == Tag.id)
+                    .where(PhotoTag.photo_id == pid)
+                )).all()
+                photo_data = {
+                    "id": p.id, "path": p.path, "filename": p.filename,
+                    "description": p.description, "title": p.title,
+                    "city": p.city, "country": p.country,
+                    "latitude": p.latitude, "longitude": p.longitude,
+                    "user_rating": p.user_rating, "is_favorite": p.is_favorite,
+                    "taken_at": p.taken_at, "is_video": p.is_video,
+                    "keywords": [name for (name,) in kw_rows],
+                }
+                break
+
+            # 3) Vor-Checks
+            if photo_data is None or not photo_data["description"]:
+                async for db in get_db():
+                    row = await db.get(XmpRepairItem, pid)
+                    if row:
+                        row.status = "skipped"
+                        row.last_error = "photo missing / no description"
+                        row.completed_at = _dt.now(tz=_tz.utc)
+                        await db.commit()
+                    break
+                skipped += 1
+                processed += 1
+                continue
+
+            if not os.path.exists(photo_data["path"]):
+                async for db in get_db():
+                    row = await db.get(XmpRepairItem, pid)
+                    if row:
+                        row.status = "skipped"
+                        row.last_error = "file not found on disk"
+                        row.completed_at = _dt.now(tz=_tz.utc)
+                        await db.commit()
+                    break
+                skipped += 1
+                processed += 1
+                continue
+
+            # 4) Write attempt
+            error_msg = None
+            try:
+                if mode in ("file", "file_sidecar"):
+                    try:
+                        await _ecd(photo_data["path"])
+                    except Exception:
+                        pass  # capture-date-Detection ist nice-to-have
+                    eff = 5 if photo_data["is_favorite"] else int(photo_data["user_rating"] or 0)
+                    await _wall(
+                        photo_data["path"],
+                        description=photo_data["description"],
+                        keywords=photo_data["keywords"] or None,
+                        rating=(eff if eff > 0 else None),
+                        title=photo_data["title"],
+                        city=photo_data["city"], country=photo_data["country"],
+                    )
+                sc_path = None
+                if mode in ("file_sidecar", "sidecar"):
+                    cap = photo_data["taken_at"]
+                    sc_path = write_sidecar(
+                        photo_data["path"],
+                        description=photo_data["description"],
+                        title=photo_data["title"],
+                        keywords=photo_data["keywords"] or None,
+                        latitude=photo_data["latitude"], longitude=photo_data["longitude"],
+                        city=photo_data["city"], country=photo_data["country"],
+                        capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                    )
+            except Exception as e:
+                error_msg = f"write failed: {str(e)[:200]}"
+
+            # 5) POST-VERIFY — die entscheidende Neuerung.
+            #    Wir vertrauen NICHT dem exiftool-Returncode, wir lesen die
+            #    Datei nochmal und suchen die Description drin.
+            verify_ok = False
+            verify_detail = ""
+            if error_msg is None:
+                needle = photo_data["description"][:40].strip()
+                needle_bytes = needle.encode("utf-8", errors="replace") if needle else b""
+
+                sidecar_ok = True
+                if mode in ("file_sidecar", "sidecar"):
+                    try:
+                        sc_path_check = sidecar_for(photo_data["path"])
+                        if os.path.exists(sc_path_check):
+                            with open(sc_path_check, encoding="utf-8", errors="replace") as f:
+                                sc_content = f.read()
+                            sidecar_ok = bool(needle) and needle in sc_content
+                            if not sidecar_ok:
+                                verify_detail = "sidecar written but description missing"
+                        else:
+                            sidecar_ok = False
+                            verify_detail = "sidecar not created"
+                    except Exception as e:
+                        sidecar_ok = False
+                        verify_detail = f"sidecar read error: {str(e)[:100]}"
+
+                embed_ok = True
+                if mode in ("file", "file_sidecar") and not photo_data["is_video"] and needle_bytes:
+                    try:
+                        size = os.path.getsize(photo_data["path"])
+                        with open(photo_data["path"], "rb") as f:
+                            head = f.read(min(size, 262_144))
+                            embed_ok = needle_bytes in head
+                            if not embed_ok and size > 262_144 + 131_072:
+                                f.seek(max(0, size - 131_072))
+                                tail = f.read(131_072)
+                                embed_ok = needle_bytes in tail
+                        if not embed_ok:
+                            verify_detail = "embed written but not found in file"
+                    except Exception as e:
+                        embed_ok = False
+                        verify_detail = f"embed verify error: {str(e)[:100]}"
+
+                verify_ok = sidecar_ok and embed_ok
+
+            # 6) DB-Update — SOFORT, damit Fortschritt persistent ist
+            now = _dt.now(tz=_tz.utc)
+            async for db in get_db():
+                row = await db.get(XmpRepairItem, pid)
+                if row is None:
+                    break
+                if verify_ok:
+                    row.status = "done"
+                    row.last_error = None
+                    row.completed_at = now
+                    # Auch Photo-Row aktualisieren
+                    await db.execute(
+                        _upd(Photo).where(Photo.id == pid).values(
+                            xmp_sidecar_written=True,
+                            xmp_last_written_at=now,
+                        )
+                    )
+                    succeeded += 1
+                else:
+                    if row.attempts >= MAX_ATTEMPTS:
+                        row.status = "failed"
+                        failed += 1
+                    else:
+                        row.status = "pending"  # zurück in Queue für Retry
+                    row.last_error = (error_msg or verify_detail or "unknown")[:500]
+                await db.commit()
+                break
+
+            processed += 1
+            if processed % 20 == 0:
+                _push()
+                flog("ai", "INFO",
+                     f"xmp_repair Fortschritt: +{succeeded} ok / +{failed} fail / +{skipped} skip "
+                     f"(total done: {done_at_start + succeeded}/{total})")
+
+        # ── Ende ─────────────────────────────────────────────────────────────
+        try:
+            if _rc:
+                _rc.set(_rkey, _json.dumps({
+                    "running": False, "finished": True, "total": total,
+                    "done_total": done_at_start + succeeded,
+                    "this_run": {
+                        "processed": processed, "succeeded": succeeded,
+                        "failed": failed, "skipped": skipped,
+                    },
+                    "elapsed_s": int(_time.time() - started_at),
+                }), ex=86400)
+        except Exception:
+            pass
+
+        flog("ai", "INFO",
+             f"xmp_repair fertig: {succeeded} ok, {failed} failed, {skipped} skipped "
+             f"(diese Session, {processed} verarbeitet)")
+        return {
+            "processed": processed, "succeeded": succeeded,
+            "failed": failed, "skipped": skipped,
+        }
+    return _run(_main())

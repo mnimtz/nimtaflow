@@ -12,8 +12,10 @@ from .share import Share, ShareType
 from .highlight import Highlight, HighlightStatus
 from .pro_key import ProKey
 from .music_job import MusicJob, MusicJobStatus
+from .xmp_repair import XmpRepairItem
 
 __all__ = [
+    "XmpRepairItem",
     "MusicJob", "MusicJobStatus",
     "ProKey",
     "Highlight", "HighlightStatus",

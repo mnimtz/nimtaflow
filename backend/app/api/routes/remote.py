@@ -1361,14 +1361,13 @@ class SidecarRepairBody(BaseModel):
 
 @router.post("/sidecar-repair")
 async def sidecar_repair(body: SidecarRepairBody):
-    """Startet backfill_xmp gezielt für die vom Audit gemeldeten Photo-IDs.
-    Blindes 'alles neu' wird explizit vermieden."""
+    """(Legacy) Startet backfill_xmp gezielt für die vom Audit gemeldeten
+    Photo-IDs. Für zuverlässigen Massen-Repair siehe /xmp-repair-queue/*."""
     if not body.photo_ids:
         raise HTTPException(400, "photo_ids leer")
     if len(body.photo_ids) > 20000:
         raise HTTPException(400, "max 20 000 IDs pro Aufruf")
     from app.worker.tasks import backfill_xmp_task
-    # Redis-Progress-Key zurücksetzen damit der Task frisch startet
     try:
         import redis as _redis_sync
         _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
@@ -1377,3 +1376,202 @@ async def sidecar_repair(body: SidecarRepairBody):
         pass
     result = backfill_xmp_task.delay(photo_ids=body.photo_ids)
     return {"task_id": result.id, "count": len(set(body.photo_ids))}
+
+
+# ── XMP-Repair-Queue: persistenter, crash-fester Massen-Repair ──────────────
+
+@router.post("/xmp-repair-queue/populate")
+async def xmp_repair_populate(
+    reset_failed: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Läuft den Audit über alle Fotos und legt für jedes Problem-Foto
+    eine Zeile in der xmp_repair_queue an (idempotent: bestehende Zeilen
+    werden nicht überschrieben, außer status='failed' bei reset_failed=true).
+
+    Rückgabe:
+      audited: wie viele Fotos geprüft
+      newly_queued: wie viele neu in die Queue eingetragen
+      already_queued: wie viele waren schon drin
+      reset_failed_count: wie viele failed → pending zurückgesetzt
+    """
+    import os
+    from app.services.xmp_sidecar import sidecar_for
+    from app.models.xmp_repair import XmpRepairItem
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    rows = (await db.execute(
+        select(Photo.id, Photo.path, Photo.description, Photo.is_video)
+        .where(
+            Photo.description.isnot(None),
+            Photo.is_missing == False,  # noqa: E712
+            Photo.is_trashed == False,  # noqa: E712
+        )
+        .order_by(Photo.id)
+    )).all()
+
+    audited = 0
+    problems: list[tuple[int, str]] = []  # (photo_id, reason)
+
+    for row in rows:
+        audited += 1
+        pid, ppath, pdesc, is_video = row
+        needle_str = (pdesc or "")[:40].strip()
+        if not needle_str:
+            continue
+        needle_bytes = needle_str.encode("utf-8", errors="replace")
+
+        # Sidecar-Check
+        sc_ok = False
+        reason = None
+        try:
+            sc_path = sidecar_for(ppath)
+            if not os.path.exists(sc_path):
+                reason = "sidecar_missing"
+            else:
+                try:
+                    with open(sc_path, encoding="utf-8", errors="replace") as f:
+                        if needle_str in f.read():
+                            sc_ok = True
+                        else:
+                            reason = "sidecar_stale"
+                except Exception:
+                    reason = "sidecar_stale"
+        except Exception:
+            reason = "sidecar_missing"
+
+        # Embed-Check (nur bei Bildern)
+        embed_ok = True
+        if not is_video and sc_ok:
+            try:
+                size = os.path.getsize(ppath)
+                with open(ppath, "rb") as f:
+                    head = f.read(min(size, 262_144))
+                if needle_bytes not in head:
+                    embed_ok = False
+                    if size > 262_144 + 131_072:
+                        with open(ppath, "rb") as f:
+                            f.seek(max(0, size - 131_072))
+                            if needle_bytes in f.read(131_072):
+                                embed_ok = True
+                if not embed_ok:
+                    reason = "embed_missing"
+            except FileNotFoundError:
+                continue  # Datei weg — überspringen (is_missing sollte gesetzt sein)
+            except Exception:
+                pass
+
+        if reason:
+            problems.append((pid, reason))
+
+    # Bulk insert with ON CONFLICT DO NOTHING (behält bestehenden Status)
+    newly_queued = 0
+    already_queued = 0
+    if problems:
+        # Wir müssen wissen wie viele NEU eingetragen wurden vs schon existent.
+        # PostgreSQL: INSERT ... ON CONFLICT DO NOTHING RETURNING photo_id.
+        # Batches à 5000 damit Statement-Größe okay bleibt.
+        BATCH = 5000
+        for i in range(0, len(problems), BATCH):
+            slice_ = problems[i:i + BATCH]
+            values = [{"photo_id": pid, "reason": r, "status": "pending"}
+                      for pid, r in slice_]
+            stmt = (pg_insert(XmpRepairItem)
+                    .values(values)
+                    .on_conflict_do_nothing(index_elements=["photo_id"])
+                    .returning(XmpRepairItem.photo_id))
+            result = await db.execute(stmt)
+            newly = len(result.scalars().all())
+            newly_queued += newly
+            already_queued += (len(slice_) - newly)
+        await db.commit()
+
+    # Optional: failed-Zeilen zurücksetzen (falls User will dass diese
+    # nochmal probiert werden — z.B. nach Rechte-Fix)
+    reset_count = 0
+    if reset_failed:
+        result = await db.execute(
+            _sql_update := __import__("sqlalchemy", fromlist=["update"]).update(XmpRepairItem)
+            .where(XmpRepairItem.status == "failed")
+            .values(status="pending", attempts=0, last_error=None)
+            .returning(XmpRepairItem.photo_id)
+        )
+        reset_count = len(result.scalars().all())
+        await db.commit()
+
+    return {
+        "audited": audited,
+        "problems_found": len(problems),
+        "newly_queued": newly_queued,
+        "already_queued": already_queued,
+        "reset_failed_count": reset_count,
+    }
+
+
+@router.post("/xmp-repair-queue/start")
+async def xmp_repair_start(max_items: int = 0):
+    """Startet den xmp_repair_run-Task. max_items=0 → bis Queue leer."""
+    from app.worker.tasks import xmp_repair_run_task
+    # Prüfen ob schon ein Lauf aktiv
+    try:
+        import redis as _redis_sync
+        _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        existing = _rc.get("xmp_repair:progress")
+        if existing:
+            import json as _json
+            d = _json.loads(existing)
+            if d.get("running"):
+                return {"already_running": True, "worker_id": d.get("worker_id")}
+    except Exception:
+        pass
+    result = xmp_repair_run_task.delay(max_items=max_items)
+    return {"task_id": result.id, "started": True}
+
+
+@router.get("/xmp-repair-queue/status")
+async def xmp_repair_status(db: AsyncSession = Depends(get_db)):
+    """Live-Fortschritt: DB-Zahlen + laufender Task-State aus Redis."""
+    from app.models.xmp_repair import XmpRepairItem
+    counts_stmt = select(
+        XmpRepairItem.status, func.count()
+    ).group_by(XmpRepairItem.status)
+    rows = (await db.execute(counts_stmt)).all()
+    counts = {"pending": 0, "in_progress": 0, "done": 0, "failed": 0, "skipped": 0}
+    for status, cnt in rows:
+        counts[status] = cnt
+    total = sum(counts.values())
+
+    # Redis-Status des aktuellen Runs
+    run_state = None
+    try:
+        import redis as _redis_sync
+        import json as _json
+        _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        raw = _rc.get("xmp_repair:progress")
+        if raw:
+            run_state = _json.loads(raw)
+    except Exception:
+        pass
+
+    return {
+        "queue": {
+            "total": total,
+            "pending": counts["pending"],
+            "in_progress": counts["in_progress"],
+            "done": counts["done"],
+            "failed": counts["failed"],
+            "skipped": counts["skipped"],
+            "pct": round(100 * counts["done"] / total) if total else 0,
+        },
+        "current_run": run_state,
+    }
+
+
+@router.post("/xmp-repair-queue/clear")
+async def xmp_repair_clear(db: AsyncSession = Depends(get_db)):
+    """Leert die Repair-Queue komplett — für Neustart nach Design-Änderung."""
+    from app.models.xmp_repair import XmpRepairItem
+    from sqlalchemy import delete as _del
+    result = await db.execute(_del(XmpRepairItem))
+    await db.commit()
+    return {"deleted": result.rowcount}
