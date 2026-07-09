@@ -1253,33 +1253,21 @@ async def sidecar_audit(
                 counts["missing"] += 1
                 missing_ids.append(pid)
                 continue
-            # Sidecar existiert. Enthält es die aktuelle Beschreibung?
-            # Zwei Checks: (1) mtime > updated_at? (2) Description-String kommt drin vor?
-            sc_mtime = datetime.fromtimestamp(os.path.getmtime(sc_path), tz=_tz.utc)
-            db_ts = pupd or _xmp_ts
-            if db_ts is not None:
-                # updated_at kann tz-aware sein
-                if db_ts.tzinfo is None:
-                    db_ts = db_ts.replace(tzinfo=_tz.utc)
-                if sc_mtime < db_ts:
-                    # Sidecar ist ÄLTER als die DB-Beschreibung → veraltet
-                    counts["stale"] += 1
-                    stale_ids.append(pid)
-                    continue
-            # Zusätzlicher Content-Check nur bei Stichprobe (zu teuer für 138k)
-            if sample:
-                try:
-                    with open(sc_path, encoding="utf-8", errors="replace") as f:
-                        content = f.read()
-                    # Erste 40 Zeichen der DB-Beschreibung sollten drin sein
-                    needle = (pdesc or "")[:40].strip()
-                    if needle and needle not in content:
-                        counts["stale"] += 1
-                        stale_ids.append(pid)
-                        continue
-                except Exception:
-                    counts["read_error"] += 1
-                    continue
+            # WAHRHEIT ist der Content: enthält der Sidecar wirklich die
+            # aktuelle DB-Beschreibung? Zeitstempel-Vergleich ist unbrauchbar
+            # weil photos.updated_at durch Trigger bei JEDEM UPDATE bumped wird
+            # (Faces, ai_claimed_at, is_favorite etc), das ergibt Falsch-Positive.
+            try:
+                with open(sc_path, encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            except Exception:
+                counts["read_error"] += 1
+                continue
+            needle = (pdesc or "")[:40].strip()
+            if needle and needle not in content:
+                counts["stale"] += 1
+                stale_ids.append(pid)
+                continue
             counts["ok"] += 1
         except Exception:
             counts["read_error"] += 1
