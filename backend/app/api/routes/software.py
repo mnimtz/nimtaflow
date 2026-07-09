@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re as _re
 import socket
 from datetime import datetime, timezone
 from pathlib import Path
@@ -287,19 +288,68 @@ FIRETV_PKG = "email.nimtz.nimtaflow.tv"
 async def firetv_adb_install(body: AdbInstallBody, _: None = Depends(require_admin)):
     """Schickt das APK via ADB auf ein Gerät.
 
-    Bei Signatur-Konflikt (INSTALL_FAILED_UPDATE_INCOMPATIBLE) wird die alte
-    Version automatisch deinstalliert und danach neu installiert.
+    Rückgabe:
+      status: "installed" | "reinstalled" | "unauthorized" | "offline" | "failed"
+      message: Klartext-Meldung für die UI
+      reinstalled: True wenn wir wegen Signaturkonflikt deinstallieren+neu installieren
     """
     if not APK_PATH.exists():
         raise HTTPException(404, "APK fehlt — zuerst bereitstellen")
-    rc, output = await _adb("-s", body.device_id, "install", "-r", "-t", str(APK_PATH), timeout=120)
+
+    # 1) Sicherstellen dass das Gerät wirklich verbunden ist. Bei Docker-Restart
+    #    ist die adb-Sitzung weg → erst reconnect versuchen.
+    ip = body.device_id.split(":")[0]
+    await _adb("connect", body.device_id, timeout=5)
+    _, dev_state = await _adb("devices")
+    line = next((ln for ln in dev_state.splitlines() if body.device_id in ln), "")
+    if not line:
+        return {"status": "offline", "message": f"FireTV {ip} nicht erreichbar — ist ADB-Debugging noch an?"}
+    if "unauthorized" in line:
+        return {
+            "status": "unauthorized",
+            "message": (
+                f"FireTV {ip} zeigt jetzt einen Bestätigungsdialog "
+                f'"USB-Debugging von diesem Computer zulassen?" — bitte "Immer erlauben" ankreuzen '
+                "und danach nochmal auf Installieren tippen."
+            ),
+        }
+    if "device" not in line:
+        return {"status": "failed", "message": f"Ungewöhnlicher ADB-Zustand: {line.strip()[:120]}"}
+
+    # 2) Erster Installations-Versuch — normaler Update-Modus
+    rc, output = await _adb("-s", body.device_id, "install", "-r", "-t", "-d", str(APK_PATH), timeout=180)
+
+    # 3) Signatur-Konflikt: alte Version wurde mit anderem Key signiert.
+    #    → deinstallieren (lautlos, keine Bestätigung nötig) + frisch installieren.
+    reinstalled = False
     if rc != 0 and "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in output:
-        # Alte Version mit anderem Signing-Key → erst deinstallieren, dann neu
-        await _adb("-s", body.device_id, "uninstall", FIRETV_PKG, timeout=30)
-        rc, output = await _adb("-s", body.device_id, "install", "-t", str(APK_PATH), timeout=120)
+        u_rc, u_out = await _adb("-s", body.device_id, "uninstall", FIRETV_PKG, timeout=60)
+        if u_rc != 0 and "Success" not in u_out:
+            return {"status": "failed",
+                    "message": f"Alte Version konnte nicht entfernt werden: {u_out[:200]}"}
+        rc, output = await _adb("-s", body.device_id, "install", "-t", "-d", str(APK_PATH), timeout=180)
+        reinstalled = True
+
     if rc != 0:
-        raise HTTPException(500, f"ADB-Install fehlgeschlagen: {output[:500]}")
-    return {"success": True, "device_id": body.device_id, "output": output[:300]}
+        # Häufige Fehler übersetzen
+        friendly = None
+        if "INSTALL_FAILED_USER_RESTRICTED" in output:
+            friendly = ('FireTV blockiert Installationen aus unbekannten Quellen. '
+                        'Am FireTV: Einstellungen → Mein Fire TV → Entwickleroptionen → '
+                        '"Apps unbekannter Herkunft" für die "Downloader"-App aktivieren.')
+        elif "INSTALL_FAILED_INSUFFICIENT_STORAGE" in output:
+            friendly = "FireTV hat zu wenig Speicher — Cache/andere Apps löschen und neu versuchen."
+        elif "Failure" in output:
+            m = _re.search(r"Failure\s*\[([^\]]+)\]", output)
+            friendly = f"ADB-Install fehlgeschlagen: {m.group(1) if m else output[:200]}"
+        raise HTTPException(500, friendly or f"ADB-Install fehlgeschlagen: {output[:300]}")
+
+    return {
+        "status": "reinstalled" if reinstalled else "installed",
+        "message": ("App auf FireTV neu installiert (alte Version hatte anderen Signing-Key)."
+                    if reinstalled else "App wurde auf FireTV installiert."),
+        "device_id": body.device_id,
+    }
 
 
 async def auto_fetch_if_missing() -> None:

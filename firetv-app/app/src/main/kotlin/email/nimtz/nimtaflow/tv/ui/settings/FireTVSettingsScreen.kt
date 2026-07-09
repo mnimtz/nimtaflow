@@ -239,14 +239,23 @@ private fun AdminAdbSection(api: APIClient) {
                     onClick = {
                         scope.launch {
                             installing = device.id
+                            installMsg = null
                             try {
-                                api.postJson(
+                                val resp = api.postJson(
                                     "api/v1/software/firetv/adb-install",
                                     buildJsonObject { put("device_id", device.id) }
                                 )
-                                installMsg = "Installation auf ${device.model} gestartet — bitte am Gerät bestätigen"
-                            } catch (_: Exception) {
-                                installMsg = "Installation fehlgeschlagen"
+                                val status = resp["status"]?.jsonPrimitive?.content ?: "installed"
+                                val message = resp["message"]?.jsonPrimitive?.content
+                                installMsg = when (status) {
+                                    "installed"    -> "✓ ${device.model}: App installiert"
+                                    "reinstalled"  -> "✓ ${device.model}: neu installiert (Signatur-Konflikt aufgelöst)"
+                                    "unauthorized" -> message ?: "FireTV: USB-Debugging noch nicht bestätigt"
+                                    "offline"      -> message ?: "${device.model} nicht erreichbar"
+                                    else           -> message ?: "Installation fehlgeschlagen"
+                                }
+                            } catch (e: Exception) {
+                                installMsg = "Installation fehlgeschlagen: ${e.message ?: "unbekannt"}"
                             } finally { installing = null }
                         }
                     },
