@@ -1196,3 +1196,125 @@ async def backfill_progress():
         }
     except Exception:
         return {"running": False, "total": 0, "done": 0, "failed": 0, "pct": 0, "finished": False}
+
+
+# ── Sidecar-Audit ────────────────────────────────────────────────────────────
+# Prüft die REALE Disk-Situation der XMP-Sidecars — nicht das DB-Flag.
+# Kategorien:
+#   ok              — Sidecar existiert und enthält die aktuelle Beschreibung
+#   missing         — Sidecar fehlt komplett obwohl DB flag=true
+#   stale           — Sidecar existiert, aber Description in DB neuer als Sidecar-mtime
+#   no_description  — Foto hat keine Beschreibung, nichts zu prüfen (übersprungen)
+
+@router.get("/sidecar-audit")
+async def sidecar_audit(
+    limit: int = 0,
+    sample: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reale Prüfung: welche Fotos haben tatsächlich saubere Sidecars auf Disk.
+
+    limit=0: ALLE Fotos (kann Minuten dauern bei 138k). Sonst nur die ersten N.
+    sample=true: Repräsentative Stichprobe von 500 quer über die DB.
+
+    Kategorisiert nach: ok / missing / stale.
+    Nur Photos mit description IS NOT NULL werden geprüft (der Rest hat
+    per Definition nichts zu schreiben).
+    """
+    import os
+    from datetime import datetime, timezone as _tz
+    from app.services.xmp_sidecar import sidecar_for
+    from sqlalchemy import select as _sel
+
+    q = _sel(Photo.id, Photo.path, Photo.description, Photo.updated_at,
+             Photo.xmp_sidecar_written, Photo.xmp_last_written_at
+             ).where(
+        Photo.description.isnot(None),
+        Photo.is_missing == False,  # noqa: E712
+        Photo.is_trashed == False,  # noqa: E712
+    ).order_by(Photo.id)
+    if sample:
+        q = q.order_by(func.random()).limit(500)
+    elif limit > 0:
+        q = q.limit(limit)
+
+    rows = (await db.execute(q)).all()
+
+    counts = {"checked": 0, "ok": 0, "missing": 0, "stale": 0, "read_error": 0}
+    missing_ids: list[int] = []
+    stale_ids: list[int] = []
+
+    for row in rows:
+        counts["checked"] += 1
+        pid, ppath, pdesc, pupd, _flag, _xmp_ts = row
+        try:
+            sc_path = sidecar_for(ppath)
+            if not os.path.exists(sc_path):
+                counts["missing"] += 1
+                missing_ids.append(pid)
+                continue
+            # Sidecar existiert. Enthält es die aktuelle Beschreibung?
+            # Zwei Checks: (1) mtime > updated_at? (2) Description-String kommt drin vor?
+            sc_mtime = datetime.fromtimestamp(os.path.getmtime(sc_path), tz=_tz.utc)
+            db_ts = pupd or _xmp_ts
+            if db_ts is not None:
+                # updated_at kann tz-aware sein
+                if db_ts.tzinfo is None:
+                    db_ts = db_ts.replace(tzinfo=_tz.utc)
+                if sc_mtime < db_ts:
+                    # Sidecar ist ÄLTER als die DB-Beschreibung → veraltet
+                    counts["stale"] += 1
+                    stale_ids.append(pid)
+                    continue
+            # Zusätzlicher Content-Check nur bei Stichprobe (zu teuer für 138k)
+            if sample:
+                try:
+                    with open(sc_path, encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    # Erste 40 Zeichen der DB-Beschreibung sollten drin sein
+                    needle = (pdesc or "")[:40].strip()
+                    if needle and needle not in content:
+                        counts["stale"] += 1
+                        stale_ids.append(pid)
+                        continue
+                except Exception:
+                    counts["read_error"] += 1
+                    continue
+            counts["ok"] += 1
+        except Exception:
+            counts["read_error"] += 1
+
+    return {
+        "counts": counts,
+        "problem_photo_ids": {
+            "missing": missing_ids[:1000],   # cap damit Response nicht mega groß
+            "stale":   stale_ids[:1000],
+        },
+        "problem_count_total": len(missing_ids) + len(stale_ids),
+        "scope": "sample" if sample else ("all" if limit == 0 else f"first_{limit}"),
+    }
+
+
+class SidecarRepairBody(BaseModel):
+    """Startet einen gezielten backfill_xmp-Lauf für die angegebenen Photo-IDs."""
+    photo_ids: list[int]
+
+
+@router.post("/sidecar-repair")
+async def sidecar_repair(body: SidecarRepairBody):
+    """Startet backfill_xmp gezielt für die vom Audit gemeldeten Photo-IDs.
+    Blindes 'alles neu' wird explizit vermieden."""
+    if not body.photo_ids:
+        raise HTTPException(400, "photo_ids leer")
+    if len(body.photo_ids) > 20000:
+        raise HTTPException(400, "max 20 000 IDs pro Aufruf")
+    from app.worker.tasks import backfill_xmp_task
+    # Redis-Progress-Key zurücksetzen damit der Task frisch startet
+    try:
+        import redis as _redis_sync
+        _rc = _redis_sync.from_url(get_settings().redis_url, decode_responses=True)
+        _rc.delete("backfill_xmp:progress")
+    except Exception:
+        pass
+    result = backfill_xmp_task.delay(photo_ids=body.photo_ids)
+    return {"task_id": result.id, "count": len(set(body.photo_ids))}

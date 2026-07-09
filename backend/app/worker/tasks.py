@@ -1197,7 +1197,7 @@ def sweep_video_faces_task(self, limit: int = 400):
 
 
 @celery_app.task(bind=True, name="backfill_xmp")
-def backfill_xmp_task(self, full: bool = False):
+def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
     """Write the existing DB AI description + tags INTO the image files for every
     described photo (honours xmp.write_mode). One-off repair for photos that were
     described while xmp.write_mode was still 'off' (the default) and only got the
@@ -1206,7 +1206,10 @@ def backfill_xmp_task(self, full: bool = False):
     full=False (nightly self-heal): only photos NOT yet stamped
     (xmp_sidecar_written is not True) → cheap, just closes new gaps.
     full=True (manual one-off): re-stamp EVERY described photo, also fixing stale
-    in-file copies that lag behind a re-description."""
+    in-file copies that lag behind a re-description.
+    photo_ids=[...]: gezielt NUR diese Photo-IDs bearbeiten (überschreibt full/nightly).
+    Kommt vom /remote/sidecar-audit-Endpoint der die "wirklich problematischen"
+    Fotos gefunden hat — verhindert stures "alles neu"."""
     async def _main():
         from app.core.database import init_db, get_db
         from app.models.photo import Photo
@@ -1238,7 +1241,12 @@ def backfill_xmp_task(self, full: bool = False):
                 or_(Photo.description.isnot(None), Photo.is_favorite == True,  # noqa: E712
                     Photo.user_rating.isnot(None)),
             ]
-            if not full:
+            if photo_ids:
+                # Gezielter Modus: nur die vom Audit als problematisch gemeldeten
+                # Photo-IDs — überspringt full/nightly-Logik komplett.
+                conds = [Photo.id.in_(list(set(int(x) for x in photo_ids)))]
+                flog("ai", "INFO", f"XMP-Backfill gezielt: {len(set(photo_ids))} Photo-IDs (vom Audit)")
+            elif not full:
                 # nightly self-heal: only photos that were never stamped into a file
                 conds.append(or_(Photo.xmp_sidecar_written == False,  # noqa: E712
                                  Photo.xmp_sidecar_written.is_(None)))
@@ -1326,7 +1334,8 @@ def backfill_xmp_task(self, full: bool = False):
 
         # Resume-Filter: Fotos überspringen die bereits in DIESEM Run beschrieben wurden
         # (xmp_last_written_at >= started_at). Nur bei full=True relevant.
-        if full and _started_at:
+        # Im gezielten Modus (photo_ids) NIE filtern — der Audit hat schon entschieden.
+        if full and _started_at and not photo_ids:
             _run_start = datetime.fromtimestamp(_started_at, tz=_tz.utc)
             items = [it for it in items
                      if it.get("xmp_last_written_at") is None
