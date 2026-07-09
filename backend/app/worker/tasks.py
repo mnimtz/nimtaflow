@@ -3373,10 +3373,18 @@ def xmp_repair_run_task(self, max_items: int = 0, batch_size: int = 50):
                 processed += 1
                 continue
 
-            # 4) Write attempt
-            error_msg = None
-            try:
-                if mode in ("file", "file_sidecar"):
+            # 4) Write attempts — Embed und Sidecar UNABHÄNGIG behandeln!
+            #    Manche Video-Container (MKV, MTS, AVI, MOV/mp4-Varianten)
+            #    kann exiftool nicht patchen → Embed-Fail. Der Sidecar geht
+            #    aber IMMER, weil es eine eigene neue Datei ist.
+            embed_error = None
+            sidecar_error = None
+            embed_attempted = False
+            sidecar_attempted = False
+
+            if mode in ("file", "file_sidecar"):
+                embed_attempted = True
+                try:
                     try:
                         await _ecd(photo_data["path"])
                     except Exception:
@@ -3390,10 +3398,14 @@ def xmp_repair_run_task(self, max_items: int = 0, batch_size: int = 50):
                         title=photo_data["title"],
                         city=photo_data["city"], country=photo_data["country"],
                     )
-                sc_path = None
-                if mode in ("file_sidecar", "sidecar"):
+                except Exception as e:
+                    embed_error = str(e)[:200]
+
+            if mode in ("file_sidecar", "sidecar"):
+                sidecar_attempted = True
+                try:
                     cap = photo_data["taken_at"]
-                    sc_path = write_sidecar(
+                    write_sidecar(
                         photo_data["path"],
                         description=photo_data["description"],
                         title=photo_data["title"],
@@ -3402,53 +3414,66 @@ def xmp_repair_run_task(self, max_items: int = 0, batch_size: int = 50):
                         city=photo_data["city"], country=photo_data["country"],
                         capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
                     )
-            except Exception as e:
-                error_msg = f"write failed: {str(e)[:200]}"
+                except Exception as e:
+                    sidecar_error = str(e)[:200]
+
+            # error_msg wird nur gesetzt wenn ALLES was versucht wurde auch
+            # scheiterte. Sonst wird der Post-Verify entscheiden.
+            error_msg = None
 
             # 5) POST-VERIFY — die entscheidende Neuerung.
             #    Wir vertrauen NICHT dem exiftool-Returncode, wir lesen die
             #    Datei nochmal und suchen die Description drin.
             verify_ok = False
             verify_detail = ""
-            if error_msg is None:
-                needle = photo_data["description"][:40].strip()
-                needle_bytes = needle.encode("utf-8", errors="replace") if needle else b""
+            needle = photo_data["description"][:40].strip()
+            needle_bytes = needle.encode("utf-8", errors="replace") if needle else b""
 
-                sidecar_ok = True
-                if mode in ("file_sidecar", "sidecar"):
-                    try:
-                        sc_path_check = sidecar_for(photo_data["path"])
-                        if os.path.exists(sc_path_check):
-                            with open(sc_path_check, encoding="utf-8", errors="replace") as f:
-                                sc_content = f.read()
-                            sidecar_ok = bool(needle) and needle in sc_content
-                            if not sidecar_ok:
-                                verify_detail = "sidecar written but description missing"
+            # ── Sidecar-Verify ─────────────────────────────────────────
+            sidecar_ok = True  # default true wenn nicht gefordert (mode=file)
+            if sidecar_attempted:
+                sidecar_ok = False
+                try:
+                    sc_path_check = sidecar_for(photo_data["path"])
+                    if os.path.exists(sc_path_check):
+                        with open(sc_path_check, encoding="utf-8", errors="replace") as f:
+                            sc_content = f.read()
+                        if needle and needle in sc_content:
+                            sidecar_ok = True
                         else:
-                            sidecar_ok = False
-                            verify_detail = "sidecar not created"
-                    except Exception as e:
-                        sidecar_ok = False
-                        verify_detail = f"sidecar read error: {str(e)[:100]}"
+                            verify_detail = "sidecar written but description missing"
+                    else:
+                        verify_detail = f"sidecar not created ({sidecar_error or 'no exception'})"
+                except Exception as e:
+                    verify_detail = f"sidecar read error: {str(e)[:100]}"
 
-                embed_ok = True
-                if mode in ("file", "file_sidecar") and not photo_data["is_video"] and needle_bytes:
+            # ── Embed-Verify ───────────────────────────────────────────
+            # Nur bei Bildern relevant. Bei Videos schreibt exiftool XMP
+            # NICHT in die Container-Datei — der Sidecar allein ist die
+            # Wahrheit. Ohne diese Ausnahme wäre jedes Video ein "fail".
+            embed_ok = True
+            if embed_attempted and not photo_data["is_video"] and needle_bytes:
+                embed_ok = False
+                if embed_error:
+                    verify_detail = f"embed write failed: {embed_error}"
+                else:
                     try:
                         size = os.path.getsize(photo_data["path"])
                         with open(photo_data["path"], "rb") as f:
                             head = f.read(min(size, 262_144))
-                            embed_ok = needle_bytes in head
-                            if not embed_ok and size > 262_144 + 131_072:
+                        if needle_bytes in head:
+                            embed_ok = True
+                        elif size > 262_144 + 131_072:
+                            with open(photo_data["path"], "rb") as f:
                                 f.seek(max(0, size - 131_072))
-                                tail = f.read(131_072)
-                                embed_ok = needle_bytes in tail
+                                if needle_bytes in f.read(131_072):
+                                    embed_ok = True
                         if not embed_ok:
                             verify_detail = "embed written but not found in file"
                     except Exception as e:
-                        embed_ok = False
                         verify_detail = f"embed verify error: {str(e)[:100]}"
 
-                verify_ok = sidecar_ok and embed_ok
+            verify_ok = sidecar_ok and embed_ok
 
             # 6) DB-Update — SOFORT, damit Fortschritt persistent ist
             now = _dt.now(tz=_tz.utc)
