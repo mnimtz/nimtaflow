@@ -23,6 +23,11 @@ final class Store: ObservableObject {
     // Chat-Assistent → Galerie-Filter: wenn der Nutzer "Alle N in Galerie öffnen" tippt,
     // landen die Treffer hier; GalleryView beobachtet das und schaltet in den Filtermodus.
     @Published var chatGalleryFilter: [Int]? = nil
+    // Aktiver TabView-Tab. Wenn der Chat-Assistent "in Galerie öffnen" tippt, MUSS
+    // die App auch tatsächlich zum Galerie-Tab wechseln — sonst greift der
+    // onChange(chatGalleryFilter) in GalleryView nicht (View ist nicht gemountet
+    // wenn User auf Alben/Dashboard/Mehr ist). Vorher: nichts passierte.
+    @Published var selectedTab: Int = 0
     // Phase 1: strukturierter Karten-Filter vom Assistenten (person_id + Datumsbereich).
     // MapScreen beobachtet das und filtert die Cluster-Anfragen entsprechend.
     @Published var chatMapFilter: AssistantMapFilter? = nil

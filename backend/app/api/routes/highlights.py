@@ -12,6 +12,21 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.auth_guard import current_user_optional
 from app.core.access import _is_unrestricted
+from app.models.user import UserRole
+
+
+def _is_admin(user: Optional["User"]) -> bool:
+    """Echter Admin-Check für Schreib-Endpunkte in Highlights (Musik-Lib, Create,
+    Animate, Save-to-Library, Music-Library-Ops).
+
+    Vorher wurde `_is_unrestricted(user)` verwendet — das prüft aber die
+    View-Restriction (`access_config.self_restrict` etc.). Ein Admin, der sich
+    freiwillig View-restricted hat (um in der eigenen Foto-Sicht bestimmte
+    Personen auszublenden), wurde dadurch von seinen eigenen Schreib-Endpunkten
+    ausgesperrt → 403 "können nur Administratoren erstellen", obwohl er es ist.
+    Der neue Check schaut ausschließlich auf `user.role`.
+    """
+    return bool(user and user.role == UserRole.admin)
 from app.models.user import User
 from app.models.highlight import Highlight, HighlightStatus
 from app.services.highlights import MOTTOS
@@ -105,7 +120,7 @@ async def music_library_status(user: Optional[User] = Depends(current_user_optio
 async def music_library_generate(user: Optional[User] = Depends(current_user_optional)):
     """Admin: (re)generate the CC0 soundtrack library with the configured model.
     Runs in the background (one track per mood) and costs generation budget."""
-    if not _is_unrestricted(user):
+    if not _is_admin(user):
         raise HTTPException(403, "Nur Admins dürfen die Musik-Bibliothek erzeugen.")
     from app.worker.tasks import generate_music_library_task
     r = generate_music_library_task.delay()
@@ -138,7 +153,7 @@ async def create_highlight(
     # eingeschränktes Konto könnte sonst ein Highlight aus dem GESAMTEN Bestand
     # erzeugen und via /{id}/video fremde Fotos streamen. Highlights sind ohnehin
     # global/Besitzer-gedacht → nur Admin (konsistent mit save-to-library).
-    if not _is_unrestricted(user):
+    if not _is_admin(user):
         raise HTTPException(403, "Highlight-Videos können nur Administratoren erstellen.")
     if body.motto not in _VALID_MOTTOS:
         raise HTTPException(400, f"Unbekanntes Motto: {body.motto}")
@@ -200,7 +215,7 @@ async def animate_photo(
     """External video-AI: turn ONE still photo into a short animated clip — optionally with a
     creative scene prompt (place the person in a new world). Opt-in (highlights.ai_enabled)
     + budget-capped in the worker. Returns a pending Highlight."""
-    if not _is_unrestricted(user):
+    if not _is_admin(user):
         raise HTTPException(403, "KI-Videos können nur Administratoren erstellen.")
     from app.models.photo import Photo
     from app.services.settings_loader import load_settings
@@ -307,7 +322,7 @@ async def save_highlight_to_library(highlight_id: int, db: AsyncSession = Depend
     """Kopiert das gerenderte Highlight-Video in einen Unterordner 'Highlights' der
     Bibliothek und indexiert es als echtes Medium — so bleibt es dauerhaft erhalten
     (statt nur im flüchtigen Cache). Nur Admin/unbeschränkt (globale Bibliothek)."""
-    if not _is_unrestricted(user):
+    if not _is_admin(user):
         raise HTTPException(403, "Nur für Administratoren.")
     import shutil, hashlib, re as _re
     from pathlib import Path

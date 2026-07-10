@@ -103,10 +103,19 @@ struct ChatView: View {
     }
 
     /// Filtert die Galerie auf diese IDs und schließt den Chat-Sheet.
-    /// Wird vom "In Galerie öffnen"-Button aufgerufen, wenn der Nutzer auf dem Galerie-Tab ist.
+    /// Vorher-Bug: `store.chatGalleryFilter = ids` allein reichte nicht, wenn der
+    /// User auf einem anderen Tab (Dashboard/Alben/Mehr) war — GalleryView war
+    /// gar nicht gemountet, `onChange` griff nie. Fix: zusätzlich zum Galerie-
+    /// Tab wechseln, DANN Filter setzen (kleine Verzögerung damit die View
+    /// wirklich montiert ist bevor der onChange feuert).
     func sendToGallery(_ ids: [Int]) {
         guard !ids.isEmpty else { return }
-        store.chatGalleryFilter = ids
+        store.selectedTab = 1
+        // Kleine Verzögerung: TabView braucht einen Frame um die neue View zu mounten,
+        // sonst kann der onChange-Handler den Filter verpassen (Timing-Race).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [store] in
+            store.chatGalleryFilter = ids
+        }
         dismiss()
     }
 

@@ -77,13 +77,23 @@ async def block_restricted_writes(
     e.g. the public demo account) may READ but must never MUTATE shared data —
     renaming/merging/deleting persons, creating public share links, etc.
 
+    ADMINS können IMMER schreiben — auch wenn sie sich per access_config.self_restrict
+    freiwillig ihre eigene Ansicht eingeschränkt haben. `_is_unrestricted()` gibt für
+    diese Admins nämlich False zurück (View-Filter), was hier fälschlich als
+    "kein Schreibrecht" interpretiert wurde → 403 auf Postkarten, Shares, Album-Rename.
+    Der access.py-Docstring sagt es selbst: "Schreib-/Admin-Rechte sind davon
+    unberührt". Wir prüfen also erst explizit auf Admin-Rolle.
+
     No-op for safe methods, for admins, and for the open single-user mode
     (enforce off → no user → unrestricted). Works alongside `enforce_auth`, which
     already 401s unauthenticated requests under enforce mode."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return
     from app.core.access import _is_unrestricted
+    from app.models.user import UserRole
     user = await _user_from_token(_extract_token(request, token), db)
+    if user and user.role == UserRole.admin:
+        return  # Admin darf immer schreiben, unabhängig von self_restrict
     if not _is_unrestricted(user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur lesender Zugriff für dieses Konto")
 

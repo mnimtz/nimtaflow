@@ -37,12 +37,12 @@ struct RootView: View {
             LoginView()
         } else {
         ZStack(alignment: .bottomTrailing) {
-            TabView {
-                DashboardView().tabItem { Label("Start", systemImage: "house.fill") }
-                GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }
-                AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }
+            TabView(selection: $store.selectedTab) {
+                DashboardView().tabItem { Label("Start", systemImage: "house.fill") }.tag(0)
+                GalleryView().tabItem { Label("Galerie", systemImage: "photo.on.rectangle.angled") }.tag(1)
+                AlbumsView().tabItem { Label("Alben", systemImage: "rectangle.stack.fill") }.tag(2)
                 // Alter Chat-Tab entfernt — der schwebende ✨-Assistent (unten) ersetzt ihn.
-                MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }
+                MoreView().tabItem { Label("Mehr", systemImage: "ellipsis.circle.fill") }.tag(3)
             }
             .tint(.indigo)
             // isAdmin (steuert die Leitstand-Sichtbarkeit) beim App-Start setzen, nicht erst

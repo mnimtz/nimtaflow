@@ -222,13 +222,25 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     # Rebalance: früher dominierte JEDES Keyword-Hit die Semantik (10+2c vs 0..1),
     # was "rotes Auto" alle Bilder mit dem Wort "Auto" vor die visuell tatsächlich
     # rot-Auto-Bilder rankte. Neue Gewichtung:
-    #   keyword: 2.0 + 1.0*count  → 3.0 bei 1 Hit, 4.0 bei 2 Hits
+    #   keyword: 1.5*count (stärker Multi-Token-belohnend)
     #   semantic: 0..8 (skaliert)  → visuelle Ähnlichkeit kann gewinnen
     # Beide addieren sich → ein Bild das visuell UND textuell passt gewinnt klar.
+    #
+    # ECHTE AND-Semantik bei ≥2 Tokens: der User erwartet bei "Boston Frank"
+    # Bilder wo BEIDE zutreffen, nicht Bilder mit "irgendwie Boston oder Frank".
+    # Vorher: alles was 1 Token traf, bekam 3.0 (Sockel 2.0 + 1×1.0) — das war
+    # nicht viel weniger als 4.0 bei 2 Hits, folgen: Ergebnisse "verwässerten".
+    # Neu: ab 2 Tokens werden Fotos die nur 1 Token treffen aussortiert (der
+    # semantische Zweig fängt Recall auf, falls es das PERFEKTE-Match nicht gibt).
     sem_floor = float(settings.get("search.min_score", "0.28") or 0.28)
+    n_tokens = len(tokens)
+    if n_tokens >= 2:
+        # Mindestens 2 Token-Hits nötig (oder max, falls weniger als 2 Wörter existieren).
+        required = min(n_tokens, 2)
+        kw = {pid: c for pid, c in kw.items() if c >= required}
     scores: dict = {}
     for pid, c in kw.items():
-        scores[pid] = scores.get(pid, 0.0) + 2.0 + c * 1.0
+        scores[pid] = scores.get(pid, 0.0) + 1.5 * c
     for pid, s in sem.items():
         if pid in kw or s >= sem_floor:                        # drop weak semantic-only noise
             scores[pid] = scores.get(pid, 0.0) + s * 8.0       # semantic ist gleichwertig

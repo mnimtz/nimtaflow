@@ -52,6 +52,10 @@ SYSTEM = (
     "ort (Land, Stadt ODER Region; für Länder den deutschen Namen, z. B. ort='Türkei') und "
     "lass den suchbegriff dann leer oder knapp — der Ortsfilter findet ALLE Treffer dort, "
     "nicht nur die textlich ähnlichsten. "
+    "Auch bei KURZEN, KOMMAGETRENNTEN Anfragen wie 'Boston, Frank' oder 'Frank Boston' "
+    "(ohne 'in', ohne 'mit'), erkenne Person und Ort aktiv: eines der Wörter ist meist ein "
+    "Name (person), das andere ein Ort (ort). Setze BEIDE Parameter — niemals einfach als "
+    "Freitext-suchbegriff durchreichen, sonst mischen sich Ergebnisse. "
     "Zu DATUM/EREIGNISSEN: Für konkrete Anlässe rechne den Zeitraum selbst aus und "
     "nutze datum_von/datum_bis (YYYY-MM-DD), z. B. 'Lea an Ostern 2022' → person='Lea', "
     "datum_von='2022-04-15', datum_bis='2022-04-18'. "
@@ -281,12 +285,16 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
     # the photo must contain BOTH.
     if person2 and person2.strip():
         conds.append(_person_cond(person2))
-    # ort = place filter across city / region / country (all ILIKE) so "in der Türkei",
-    # "in Antalya", "in Köln" all work even though one photo may only have city OR country.
+    # ort = place filter across city / region / country / description. Vorher hat
+    # der ort-Zweig NUR city/country/location_name geprüft. Fotos deren city z.B.
+    # "Chelsea" ist, aber die KI-Beschreibung "Boston" nennt (Anreise-Aufnahme,
+    # Umland, Verwaltungsstruktur), fielen durch. `description` als 4. Kandidat
+    # hebt den Recall ohne Präzisionsverlust bei üblichen Ortsnamen (>= 4 Zeichen).
     if ort and ort.strip():
         o = f"%{ort.strip()}%"
         from sqlalchemy import or_ as _or
-        conds.append(_or(Photo.city.ilike(o), Photo.country.ilike(o), Photo.location_name.ilike(o)))
+        conds.append(_or(Photo.city.ilike(o), Photo.country.ilike(o),
+                         Photo.location_name.ilike(o), Photo.description.ilike(o)))
     return conds
 
 

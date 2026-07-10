@@ -1186,8 +1186,16 @@ struct PhotoInfoView: View {
             let urlStr = share.url.replacingOccurrences(of: "/s/\(share.token)", with: "/api/public/\(share.token)/postcard")
             postcardURL = URL(string: urlStr)
             if postcardURL == nil { pcError = "Ungültige Postkarten-URL." }
+        } catch APIClient.APIError.status(let code) {
+            pcError = switch code {
+            case 400: "Foto nicht gefunden oder ungültig."
+            case 401: "Nicht angemeldet — bitte neu einloggen."
+            case 403: "Keine Berechtigung — Postkarte darf nicht erstellt werden."
+            case 404: "Foto nicht gefunden."
+            default: "Serverfehler HTTP \(code)."
+            }
         } catch {
-            pcError = "Postkarte konnte nicht erstellt werden."
+            pcError = "Netzwerkfehler: \(error.localizedDescription)"
         }
     }
 
@@ -1431,7 +1439,17 @@ struct AnimateSceneSheet: View {
                             do {
                                 try await api.animatePhoto(photoId, prompt: prompt.isEmpty ? nil : prompt)
                                 onStarted(); isPresented = false
-                            } catch { self.error = "Start fehlgeschlagen — ist KI-Video aktiviert?" }
+                            } catch APIClient.APIError.status(let code) {
+                                self.error = switch code {
+                                case 400: "KI-Video ist in den Einstellungen deaktiviert. Aktivieren unter Einstellungen → Highlights."
+                                case 403: "Keine Berechtigung — nur Administratoren dürfen KI-Videos starten."
+                                case 404: "Foto nicht gefunden."
+                                case 429: "Budget überschritten — bitte später erneut versuchen."
+                                default: "Serverfehler HTTP \(code)."
+                                }
+                            } catch {
+                                self.error = "Netzwerkfehler: \(error.localizedDescription)"
+                            }
                             submitting = false
                         }
                     } label: {
