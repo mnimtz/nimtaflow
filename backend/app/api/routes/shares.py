@@ -437,7 +437,15 @@ async def public_postcard(token: str, pw: Optional[str] = Query(None),
     photo = await db.get(Photo, share.photo_id)
     if not photo:
         raise HTTPException(404)
-    path = photo.thumb_large or photo.thumb_medium or photo.path
+    # Videos brauchen ein Bild-Thumbnail — photo.path zeigt bei Videos auf die
+    # MP4/MOV-Datei, die PIL nicht öffnen kann. Vorher: Krachen mit 500. Jetzt:
+    # bevorzugt thumb_large/medium/small (alles JPEG), Original nur bei Bildern.
+    if photo.is_video:
+        path = photo.thumb_large or photo.thumb_medium or photo.thumb_small
+        if not path:
+            raise HTTPException(415, "Postkarte für dieses Video nicht möglich (kein Vorschaubild)")
+    else:
+        path = photo.thumb_large or photo.thumb_medium or photo.path
     if not path or not os.path.exists(path):
         raise HTTPException(404, "Kein Bild")
     pr = share.params or {}
