@@ -845,7 +845,10 @@ struct PhotoPager: View {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { i, p in
                     Group {
                         if p.is_video {
-                            VideoPlayerView(url: api.url("api/v1/photos/\(p.id)/stream?access_token=\(api.token)"))
+                            VideoPlayerView(
+                                url: api.url("api/v1/photos/\(p.id)/stream"),
+                                bearerToken: api.token,
+                            )
                         } else {
                             ZoomableImage(url: api.url("api/photos/\(p.id)/thumbnail?size=large"))
                         }
@@ -1065,12 +1068,19 @@ struct ZoomableImage: View {
 
 extension Array { subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil } }
 
-/// Streams a video. The stream endpoint needs auth, and AVPlayer can't send a
-/// Bearer header on its own → the URL already carries the token as a
-/// `?access_token=` query param (built by the caller), which the backend's
-/// auth guard accepts. So a plain AVPlayer(url:) is all that's needed here.
+/// Streams a video. Nutzt AVURLAsset mit HTTP-Header statt Query-Token —
+/// dadurch landet der Bearer-Token nicht mehr in Server-Access-Logs, iOS-
+/// URLCache oder Referer. Wenn kein Token übergeben wird (öffentliche
+/// Highlights), läuft die Auth über die URL-Query wie zuvor.
 struct VideoPlayerView: View {
-    let url: URL?              // already carries ?access_token= for auth
+    let url: URL?
+    let bearerToken: String?      // optional: als HTTP-Header statt Query
+
+    init(url: URL?, bearerToken: String? = nil) {
+        self.url = url
+        self.bearerToken = bearerToken
+    }
+
     @State private var player: AVPlayer?
 
     var body: some View {
@@ -1078,9 +1088,6 @@ struct VideoPlayerView: View {
             if let player {
                 VideoPlayer(player: player)
                     .onAppear {
-                        // Play audio even when the ring/silent switch is on — without
-                        // this AVPlayer uses the default (soloAmbient) session and stays
-                        // muted on silent, so highlight music + video sound were silent.
                         #if os(iOS)
                         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
                         try? AVAudioSession.sharedInstance().setActive(true)
@@ -1099,7 +1106,18 @@ struct VideoPlayerView: View {
         }
         .task(id: url) {
             guard let url else { return }
-            player = AVPlayer(url: url)
+            if let token = bearerToken, !token.isEmpty {
+                // Bearer per HTTP-Header — sicher, kein Token in URL/Logs.
+                let asset = AVURLAsset(url: url, options: [
+                    "AVURLAssetHTTPHeaderFieldsKey": [
+                        "Authorization": "Bearer \(token)"
+                    ]
+                ])
+                let item = AVPlayerItem(asset: asset)
+                player = AVPlayer(playerItem: item)
+            } else {
+                player = AVPlayer(url: url)
+            }
         }
     }
 }

@@ -56,13 +56,23 @@ fun QRLoginScreen(
         }
     }
 
-    // Poll for approval
+    // Poll for approval — mit Max-Attempts (5 Min bei 3s Intervall = 100 Polls)
+    // und Exponential-Backoff bei Netzwerk-Fehlern, damit ein toter Server nicht
+    // dauerhaft die TV-CPU frisst.
     LaunchedEffect(deviceCode) {
         if (deviceCode.isEmpty()) return@LaunchedEffect
-        while (true) {
-            delay(3_000)
+        val maxPolls = 100  // ~5 min bei 3s Intervall
+        var consecutiveErrors = 0
+        var polls = 0
+        while (polls < maxPolls) {
+            val wait = if (consecutiveErrors > 0)
+                (3_000L * (1L shl minOf(consecutiveErrors, 4))).coerceAtMost(30_000L)
+            else 3_000L
+            delay(wait)
+            polls++
             try {
                 val resp = withContext(Dispatchers.IO) { api.pollDeviceToken(deviceCode) }
+                consecutiveErrors = 0
                 when (resp.status) {
                     "approved" -> {
                         val accessToken = resp.accessToken ?: ""
@@ -70,10 +80,20 @@ fun QRLoginScreen(
                         onApproved(accessToken, refreshToken)
                         return@LaunchedEffect
                     }
-                    "expired"  -> { error = "Code abgelaufen. Bitte neu laden."; return@LaunchedEffect }
+                    "expired"  -> {
+                        error = "Code abgelaufen. Bitte neu laden."
+                        return@LaunchedEffect
+                    }
                 }
-            } catch (_: Exception) { /* network blip — retry */ }
+            } catch (_: Exception) {
+                consecutiveErrors++
+                if (consecutiveErrors >= 5) {
+                    error = "Server nicht erreichbar. Bitte neu laden."
+                    return@LaunchedEffect
+                }
+            }
         }
+        error = "Zeitüberschreitung. Bitte neu laden."
     }
 
     Box(

@@ -137,9 +137,14 @@ export default function GalleryPage() {
   const [layout, setLayout] = useState<LayoutMode>(() => (localStorage.getItem('gallery.layout') as LayoutMode) || 'rows')
   const [showTimeline, setShowTimeline] = useState<boolean>(() => (localStorage.getItem('gallery.timeline') ?? 'true') === 'true')
   useEffect(() => { localStorage.setItem('gallery.timeline', String(showTimeline)) }, [showTimeline])
-  useEffect(() => { localStorage.setItem('gallery.zoom', String(zoom)) }, [zoom])
   useEffect(() => { localStorage.setItem('gallery.groupBy', groupBy) }, [groupBy])
   useEffect(() => { localStorage.setItem('gallery.layout', layout) }, [layout])
+  // Zoom-Slider produziert bei jeder Bewegung viele Werte — kein Sinn jedesmal
+  // synchronen storage-Write zu machen. 200ms Debounce hält den Slider flüssig.
+  useEffect(() => {
+    const h = setTimeout(() => localStorage.setItem('gallery.zoom', String(zoom)), 200)
+    return () => clearTimeout(h)
+  }, [zoom])
   const rowHeight = zoom
   const qc = useQueryClient()
 

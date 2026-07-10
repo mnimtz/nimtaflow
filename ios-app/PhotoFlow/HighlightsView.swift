@@ -183,7 +183,10 @@ private struct HighlightPlayerView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            VideoPlayerView(url: api.url("api/highlights/\(highlight.id)/video?access_token=\(api.token)"))
+            VideoPlayerView(
+                url: api.url("api/highlights/\(highlight.id)/video"),
+                bearerToken: api.token,
+            )
                 .ignoresSafeArea()
             HStack(spacing: 10) {
                 Button {

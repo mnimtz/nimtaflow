@@ -19,7 +19,7 @@ private val jsonMedia = "application/json".toMediaType()
 /** Wird geworfen wenn der Server 401 zurückgibt — löst in der UI einen Re-Login aus. */
 class UnauthorizedException : Exception("Token abgelaufen oder ungültig")
 
-class APIClient(var baseUrl: String, private var token: String = "") {
+class APIClient(@Volatile var baseUrl: String, @Volatile private var token: String = "") {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -29,7 +29,11 @@ class APIClient(var baseUrl: String, private var token: String = "") {
         })
         .build()
 
-    fun setToken(t: String) { token = t }
+    // @Synchronized damit setToken + Read von token in Requests atomar sichtbar sind.
+    // Ohne das können in-flight Requests aus dem I/O-Thread mit einem alten Token
+    // ausgeführt werden, während Main gerade einen neuen setzt → 401 → Zwangs-Logout
+    // MITTEN im Login-Flow.
+    @Synchronized fun setToken(t: String) { token = t }
     fun hasToken() = token.isNotBlank()
 
     fun thumbUrl(photoId: Int, size: String = "medium") =

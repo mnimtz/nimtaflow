@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { RowsPhotoAlbum, MasonryPhotoAlbum } from 'react-photo-album'
 import 'react-photo-album/rows.css'
 import 'react-photo-album/masonry.css'
@@ -59,6 +59,42 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 type AlbumPhoto = { src: string; width: number; height: number; key: string; srcSet: { src: string; width: number; height: number }[]; _p: Photo; _i: number }
+
+/**
+ * LQIP-Blur nur bis das eigentliche Thumbnail geladen ist. Vorher: das
+ * <img> hatte den Blur permanent als `backgroundImage` — auch nach onLoad
+ * blieb der Base64 im DOM, der Browser dekodierte pro Kachel eine
+ * kleine JPEG weiter → 100+ dekodierte Blur-Bitmaps pro Grid-Scroll.
+ * Jetzt: sobald das Foto lädt, verschwindet der Background — spart RAM.
+ */
+function LazyImgWithBlur({ imgProps, blurData, pos }:
+  { imgProps: any; blurData?: string | null; pos: string }) {
+  const [loaded, setLoaded] = useState(false)
+  const blur = (!loaded && blurData)
+    ? {
+        backgroundImage: `url(data:image/jpeg;base64,${blurData})`,
+        backgroundSize: 'cover',
+        backgroundPosition: pos,
+        backgroundRepeat: 'no-repeat' as const,
+      }
+    : {}
+  return (
+    <img
+      {...imgProps}
+      onLoad={(e: any) => { setLoaded(true); imgProps.onLoad?.(e) }}
+      onError={(e: any) => { setLoaded(true); imgProps.onError?.(e) }}
+      style={{
+        ...(imgProps.style || {}),
+        display: 'block',
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        objectPosition: pos,
+        ...blur,
+      }}
+    />
+  )
+}
 
 function toAlbum(items: Indexed[]): AlbumPhoto[] {
   return items.map(({ photo, index }) => {
@@ -148,15 +184,13 @@ function Album({ items, layout, rowHeight, anySelected, ...cb }: {
         const pos = (p.focus_x != null && p.focus_y != null)
           ? `${Math.round(p.focus_x * 100)}% ${Math.round(p.focus_y * 100)}%`
           : '50% 38%'
-        // LQIP als reiner Lade-Platzhalter — direkt als HINTERGRUND des <img> (kein
-        // Wrapper-Div, damit react-photo-album die Kachel korrekt bemaßt und nichts
-        // kollabiert). Solange das Thumbnail lädt, zeigt das transparente <img> den
-        // Blur dahinter; sobald geladen, verdeckt das scharfe Bild ihn SOFORT — kein
-        // künstlicher Verzug, schnelles Laden bleibt schnell.
-        const blur = p.blur_data
-          ? { backgroundImage: `url(data:image/jpeg;base64,${p.blur_data})`, backgroundSize: 'cover', backgroundPosition: pos, backgroundRepeat: 'no-repeat' as const }
-          : {}
-        return <img {...props} style={{ ...(props.style || {}), display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos, ...blur }} />
+        return (
+          <LazyImgWithBlur
+            imgProps={props}
+            blurData={p.blur_data}
+            pos={pos}
+          />
+        )
       },
       extras: (_: any, ctx: any) => {
         const p = (ctx.photo as AlbumPhoto)._p, i = (ctx.photo as AlbumPhoto)._i
@@ -192,9 +226,13 @@ export default function Gallery({ photos, layout = 'rows', rowHeight = 200, grou
       </div>
     )
   }
+  // groupByDate ist O(n) über potentiell 5000+ Fotos. Bei jedem Re-Render
+  // (Zoom-Slider, Selektion) wurde das VOR dem Memo neu berechnet — jetzt
+  // nur wenn photos-Referenz oder groupBy sich ändert.
+  const groups = useMemo(() => groupByDate(photos, groupBy), [photos, groupBy])
   return (
     <div className="space-y-6">
-      {groupByDate(photos, groupBy).map((g, gi) => {
+      {groups.map((g, gi) => {
         const ids = g.items.map(it => it.photo.id)
         const allSel = cb.selectable && ids.length > 0 && ids.every(id => cb.selected?.has(id))
         return (

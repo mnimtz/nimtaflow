@@ -120,6 +120,15 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS email   VARCHAR(256)",
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS phone   VARCHAR(64)",
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
+    # ── pg_trgm für schnelle ILIKE '%..%' Suche auf description + filename ────
+    # Ohne trgm-GIN läuft jede Freitextsuche im Backend als Sequential Scan über
+    # die volle Photos-Tabelle. Mit dem GIN-Index klappt es in ms.
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    "CREATE INDEX IF NOT EXISTS ix_photos_description_trgm "
+    "ON photos USING gin (description gin_trgm_ops) "
+    "WHERE description IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_photos_filename_trgm "
+    "ON photos USING gin (filename gin_trgm_ops)",
     # ── Partial-Indexes für die Kern-Query der Bibliotheks-Timeline ───────────
     # Die Standard-Galerie-Query (view=library, sort=newest) hatte keinen
     # passenden Index. Postgres scannte über 140k Rows und filterte.

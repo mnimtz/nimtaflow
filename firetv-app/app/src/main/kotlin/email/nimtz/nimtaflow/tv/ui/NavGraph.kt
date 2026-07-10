@@ -113,7 +113,10 @@ fun AppNavGraph(
                 updateRelease = availableRelease,
                 updateProgress = updateProgress,
                 onInstallUpdate = {
-                    availableRelease?.let { release ->
+                    // Doppel-Klick-Guard: verhindert dass ein zweiter Enter mid-Download
+                    // eine parallele Coroutine startet → gleichzeitig schreibende
+                    // tmpFile-Handles → korrupter Download / renameTo-Race.
+                    if (updateProgress < 0) availableRelease?.let { release ->
                         scope.launch {
                             updateProgress = 0
                             try {

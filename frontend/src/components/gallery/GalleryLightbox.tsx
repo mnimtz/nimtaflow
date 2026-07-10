@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import Lightbox from 'yet-another-react-lightbox'
@@ -572,9 +572,15 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
   // Fall back to generous dimensions when EXIF width/height are missing —
   // otherwise yet-another-react-lightbox renders the image at its tiny natural
   // (thumbnail) size instead of scaling it to fill the viewport.
-  const slides = photos.map(p => p.is_video
-    ? { type: 'video' as const, poster: thumbUrl(p, 'large'), width: p.width || 1280, height: p.height || 720, sources: [{ src: `/api/photos/${p.id}/video/stream`, type: 'video/mp4' }], description: p.filename }
-    : { src: thumbUrl(p, 'large'), width: p.width || 1600, height: p.height || 1200, description: p.filename, download: { url: `/api/photos/${p.id}/original`, filename: p.filename } })
+  // useMemo verhindert dass yet-another-react-lightbox bei jedem Elternteil-
+  // Re-render die slides als "neu" sieht und den Player remountet (Video-Neustart,
+  // hasMore-Flackern). Kernkriterium: die Photo-Referenz + Länge.
+  const slides = useMemo(
+    () => photos.map(p => p.is_video
+      ? { type: 'video' as const, poster: thumbUrl(p, 'large'), width: p.width || 1280, height: p.height || 720, sources: [{ src: `/api/photos/${p.id}/video/stream`, type: 'video/mp4' }], description: p.filename }
+      : { src: thumbUrl(p, 'large'), width: p.width || 1600, height: p.height || 1200, description: p.filename, download: { url: `/api/photos/${p.id}/original`, filename: p.filename } }),
+    [photos],
+  )
 
   // External video-AI ("animate this photo") — only when opted in (Settings → Highlights).
   const toast = useToast()

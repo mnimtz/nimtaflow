@@ -1200,6 +1200,16 @@ async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db),
     web = photo.video_webm_path
     if web and os.path.exists(web):
         mt = "video/mp4" if web.endswith(".mp4") else "video/webm"
+        # X-Accel-Redirect: nginx liefert die Bytes mit sendfile + Range-Support
+        # direkt aus /cache. Vorher lief jeder Byte-Range-Request von ExoPlayer/
+        # AVPlayer durch FastAPI FileResponse → Python-RAM je Seek.
+        _cache_prefix = "/cache/"
+        if web.startswith(_cache_prefix):
+            accel_path = "/internal-video-cache/" + web[len(_cache_prefix):]
+            return Response(headers={
+                "X-Accel-Redirect": accel_path,
+                "Content-Type": mt,
+            })
         return FileResponse(web, media_type=mt,
                             headers={"Cache-Control": "public, max-age=86400"})
 

@@ -89,7 +89,10 @@ struct DashboardView: View {
             .fullScreenCover(item: $playWeekly) { wh in
                 ZStack(alignment: .topTrailing) {
                     Color.black.ignoresSafeArea()
-                    VideoPlayerView(url: api.url("api/highlights/\(wh.id)/video?access_token=\(api.token)"))
+                    VideoPlayerView(
+                        url: api.url("api/highlights/\(wh.id)/video"),
+                        bearerToken: api.token,
+                    )
                         .ignoresSafeArea()
                     Button { playWeekly = nil } label: {
                         Image(systemName: "xmark.circle.fill")

@@ -76,7 +76,12 @@ fun GalleryScreen(
         }
     }
 
-    // Group photos by month for section headers
+    // Group photos by month for section headers.
+    // WICHTIG: die flache Anzeige-Reihenfolge kann von der Server-Reihenfolge
+    // abweichen (Server: newest first — aber wenn Import-Batches vermischt sind,
+    // ist die Chronologie pro Monat nicht 1:1 in photos). Wir brauchen deshalb
+    // eine `flatPhotos`-Liste die exakt der grouped-Reihenfolge folgt, damit der
+    // MediaViewer beim Klick auf ein Foto das RICHTIGE öffnet.
     val grouped: List<Pair<String, List<IndexedPhoto>>> = remember(photos) {
         var idx = 0
         photos
@@ -87,6 +92,9 @@ fun GalleryScreen(
                 val label = formatMonthYear(group.firstOrNull()?.takenAt)
                 label to group.map { p -> IndexedPhoto(p, idx++) }
             }
+    }
+    val flatPhotos = remember(grouped) {
+        grouped.flatMap { (_, ips) -> ips.map { it.photo } }
     }
 
     if (loading && photos.isEmpty()) {
@@ -137,11 +145,12 @@ fun GalleryScreen(
                 )
             }
 
-            // Photos in this month
+            // Photos in this month — nutzt flatPhotos (grouped-Reihenfolge)
+            // damit der Index zur richtigen Liste passt.
             items(indexedPhotos, key = { it.photo.id }) { (photo, globalIdx) ->
                 PhotoCard(
                     photo, api, token,
-                    onClick = { onPhotoSelected(photos, globalIdx) },
+                    onClick = { onPhotoSelected(flatPhotos, globalIdx) },
                     modifier = if (globalIdx == 0) Modifier.focusRequester(firstCardFocus) else Modifier,
                 )
             }
