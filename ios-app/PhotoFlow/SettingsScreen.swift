@@ -521,6 +521,16 @@ private struct AdbDeviceInfo: Decodable, Identifiable {
     enum CodingKeys: String, CodingKey { case deviceId = "id", model, state }
 }
 
+/// Strukturierte Antwort vom `POST /firetv/adb-install`. Backend liefert seit
+/// v1.511.0 einen präzisen Status statt eines pauschalen `success: true`, das
+/// zusammen mit dem irreführenden Frontend-Text ("bitte am Gerät bestätigen")
+/// den User im Kreis geschickt hat.
+private struct AdbInstallResponse: Decodable {
+    let status: String        // installed | reinstalled | unauthorized | offline | failed
+    let message: String?
+    let device_id: String?
+}
+
 private struct FireTVSection: View {
     @EnvironmentObject var api: APIClient
     @State private var apkInfo: ApkInfo?
@@ -618,30 +628,7 @@ private struct FireTVSection: View {
 
             // ADB Autodiscover
             Button {
-                Task {
-                    scanning = true; adbDevices = []; installMsg = nil
-                    defer { scanning = false }
-                    let subnetSuffix: String = {
-                        guard let host = URL(string: api.serverURL)?.host else { return "" }
-                        let parts = host.components(separatedBy: ".")
-                        guard parts.count == 4, parts.allSatisfy({ Int($0) != nil }) else { return "" }
-                        return "?subnet=\(parts[0]).\(parts[1]).\(parts[2])"
-                    }()
-                    let adbPath = "api/v1/software/firetv/adb-devices\(subnetSuffix)"
-                    do {
-                        let list = try await api.get(adbPath, as: AdbDeviceList.self)
-                        adbDevices = list.devices
-                        if let backendError = list.error {
-                            installMsg = "Scan-Fehler: \(backendError)"
-                        } else if adbDevices.isEmpty {
-                            installMsg = "Keine Geräte gefunden — FireTV einschalten + ADB über Netzwerk aktivieren"
-                        }
-                    } catch APIClient.APIError.status(let code) {
-                        installMsg = "Scan fehlgeschlagen (HTTP \(code))"
-                    } catch {
-                        installMsg = "Scan fehlgeschlagen: \(error.localizedDescription)"
-                    }
-                }
+                Task { await scanAdb() }
             } label: {
                 HStack {
                     if scanning { ProgressView().controlSize(.small) }
@@ -660,21 +647,48 @@ private struct FireTVSection: View {
                         }
                     }
                     Spacer()
-                    if device.state == "device" {
+                    if device.state == "device" || device.state == "unauthorized" {
                         Button {
                             Task {
                                 installing = device.id; defer { installing = nil }
-                                _ = try? await api.action(
-                                    "api/v1/software/firetv/adb-install", method: "POST",
-                                    json: ["device_id": device.id])
-                                installMsg = "Installation auf \(device.model) gestartet — bitte am Gerät bestätigen"
+                                installMsg = nil
+                                var req = URLRequest(url: api.absoluteURL("api/v1/software/firetv/adb-install"))
+                                req.httpMethod = "POST"
+                                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                                if !api.token.isEmpty {
+                                    req.setValue("Bearer \(api.token)", forHTTPHeaderField: "Authorization")
+                                }
+                                req.httpBody = try? JSONSerialization.data(
+                                    withJSONObject: ["device_id": device.id])
+                                do {
+                                    let resp = try await api.send(req, as: AdbInstallResponse.self)
+                                    installMsg = switch resp.status {
+                                    case "installed":
+                                        "✓ \(device.model): App installiert."
+                                    case "reinstalled":
+                                        "✓ \(device.model): neu installiert (Signatur-Konflikt aufgelöst)."
+                                    case "unauthorized":
+                                        resp.message ?? "\(device.model) zeigt jetzt einen USB-Debugging-Dialog — bitte am FireTV bestätigen ('Immer erlauben'), dann nochmal auf Installieren."
+                                    case "offline":
+                                        resp.message ?? "\(device.model) nicht erreichbar."
+                                    default:
+                                        resp.message ?? "Installation fehlgeschlagen."
+                                    }
+                                } catch {
+                                    installMsg = "Netzwerkfehler: \(error.localizedDescription)"
+                                }
+                                // Nach dem Versuch die Liste refreshen — nach 'unauthorized'
+                                // ändert sich der state → 'device' sobald User zugestimmt hat.
+                                _ = try? await Task.sleep(nanoseconds: 500_000_000)
+                                await scanAdb()
                             }
                         } label: {
                             if installing == device.id {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Label("Installieren", systemImage: "arrow.down.to.line.circle.fill")
-                                    .labelStyle(.iconOnly).foregroundStyle(.blue)
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(device.state == "unauthorized" ? .orange : .blue)
                             }
                         }.disabled(installing != nil)
                     }
@@ -693,6 +707,35 @@ private struct FireTVSection: View {
                 autoUpdate = (s["firetv.auto_update"] ?? "false") == "true"
                 publicUrl = s["firetv.public_url"] ?? ""
             }
+        }
+    }
+
+    /// Sucht ADB-Geräte im Subnetz des Servers und aktualisiert die Liste.
+    /// Wird auch nach einem Install-Versuch aufgerufen (state wechselt dann
+    /// z.B. von 'unauthorized' zu 'device').
+    @MainActor
+    private func scanAdb() async {
+        scanning = true; adbDevices = []; installMsg = nil
+        defer { scanning = false }
+        let subnetSuffix: String = {
+            guard let host = URL(string: api.serverURL)?.host else { return "" }
+            let parts = host.components(separatedBy: ".")
+            guard parts.count == 4, parts.allSatisfy({ Int($0) != nil }) else { return "" }
+            return "?subnet=\(parts[0]).\(parts[1]).\(parts[2])"
+        }()
+        let adbPath = "api/v1/software/firetv/adb-devices\(subnetSuffix)"
+        do {
+            let list = try await api.get(adbPath, as: AdbDeviceList.self)
+            adbDevices = list.devices
+            if let backendError = list.error {
+                installMsg = "Scan-Fehler: \(backendError)"
+            } else if adbDevices.isEmpty {
+                installMsg = "Keine Geräte gefunden — FireTV einschalten + ADB über Netzwerk aktivieren"
+            }
+        } catch APIClient.APIError.status(let code) {
+            installMsg = "Scan fehlgeschlagen (HTTP \(code))"
+        } catch {
+            installMsg = "Scan fehlgeschlagen: \(error.localizedDescription)"
         }
     }
 }
