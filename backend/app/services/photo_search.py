@@ -16,13 +16,21 @@ import math
 from collections import defaultdict
 from typing import List, Optional
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.photo import Photo, PhotoStatus
 from app.models.tag import Tag, PhotoTag
 from app.models.face import Face
 from app.models.person import Person
+
+
+def _word_regex(token: str) -> str:
+    """PostgreSQL Regex mit Wortgrenzen (\y). Verhindert dass 'hund' auch
+    'Hundert' oder 'Automat' matcht. Sonderzeichen escapen damit sie nicht
+    als Regex-Metazeichen interpretiert werden."""
+    escaped = re.escape(token)
+    return rf"\y{escaped}\y"
 
 _STOP = {"der", "die", "das", "ein", "eine", "einen", "und", "oder", "mit", "von", "vom",
          "auf", "im", "in", "den", "dem", "des", "bei", "beim", "zur", "zum", "the", "and",
@@ -130,7 +138,10 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         from app.services import jina_embed
         vec = jina_embed.embed_text(q)
         if vec and len(vec) == 768:
-            max_dist = float(settings.get("search.max_distance", "0.62") or 0.62)
+            # Default 0.48 (statt 0.62): Jina-CLIP-v2 Cross-Modal ist qualitativ
+            # solide, aber 0.62 hat massive Recall-Noise gebracht (visuelle "vielleicht"-
+            # Treffer als sichere Hits). 0.48 → Similarity ≈ 0.52, sinnvoller Schwelle.
+            max_dist = float(settings.get("search.max_distance", "0.48") or 0.48)
             for col in (Photo.embedding, Photo.embedding_text):
                 dist = col.cosine_distance(vec)
                 rows = (await db.execute(
@@ -148,27 +159,38 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         await db.rollback()
 
     # ── literal / tag / person hits ──────────────────────────────────────────
+    # Wortgrenzen-Match statt Substring: "hund" matcht NICHT "Hundert",
+    # "auto" matcht NICHT "Automat". Nutzt Postgres-Regex mit `\y` word boundary.
     kw: dict = defaultdict(int)
     if tokens:
         try:
             for t in tokens:
-                like = f"%{t}%"
+                rx = _word_regex(t)
                 rows = (await db.execute(select(Photo.id).where(*base, or_(
-                    Photo.description.ilike(like), Photo.keywords.ilike(like),
-                    Photo.city.ilike(like), Photo.country.ilike(like), Photo.location_name.ilike(like),
+                    Photo.description.op("~*")(rx),
+                    Photo.keywords.op("~*")(rx),
+                    Photo.city.op("~*")(rx),
+                    Photo.country.op("~*")(rx),
+                    Photo.location_name.op("~*")(rx),
                 )))).all()
                 for (pid,) in rows:
                     kw[pid] += 1
             # tags (scoped to accessible photos)
             rows = (await db.execute(
                 select(PhotoTag.photo_id).join(Tag, Tag.id == PhotoTag.tag_id)
-                .where(PhotoTag.photo_id.in_(acc_sub), or_(*[Tag.name.ilike(f"%{t}%") for t in tokens]))
+                .where(PhotoTag.photo_id.in_(acc_sub),
+                       or_(*[Tag.name.op("~*")(_word_regex(t)) for t in tokens]))
             )).all()
             for (pid,) in rows:
                 kw[pid] += 1
-            # person names → that person's accessible photos
+            # person names → that person's accessible photos.
+            # STRIKTE Regel: exakt oder Prefix (Name beginnt mit dem Token),
+            # damit "Anja" nicht "Anjana" trifft. Case-insensitive.
             prows = (await db.execute(
-                select(Person.id).where(or_(*[Person.name.ilike(f"%{t}%") for t in tokens]))
+                select(Person.id).where(or_(
+                    *[func.lower(Person.name) == t for t in tokens],
+                    *[func.lower(Person.name).like(f"{t} %") for t in tokens],   # "Anja Marie"
+                ))
             )).all()
             pids = [r[0] for r in prows]
             if pids:
@@ -197,17 +219,19 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
         await db.rollback()  # don't poison the session for the final fetch below
 
     # ── combine & rank ────────────────────────────────────────────────────────
-    # Relevance floor: a photo that ONLY matched semantically with a weak score is
-    # noise (the old behaviour filled the list to `limit` with ~irrelevant images).
-    # Keep it only if it had a keyword/person/relationship hit OR a decent semantic
-    # score. Tunable via search.min_score.
+    # Rebalance: früher dominierte JEDES Keyword-Hit die Semantik (10+2c vs 0..1),
+    # was "rotes Auto" alle Bilder mit dem Wort "Auto" vor die visuell tatsächlich
+    # rot-Auto-Bilder rankte. Neue Gewichtung:
+    #   keyword: 2.0 + 1.0*count  → 3.0 bei 1 Hit, 4.0 bei 2 Hits
+    #   semantic: 0..8 (skaliert)  → visuelle Ähnlichkeit kann gewinnen
+    # Beide addieren sich → ein Bild das visuell UND textuell passt gewinnt klar.
     sem_floor = float(settings.get("search.min_score", "0.28") or 0.28)
     scores: dict = {}
     for pid, c in kw.items():
-        scores[pid] = scores.get(pid, 0.0) + 10.0 + c * 2.0   # precise hits dominate
+        scores[pid] = scores.get(pid, 0.0) + 2.0 + c * 1.0
     for pid, s in sem.items():
         if pid in kw or s >= sem_floor:                        # drop weak semantic-only noise
-            scores[pid] = scores.get(pid, 0.0) + s             # semantic 0..1 fills in
+            scores[pid] = scores.get(pid, 0.0) + s * 8.0       # semantic ist gleichwertig
     if not scores:
         return []
     top = sorted(scores, key=lambda p: -scores[p])[:limit]

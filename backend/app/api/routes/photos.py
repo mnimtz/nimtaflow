@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, distinct, extract, text
+from sqlalchemy.orm import load_only
 from datetime import date, datetime, timezone
 import os, subprocess, pathlib, mimetypes, asyncio
 
@@ -66,12 +67,25 @@ def _base_query(
         q = q.where(Photo.is_video == False, or_(Photo.mime_type.is_(None), Photo.mime_type.not_like("image/raw%")))
     elif media_type == "raw":
         q = q.where(Photo.mime_type.like("image/raw%"))
+    # Wichtig: die Joins mit Face und PhotoTag können ein Foto MEHRFACH
+    # zurückgeben (Foto mit mehreren Gesichtern derselben Person; Foto mit
+    # mehreren PhotoTag-Zeilen desselben Tag-Namens). Ohne DISTINCT:
+    # sichtbare Duplikate in der Galerie + falsches `total` + zu frühes
+    # Pagination-Ende (items.length < limit).
+    _joined = False
     if person_id:
         from app.models.face import Face
         q = q.join(Face, Face.photo_id == Photo.id).where(Face.person_id == person_id)
+        _joined = True
     if tag:
         from app.models.tag import Tag, PhotoTag
         q = q.join(PhotoTag, PhotoTag.photo_id == Photo.id).join(Tag, Tag.id == PhotoTag.tag_id).where(Tag.name == tag)
+        _joined = True
+    if _joined:
+        # SELECT DISTINCT * (Postgres-Standard, kein DISTINCT ON) — Photo.id
+        # ist PK, alle Spalten pro id identisch → wirkt genau wie DISTINCT ON (id)
+        # und harmoniert mit dem späteren ORDER BY taken_at DESC, id DESC.
+        q = q.distinct()
     return q
 
 
@@ -132,6 +146,17 @@ async def list_photos(
     else:  # newest (default)
         q = q.order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
     q = q.offset((page - 1) * limit).limit(limit)
+    # Nur die Spalten laden, die PhotoBase tatsächlich braucht. Erspart pro Row
+    # ~800 Bytes (description Text 200-1000 chars, caption, keywords, camera-
+    # meta die für die Grid-Ansicht irrelevant sind).
+    q = q.options(load_only(
+        Photo.id, Photo.path, Photo.filename, Photo.taken_at,
+        Photo.width, Photo.height, Photo.latitude, Photo.longitude,
+        Photo.status, Photo.thumb_small, Photo.thumb_medium, Photo.processed_at,
+        Photo.is_video, Photo.duration_seconds, Photo.is_favorite,
+        Photo.is_archived, Photo.is_trashed, Photo.user_rating,
+        Photo.focus_x, Photo.focus_y, Photo.blur_data,
+    ))
     photos = (await db.execute(q)).scalars().all()
     return PhotoListResponse(total=total or 0, page=page, limit=limit, items=photos)
 

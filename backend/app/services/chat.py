@@ -1217,9 +1217,25 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         # Echte gesamt_anzahl: separater COUNT ohne 2000er-Cap, damit das Modell
                         # "2000 Fotos von Anja" nicht sagt, wenn es 7742 sind.
                         if args.get("kontext_filtern") and context_ids:
-                            gesamt = len([i for i in context_ids
-                                          if not ctx_acl or True])  # einfache Annäherung
-                            full = [i for i in context_ids]
+                            # WAR: `not ctx_acl or True` — immer True → Filter unwirksam.
+                            # Jetzt: bei aktivem ctx_acl (Medientyp/Person-Filter im Kontext)
+                            # zählen wir gefiltert per COUNT — sonst einfach len(context_ids).
+                            if ctx_acl:
+                                gesamt = await db.scalar(
+                                    select(func.count()).select_from(Photo).where(
+                                        Photo.id.in_(context_ids), *ctx_acl,
+                                    )
+                                ) or 0
+                                # gallery_ids sollen auch die gefilterten sein
+                                _filtered = (await db.execute(
+                                    select(Photo.id).where(
+                                        Photo.id.in_(context_ids), *ctx_acl,
+                                    ).order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc())
+                                )).all()
+                                full = [pid for (pid,) in _filtered]
+                            else:
+                                gesamt = len(context_ids)
+                                full = list(context_ids)
                             gallery_ids = full
                         elif has_struct:
                             cnt_res = await _count(

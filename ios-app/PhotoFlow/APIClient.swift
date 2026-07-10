@@ -71,23 +71,42 @@ final class APIClient: ObservableObject {
         try await send(makeRequest(path), as: type)
     }
 
+    /// Singleton für laufende Refresh-Task. Verhindert die klassische Race:
+    /// beim Grid-Scroll landen viele Requests gleichzeitig auf 401, jeder
+    /// startet `refreshToken()`, der ERSTE bekommt neue Tokens, die anderen
+    /// verwenden den bereits invalidierten Refresh-Token → 401 → Force-Logout.
+    /// Jetzt: alle parallelen Aufrufer warten auf DIESELBE Task.
+    private var _refreshTask: Task<Bool, Never>?
+
     /// On 401, refresh the access token with the stored refresh token (long-lived)
     /// and retry once — so an expired access token NEVER forces a re-login. Returns
     /// false if there's no refresh token or the refresh itself failed.
     private func refreshToken() async -> Bool {
+        // Bereits laufende Refresh-Task existiert → mitwarten statt neu starten
+        if let existing = _refreshTask {
+            return await existing.value
+        }
         guard !refresh.isEmpty else { return false }
-        // Percent-encode the token: JWTs are URL-safe today, but a reserved char
-        // would otherwise silently break refresh → spurious force-logout.
-        let enc = refresh.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? refresh
-        var req = URLRequest(url: absoluteURL("api/auth/refresh?refresh_token=\(enc)"))
-        req.httpMethod = "POST"
-        do {
-            let (data, resp) = try await pfSession.data(for: req)
-            guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return false }
-            let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
-            token = tok.access_token; refresh = tok.refresh_token
-            return true
-        } catch { return false }
+        let task = Task<Bool, Never> { [weak self] in
+            guard let self else { return false }
+            let enc = self.refresh.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? self.refresh
+            var req = URLRequest(url: self.absoluteURL("api/auth/refresh?refresh_token=\(enc)"))
+            req.httpMethod = "POST"
+            do {
+                let (data, resp) = try await pfSession.data(for: req)
+                guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return false }
+                let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
+                await MainActor.run {
+                    self.token = tok.access_token
+                    self.refresh = tok.refresh_token
+                }
+                return true
+            } catch { return false }
+        }
+        _refreshTask = task
+        let ok = await task.value
+        _refreshTask = nil
+        return ok
     }
 
     @discardableResult
@@ -148,7 +167,13 @@ final class APIClient: ObservableObject {
         token = tok.access_token; refresh = tok.refresh_token; loggedIn = true
     }
 
-    func logout() async { token = ""; refresh = ""; loggedIn = false }
+    func logout() async {
+        token = ""; refresh = ""; loggedIn = false
+        // Wichtig: URLCache + NSCache leeren, damit Voruser-Thumbnails nicht
+        // beim nächsten Login des Nachbenutzers durchscheinen. Die Disk-Cache-
+        // Fragmente unter photoflow-thumbs wurden vorher nicht geleert.
+        clearImageCaches()
+    }
 
     // MARK: Feeds
     func photos(cursor: Int?, favorites: Bool = false, mediaType: String? = nil,

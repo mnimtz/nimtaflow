@@ -2,9 +2,22 @@ import SwiftUI
 import UIKit
 
 // Shared in-memory image cache (decoded UIImages, fast path).
+// countLimit ALLEIN reicht nicht: 800 dekodierte medium-Thumbnails (~256 KB)
+// = ~200 MB — auf älteren Geräten Jetsam-kritisch. Zusätzliches totalCostLimit
+// bei 128 MB kappt den Speicherverbrauch bei Beibehaltung des Cache-Nutzens.
 private let imageCache: NSCache<NSURL, UIImage> = {
-    let c = NSCache<NSURL, UIImage>(); c.countLimit = 800; return c
+    let c = NSCache<NSURL, UIImage>()
+    c.countLimit = 800
+    c.totalCostLimit = 128 * 1024 * 1024
+    return c
 }()
+
+/// Schätzt Kosten pro UIImage (Byte für dekodierten RGBA-Puffer).
+private func imageCost(_ img: UIImage) -> Int {
+    let w = Int(img.size.width * img.scale)
+    let h = Int(img.size.height * img.scale)
+    return max(w * h * 4, 4096)  // Mindestens 4 KB
+}
 
 // Dedicated URLSession with a big on-DISK cache. Thumbnails are served with a
 // long immutable Cache-Control, so once fetched they're reused from disk across
@@ -50,7 +63,7 @@ final class AuthImageLoader: ObservableObject {
                     let (data, resp) = try await imageSession.data(for: req)
                     let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
                     if (200..<300).contains(code), let img = UIImage(data: data) {
-                        imageCache.setObject(img, forKey: url as NSURL)
+                        imageCache.setObject(img, forKey: url as NSURL, cost: imageCost(img))
                         if !Task.isCancelled { image = img; failed = false }
                         return
                     }
@@ -58,7 +71,13 @@ final class AuthImageLoader: ObservableObject {
                     // 404 (not ready) / 5xx → fall through to retry
                 } catch is CancellationError { return }
                 catch { /* network blip → retry */ }
-                if attempt < delays.count { try? await Task.sleep(nanoseconds: delays[attempt]) }
+                if attempt < delays.count {
+                    // Task.sleep respektiert Cancellation. Wenn währenddessen
+                    // die View verschwindet (schnelles Scrollen), wirft es
+                    // CancellationError statt weitere 3s zu blockieren.
+                    do { try await Task.sleep(nanoseconds: delays[attempt]) }
+                    catch { return }
+                }
             }
             if !Task.isCancelled { failed = true }
         }
@@ -76,7 +95,7 @@ func prefetchImage(_ url: URL?, token: String) {
         if let (data, resp) = try? await imageSession.data(for: req),
            (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
            let img = UIImage(data: data) {
-            await MainActor.run { imageCache.setObject(img, forKey: url as NSURL) }
+            await MainActor.run { imageCache.setObject(img, forKey: url as NSURL, cost: imageCost(img)) }
         }
     }
 }
@@ -87,9 +106,16 @@ func imageCacheSizeMB() -> Int {
 }
 
 /// Clear the in-memory + on-disk image caches (Settings → "Cache leeren").
+/// WICHTIG bei Logout: der URLCache legt Files im Cache-Directory ab, die auch
+/// nach `removeAllCachedResponses` teilweise als tote Fragmente liegen können.
+/// Wir räumen zusätzlich den Ordner `photoflow-thumbs` unter Caches auf.
 @MainActor func clearImageCaches() {
     imageCache.removeAllObjects()
     imageSession.configuration.urlCache?.removeAllCachedResponses()
+    if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+        let dir = caches.appendingPathComponent("photoflow-thumbs")
+        try? FileManager.default.removeItem(at: dir)
+    }
 }
 
 /// Shimmer-Platzhalter für Thumb während des Ladens — sanft animierter Gradient.

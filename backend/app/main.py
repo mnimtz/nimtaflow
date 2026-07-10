@@ -120,6 +120,18 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS email   VARCHAR(256)",
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS phone   VARCHAR(64)",
     "ALTER TABLE persons ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
+    # ── Partial-Indexes für die Kern-Query der Bibliotheks-Timeline ───────────
+    # Die Standard-Galerie-Query (view=library, sort=newest) hatte keinen
+    # passenden Index. Postgres scannte über 140k Rows und filterte.
+    "CREATE INDEX IF NOT EXISTS ix_photos_lib_timeline "
+    "ON photos (taken_at DESC NULLS LAST, id DESC) "
+    "WHERE is_trashed=false AND is_archived=false AND is_missing=false AND thumb_small IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_photos_favorites_timeline "
+    "ON photos (taken_at DESC NULLS LAST, id DESC) "
+    "WHERE is_favorite=true AND is_trashed=false AND thumb_small IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_photos_trash_timeline "
+    "ON photos (trashed_at DESC NULLS LAST, id DESC) "
+    "WHERE is_trashed=true",
     # ── users: defensive (in case the table predates these columns) ───────────
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_config JSONB",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_pro BOOLEAN NOT NULL DEFAULT FALSE",

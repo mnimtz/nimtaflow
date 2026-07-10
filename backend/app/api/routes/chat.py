@@ -22,6 +22,11 @@ class ChatRequest(BaseModel):
     message: str
     history: List[ChatMsg] = []
     provider: Optional[str] = None   # "gemini" | "local" — overrides chat.provider
+    # IDs des letzten Suchergebnisses des Frontends. Ermöglicht "davon nur
+    # Videos", "welche davon zeigen Anja" etc. — Chat filtert dann in diesem
+    # Set statt frisch zu suchen. Ohne dieses Feld war der Kontext-Modus im
+    # Chat-Service totes Code-Pfad.
+    context_ids: Optional[List[int]] = None
 
 
 @router.get("/status")
@@ -40,4 +45,5 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db),
                user=Depends(current_user_optional)):
     s = await load_settings(db)
     hist = [{"role": m.role, "content": m.content} for m in body.history]
-    return await chat_svc.chat(body.message, hist, s, db, provider=body.provider, user=user)
+    return await chat_svc.chat(body.message, hist, s, db, provider=body.provider,
+                                user=user, context_ids=body.context_ids)

@@ -9,7 +9,14 @@ import './index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1 },
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      // v5-Default ist true → bei jedem Tab-Wechsel zurück zum Browser wurden
+      // ALLE geladenen Galerie-Seiten neu geholt (bei 20 Seiten × 100 Fotos
+      // = 10 MB nutzloser Traffic). Für eine Foto-Bibliothek unnötig aggressiv.
+      refetchOnWindowFocus: false,
+    },
   },
 })
 

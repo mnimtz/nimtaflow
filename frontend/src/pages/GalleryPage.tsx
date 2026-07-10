@@ -164,8 +164,11 @@ export default function GalleryPage() {
 
   const infiniteQuery = useInfiniteQuery({
     queryKey: ['photos', 'grid', filterParams, pageSize],
-    queryFn: ({ pageParam = 1 }) =>
-      api.get('/photos', { params: { ...filterParams, page: pageParam, limit: pageSize } })
+    queryFn: ({ pageParam = 1, signal }) =>
+      api.get('/photos', {
+        params: { ...filterParams, page: pageParam, limit: pageSize },
+        signal,   // React-Query cancelt alte Requests bei Filter-Wechsel/Unmount
+      })
         .then(r => r.data as PhotoListResponse),
     // Nächste Seite laden, wenn die letzte VOLL war (total wird ab Seite 2 nicht mehr
     // gezählt → -1). Eine nicht-volle Seite ist das Ende.
@@ -221,15 +224,36 @@ export default function GalleryPage() {
     setFilters(f => ({ ...f, dateTo: '' }))
   }
 
+  // Optimistic Update statt kompletter Refetch: Favorit-Klick auf einem
+  // Foto in Seite 12 einer 25-Seiten-Galerie hat vorher ALLE Seiten neu geladen
+  // (dank Prefix-Match auf ['photos']). Jetzt: nur die einzelne Photo-Row in
+  // allen Cache-Einträgen togglen — kein Netzwerk-Refetch.
   const favMutation = useMutation({
     mutationFn: (id: number) => api.patch(`/photos/${id}/favorite`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['photos'] }),
+    onMutate: async (id: number) => {
+      const cache = qc.getQueriesData<{ pages: PhotoListResponse[] }>({ queryKey: ['photos'] })
+      cache.forEach(([key, data]) => {
+        if (!data?.pages) return
+        qc.setQueryData(key, {
+          ...data,
+          pages: data.pages.map(pg => ({
+            ...pg,
+            items: pg.items.map(p =>
+              p.id === id ? { ...p, is_favorite: !p.is_favorite } : p,
+            ),
+          })),
+        })
+      })
+    },
   })
 
   const batchMutation = useMutation({
     mutationFn: (action: string) => api.post('/photos/batch', { ids: [...selected], action }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['photos'] })
+      // Batch-Ops (archive, trash, delete) verändern Sichtbarkeit → hier ist
+      // ein Refetch unvermeidlich, aber wir invalidieren spezifischer: nur die
+      // Grid-Query, nicht z.B. photo-stats/photo-buckets in einem Zug.
+      qc.invalidateQueries({ queryKey: ['photos', 'grid'] })
       clearSelection()
     },
   })
