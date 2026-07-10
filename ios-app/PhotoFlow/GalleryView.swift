@@ -922,8 +922,58 @@ struct PhotoPager: View {
     }
 
     var body: some View {
+        rootContent
+        .onAppear {
+            index = photos.firstIndex(of: start) ?? 0
+            favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
+            ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
+            if !start.is_video {
+                prefetchImage(api.url("api/photos/\(start.id)/thumbnail?size=large"), token: api.token)
+            }
+            prefetchNeighbors()
+        }
+        .onChange(of: index) { _, _ in actionNote = nil; prefetchNeighbors() }
+        .sheet(isPresented: $showShare) {
+            if let c = cur {
+                ShareSheetView(target: .photo(id: c.id, title: c.filename))
+                    .presentationDetents([.medium])
+            }
+        }
+        .sheet(isPresented: $showInfo) {
+            if let p = photos[safe: index] { PhotoInfoView(photo: p).presentationDetents([.medium, .large]) }
+        }
+        .sheet(isPresented: $showAlbumPicker) {
+            AlbumPickerSheet { albumId in
+                guard let id = cur?.id else { return }
+                Task { try? await api.addPhotosToAlbum(albumId, photoIds: [id]); actionNote = "Zu Album hinzugefügt" }
+            }.presentationDetents([.medium, .large])
+        }
+        .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
+            ForEach(profileFaces) { f in
+                Button(f.person_name) {
+                    Task { try? await api.setProfileFace(personId: f.person_id, faceId: f.face_id)
+                           actionNote = "Titelbild gesetzt: \(f.person_name)" }
+                }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        }
+        .confirmationDialog("Dieses Medium endgültig löschen? Datei und Eintrag werden entfernt – das kann nicht rückgängig gemacht werden.",
+                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Endgültig löschen", role: .destructive) {
+                guard let id = cur?.id else { return }
+                Task { try? await api.deletePhoto(id); onRemoved?(id); dismiss() }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        }
+    }
+
+    /// Der eigentliche Pager — je nach Plattform in NavigationStack (macOS) oder nackt (iOS).
+    /// Ausgelagert damit die Modifier-Kette in `body` unabhängig von der #if-Verzweigung ist
+    /// (sonst: "onAppear cannot be used on type 'View'" weil Swift die Modifier nicht durch
+    /// den Preprozessor-Cut nachvollziehen kann).
+    @ViewBuilder
+    private var rootContent: some View {
         #if targetEnvironment(macCatalyst)
-        // macOS: NavigationStack with proper toolbar (Escape / ⌘W also dismiss the sheet)
         NavigationStack {
             pagerContent
                 .navigationBarTitleDisplayMode(.inline)
@@ -973,50 +1023,6 @@ struct PhotoPager: View {
         #else
         pagerContent
         #endif
-        .onAppear {
-            index = photos.firstIndex(of: start) ?? 0
-            favs = Set(photos.filter { $0.is_favorite }.map { $0.id })
-            ratings = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.user_rating ?? 0) })
-            // Pre-warm current + neighbours (current may not be in NSCache yet when
-            // opened from Memories where the thumbnail was just requested via prefetch).
-            if !start.is_video {
-                prefetchImage(api.url("api/photos/\(start.id)/thumbnail?size=large"), token: api.token)
-            }
-            prefetchNeighbors()
-        }
-        .onChange(of: index) { _, _ in actionNote = nil; prefetchNeighbors() }
-        .sheet(isPresented: $showShare) {
-            if let c = cur {
-                ShareSheetView(target: .photo(id: c.id, title: c.filename))
-                    .presentationDetents([.medium])
-            }
-        }
-        .sheet(isPresented: $showInfo) {
-            if let p = photos[safe: index] { PhotoInfoView(photo: p).presentationDetents([.medium, .large]) }
-        }
-        .sheet(isPresented: $showAlbumPicker) {
-            AlbumPickerSheet { albumId in
-                guard let id = cur?.id else { return }
-                Task { try? await api.addPhotosToAlbum(albumId, photoIds: [id]); actionNote = "Zu Album hinzugefügt" }
-            }.presentationDetents([.medium, .large])
-        }
-        .confirmationDialog("Als Titelbild setzen für…", isPresented: $showProfileDialog, titleVisibility: .visible) {
-            ForEach(profileFaces) { f in
-                Button(f.person_name) {
-                    Task { try? await api.setProfileFace(personId: f.person_id, faceId: f.face_id)
-                           actionNote = "Titelbild gesetzt: \(f.person_name)" }
-                }
-            }
-            Button("Abbrechen", role: .cancel) {}
-        }
-        .confirmationDialog("Dieses Medium endgültig löschen? Datei und Eintrag werden entfernt – das kann nicht rückgängig gemacht werden.",
-                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Endgültig löschen", role: .destructive) {
-                guard let id = cur?.id else { return }
-                Task { try? await api.deletePhoto(id); onRemoved?(id); dismiss() }
-            }
-            Button("Abbrechen", role: .cancel) {}
-        }
     }
 
     func loadProfileFaces() async {

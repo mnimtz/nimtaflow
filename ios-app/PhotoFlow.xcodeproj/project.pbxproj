@@ -184,8 +184,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
-				"MARKETING_VERSION[sdk=macosx*]" = 1.9;
+				MARKETING_VERSION = 1.10;
+				"MARKETING_VERSION[sdk=macosx*]" = 1.10;
 				PRODUCT_BUNDLE_IDENTIFIER = email.nimtz.photoflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
@@ -212,8 +212,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
-				"MARKETING_VERSION[sdk=macosx*]" = 1.9;
+				MARKETING_VERSION = 1.10;
+				"MARKETING_VERSION[sdk=macosx*]" = 1.10;
 				PRODUCT_BUNDLE_IDENTIFIER = email.nimtz.photoflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
