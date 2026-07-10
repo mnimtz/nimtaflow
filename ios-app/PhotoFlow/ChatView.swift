@@ -241,7 +241,7 @@ private struct ChatBubbleView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(bubble.photoIDs, id: \.self) { pid in
-                            Thumb(url: api.url("api/photos/\(pid)/thumbnail?size=medium"))
+                            Thumb(url: api.url("api/photos/\(pid)/thumbnail?size=small"))
                                 .frame(width: 92, height: 92)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .onTapGesture { onTapPhoto(pid) }

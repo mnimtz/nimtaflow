@@ -117,7 +117,7 @@ private struct HighlightCard: View {
                 .frame(maxWidth: .infinity)
                 .overlay {
                     if let cid = highlight.cover_photo_id {
-                        Thumb(url: api.url("api/photos/\(cid)/thumbnail?size=medium"))
+                        Thumb(url: api.url("api/photos/\(cid)/thumbnail?size=small"))
                     } else {
                         Color.gray.opacity(0.18)
                             .overlay(Image(systemName: "film").foregroundStyle(.secondary))

@@ -641,7 +641,11 @@ struct VarPhotoCell: View {
     let onTap: () -> Void
 
     var body: some View {
-        Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"), blurData: photo.blur_data)
+        // Grid-Kachel-Größe ca. 110-160dp @3x = 330-480px. "small" (320px) reicht
+        // bei kleinen Kacheln, "medium" (800px) war 4x mehr Traffic + RAM als nötig
+        // → Scroll spürbar langsamer, iCache läuft schneller voll.
+        Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=\(width > 200 ? "medium" : "small")"),
+              blurData: photo.blur_data)
             .frame(width: width, height: height)
             .clipped()
             .overlay(alignment: .bottomLeading) {

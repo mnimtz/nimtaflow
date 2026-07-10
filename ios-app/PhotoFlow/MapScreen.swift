@@ -70,7 +70,10 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
 struct MapScreen: View {
     @EnvironmentObject var api: APIClient
     @EnvironmentObject var store: Store
-    @AppStorage("map_style_pref") private var stylePrefRaw = MapStylePref.globus.rawValue
+    // Default: Satellit statt Globus. Der 3D-Realistic-Stil (elevation:.realistic)
+    // rendert Terrain-Meshes + Satellitentiles + 3D-Lichteffekte — das ist der
+    // teuerste MapKit-Modus. User kann jederzeit im Menu auf Globus umschalten.
+    @AppStorage("map_style_pref") private var stylePrefRaw = MapStylePref.satellit.rawValue
     @State private var clusters: [MapClusterV1] = []
     @State private var selected: PhotoV1?
     @State private var camera: MapCameraPosition = .region(
@@ -79,6 +82,10 @@ struct MapScreen: View {
     @State private var region: MKCoordinateRegion?
     @State private var loading = false
     @State private var mapError: String?
+    /// Nur die JEWEILS neueste loadClusters-Task darf ihre Cluster übernehmen.
+    /// Vorher: langsam zurückkehrende Response überschrieb die aktuellen Cluster
+    /// mit veralteten Daten (klassische Race bei schnellem Pan/Zoom).
+    @State private var loadTask: Task<Void, Never>?
     @State private var clusterPhotos: [PhotoV1] = []
     @State private var showClusterSheet = false
     @StateObject private var loc = LocationProvider()
@@ -142,7 +149,9 @@ struct MapScreen: View {
             .mapStyle(stylePref.mapStyle)
             .onMapCameraChange(frequency: .onEnd) { ctx in
                 region = ctx.region
-                Task { await loadClusters(ctx.region) }
+                // Vorherige Load-Task cancellen bevor die neue startet.
+                loadTask?.cancel()
+                loadTask = Task { await loadClusters(ctx.region) }
             }
             .navigationTitle("Karte")
             .toolbar {
@@ -186,7 +195,8 @@ struct MapScreen: View {
                     let worldRegion = MKCoordinateRegion(
                         center: .init(latitude: 25, longitude: 10),
                         span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 130))
-                    Task { await loadClusters(worldRegion) }
+                    loadTask?.cancel()
+                    loadTask = Task { await loadClusters(worldRegion) }
                 }
             }
             .onReceive(loc.$coordinate.compactMap { $0 }) { c in
@@ -255,25 +265,42 @@ struct MapScreen: View {
         let maxLat = r.center.latitude + r.span.latitudeDelta / 2
         let minLng = r.center.longitude - r.span.longitudeDelta / 2
         let maxLng = r.center.longitude + r.span.longitudeDelta / 2
+        // Adaptive Grid-Größe je nach Zoom:
+        // - Weltansicht (span > 60°) → grid=6  (nur ~36 Cluster global)
+        // - Länderansicht (span 10-60°) → grid=10
+        // - Stadtansicht (span < 10°) → grid=14 (feiner, mehr Details)
+        let maxSpan = max(r.span.latitudeDelta, r.span.longitudeDelta)
+        let grid = maxSpan > 60 ? 6 : (maxSpan > 10 ? 10 : 14)
+
+        // Kurz warten damit schnelles Pannen nicht viele überflüssige Requests
+        // aussendet. Bei Cancel via loadTask?.cancel() beendet Task.sleep sofort.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        if Task.isCancelled { return }
+
         loading = true; mapError = nil
         let mapFilter = store.chatMapFilter
         do {
-            clusters = try await api.mapClusters(minLat: minLat, minLng: minLng,
-                                                 maxLat: maxLat, maxLng: maxLng, grid: 12,
-                                                 personId: mapFilter?.personId,
-                                                 dateFrom: mapFilter?.dateFrom,
-                                                 dateTo: mapFilter?.dateTo)
-            // Beim ersten Laden auf den Schwerpunkt der echten Fotos zentrieren
-            // statt bei einem hardcodierten Globus-Startpunkt zu bleiben.
+            let fetched = try await api.mapClusters(
+                minLat: minLat, minLng: minLng,
+                maxLat: maxLat, maxLng: maxLng, grid: grid,
+                personId: mapFilter?.personId,
+                dateFrom: mapFilter?.dateFrom,
+                dateTo: mapFilter?.dateTo,
+            )
+            // Nach dem Fetch checken ob wir während der Antwort gecancelt wurden.
+            if Task.isCancelled { return }
+            clusters = fetched
             if !autocentered, !clusters.isEmpty {
                 autocentered = true
                 autofitClusters()
             }
         } catch is CancellationError {
         } catch {
-            mapError = "Karte: \((error as NSError).localizedDescription)"
+            if !Task.isCancelled {
+                mapError = "Karte: \((error as NSError).localizedDescription)"
+            }
         }
-        loading = false
+        if !Task.isCancelled { loading = false }
     }
 
     private func autofitClusters() {

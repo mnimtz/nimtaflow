@@ -291,10 +291,16 @@ struct PhotoGridView: View {
 struct PhotoTile: View {
     @EnvironmentObject var api: APIClient
     let photo: PhotoV1
+    /// Grid-Kacheln <200pt bekommen "small" (320px). Größere Kacheln (Suche mit
+    /// wenigen Ergebnissen, Detail-Sheets) "medium". Vorher: alles "medium".
+    var wantsLarge: Bool = false
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
-            .overlay { Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=medium"), blurData: photo.blur_data) }
+            .overlay {
+                Thumb(url: api.url("api/photos/\(photo.id)/thumbnail?size=\(wantsLarge ? "medium" : "small")"),
+                      blurData: photo.blur_data)
+            }
             .clipped()
             .overlay(alignment: .bottomLeading) {
                 if photo.is_video {
