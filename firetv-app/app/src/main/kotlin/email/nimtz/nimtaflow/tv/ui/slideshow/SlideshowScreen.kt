@@ -126,7 +126,6 @@ fun SlideshowScreen(
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(api.thumbUrl(photo.id, "large"))
-                        .addHeader("Authorization", "Bearer $token")
                         .crossfade(false)
                         .build(),
                     contentDescription = null,

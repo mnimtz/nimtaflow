@@ -199,7 +199,6 @@ private fun ScreensaverSlideshow(context: Context) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data("$serverUrl/api/photos/${photo.id}/thumbnail?size=large")
-                            .addHeader("Authorization", "Bearer $token")
                             .crossfade(false)
                             .build(),
                         contentDescription = null,

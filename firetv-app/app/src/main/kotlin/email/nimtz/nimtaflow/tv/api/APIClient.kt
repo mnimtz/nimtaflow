@@ -35,9 +35,16 @@ class APIClient(@Volatile var baseUrl: String, @Volatile private var token: Stri
     // MITTEN im Login-Flow.
     @Synchronized fun setToken(t: String) { token = t }
     fun hasToken() = token.isNotBlank()
+    /** Für den zentralen Coil-OkHttp-Interceptor: liest den aktuellen Token
+     *  ohne den Cache-Key mit Bearer-Bytes zu vergiften. */
+    fun currentToken(): String = token
 
     fun thumbUrl(photoId: Int, size: String = "medium") =
         "$baseUrl/api/photos/$photoId/thumbnail?size=$size"
+
+    /** URL für den runden Personen-Kreis. Backend liefert das Face-Crop. */
+    fun personAvatarUrl(personId: Int) =
+        "$baseUrl/api/people/$personId/avatar"
 
     /**
      * URL zum abspielen eines Videos.
@@ -116,7 +123,10 @@ class APIClient(@Volatile var baseUrl: String, @Volatile private var token: Stri
     // ── Persons ───────────────────────────────────────────────────────────────
 
     fun persons(): List<Person> =
-        runCatching { json.decodeFromString<List<Person>>(get("/api/persons")) }.getOrDefault(emptyList())
+        // Backend-Route heißt /api/people (nicht /api/persons wie ursprünglich
+        // benutzt — das gab lautlos 404 zurück, deshalb war die Personen-Liste
+        // in der App wochenlang leer).
+        runCatching { json.decodeFromString<List<Person>>(get("/api/people")) }.getOrDefault(emptyList())
 
     // ── Auth/Me ───────────────────────────────────────────────────────────────
 

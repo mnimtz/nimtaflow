@@ -113,11 +113,14 @@ fun GalleryScreen(
     }
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 220.dp),
+        // 155dp minSize → auf FullHD (1920px sichtbare Content-Fläche nach Sidebar
+        // ~1680) sind das ~10 Spalten; auf 4K TVs entsprechend ~16. Vorher 220dp
+        // ergab nur 6-7 riesige Kacheln, wirkte klobig und leer.
+        columns = GridCells.Adaptive(minSize = 155.dp),
         state = gridState,
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         // ── Diashow button (first row) ─────────────────────────────────────
@@ -203,8 +206,10 @@ fun PhotoCard(
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (focused) 1.06f else 1f,
-        animationSpec = androidx.compose.animation.core.tween(180),
+        // 1.10 auf kleineren Kacheln — Netflix-Standard, klar sichtbar ohne
+        // die Nachbar-Kacheln zu überdecken.
+        targetValue = if (focused) 1.10f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(160),
         label = "photoCardScale",
     )
 
@@ -214,12 +219,15 @@ fun PhotoCard(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                // Fokussierte Kachel über den Nachbarn — sonst wird sie beim
+                // Wachsen von der Reihe darunter clipped.
+                shadowElevation = if (focused) 12f else 0f
             }
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(8.dp))
             .border(
-                width = if (focused) 3.dp else 0.dp,
+                width = if (focused) 2.5.dp else 0.dp,
                 color = if (focused) Accent else Color.Transparent,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(8.dp),
             )
             .onFocusChanged { focused = it.isFocused }
             .focusable()
@@ -232,9 +240,12 @@ fun PhotoCard(
     ) {
         AsyncImage(
             model = ImageRequest.Builder(ctx)
-                .data(api.thumbUrl(photo.id, "medium"))
-                .addHeader("Authorization", "Bearer $token")
-                .crossfade(true)
+                // Kleinere Kacheln → "small" (320px) reicht statt "medium" (800px).
+                // Auth-Header wird vom zentralen ImageLoader-Interceptor gesetzt,
+                // manueller addHeader entfernt (vergiftete sonst den Cache-Key
+                // bei jedem Token-Wechsel).
+                .data(api.thumbUrl(photo.id, "small"))
+                .crossfade(120)
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,

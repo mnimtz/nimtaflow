@@ -33,3 +33,8 @@ CLAUDE.md
 
 # App Store Assets (enthält Demo-Creds/Reviewer-Notizen + Screenshots — nicht ins Repo)
 ios-app/appstore/
+
+# FireTV build artifacts
+firetv-app/app/build/
+firetv-app/build/
+firetv-app/.gradle/

@@ -207,20 +207,16 @@ private fun PersonCard(
                 .background(SurfaceHi),
             contentAlignment = Alignment.Center,
         ) {
-            if (person.samplePhotoId != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(ctx)
-                        .data(api.thumbUrl(person.samplePhotoId, "medium"))
-                        .addHeader("Authorization", "Bearer $token")
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(Icons.Default.Person, null, tint = Muted, modifier = Modifier.size(48.dp))
-            }
+            // Nutzt Face-Crop-Endpoint /api/people/{id}/avatar
+            AsyncImage(
+                model = ImageRequest.Builder(ctx)
+                    .data(api.personAvatarUrl(person.id))
+                    .crossfade(120)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         Text(

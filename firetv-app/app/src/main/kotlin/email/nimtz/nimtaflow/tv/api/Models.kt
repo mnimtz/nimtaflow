@@ -20,10 +20,19 @@ data class Photo(
 @Serializable
 data class Person(
     val id: Int,
-    val name: String,
+    val name: String = "",
+    // Backend /api/people liefert `face_count` (nicht `photo_count`);
+    // beide akzeptieren, damit ältere Server + Alias klappen.
+    @SerialName("face_count")      val faceCount: Int = 0,
     @SerialName("photo_count")     val photoCount: Int = 0,
+    // Backend liefert `profile_face_id` (nicht `sample_photo_id`) für den
+    // Avatar-Endpoint /api/people/{id}/avatar. Wir bauen daraus die URL.
+    @SerialName("profile_face_id") val profileFaceId: Int? = null,
     @SerialName("sample_photo_id") val samplePhotoId: Int? = null,
-)
+) {
+    /** Gesamt-Anzahl Fotos für die Sortierung/Anzeige. */
+    val effectivePhotoCount: Int get() = if (photoCount > 0) photoCount else faceCount
+}
 
 @Serializable
 data class PhotoListResponse(
@@ -45,7 +54,9 @@ data class Album(
 data class MemoryGroup(
     @SerialName("years_ago") val yearsAgo: Int,
     val date: String,
-    val items: List<Photo>,
+    // Backend liefert das Feld als "photos", nicht "items" → deshalb war die
+    // Erinnerungs-Rail immer leer (Deserialisierung schlug pro Gruppe fehl).
+    @SerialName("photos") val items: List<Photo> = emptyList(),
 )
 
 @Serializable

@@ -222,7 +222,6 @@ private fun PhotoItem(photoId: Int, api: APIClient, token: String) {
     AsyncImage(
         model = ImageRequest.Builder(ctx)
             .data(api.thumbUrl(photoId, "large"))
-            .addHeader("Authorization", "Bearer $token")
             .crossfade(true)
             .build(),
         contentDescription = null,

@@ -256,7 +256,6 @@ private fun HeroBanner(
             AsyncImage(
                 model = ImageRequest.Builder(ctx)
                     .data(api.thumbUrl(photo.id, "large"))
-                    .addHeader("Authorization", "Bearer $token")
                     .crossfade(true)
                     .build(),
                 contentDescription = null,
@@ -442,7 +441,6 @@ private fun SmallPhotoTile(
         AsyncImage(
             model = ImageRequest.Builder(ctx)
                 .data(api.thumbUrl(photo.id, "medium"))
-                .addHeader("Authorization", "Bearer $token")
                 .crossfade(true)
                 .build(),
             contentDescription = null,
@@ -499,7 +497,6 @@ private fun MemoryTile(
             AsyncImage(
                 model = ImageRequest.Builder(ctx)
                     .data(api.thumbUrl(cover.id, "medium"))
-                    .addHeader("Authorization", "Bearer $token")
                     .crossfade(true)
                     .build(),
                 contentDescription = null,
@@ -564,24 +561,15 @@ private fun PersonTile(
                 )
                 .background(SurfaceHi),
         ) {
-            if (person.samplePhotoId != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(ctx)
-                        .data(api.thumbUrl(person.samplePhotoId, "medium"))
-                        .addHeader("Authorization", "Bearer $token")
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    Icons.Filled.Person, null,
-                    tint = Muted,
-                    modifier = Modifier.align(Alignment.Center).size(44.dp),
-                )
-            }
+            AsyncImage(
+                model = ImageRequest.Builder(ctx)
+                    .data(api.personAvatarUrl(person.id))
+                    .crossfade(120)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         Text(
             person.name,
@@ -634,7 +622,6 @@ private fun AlbumTile(
                 AsyncImage(
                     model = ImageRequest.Builder(ctx)
                         .data(api.thumbUrl(album.coverPhotoId, "medium"))
-                        .addHeader("Authorization", "Bearer $token")
                         .crossfade(true)
                         .build(),
                     contentDescription = null,

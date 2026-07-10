@@ -152,7 +152,6 @@ private fun AlbumCard(
                 AsyncImage(
                     model = ImageRequest.Builder(ctx)
                         .data(api.thumbUrl(album.coverPhotoId, "medium"))
-                        .addHeader("Authorization", "Bearer $token")
                         .crossfade(true)
                         .build(),
                     contentDescription = null,
