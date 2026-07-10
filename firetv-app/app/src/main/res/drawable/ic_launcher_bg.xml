@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Schwarzer Hintergrund passend zum goldenen N-Logo (Corporate Look). -->
     <gradient
-        android:startColor="#1A0A2E"
-        android:endColor="#0D0620"
+        android:startColor="#0A0A0F"
+        android:endColor="#000000"
         android:angle="135" />
 </shape>
