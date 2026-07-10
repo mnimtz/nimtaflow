@@ -15,17 +15,31 @@ import BackgroundTasks
 final class AutoUploadManager: ObservableObject {
     static let shared = AutoUploadManager()
 
-    @AppStorage("autoUpload.enabled") var enabled = false
-    /// Only auto-upload assets taken on/after this date. 0 = no lower bound (all).
-    @AppStorage("autoUpload.fromDate") var fromDateTS: Double = 0
-    /// Conditions for AUTOMATIC runs (the manual "Jetzt hochladen" button ignores them).
-    @AppStorage("autoUpload.wifiOnly") var wifiOnly = true
-    @AppStorage("autoUpload.requireCharging") var requireCharging = false
-    /// Run opportunistically in the background (BGProcessingTask — iOS only).
-    @AppStorage("autoUpload.background") var background = true
-    /// Prefer a nightly window: schedule the background task for ~this hour.
-    @AppStorage("autoUpload.nightOnly") var nightOnly = false
-    @AppStorage("autoUpload.nightHour") var nightHour = 2
+    /// @AppStorage in einer ObservableObject-Klasse feuert kein objectWillChange —
+    /// bedingte Views (`if mgr.enabled { … }`, DatePicker etc.) refreshten deshalb
+    /// beim Toggle nicht. Fix: @Published-Properties, die UserDefaults als Backing
+    /// Store nutzen — Änderungen laufen jetzt korrekt durch SwiftUI's Observation.
+    @Published var enabled: Bool = UserDefaults.standard.bool(forKey: "autoUpload.enabled") {
+        didSet { UserDefaults.standard.set(enabled, forKey: "autoUpload.enabled") }
+    }
+    @Published var fromDateTS: Double = UserDefaults.standard.double(forKey: "autoUpload.fromDate") {
+        didSet { UserDefaults.standard.set(fromDateTS, forKey: "autoUpload.fromDate") }
+    }
+    @Published var wifiOnly: Bool = UserDefaults.standard.object(forKey: "autoUpload.wifiOnly") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(wifiOnly, forKey: "autoUpload.wifiOnly") }
+    }
+    @Published var requireCharging: Bool = UserDefaults.standard.bool(forKey: "autoUpload.requireCharging") {
+        didSet { UserDefaults.standard.set(requireCharging, forKey: "autoUpload.requireCharging") }
+    }
+    @Published var background: Bool = UserDefaults.standard.object(forKey: "autoUpload.background") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(background, forKey: "autoUpload.background") }
+    }
+    @Published var nightOnly: Bool = UserDefaults.standard.bool(forKey: "autoUpload.nightOnly") {
+        didSet { UserDefaults.standard.set(nightOnly, forKey: "autoUpload.nightOnly") }
+    }
+    @Published var nightHour: Int = (UserDefaults.standard.object(forKey: "autoUpload.nightHour") as? Int) ?? 2 {
+        didSet { UserDefaults.standard.set(nightHour, forKey: "autoUpload.nightHour") }
+    }
 
     nonisolated static let bgTaskID = "com.photoflow.upload"
 

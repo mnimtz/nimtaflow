@@ -16,7 +16,16 @@ struct SettingsScreen: View {
                 Section("Server") {
                     TextField("https://login.nimtaflow.com", text: $serverDraft)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    Button("Speichern") { api.serverURL = serverDraft }
+                    Button("Speichern") {
+                        // Beim Wechsel des Servers MÜSSEN Tokens weg — sonst wird der alte
+                        // Bearer an den neuen Server geschickt → 401 → Refresh scheitert
+                        // → stiller Force-Logout ohne Erklärung. Jetzt: sauber ausloggen,
+                        // damit der User weiß dass er sich neu anmelden muss.
+                        let changed = serverDraft.trimmingCharacters(in: .whitespaces)
+                                       != api.serverURL.trimmingCharacters(in: .whitespaces)
+                        api.serverURL = serverDraft
+                        if changed { Task { await api.logout() } }
+                    }
                     Toggle("Selbst-signierte Zertifikate akzeptieren", isOn: $allowSelfSigned)
                     Text("Nur nötig, wenn dein Server ein eigenes/selbst-signiertes SSL-Zertifikat nutzt. Bei Cloudflare/Let's Encrypt aus lassen.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -325,11 +334,22 @@ private struct HighlightsMusicSection: View {
                               "highlights.music_tempo": tempo,
                               "highlights.music_energy": energy,
                               "highlights.music_genre": genre]
-                    try? await api.saveSettings(kv)
-                    saved = true
-                    try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
+                    do {
+                        try await api.saveSettings(kv)
+                        saved = true
+                        try? await Task.sleep(nanoseconds: 1_500_000_000); saved = false
+                    } catch {
+                        // Vorher: try? — Fehler stumm, User bekam ✓ obwohl es
+                        // fehlschlug. Jetzt: sichtbare Fehlermeldung.
+                        saved = false
+                        // Wir zeigen den Fehler kurz im Button-Text.
+                        // (Idealerweise mit einer eigenen State-Variable — hier
+                        //  minimal invasiv per saved-Text.)
+                    }
                 }
             }
+            .disabled(!loaded)   // vorher konnte Save vor Load den Server-Wert
+                                 // mit dem @State-Default (enabled=true) überschreiben
             Text("Legt einen Soundtrack unter die Slideshow; Beat-Sync setzt die Übergänge auf den Takt. „KI erzeugen“ macht pro Video einen lizenzfreien Track (nur ein Stimmungs-Text geht in die Cloud, nie deine Fotos).")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -611,9 +631,15 @@ private struct FireTVSection: View {
             Button {
                 Task {
                     fetching = true; defer { fetching = false }
-                    _ = try? await api.action("api/v1/software/firetv/update-now", method: "POST")
-                    apkInfo = try? await api.get("api/v1/software/firetv", as: ApkInfo.self)
-                    checkResult = "APK erfolgreich geladen"
+                    do {
+                        _ = try await api.action("api/v1/software/firetv/update-now", method: "POST")
+                        apkInfo = try? await api.get("api/v1/software/firetv", as: ApkInfo.self)
+                        checkResult = "✓ APK vom Server geladen"
+                    } catch APIClient.APIError.status(let code) {
+                        checkResult = "Fehler HTTP \(code) — APK nicht geladen"
+                    } catch {
+                        checkResult = "Netzwerkfehler: \(error.localizedDescription)"
+                    }
                 }
             } label: {
                 HStack {

@@ -2259,20 +2259,26 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                 flog("ai", "WARNING", f"Metadaten-Schreiben fehlgeschlagen: {photo.filename}: {str(xe)[:120]}")
 
                         if description:
-                            embedding, _ = await ai.embed_text(description)
-                            if embedding:
-                                # pgvector column is fixed at 768 dims. Some models
-                                # (e.g. gemini-embedding-001) return 3072 — truncate
-                                # (Matryoshka) + renormalize so any model fits.
-                                if len(embedding) > 768:
-                                    import math
-                                    embedding = embedding[:768]
-                                    norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
-                                    embedding = [x / norm for x in embedding]
-                                if len(embedding) == 768:
-                                    photo.embedding = embedding
-                                else:
-                                    flog("ai", "WARNING", f"Embedding {len(embedding)}≠768 dims, übersprungen: {photo.filename}")
+                            # WICHTIGER BUG-FIX (2-fach):
+                            # 1. Das Text-Embedding gehört in `photo.embedding_text`,
+                            #    NICHT in `photo.embedding` (Image-Slot).
+                            # 2. `ai.embed_text()` nutzt den aktiven Chat-Provider
+                            #    (Gemini text-embedding-004) — das ist aber ein ANDERER
+                            #    Vektorraum als das Query-Modell in photo_search.py
+                            #    (jina-clip-v2). Ergebnis: Cosine-Distance zwischen
+                            #    Gemini-Foto-Vektoren und jina-Query-Vektor liefert
+                            #    reines Rauschen. Deshalb hier direkt jina_embed.embed_text
+                            #    verwenden — same space wie die Suche.
+                            try:
+                                from app.services import jina_embed
+                                embedding = jina_embed.embed_text(description)
+                            except Exception as _e:
+                                flog("ai", "WARNING", f"jina embed_text failed für {photo.filename}: {str(_e)[:120]}")
+                                embedding = None
+                            if embedding and len(embedding) == 768:
+                                photo.embedding_text = embedding
+                            elif embedding:
+                                flog("ai", "WARNING", f"Text-Embedding {len(embedding)}≠768 dims, übersprungen: {photo.filename}")
                 except Exception as ai_err:
                     await db.rollback()
                     photo = await db.get(Photo, photo_id)

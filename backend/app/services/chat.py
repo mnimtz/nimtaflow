@@ -24,6 +24,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.photo import Photo
 from app.models.face import Face
 from app.models.person import Person
+
+
+def _strict_name(name):
+    """Strikter Person-Namen-Match: exakt oder Vorname-Prefix.
+    Vorher überall `ilike("%name%")` — hat "Lea" als Match für "Leandra" akzeptiert.
+    photo_search.py nutzt schon die strikte Regel; jetzt konsistent.
+    """
+    from sqlalchemy import or_ as _or, func as _func
+    from app.models.person import Person
+    n = (name or "").strip().lower()
+    if not n:
+        return Person.name.is_(None)  # nichts trifft → leerer Filter
+    return _or(_func.lower(Person.name) == n,
+               _func.lower(Person.name).like(f"{n} %"))
+
 from app.models.tag import Tag, PhotoTag
 from app.services.photo_search import search_photos
 
@@ -274,10 +289,16 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
     # Restrict to photos that CONTAIN a named, recognised person (subquery, so no
     # join needed on the caller) — this is what makes "Lea traurig", "Lea an Ostern"
     # actually search within Lea's photos instead of for the word "Lea".
+    # STRIKT: exakt oder Prefix — vorher hat ilike("%name%") auch "Leandra" bei
+    # "Lea" oder "Alexander" bei "Alex" getroffen. photo_search.py nutzt schon
+    # dieselbe Regel; jetzt konsistent überall.
     def _person_cond(name: str):
+        from sqlalchemy import or_ as _or_p, func as _func
+        n = name.strip().lower()
         return Photo.id.in_(
             select(Face.photo_id).join(Person, Person.id == Face.person_id)
-            .where(Person.name.ilike(f"%{name.strip()}%")))
+            .where(_or_p(_func.lower(Person.name) == n,
+                          _func.lower(Person.name).like(f"{n} %"))))
     if person and person.strip():
         conds.append(_person_cond(person))
     # person2 = a SECOND named person who must ALSO be on the photo (co-occurrence) →
@@ -361,7 +382,7 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
     def _has(name: str):
         return Photo.id.in_(
             select(Face.photo_id).join(Person, Person.id == Face.person_id)
-            .where(Person.name.ilike(f"%{name.strip()}%")))
+            .where(_strict_name(name)))
 
     if person and person.strip():
         conds.append(_has(person))
@@ -385,7 +406,7 @@ async def _birthday_date(db: AsyncSession, person: Optional[str], alter=None) ->
     if not person or not person.strip():
         return {"hat_geburtsdatum": False, "hinweis": "Kein Personenname angegeben."}
     p = (await db.execute(
-        select(Person).where(Person.name.ilike(f"%{person.strip()}%"),
+        select(Person).where(_strict_name(person),
                              Person.birthdate.isnot(None)).limit(1)
     )).scalar_one_or_none()
     if not p or not p.birthdate:
@@ -446,7 +467,7 @@ async def _resolve_action_photo_ids(db: AsyncSession, settings: dict, args: dict
     if person:
         conds.append(Photo.id.in_(
             select(Face.photo_id).join(Person, Person.id == Face.person_id)
-            .where(Person.name.ilike(f"%{person}%"))
+            .where(_strict_name(person))
         ))
     sb = (args.get("suchbegriff") or "").strip()
     if sb:
@@ -470,7 +491,7 @@ async def _action_create_album(db: AsyncSession, settings: dict, args: dict) -> 
     # "Lea Marie hat nur 1000 Bilder" bug).
     if person and not sb:
         pids = [r[0] for r in (await db.execute(
-            select(Person.id).where(Person.name.ilike(f"%{person}%")))).all()]
+            select(Person.id).where(_strict_name(person)))).all()]
         if pids:
             crit: dict = {"person_ids": pids, "person_match": "any"}
             mt = args.get("medientyp")
@@ -705,7 +726,7 @@ async def _create_highlight_action(db: AsyncSession, thema, person, jahr, album_
     pid = None
     if person and person.strip():
         row = (await db.execute(select(Person.id, Person.name).where(
-            Person.name.ilike(f"%{person.strip()}%")).limit(1))).first()
+            _strict_name(person)).limit(1))).first()
         if not row:
             return {"fehler": f"Person '{person}' nicht gefunden."}
         pid = row[0]
@@ -754,7 +775,7 @@ async def _resolve_view(db: AsyncSession, ziel: str, name: Optional[str], user) 
         from app.models.person import Person
         from app.core.access import visible_person_subquery
         q = select(Person.id, Person.name).where(
-            Person.name.ilike(f"%{name.strip()}%"), Person.is_hidden == False)  # noqa: E712
+            _strict_name(name), Person.is_hidden == False)  # noqa: E712
         vps = visible_person_subquery(user)
         if vps is not None:
             q = q.where(Person.id.in_(vps))
@@ -801,7 +822,7 @@ async def _build_intents(db: AsyncSession, search_args: dict, nav_target: Option
     resolved_person_id: Optional[int] = None
     if person_name.strip():
         row = (await db.execute(
-            select(Person.id).where(Person.name.ilike(f"%{person_name.strip()}%"))
+            select(Person.id).where(_strict_name(person_name))
             .limit(1)
         )).first()
         if row:
