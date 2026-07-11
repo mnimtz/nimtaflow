@@ -343,16 +343,31 @@ async def video(photo_id: int, db: AsyncSession = Depends(get_db),
 # never transcode the same file.
 
 @router.get("/transcode-jobs")
-async def transcode_jobs(limit: int = 2, db: AsyncSession = Depends(get_db),
+async def transcode_jobs(limit: int = 2, resolution: int = 720,
+                         db: AsyncSession = Depends(get_db),
                          x_remote_token: Optional[str] = Header(None)):
-    """Lease up to `limit` videos that still lack a 1080p web transcode."""
+    """Lease Videos die noch keinen Web-Transcode in der gewünschten Auflösung haben.
+    `resolution` ∈ {480,720,1080}. Der Server sperrt jede (photo_id, resolution) via
+    Redis so, dass parallele Worker (Server-cpu + M3-remote) nichts doppelt tun.
+
+    Kriterien:
+      - is_video, kein Trash/missing, kein status=error
+      - `/cache/videos/{id}_{res}.mp4` existiert NICHT
+      - video_transcode_failures < 3 (nach 3 Fehlern gibt der Sweep-Filter auf)
+    """
     await _require_token(db, x_remote_token)
+    if resolution not in (480, 720, 1080):
+        raise HTTPException(400, "resolution must be 480/720/1080")
     n = max(1, min(limit, 4))
+    import pathlib as _pl
+    from app.core.config import get_settings as _gs
+    cache = _pl.Path(_gs().cache_path) / "videos"
     rows = (await db.execute(
         select(Photo.id, Photo.path).where(
             Photo.is_video == True, Photo.is_trashed == False, Photo.is_missing == False,  # noqa: E712
-            Photo.video_webm_path.is_(None), Photo.status != PhotoStatus.error,
-        ).order_by(Photo.id.desc()).limit(n * 6)
+            Photo.status != PhotoStatus.error,
+            Photo.video_transcode_failures < 3,
+        ).order_by(Photo.id.desc()).limit(n * 30)
     )).all()
     jobs = []
     try:
@@ -360,8 +375,12 @@ async def transcode_jobs(limit: int = 2, db: AsyncSession = Depends(get_db),
         for pid, path in rows:
             if not path or not os.path.exists(path):
                 continue
-            if await r.set(f"transcode:lock:{pid}", "remote", nx=True, ex=1800):
-                jobs.append({"photo_id": pid, "resolution": 1080})
+            # Wenn Ziel-Datei schon existiert → skippen
+            if (cache / f"{pid}_{resolution}.mp4").exists():
+                continue
+            # Redis-Lock pro (id, resolution) — kollidiert nicht mit anderen Auflösungen.
+            if await r.set(f"transcode:lock:{pid}:{resolution}", "remote", nx=True, ex=1800):
+                jobs.append({"photo_id": pid, "resolution": resolution})
                 if len(jobs) >= n:
                     break
         await r.aclose()
@@ -414,10 +433,18 @@ async def transcode_result(photo_id: int, resolution: int = 1080,
         except Exception: pass
         raise HTTPException(400, "Ungültiges Transcode-Ergebnis")
     os.replace(str(tmp_path), str(out_path))
-    photo.video_webm_path = str(out_path)
+    # Nur den DB-Zeiger auf video_webm_path setzen wenn dies die Default-Auflösung
+    # (1080p) ist ODER noch keiner existiert. So bleibt der bestehende 1080p-Zeiger
+    # erhalten, wenn ein Worker parallel den 720p geliefert hat.
+    if resolution == 1080 or not photo.video_webm_path:
+        photo.video_webm_path = str(out_path)
     await db.commit()
     try:
-        r = await _redis(); await r.delete(f"transcode:lock:{photo_id}"); await r.aclose()
+        r = await _redis()
+        # sowohl den neuen als auch den Alt-Lock aufheben (Rückwärtskompat)
+        await r.delete(f"transcode:lock:{photo_id}:{resolution}")
+        await r.delete(f"transcode:lock:{photo_id}")
+        await r.aclose()
     except Exception:
         pass
     return {"ok": True}
