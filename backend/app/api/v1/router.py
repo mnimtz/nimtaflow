@@ -1585,14 +1585,23 @@ async def dashboard_v1(request: Request, db: AsyncSession = Depends(get_db),
     # 8) latest rendered recap video ("Highlight der Woche" & co.) for the start page.
     # Only for unrestricted users (highlights aren't per-folder scoped); excludes the
     # single-photo photo_animate clips.
+    #
+    # Primär das jüngste AUTO-Wochen-Highlight (motto='week_review'), das der
+    # generate_weekly_highlight-Beat baut. Fallback: irgendein manuelles Highlight,
+    # damit die Zeile nicht leer bleibt, wenn der Wochen-Beat noch nie lief.
     out["weekly_highlight"] = None
     from app.core.access import _is_unrestricted
     if _is_unrestricted(user):  # admin / open mode only (not per-folder scoped)
         from app.models.highlight import Highlight, HighlightStatus
-        wh = (await db.execute(select(Highlight).where(
+        _base_hl = select(Highlight).where(
             Highlight.status == HighlightStatus.done, Highlight.file_path.isnot(None),
-            Highlight.motto != "photo_animate")
-            .order_by(Highlight.created_at.desc()).limit(1))).scalars().first()
+            Highlight.motto != "photo_animate",
+        ).order_by(Highlight.created_at.desc())
+        wh = (await db.execute(
+            _base_hl.where(Highlight.motto == "week_review").limit(1)
+        )).scalars().first()
+        if wh is None:
+            wh = (await db.execute(_base_hl.limit(1))).scalars().first()
         if wh:
             out["weekly_highlight"] = {
                 "id": wh.id, "title": wh.title, "motto": wh.motto,

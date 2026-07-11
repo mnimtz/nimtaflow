@@ -118,11 +118,14 @@ celery_app.conf.beat_schedule = {
         "task": "auto_cluster_faces",
         "schedule": 600.0,
     },
-    # "Highlight der Woche" — auto-create every Monday 07:00. No-op unless the user
-    # opted in (highlights.weekly_enabled); the task itself checks the flag.
+    # "Highlight der Woche" — täglich 07:00 UTC prüfen, ob für die AKTUELLE ISO-Woche
+    # noch keins existiert. Sonst würde ein Server-Ausfall am Montag 07:00 die ganze
+    # Woche ohne Highlight lassen (siehe KW 26/27 in Prod: mussten manuell nachgeholt
+    # werden, weil der Montags-Cron nicht traf). Der Task selbst hat idempotenten
+    # Dedup gegen doppelte Erstellung.
     "weekly-highlight": {
         "task": "generate_weekly_highlight",
-        "schedule": crontab(day_of_week=1, hour=7, minute=0),
+        "schedule": crontab(hour=7, minute=0),
     },
     # Self-heal highlights stuck in "rendering" (worker killed mid-task, e.g. deploy).
     "reap-stuck-highlights": {
