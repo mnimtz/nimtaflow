@@ -1226,6 +1226,9 @@ struct PhotoInfoView: View {
     @State private var pcTheme = "classic"
     @State private var pcColor = ""   // "" = Standard, sonst #rrggbb
     @State private var pcError: String?
+    @State private var pcText = ""    // Grußformel (Kopfzeile)
+    @State private var pcSubtitle = ""// Untertitel/persönliche Nachricht
+    @State private var pcVideoMode = true  // bei Video: true = echtes Video, false = Standbild-PNG
     @State private var allPeople: [PersonV1] = []
 
     private func reassignFace(_ faceId: Int, to personId: Int) async {
@@ -1253,6 +1256,13 @@ struct PhotoInfoView: View {
         pcError = nil; postcardURL = nil
         var params: [String: Any] = ["theme": pcTheme, "lang": "de"]
         if !pcColor.isEmpty { params["text_color"] = pcColor }
+        let greet = pcText.trimmingCharacters(in: .whitespaces)
+        let sub   = pcSubtitle.trimmingCharacters(in: .whitespaces)
+        if !greet.isEmpty { params["text"] = greet }
+        if !sub.isEmpty { params["subtitle"] = sub }
+        // Video-Grußkarte: Empfänger sieht das echte Video mit Text-Overlay
+        // (Server-Response type=video_postcard, /public/{token}/postcard-video).
+        if photo.is_video && pcVideoMode { params["video"] = true }
         do {
             let share = try await api.createShare([
                 "share_type": "postcard",
@@ -1260,8 +1270,15 @@ struct PhotoInfoView: View {
                 "params": params,
                 "allow_download": false
             ])
-            // share.url = "{base}/s/{token}" — öffentlicher Postcard-Endpunkt liegt unter /api/public/{token}/postcard
-            let urlStr = share.url.replacingOccurrences(of: "/s/\(share.token)", with: "/api/public/\(share.token)/postcard")
+            // Bei Video-Postkarte zeigt die Public-Seite den Player, nicht das PNG —
+            // wir liefern die /s/{token}-URL, damit der Empfänger auf der schönen
+            // Übersichtsseite landet und nicht auf dem Roh-Video-Endpoint.
+            let urlStr: String
+            if photo.is_video && pcVideoMode {
+                urlStr = share.url   // → /s/{token}, öffnet Public-Share-Seite
+            } else {
+                urlStr = share.url.replacingOccurrences(of: "/s/\(share.token)", with: "/api/public/\(share.token)/postcard")
+            }
             postcardURL = URL(string: urlStr)
             if postcardURL == nil { pcError = "Ungültige Postkarten-URL." }
         } catch APIClient.APIError.status(let code) {
@@ -1352,11 +1369,24 @@ struct PhotoInfoView: View {
                 if let tags = detail?.tags, !tags.isEmpty {
                     Section("Tags") { Text(tags.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary) }
                 }
-                Section("🖼️ Postkarte") {
-                    Picker("Layout", selection: $pcTheme) {
-                        Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
-                        Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
-                        Text("Vintage").tag("vintage")
+                Section(photo.is_video ? "🎬 Video-Grußkarte" : "🖼️ Postkarte") {
+                    if photo.is_video {
+                        Picker("Modus", selection: $pcVideoMode) {
+                            Text("🎬 Video mitschicken").tag(true)
+                            Text("🖼️ Standbild").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    TextField("Grußzeile (optional)", text: $pcText)
+                        .autocorrectionDisabled(false)
+                    TextField("Nachricht (optional)", text: $pcSubtitle, axis: .vertical)
+                        .lineLimit(1...3)
+                    if !(photo.is_video && pcVideoMode) {
+                        Picker("Layout", selection: $pcTheme) {
+                            Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
+                            Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
+                            Text("Vintage").tag("vintage")
+                        }
                     }
                     Picker("Schriftfarbe", selection: $pcColor) {
                         Text("Standard").tag(""); Text("Weiß").tag("#ffffff")
@@ -1367,7 +1397,7 @@ struct PhotoInfoView: View {
                     } label: {
                         HStack {
                             if pcBusy { ProgressView().controlSize(.small) }
-                            Text("Postkarte erstellen")
+                            Text(photo.is_video && pcVideoMode ? "Video-Grußkarte erstellen" : "Postkarte erstellen")
                         }
                     }.disabled(pcBusy)
                     if let e = pcError { Text(e).font(.caption).foregroundStyle(.red) }
