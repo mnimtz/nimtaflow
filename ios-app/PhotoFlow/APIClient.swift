@@ -411,6 +411,10 @@ final class APIClient: ObservableObject {
         try await action("api/v1/ops/reset-ai-errors?kind=\(kind)", method: "POST")
     }
     func opsWorkers() async throws -> OpsWorkers { try await get("api/v1/ops/workers", as: OpsWorkers.self) }
+    /// Vorhandene Video-Auflösungen für den Quality-Picker.
+    func videoVariants(_ id: Int) async throws -> VideoVariants {
+        try await get("api/v1/photos/\(id)/video/variants", as: VideoVariants.self)
+    }
     @discardableResult
     func startXmpBackfill(full: Bool = false) async throws -> Bool {
         try await action("api/v1/ops/xmp-backfill/start?full=\(full)", method: "POST")

@@ -461,6 +461,12 @@ struct OpsStatus: Codable {
     let hinweis_restzeit: String?
 }
 
+struct VideoVariants: Codable {
+    struct V: Codable { let resolution: Int; let size_bytes: Int }
+    let variants: [V]
+    let `default`: Int?
+}
+
 struct OpsWorkers: Codable {
     struct XmpRun: Codable {
         let total: Int?; let done: Int?; let failed: Int?

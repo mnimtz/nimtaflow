@@ -519,23 +519,81 @@ async def upload_photos(
 
 # ── Video streaming with Range support (required for iOS AVPlayer) ─────────────
 
+@router.get("/photos/{photo_id}/video/variants")
+async def video_variants_v1(photo_id: int, db: AsyncSession = Depends(get_db),
+                            user: Optional[User] = Depends(current_user_optional)):
+    """Verfügbare Web-Video-Auflösungen für den iOS-Quality-Picker."""
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
+        raise HTTPException(404)
+    import pathlib as _pl
+    out = []
+    for res in (480, 720, 1080):
+        p = _pl.Path("/cache/videos") / f"{photo_id}_{res}.mp4"
+        if p.exists():
+            try:
+                sz = p.stat().st_size
+            except Exception:
+                sz = 0
+            out.append({"resolution": res, "size_bytes": sz})
+    default_res = 720 if any(v["resolution"] == 720 for v in out) else (
+        1080 if any(v["resolution"] == 1080 for v in out) else
+        (out[0]["resolution"] if out else None))
+    return {"variants": out, "default": default_res}
+
+
 @router.get("/photos/{photo_id}/stream")
 async def stream_video_v1(
     photo_id: int,
     request: Request,
+    res: Optional[int] = None,
     range: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(current_user_optional),
 ):
-    """HTTP Range-aware video stream. iOS AVPlayer requires Range support."""
+    """HTTP Range-aware video stream. iOS AVPlayer requires Range support.
+
+    `res` wählt die Auflösung (480/720/1080). Ohne Parameter liefert der Server
+    720p bevorzugt (garantiert HW-decodable seit v1.525-Transcode-Fix), sonst
+    1080p. Fehlt die gewünschte Datei: enqueue Transcode + Fallback auf beste
+    vorhandene Alternative statt 404.
+    """
     photo = await db.get(Photo, photo_id)
     if not photo or not photo.is_video or not await user_can_access_photo(db, photo_id, user):
         raise HTTPException(404)
     if not feature_allowed(user, "allow_download"):
         raise HTTPException(403, "Download nicht erlaubt")
 
-    video_path = photo.video_webm_path or photo.path
-    if not os.path.exists(video_path):
+    # Multi-Res-Auswahl mit lazy-transcode. Reihenfolge:
+    #   1) explizit gewünschte Auflösung, falls fertig
+    #   2) 720p (kleinstes flüssiges Default für Handy-Netze)
+    #   3) 1080p, 480p
+    #   4) DB-Feld video_webm_path (Alt-Bestand)
+    #   5) Original (letzter Fallback — bricht nicht ab)
+    import pathlib as _pl
+
+    def _cache_path(r: int) -> _pl.Path:
+        return _pl.Path("/cache/videos") / f"{photo_id}_{r}.mp4"
+
+    video_path: Optional[str] = None
+    if res in (480, 720, 1080):
+        p = _cache_path(res)
+        if p.exists():
+            video_path = str(p)
+        else:
+            try:
+                from app.worker.tasks import transcode_video_task
+                transcode_video_task.delay(photo_id, res)
+            except Exception:
+                pass
+    if not video_path:
+        for r in (720, 1080, 480):
+            p = _cache_path(r)
+            if p.exists():
+                video_path = str(p); break
+    if not video_path:
+        video_path = photo.video_webm_path or photo.path
+    if not video_path or not os.path.exists(video_path):
         raise HTTPException(404, "Video file not found")
 
     file_size = os.path.getsize(video_path)

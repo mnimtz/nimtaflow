@@ -852,6 +852,7 @@ struct PhotoPager: View {
                             VideoPlayerView(
                                 url: api.url("api/v1/photos/\(p.id)/stream"),
                                 bearerToken: api.token,
+                                photoId: p.id,
                             )
                         } else {
                             ZoomableImage(url: api.url("api/photos/\(p.id)/thumbnail?size=large"))
@@ -1085,49 +1086,126 @@ extension Array { subscript(safe i: Int) -> Element? { indices.contains(i) ? sel
 struct VideoPlayerView: View {
     let url: URL?
     let bearerToken: String?      // optional: als HTTP-Header statt Query
+    /// Nur gesetzt, wenn der Player Multi-Res anbieten soll (Galerie-Fall).
+    let photoId: Int?
 
-    init(url: URL?, bearerToken: String? = nil) {
+    init(url: URL?, bearerToken: String? = nil, photoId: Int? = nil) {
         self.url = url
         self.bearerToken = bearerToken
+        self.photoId = photoId
     }
 
+    @EnvironmentObject var api: APIClient
     @State private var player: AVPlayer?
+    @State private var variants: [VideoVariants.V] = []
+    @State private var selectedRes: Int?     // nil = server default (720p)
+    @State private var showQualityMenu = false
+
+    private func makePlayer(for finalURL: URL, resumeAt: Double = 0) {
+        let asset: AVURLAsset
+        if let token = bearerToken, !token.isEmpty {
+            asset = AVURLAsset(url: finalURL, options: [
+                "AVURLAssetHTTPHeaderFieldsKey": [
+                    "Authorization": "Bearer \(token)"
+                ]
+            ])
+        } else {
+            asset = AVURLAsset(url: finalURL)
+        }
+        let item = AVPlayerItem(asset: asset)
+        let p = AVPlayer(playerItem: item)
+        if resumeAt > 0.1 {
+            p.seek(to: CMTime(seconds: resumeAt, preferredTimescale: 600))
+        }
+        p.play()
+        player = p
+    }
+
+    private func urlFor(res: Int?) -> URL? {
+        guard let base = url else { return nil }
+        guard let r = res else { return base }
+        // ?res=… anhängen; wenn schon Query da, mit & fortsetzen.
+        var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        var items = comps?.queryItems ?? []
+        items.removeAll { $0.name == "res" }
+        items.append(URLQueryItem(name: "res", value: String(r)))
+        comps?.queryItems = items
+        return comps?.url ?? base
+    }
 
     var body: some View {
-        Group {
-            if let player {
-                VideoPlayer(player: player)
-                    .onAppear {
-                        #if os(iOS)
-                        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-                        try? AVAudioSession.sharedInstance().setActive(true)
-                        #endif
-                        player.play()
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let player {
+                    VideoPlayer(player: player)
+                        .onAppear {
+                            #if os(iOS)
+                            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+                            try? AVAudioSession.sharedInstance().setActive(true)
+                            #endif
+                            player.play()
+                        }
+                        .onDisappear {
+                            player.pause()
+                            #if os(iOS)
+                            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                            #endif
+                        }
+                } else {
+                    Color.black.overlay(ProgressView().tint(.white))
+                }
+            }
+
+            // Quality-Picker nur wenn ≥ 2 Varianten und photoId gesetzt.
+            if variants.count > 1 {
+                Menu {
+                    ForEach(variants.sorted(by: { $0.resolution > $1.resolution }), id: \.resolution) { v in
+                        Button {
+                            switchRes(v.resolution)
+                        } label: {
+                            HStack {
+                                Text("\(v.resolution)p")
+                                Spacer()
+                                if selectedRes == v.resolution {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
                     }
-                    .onDisappear {
-                        player.pause()
-                        #if os(iOS)
-                        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-                        #endif
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gearshape.fill")
+                        Text(selectedRes.map { "\($0)p" } ?? "auto")
+                            .font(.caption2.monospacedDigit())
                     }
-            } else {
-                Color.black.overlay(ProgressView().tint(.white))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                }
+                .padding(.top, 12).padding(.trailing, 12)
             }
         }
         .task(id: url) {
             guard let url else { return }
-            if let token = bearerToken, !token.isEmpty {
-                // Bearer per HTTP-Header — sicher, kein Token in URL/Logs.
-                let asset = AVURLAsset(url: url, options: [
-                    "AVURLAssetHTTPHeaderFieldsKey": [
-                        "Authorization": "Bearer \(token)"
-                    ]
-                ])
-                let item = AVPlayerItem(asset: asset)
-                player = AVPlayer(playerItem: item)
-            } else {
-                player = AVPlayer(url: url)
+            makePlayer(for: url)
+            // Varianten nachladen — nicht kritisch, wenn's fehlschlägt bleibt Default.
+            if let pid = photoId {
+                if let r = try? await api.videoVariants(pid) {
+                    await MainActor.run {
+                        variants = r.variants
+                        if selectedRes == nil { selectedRes = r.default }
+                    }
+                }
             }
+        }
+    }
+
+    private func switchRes(_ r: Int) {
+        let at = player?.currentTime().seconds ?? 0
+        selectedRes = r
+        if let newURL = urlFor(res: r) {
+            player?.pause()
+            makePlayer(for: newURL, resumeAt: at)
         }
     }
 }
