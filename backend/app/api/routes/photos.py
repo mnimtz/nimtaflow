@@ -1240,17 +1240,32 @@ async def stream_video(photo_id: int,
         return FileResponse(s, media_type=mt,
                             headers={"Cache-Control": "public, max-age=86400"})
 
+    # SETNX-Dedup: jeder Player-Request könnte sonst einen transcode_video_task
+    # neu enqueuen (Quality-Switching zwischen 720p/1080p durch schnelles Klicken
+    # oder mehrere Tabs). Wir sperren pro (id, res) für 30 min — der Task selbst
+    # nutzt seinen eigenen Redis-Lock, aber der greift erst NACH dem enqueue; wir
+    # wollen schon davor rate-limiten.
+    def _enqueue_once(pid: int, r: int) -> None:
+        try:
+            import redis as _r
+            from app.core.config import get_settings as _gs
+            rc = _r.from_url(_gs().redis_url)
+            if not rc.set(f"stream:enqueue:{pid}:{r}", "1", nx=True, ex=1800):
+                return
+        except Exception:
+            pass
+        try:
+            from app.worker.tasks import transcode_video_task
+            transcode_video_task.delay(pid, r)
+        except Exception:
+            pass
+
     # 1) explizit gewünschte Auflösung
     if res in (480, 720, 1080):
         p = _cache_path(res)
         if p.exists():
             return _serve(p)
-        # nicht da → enqueue + Fallback auf beste vorhandene
-        try:
-            from app.worker.tasks import transcode_video_task
-            transcode_video_task.delay(photo_id, res)
-        except Exception:
-            pass
+        _enqueue_once(photo_id, res)
         # Fallback in Präferenz-Reihenfolge
         for alt in (720, 1080, 480):
             if alt == res:
@@ -1268,20 +1283,12 @@ async def stream_video(photo_id: int,
     # 3) DB-Fallback (falls video_webm_path an andere Stelle zeigt) + enqueue 720
     web = photo.video_webm_path
     if web and os.path.exists(web):
-        try:
-            from app.worker.tasks import transcode_video_task
-            transcode_video_task.delay(photo_id, 720)
-        except Exception:
-            pass
+        _enqueue_once(photo_id, 720)
         return _serve(pathlib.Path(web))
 
     # 4) Nichts transkodiert → HW transcode enqueue + Original als Fallback
-    try:
-        from app.worker.tasks import transcode_video_task
-        transcode_video_task.delay(photo_id, 720)
-        transcode_video_task.delay(photo_id, 1080)
-    except Exception:
-        pass
+    _enqueue_once(photo_id, 720)
+    _enqueue_once(photo_id, 1080)
     mime = photo.mime_type or "video/mp4"
     return FileResponse(photo.path, media_type=mime)
 

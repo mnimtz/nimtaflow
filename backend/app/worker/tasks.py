@@ -1835,7 +1835,10 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
         try:
             import redis.asyncio as aioredis
             r = aioredis.from_url(settings.redis_url)
-            if not await r.set(f"transcode:lock:{photo_id}", "1", nx=True, ex=3600):
+            # Lock pro (photo_id, resolution) — sonst blockiert ein laufender 720p-Job
+            # den 1080p-Job desselben Fotos (der HDR-Requeue queued beide direkt
+            # hintereinander). Der Remote-Endpoint nutzt bereits denselben Suffix.
+            if not await r.set(f"transcode:lock:{photo_id}:{resolution}", "1", nx=True, ex=3600):
                 await r.aclose(); return {"skipped": "running"}
         except Exception:
             r = None
@@ -1874,7 +1877,21 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 src_path, fname = photo.path, photo.filename
                 if out_path.exists():
                     if _probe_ok(out_path):
-                        photo.video_webm_path = str(out_path); await db.commit()
+                        # video_webm_path nur setzen wenn Default (1080p) oder leer —
+                        # sonst überschreibt ein 720p-Cache-Hit den 1080p-Zeiger.
+                        # (Symmetrie zum Remote-Endpoint, der dieselbe Regel hat.)
+                        if resolution == 1080 or not photo.video_webm_path:
+                            photo.video_webm_path = str(out_path)
+                        # Ehrliche Progress-Timestamps auch beim Cache-Hit — sonst
+                        # bleiben die Zähler unehrlich, wenn ein Retry ein bereits
+                        # fertiges File findet.
+                        from datetime import datetime as _dtc, timezone as _tzc
+                        _nowc = _dtc.now(_tzc.utc)
+                        if resolution == 720 and photo.web_mp4_720_at is None:
+                            photo.web_mp4_720_at = _nowc
+                        elif resolution == 1080 and photo.web_mp4_1080_at is None:
+                            photo.web_mp4_1080_at = _nowc
+                        await db.commit()
                         return {"cached": True}
                     # Broken leftover from an interrupted run — drop it (and clear a
                     # stale path) so we re-transcode instead of serving a no-moov torso.
@@ -1912,7 +1929,11 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 async for db in get_db():
                     photo = await db.get(Photo, photo_id)
                     if photo:
-                        photo.video_webm_path = str(out_path)
+                        # Nur den Zeiger auf video_webm_path setzen wenn Default
+                        # (1080p) oder leer — sonst überschreibt ein 720p-Job den
+                        # 1080p-Zeiger. (Symmetrie zum Remote-Endpoint.)
+                        if resolution == 1080 or not photo.video_webm_path:
+                            photo.video_webm_path = str(out_path)
                         # Ehrliche Progress-Zähler für den Leitstand.
                         from datetime import datetime as _dt_now, timezone as _tz_now
                         _now = _dt_now.now(_tz_now.utc)
@@ -1920,6 +1941,11 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                             photo.web_mp4_720_at = _now
                         elif resolution == 1080:
                             photo.web_mp4_1080_at = _now
+                        # Nach dem ERSTEN Erfolg den Failure-Counter zurücksetzen —
+                        # sonst sperrt eine frühere 720p-Failure den 1080p-Job für
+                        # dasselbe Foto, obwohl das Video grundsätzlich transcodable
+                        # ist. (Counter ist per-photo, nicht per-res.)
+                        photo.video_transcode_failures = 0
                         await db.commit()
                     break
                 flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {fname}")
@@ -1947,10 +1973,66 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 pass
             if r is not None:
                 try:
-                    await r.delete(f"transcode:lock:{photo_id}"); await r.aclose()
+                    # Sowohl neuen (:{res}-Suffix) als auch alten Key aufheben, damit
+                    # ein Rollback auf ältere Codepfade nicht in einen Deadlock läuft.
+                    await r.delete(f"transcode:lock:{photo_id}:{resolution}")
+                    await r.delete(f"transcode:lock:{photo_id}")
+                    await r.aclose()
                 except Exception:
                     pass
     return _run(_run_tc())
+
+
+@celery_app.task(bind=True, name="video_timestamps_scan")
+def video_timestamps_scan_task(self):
+    """Einmaliger Backfill der Rendition-Timestamps für den Leitstand.
+    Scannt /cache/videos/*_720.mp4 + *_1080.mp4 und setzt web_mp4_*_at aus
+    der Datei-mtime — aber NUR für Files nach dem v1.525-Cutoff, sonst
+    würden alte 10-bit-Files als „done" gezählt. Läuft als Celery-Task, damit
+    der ~28k-UPDATE-Batch nicht den nginx-Timeout des Trigger-Requests reißt."""
+    async def _main():
+        import os as _os, re as _re, pathlib as _pl
+        from datetime import datetime as _dt, timezone as _tz
+        from sqlalchemy import update as _upd
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        init_db()
+        cache = _pl.Path("/cache/videos")
+        if not cache.exists():
+            return {"scanned": 0}
+        CUTOFF = _dt(2026, 7, 11, 0, 0, tzinfo=_tz.utc)
+        u720: dict = {}; u1080: dict = {}
+        pat = _re.compile(r"^(\d+)_(720|1080)\.mp4$")
+        for p in cache.iterdir():
+            m = pat.match(p.name)
+            if not m:
+                continue
+            try:
+                pid = int(m.group(1)); res = int(m.group(2))
+                mt = _dt.fromtimestamp(p.stat().st_mtime, tz=_tz.utc)
+            except Exception:
+                continue
+            if mt < CUTOFF:
+                continue
+            (u720 if res == 720 else u1080)[pid] = mt
+        # Bulk in Chunks — hält keine Session ewig auf.
+        set_720 = 0; set_1080 = 0
+        for updates, col in ((u720, "web_mp4_720_at"), (u1080, "web_mp4_1080_at")):
+            items = list(updates.items())
+            for i in range(0, len(items), 500):
+                batch = items[i:i+500]
+                async for db in get_db():
+                    for pid, mt in batch:
+                        await db.execute(
+                            _upd(Photo).where(Photo.id == pid).values({col: mt}))
+                    await db.commit()
+                    break
+                if col.endswith("720_at"): set_720 += len(batch)
+                else: set_1080 += len(batch)
+        flog("video", "INFO", f"video_timestamps_scan: 720={set_720}, 1080={set_1080}")
+        return {"set_720": set_720, "set_1080": set_1080}
+    return _run(_main())
 
 
 @celery_app.task(bind=True, name="requeue_hdr_transcodes")
@@ -1997,13 +2079,25 @@ def requeue_hdr_transcodes_task(self, limit: int = 500):
                 continue
         if not bad:
             return {"checked": len(rows), "requeued": 0}
+        # KEIN sofortiges video_webm_path=NULL — sonst sind Player/Share/Video-KI
+        # bis zum abgeschlossenen Neu-Transcode blind. Der neue transcode_result-
+        # Handler überschreibt den Zeiger, wenn die neue Rendition da ist. Nur
+        # den Failure-Counter zurücksetzen, damit der Sweep die IDs wieder greift.
         async for db in get_db():
             await db.execute(update(Photo).where(Photo.id.in_(bad)).values(
-                video_webm_path=None, video_transcode_failures=0))
+                video_transcode_failures=0))
             await db.commit()
             break
+        # Alte 10-bit-Files im Cache LÖSCHEN, damit der Task nicht per Cache-Hit
+        # sagt „schon fertig" und die 10-bit-Version behält. Der aktuelle Player-
+        # Fallback im stream-Endpoint zeigt bis zum neuen Transcode das Original
+        # (mime_type=video/mp4) via FileResponse — kein Total-Blackout.
         for pid in bad:
-            _os.path.exists  # keep linter quiet
+            for res in (720, 1080):
+                cached = _os.path.join("/cache/videos", f"{pid}_{res}.mp4")
+                if _os.path.exists(cached):
+                    try: _os.unlink(cached)
+                    except Exception: pass
             transcode_video_task.delay(pid, 720)
             transcode_video_task.delay(pid, 1080)
         flog("video", "INFO", f"HDR/10-bit Re-Transcode: {len(bad)} Videos neu eingereiht")

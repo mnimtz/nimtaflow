@@ -494,12 +494,26 @@ async def video_broken(photo_id: int, db: AsyncSession = Depends(get_db),
     if wp and os.path.exists(wp):
         try: os.unlink(wp)
         except Exception: pass
+    # Konsistenz mit den Rendition-Timestamps: der Leitstand zählt darauf, also
+    # jetzt auch löschen, damit die Zahlen ehrlich bleiben.
     photo.video_webm_path = None
+    if wp and wp.endswith("_720.mp4"):
+        photo.web_mp4_720_at = None
+    elif wp and wp.endswith("_1080.mp4"):
+        photo.web_mp4_1080_at = None
+    else:
+        # Unbekanntes Suffix → alle Renditionen auf None; die transcode_result
+        # setzt sie beim nächsten Erfolg wieder.
+        photo.web_mp4_720_at = None
+        photo.web_mp4_1080_at = None
     photo.ai_error = False
     photo.ai_claimed_at = None
     await db.commit()
+    # Beide gewünschten Renditionen neu einreihen — sonst blockt der Client mit
+    # ?res=720 auf ewig, wenn nur 1080p enqueued wurde.
     from app.worker.tasks import transcode_video_task
-    transcode_video_task.delay(photo_id)
+    transcode_video_task.delay(photo_id, 720)
+    transcode_video_task.delay(photo_id, 1080)
     return {"ok": True, "requeued": True}
 
 
@@ -923,9 +937,14 @@ async def status(db: AsyncSession = Depends(get_db)):
     # source. "done" = has a *_1080.mp4; pending = remaining videos.
     vid_total = await db.scalar(select(func.count()).where(
         Photo.is_video == True, Photo.is_trashed == False, Photo.is_missing == False))  # noqa: E712
+    # „done" = Rendition-Timestamp gesetzt (720p ODER 1080p mit dem neuen 8-bit-
+    # Fix). LIKE '%_1080.mp4' hat vorher fälschlicherweise auch 720p-Files als
+    # „not done" gezählt, obwohl der Player 720p bevorzugt.
     vid_1080 = await db.scalar(select(func.count()).where(
-        Photo.is_video == True, Photo.video_webm_path.like("%_1080.mp4"),  # noqa: E712
-        Photo.is_trashed == False))  # noqa: E712
+        Photo.is_video == True,   # noqa: E712
+        Photo.is_trashed == False,
+        (Photo.web_mp4_720_at.isnot(None)) | (Photo.web_mp4_1080_at.isnot(None)),
+    ))
     transcode_pending = max(0, (vid_total or 0) - (vid_1080 or 0))
 
     # Progress ("done") counts for the dashboard's per-stage progress bars.

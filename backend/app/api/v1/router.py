@@ -575,17 +575,31 @@ async def stream_video_v1(
     def _cache_path(r: int) -> _pl.Path:
         return _pl.Path("/cache/videos") / f"{photo_id}_{r}.mp4"
 
+    # SETNX-Dedup: Player-Requests dürfen pro (id, res) nur 1× / 30 min transcode
+    # anstoßen. Sonst flutet ein AVPlayer der bei Range-Seeks resource fragt die
+    # video-Queue (macht den v1.521-Amplification-Fix zunichte).
+    def _enqueue_once(pid: int, r: int) -> None:
+        try:
+            import redis as _r
+            from app.core.config import get_settings as _gs
+            rc = _r.from_url(_gs().redis_url)
+            if not rc.set(f"stream:enqueue:{pid}:{r}", "1", nx=True, ex=1800):
+                return
+        except Exception:
+            pass
+        try:
+            from app.worker.tasks import transcode_video_task
+            transcode_video_task.delay(pid, r)
+        except Exception:
+            pass
+
     video_path: Optional[str] = None
     if res in (480, 720, 1080):
         p = _cache_path(res)
         if p.exists():
             video_path = str(p)
         else:
-            try:
-                from app.worker.tasks import transcode_video_task
-                transcode_video_task.delay(photo_id, res)
-            except Exception:
-                pass
+            _enqueue_once(photo_id, res)
     if not video_path:
         for r in (720, 1080, 480):
             p = _cache_path(r)
@@ -1434,11 +1448,21 @@ async def start_xmp_backfill_v1(full: bool = False,
 
 
 @router.post("/ops/video-timestamps-scan")
-async def video_timestamps_scan_v1(db: AsyncSession = Depends(get_db),
-                                   user: Optional[User] = Depends(current_user_optional)):
-    """Einmaliger Backfill: durchsucht /cache/videos/*.mp4, setzt web_mp4_720_at
-    und web_mp4_1080_at aus der Datei-mtime. So bekommt der Leitstand die ehrlichen
-    Zahlen sofort — ohne dass wir jedes Video neu transcodieren müssen. Admin-only."""
+async def video_timestamps_scan_v1(user: Optional[User] = Depends(current_user_optional)):
+    """Trigger den Backfill der Rendition-Timestamps für den Leitstand — als
+    Celery-Task, damit ein 28k-Update-Batch nicht den nginx-Timeout des HTTP-
+    Requests reißt. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.worker.celery_app import celery_app
+    r = celery_app.send_task("video_timestamps_scan", queue="cpu")
+    return {"queued": True, "task_id": r.id}
+
+
+@router.post("/ops/_video-timestamps-scan-inline")
+async def _video_timestamps_scan_inline(db: AsyncSession = Depends(get_db),
+                                        user: Optional[User] = Depends(current_user_optional)):
+    """Legacy Inline-Variante — nicht mehr genutzt, aber für Ad-hoc-Debug bleibt sie."""
     if not user or user.role != UserRole.admin:
         raise HTTPException(403, "Nur für Administratoren.")
     import os as _os, re as _re, pathlib as _pl

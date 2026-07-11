@@ -345,6 +345,12 @@ async def public_original(token: str, photo_id: int,
     _check_pw(share, pw)
     if not share.allow_download:
         raise HTTPException(403, "Download für diesen Link nicht erlaubt")
+    # Extra-Guard: Video-Postkarte ist explizit NICHT downloadbar — der Endpoint
+    # würde sonst das Original-Video ausliefern, obwohl der Editor „Download"
+    # verweigert. share.allow_download ist bei Postkarten immer False, aber wir
+    # doppeln die Prüfung explizit ab, damit ein späterer Bug nicht das leakt.
+    if share.share_type == ShareType.postcard:
+        raise HTTPException(403, "Download für Postkarten nicht erlaubt")
     if not await _owns(share, photo_id, db):
         raise HTTPException(404)
     photo = await db.get(Photo, photo_id)

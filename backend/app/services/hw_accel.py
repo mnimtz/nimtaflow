@@ -314,6 +314,18 @@ def build_transcode_cmd(
         "-g", "60", "-keyint_min", "60",   # 2s GOP bei 30fps → Seek-freundlich
     ]
 
+    # HDR-Guard: QSV's vpp_qsv-Filter kann kein HLG→BT.709-Tonemapping. Ohne die
+    # zscale-Kette bleibt die 10-bit-HDR-Quelle → 10-bit-Output → Safari/iOS-HW-
+    # Decoder aus → Ruckeln → requeue_hdr_transcodes markiert dieselben Files
+    # ERNEUT als HDR → Endlos-Loop. Für HDR-Inputs die HW-Profile-Referenz auf
+    # software zwingen — dann fällt der ganze Pfad unten auf libx264 mit der
+    # vollen zscale/tonemap-Filterkette.
+    if is_hdr and hw.name in ("qsv", "cuda", "vaapi"):
+        # Nicht-mutierender Fallback: lokale Kopie mit software-Codec.
+        hw = HWProfile(name="software", hwaccel=None,
+                       encode_h264_codec="libx264", available=True,
+                       info="hdr fallback to software")
+
     # QSV: software-decode → scale → upload to QSV surfaces → h264_qsv encode.
     # This is the validated, codec-agnostic path (no HW-decode init that breaks on
     # odd input codecs); the expensive encode runs on the Intel GPU. Falls back to
@@ -359,9 +371,25 @@ def build_transcode_cmd(
     if codec == "h264":
         vcodec = hw.encode_h264_codec
         cmd += ["-c:v", vcodec]
-        if hw.encode_extra:
-            cmd += hw.encode_extra
-        if "nvenc" in vcodec or "vaapi" in vcodec or "videotoolbox" in vcodec:
+        _extra = list(hw.encode_extra or [])
+        _is_hw_bitrate_path = ("nvenc" in vcodec or "vaapi" in vcodec or "videotoolbox" in vcodec)
+        if _is_hw_bitrate_path:
+            # Widersprüchliche Rate-Control-Modi vermeiden: encode_extra enthält für
+            # VideoToolbox `-q:v 65` / für NVENC `-cq` / für VAAPI `-qp`, das mit
+            # den gleich folgenden `-b:v/-maxrate` kollidiert. Bitrate-Cap gewinnt
+            # (unser Zielfall), also die Qualitäts-Only-Args entfernen.
+            def _drop_pair(lst, key):
+                out = []
+                i = 0
+                while i < len(lst):
+                    if lst[i] == key and i + 1 < len(lst):
+                        i += 2; continue
+                    out.append(lst[i]); i += 1
+                return out
+            for _k in ("-q:v", "-qp", "-cq", "-global_quality", "-b:v"):
+                _extra = _drop_pair(_extra, _k)
+        cmd += _extra
+        if _is_hw_bitrate_path:
             # HW-Encoder-Pfad: nutzt CPU-Filter-Kette (mit yuv420p/tonemap) auf CPU,
             # gibt an HW-Encoder weiter. Deutlich robuster als HW-Scaler + HW-Encoder
             # gemischt (die kollidieren bei HDR).
