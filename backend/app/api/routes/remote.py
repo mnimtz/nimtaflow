@@ -46,6 +46,18 @@ async def remote_worker_alive() -> int:
         return 0
 
 
+async def video_transcode_worker_alive() -> int:
+    """Wie viele Video-Transcode-Worker (M3, Asus etc.) haben in den letzten
+    HEARTBEAT_TTL Sekunden ein Batch abgeholt."""
+    try:
+        r = await _redis()
+        keys = await r.keys("remote:videoworker:*")
+        await r.aclose()
+        return len(keys)
+    except Exception:
+        return 0
+
+
 async def _require_token(db: AsyncSession, token: Optional[str]) -> dict:
     s = await load_settings(db)
     if str(s.get("remote.enabled", "false")).lower() != "true":
@@ -344,6 +356,7 @@ async def video(photo_id: int, db: AsyncSession = Depends(get_db),
 
 @router.get("/transcode-jobs")
 async def transcode_jobs(limit: int = 2, resolution: int = 720,
+                         worker: str = "worker",
                          db: AsyncSession = Depends(get_db),
                          x_remote_token: Optional[str] = Header(None)):
     """Lease Videos die noch keinen Web-Transcode in der gewünschten Auflösung haben.
@@ -362,6 +375,15 @@ async def transcode_jobs(limit: int = 2, resolution: int = 720,
     import pathlib as _pl
     from app.core.config import get_settings as _gs
     cache = _pl.Path(_gs().cache_path) / "videos"
+    # Heartbeat für den Leitstand — Prefix separat vom describe/embed-Worker,
+    # damit der Leitstand die Video-Lane getrennt zählen kann.
+    try:
+        r_hb = await _redis()
+        await r_hb.set(f"remote:videoworker:{worker}", str(int(time.time())),
+                       ex=HEARTBEAT_TTL)
+        await r_hb.aclose()
+    except Exception:
+        pass
     rows = (await db.execute(
         select(Photo.id, Photo.path).where(
             Photo.is_video == True, Photo.is_trashed == False, Photo.is_missing == False,  # noqa: E712

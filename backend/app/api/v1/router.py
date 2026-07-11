@@ -1362,8 +1362,29 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
         xmp_run = None
 
     # Remote-embed-worker liveness (Heartbeat aus Redis)
-    from app.api.routes.remote import remote_worker_alive
+    from app.api.routes.remote import remote_worker_alive, video_transcode_worker_alive
     embed_alive = await remote_worker_alive()
+    video_alive = await video_transcode_worker_alive()
+
+    # ── Video-Transcode (Server-cpu + M3 remote) ──
+    # „Total": alle Videos die Anspruch auf einen Web-Transcode haben (Failure-
+    # gefiltert, wie der Sweep sie auch anbietet).
+    # „Done": Videos deren video_webm_path gesetzt ist (irgendeine Auflösung
+    # fertig). Für die neue 720p-Rendition (der Multi-Res-Push seit v1.525)
+    # gibt's noch kein DB-Feld — der Cache-Ordner ist die Quelle der Wahrheit.
+    total_videos = int(await db.scalar(select(_f.count()).where(
+        Photo.is_video == True,                                   # noqa: E712
+        Photo.is_trashed == False,                                # noqa: E712
+        Photo.is_missing == False,                                # noqa: E712
+        Photo.video_transcode_failures < 3,
+    )) or 0)
+    videos_done = int(await db.scalar(select(_f.count()).where(
+        Photo.is_video == True,                                   # noqa: E712
+        Photo.is_trashed == False,                                # noqa: E712
+        Photo.video_webm_path.isnot(None),
+    )) or 0)
+    videos_pending = max(0, total_videos - videos_done)
+    videos_pct = round(100 * videos_done / total_videos, 1) if total_videos else 0.0
 
     return {
         "embed": {
@@ -1376,6 +1397,11 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
             "percent": xmp_pct,
             "active_run": xmp_run,   # {total,done,failed,finished,started_at,full} oder None
             "label": "XMP + Sidecars (Beschreibung ins Bild)",
+        },
+        "video_transcode": {
+            "total": total_videos, "done": videos_done, "pending": videos_pending,
+            "percent": videos_pct, "workers_alive": video_alive,
+            "label": "Video-Transcode (Web-MP4, 720p/1080p)",
         },
     }
 

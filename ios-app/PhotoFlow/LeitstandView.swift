@@ -18,6 +18,9 @@ struct LeitstandView: View {
                     Section("Worker-Fortschritt") {
                         progressRow(lane: w.embed, iconName: "brain.head.profile")
                         progressRow(lane: w.xmp, iconName: "doc.badge.arrow.up")
+                        if let vt = w.video_transcode {
+                            progressRow(lane: vt, iconName: "film.stack")
+                        }
                         if let run = w.xmp.active_run, run.finished != true, let t = run.total, let d = run.done, t > 0 {
                             HStack {
                                 Text("Aktueller XMP-Run").font(.caption).foregroundStyle(.secondary)

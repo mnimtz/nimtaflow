@@ -480,6 +480,9 @@ struct OpsWorkers: Codable {
     }
     let embed: Lane
     let xmp: Lane
+    // Video-Transcode-Lane: erst ab Backend v1.529 gefüllt — optional halten,
+    // damit ältere Server nicht die Deserialisierung sprengen.
+    let video_transcode: Lane?
 }
 
 // MARK: - Highlights (video assistant)
