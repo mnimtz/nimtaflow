@@ -464,6 +464,114 @@ def retry_failed_ai_task(self):
     return _run(_main())
 
 
+@celery_app.task(bind=True, name="describe_video_via_gemini")
+def describe_video_via_gemini_task(self, photo_id: int):
+    """Cloud-Fallback: schickt das transkodierte 1080p-Web-Video an Gemini
+    (File-Upload-API → generateContent) und speichert Beschreibung + Tags.
+    Nur für Videos, bei denen der lokale VLM-Worker mehrfach ‚degenerate
+    output' geliefert hat (ai_error=True, description IS NULL, webm da).
+    Keine Endlosschleife: bei Gemini-Fehler wird ai_error nicht neu gesetzt
+    (bleibt True) und ai_attempts++."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.models.tag import Tag, PhotoTag
+        from app.services.settings_loader import load_settings
+        from app.services.ai.gemini import GeminiProvider
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        import os
+        init_db()
+        async for db in get_db():
+            photo = await db.get(Photo, photo_id)
+            if not photo or not photo.is_video:
+                return {"skipped": "not video"}
+            if not photo.video_webm_path or not os.path.exists(photo.video_webm_path):
+                return {"skipped": "no webm"}
+            if photo.description and photo.description.strip():
+                return {"skipped": "has description"}
+            s = await load_settings(db)
+            key = (s.get("ai.gemini.api_key") or "").strip()
+            if not key:
+                flog("ai", "WARNING", "Gemini-Video-Fallback: kein API-Key konfiguriert")
+                return {"error": "no_gemini_key"}
+            model = s.get("ai.gemini.video_model", "gemini-2.5-flash")
+            prompt = s.get("ai.prompt.video") or None
+            tag_prompt = s.get("ai.prompt.video_tags") or s.get("ai.prompt.tags") or None
+            lang = s.get("ai.language", "de")
+            gp = GeminiProvider(key, model=model)
+            try:
+                desc, tags = await gp.describe_video(
+                    photo.video_webm_path, language=lang,
+                    desc_prompt=prompt, tag_prompt=tag_prompt,
+                )
+            except Exception as e:
+                photo.ai_attempts = (photo.ai_attempts or 0) + 1
+                await db.commit()
+                flog("ai", "WARNING",
+                     f"Gemini-Video-Fallback #{photo_id} {photo.filename}: {str(e)[:200]}")
+                return {"error": str(e)[:200]}
+            if not desc or not desc.strip():
+                photo.ai_attempts = (photo.ai_attempts or 0) + 1
+                await db.commit()
+                return {"error": "empty_response"}
+            photo.description = desc.strip()
+            photo.description_model = f"gemini:{model}"
+            photo.ai_error = False
+            photo.ai_attempts = (photo.ai_attempts or 0) + 1
+            # Tags anlegen/verknüpfen
+            if tags:
+                seen = set()
+                for tname in tags[:20]:
+                    tn = (tname or "").strip().lower()
+                    if not tn or tn in seen:
+                        continue
+                    seen.add(tn)
+                    tag = (await db.execute(select(Tag).where(Tag.name == tn))).scalars().first()
+                    if not tag:
+                        tag = Tag(name=tn); db.add(tag); await db.flush()
+                    exists = (await db.execute(select(PhotoTag).where(
+                        PhotoTag.photo_id == photo.id, PhotoTag.tag_id == tag.id))).scalars().first()
+                    if not exists:
+                        db.add(PhotoTag(photo_id=photo.id, tag_id=tag.id))
+            await db.commit()
+            flog("ai", "INFO",
+                 f"Gemini-Video ✓ #{photo_id} {photo.filename}: "
+                 f"{len(tags or [])} Tags · {desc[:120]}")
+            return {"ok": True, "tags": len(tags or [])}
+    return _run(_main())
+
+
+@celery_app.task(bind=True, name="batch_describe_videos_via_gemini")
+def batch_describe_videos_via_gemini_task(self, limit: int = 200):
+    """Reiht bis zu `limit` Videos ohne Beschreibung (ai_error=True) in den
+    Gemini-Fallback ein. Idempotent — läuft der ohne Wirkung wenn kein Key
+    konfiguriert ist. Sub-Tasks laufen sequenziell im describe_video_via_gemini
+    Slot (nicht parallel, weil sonst Gemini-Quota rasant erschöpft ist)."""
+    async def _main():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select
+        init_db()
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Photo.id).where(
+                    Photo.is_video == True,                        # noqa: E712
+                    Photo.description.is_(None),
+                    Photo.video_webm_path.isnot(None),
+                    Photo.is_trashed == False,                     # noqa: E712
+                    Photo.is_missing == False,                     # noqa: E712
+                ).order_by(Photo.id).limit(limit)
+            )).all()
+            ids = [r[0] for r in rows]
+            for pid in ids:
+                describe_video_via_gemini_task.delay(pid)
+            flog("ai", "INFO", f"Gemini-Video-Fallback: {len(ids)} Videos eingereiht")
+            return {"queued": len(ids)}
+    return _run(_main())
+
+
 @celery_app.task(bind=True, name="reap_stuck_photos")
 def reap_stuck_photos_task(self):
     """Self-heal photos stuck at status=processing: a deploy/container-recreate (or

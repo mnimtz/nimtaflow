@@ -167,6 +167,86 @@ class GeminiProvider(AIProvider):
             resp.raise_for_status()
             return (resp.json().get("embedding") or {}).get("values") or []
 
+    async def describe_video(self, video_path: str, language: str = "de",
+                             desc_prompt: Optional[str] = None,
+                             tag_prompt: Optional[str] = None,
+                             mime_type: str = "video/mp4") -> tuple:
+        """Uploads the local web-mp4 via the Gemini File API and asks for
+        description+tags in ONE call. Returns (description, [tags]).
+
+        Fallback für Videos, bei denen das lokale VLM (Qwen3-VL/MLX) nur
+        „degenerate output" liefert — meist 3GP-Handys, JGA-Nachtaufnahmen,
+        alte MOVs, bei denen das Model kein klares Motiv findet. Gemini kommt
+        über die eigene Video-Pipeline meist zurecht.
+        """
+        import asyncio
+        # 1) Upload the file — Gemini's simple `uploadType=media` accepts binary body.
+        #    Response contains .file.name (e.g. "files/abc123") and .file.state.
+        upload_base = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        try:
+            with open(video_path, "rb") as f:
+                data = f.read()
+        except Exception as e:
+            raise RuntimeError(f"video read failed: {e}")
+        headers = {
+            "X-Goog-Upload-Command": "start, upload, finalize",
+            "X-Goog-Upload-Header-Content-Length": str(len(data)),
+            "X-Goog-Upload-Header-Content-Type": mime_type,
+            "Content-Type": mime_type,
+        }
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(
+                upload_base, params={"key": self.api_key},
+                headers=headers, content=data,
+            )
+            r.raise_for_status()
+            j = r.json()
+            file_uri = j.get("file", {}).get("uri") or j.get("uri")
+            file_name = j.get("file", {}).get("name") or j.get("name")
+            state = (j.get("file", {}).get("state") or j.get("state") or "").upper()
+            if not file_uri or not file_name:
+                raise RuntimeError(f"unexpected upload response: {str(j)[:200]}")
+
+            # 2) Poll bis der File ACTIVE ist (Gemini transkodiert Videos server-seitig).
+            for _ in range(60):
+                if state == "ACTIVE":
+                    break
+                if state == "FAILED":
+                    raise RuntimeError(f"gemini file processing FAILED for {file_name}")
+                await asyncio.sleep(2)
+                fr = await client.get(f"https://generativelanguage.googleapis.com/v1beta/{file_name}",
+                                      params={"key": self.api_key})
+                fr.raise_for_status()
+                fj = fr.json()
+                state = (fj.get("state") or "").upper()
+                file_uri = fj.get("uri", file_uri)
+            if state != "ACTIVE":
+                raise RuntimeError(f"gemini file never became ACTIVE (state={state})")
+
+            # 3) generateContent mit file_data-Referenz
+            dp = desc_prompt or LANG_PROMPTS.get(language, LANG_PROMPTS["de"])
+            tp = tag_prompt or TAG_PROMPTS.get(language, TAG_PROMPTS["de"])
+            combined = f"{dp}\n\nGib anschließend in einer NEUEN Zeile, beginnend mit 'TAGS:', {tp}."
+            payload = {"contents": [{"parts": [
+                {"fileData": {"mimeType": mime_type, "fileUri": file_uri}},
+                {"text": combined},
+            ]}]}
+            gr = await client.post(
+                f"{self._base}/models/{self.model}:generateContent",
+                params={"key": self.api_key}, json=payload,
+            )
+            gr.raise_for_status()
+            raw = self._extract_text(gr.json())
+
+            # 4) Aufräumen — Datei wird sonst 48h auf Google gehostet
+            try:
+                await client.delete(f"https://generativelanguage.googleapis.com/v1beta/{file_name}",
+                                    params={"key": self.api_key})
+            except Exception:
+                pass
+
+        return self._split_desc_tags(raw)
+
     async def is_available(self) -> bool:
         try:
             await self.embed_text("test")

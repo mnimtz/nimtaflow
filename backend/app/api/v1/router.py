@@ -1334,6 +1334,21 @@ async def start_xmp_backfill_v1(full: bool = False,
     return {"task_id": r.id, "full": bool(full)}
 
 
+@router.post("/ops/video-cloud-fallback/start")
+async def video_cloud_fallback_v1(limit: int = 200,
+                                  db: AsyncSession = Depends(get_db),
+                                  user: Optional[User] = Depends(current_user_optional)):
+    """Reiht bis zu `limit` Videos ohne Beschreibung in den Gemini-Fallback ein
+    (File-Upload + generateContent). Für die Videos, bei denen der lokale
+    Qwen3-VL-Worker nur ‚degenerate output' geliefert hat. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.worker.celery_app import celery_app
+    r = celery_app.send_task("batch_describe_videos_via_gemini",
+                             kwargs={"limit": int(limit)}, queue="cpu")
+    return {"task_id": r.id, "limit": int(limit)}
+
+
 @router.post("/ops/video-queue/reset-failures")
 async def reset_video_failures_v1(db: AsyncSession = Depends(get_db),
                                   user: Optional[User] = Depends(current_user_optional)):

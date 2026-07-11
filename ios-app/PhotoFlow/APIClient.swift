@@ -415,6 +415,12 @@ final class APIClient: ObservableObject {
     func startXmpBackfill(full: Bool = false) async throws -> Bool {
         try await action("api/v1/ops/xmp-backfill/start?full=\(full)", method: "POST")
     }
+    /// Startet Gemini-Cloud-Fallback für Videos, bei denen der lokale VLM
+    /// „degenerate output" geliefert hat (bis zu limit auf einmal, default 200).
+    @discardableResult
+    func startVideoCloudFallback(limit: Int = 200) async throws -> Bool {
+        try await action("api/v1/ops/video-cloud-fallback/start?limit=\(limit)", method: "POST")
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

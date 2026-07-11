@@ -72,6 +72,16 @@ struct LeitstandView: View {
                             } label: {
                                 Label("Fehler zurücksetzen & neu versuchen", systemImage: "arrow.clockwise")
                             }
+                            if failedVid > 0 {
+                                Button {
+                                    Task {
+                                        _ = try? await api.startVideoCloudFallback(limit: 200)
+                                        await load()
+                                    }
+                                } label: {
+                                    Label("Videos via Gemini nachziehen (Cloud)", systemImage: "cloud.and.arrow.up")
+                                }
+                            }
                         }
                     }
                 }
