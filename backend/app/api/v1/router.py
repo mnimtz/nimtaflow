@@ -1256,6 +1256,84 @@ async def ops_status_v1(db: AsyncSession = Depends(get_db),
     return await _ops_status(db)
 
 
+@router.get("/ops/workers")
+async def ops_workers_v1(db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    """Fortschritt der Backfill-Worker (XMP-Sidecar + Image-Embeddings) —
+    für die 'Worker-Fortschritt' Sektion im iOS-Leitstand. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from sqlalchemy import func as _f
+    # ── Image-Embedding-Backfill (jina-clip-v2, M3 remote worker) ──
+    total_ready = int(await db.scalar(select(_f.count()).where(  # noqa
+        Photo.thumb_large.isnot(None), Photo.is_trashed == False,  # noqa: E712
+        Photo.is_missing == False,                                 # noqa: E712
+    )) or 0)
+    embed_done = int(await db.scalar(select(_f.count()).where(
+        Photo.embedding.isnot(None), Photo.is_trashed == False,   # noqa: E712
+    )) or 0)
+    embed_pending = max(0, total_ready - embed_done)
+    embed_pct = round(100 * embed_done / total_ready, 1) if total_ready else 0.0
+
+    # ── XMP/Sidecar-Backfill (Prod worker-cpu-1) ──
+    total_described = int(await db.scalar(select(_f.count()).where(
+        Photo.description.isnot(None), Photo.description != "",
+        Photo.is_trashed == False,                                # noqa: E712
+    )) or 0)
+    xmp_written = int(await db.scalar(select(_f.count()).where(
+        Photo.description.isnot(None), Photo.description != "",
+        Photo.is_trashed == False, Photo.xmp_sidecar_written == True,  # noqa: E712
+        Photo.xmp_last_written_at.isnot(None),
+        Photo.xmp_last_written_at >= Photo.updated_at,
+    )) or 0)
+    xmp_pending = max(0, total_described - xmp_written)
+    xmp_pct = round(100 * xmp_written / total_described, 1) if total_described else 0.0
+
+    # Live-Progress aus Redis (aktiver Task-Run, falls einer läuft)
+    xmp_run = None
+    try:
+        import redis.asyncio as _aio_redis
+        from app.core.config import get_settings as _gs
+        rc = _aio_redis.from_url(_gs().redis_url, decode_responses=True)
+        raw = await rc.get("backfill_xmp:progress")
+        await rc.aclose()
+        if raw:
+            import json as _j
+            xmp_run = _j.loads(raw)
+    except Exception:
+        xmp_run = None
+
+    # Remote-embed-worker liveness (Heartbeat aus Redis)
+    from app.api.routes.remote import remote_worker_alive
+    embed_alive = await remote_worker_alive()
+
+    return {
+        "embed": {
+            "total": total_ready, "done": embed_done, "pending": embed_pending,
+            "percent": embed_pct, "workers_alive": embed_alive,
+            "label": "Bild-Embeddings (jina-clip-v2)",
+        },
+        "xmp": {
+            "total": total_described, "done": xmp_written, "pending": xmp_pending,
+            "percent": xmp_pct,
+            "active_run": xmp_run,   # {total,done,failed,finished,started_at,full} oder None
+            "label": "XMP + Sidecars (Beschreibung ins Bild)",
+        },
+    }
+
+
+@router.post("/ops/xmp-backfill/start")
+async def start_xmp_backfill_v1(full: bool = False,
+                                db: AsyncSession = Depends(get_db),
+                                user: Optional[User] = Depends(current_user_optional)):
+    """Startet backfill_xmp manuell (nightly self-heal on demand). Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.worker.celery_app import celery_app
+    r = celery_app.send_task("backfill_xmp", kwargs={"full": bool(full)}, queue="cpu")
+    return {"task_id": r.id, "full": bool(full)}
+
+
 @router.post("/ops/reset-ai-errors")
 async def reset_ai_errors_v1(kind: str = "all",
                              db: AsyncSession = Depends(get_db),

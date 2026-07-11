@@ -410,6 +410,11 @@ final class APIClient: ObservableObject {
     func resetAiErrors(kind: String = "all") async throws -> Bool {
         try await action("api/v1/ops/reset-ai-errors?kind=\(kind)", method: "POST")
     }
+    func opsWorkers() async throws -> OpsWorkers { try await get("api/v1/ops/workers", as: OpsWorkers.self) }
+    @discardableResult
+    func startXmpBackfill(full: Bool = false) async throws -> Bool {
+        try await action("api/v1/ops/xmp-backfill/start?full=\(full)", method: "POST")
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

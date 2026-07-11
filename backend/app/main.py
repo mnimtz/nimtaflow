@@ -162,6 +162,21 @@ async def lifespan(app: FastAPI):
     from app.core.database import Base, _engine
     import app.models  # noqa
     from sqlalchemy import text
+    # Startup-Safety: einen früheren Backend-Prozess der zwischen Deploy-Recreate abriss
+    # kann "idle in transaction" hinterlassen (langer SELECT offen). Der hält einen
+    # AccessShareLock auf photos → jede ALTER TABLE (unten) wartet ewig und die App
+    # kommt nie hoch (nginx = 502). Vor der Migration alle idle-in-tx > 30 s killen,
+    # die NICHT unser eigener Prozess sind. Idempotent, nie fatal.
+    try:
+        async with _engine.begin() as conn:
+            await conn.execute(text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname=current_database() AND pid <> pg_backend_pid() "
+                "  AND state = 'idle in transaction' "
+                "  AND xact_start < now() - interval '30 seconds'"
+            ))
+    except Exception:
+        pass
     async with _engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
@@ -174,6 +189,11 @@ async def lifespan(app: FastAPI):
     for stmt in _COLUMN_MIGRATIONS:
         try:
             async with _engine.begin() as conn:
+                # lock_timeout=15s: wenn eine Migration ihren Lock nicht bekommt (weil
+                # ein anderer Prozess die Tabelle sperrt) → sauber failen und nächste
+                # probieren, statt Startup blockieren. Bei "IF NOT EXISTS" ist das
+                # unkritisch: der Skip wird beim nächsten Start automatisch nachgeholt.
+                await conn.execute(text("SET LOCAL lock_timeout = '15s'"))
                 await conn.execute(text(stmt))
         except Exception:
             _logging.getLogger("photoflow").warning("migration skipped: %s", stmt[:80])

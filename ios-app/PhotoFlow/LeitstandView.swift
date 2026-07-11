@@ -6,12 +6,33 @@ import SwiftUI
 struct LeitstandView: View {
     @EnvironmentObject var api: APIClient
     @State private var ops: OpsStatus?
+    @State private var workers: OpsWorkers?
     @State private var loading = false
     @State private var err: String?
+    @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
             List {
+                if let w = workers {
+                    Section("Worker-Fortschritt") {
+                        progressRow(lane: w.embed, iconName: "brain.head.profile")
+                        progressRow(lane: w.xmp, iconName: "doc.badge.arrow.up")
+                        if let run = w.xmp.active_run, run.finished != true, let t = run.total, let d = run.done, t > 0 {
+                            HStack {
+                                Text("Aktueller XMP-Run").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(d)/\(t) · \(run.failed ?? 0) Fehler")
+                                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                        }
+                        Button {
+                            Task { _ = try? await api.startXmpBackfill(full: true); await load() }
+                        } label: {
+                            Label("XMP-Backfill jetzt starten (voll)", systemImage: "play.circle")
+                        }
+                    }
+                }
                 if let q = ops?.queues {
                     Section("Warteschlangen") {
                         row("CPU · Scans/Thumbnails", q.cpu)
@@ -70,9 +91,42 @@ struct LeitstandView: View {
             .navigationTitle("Leitstand")
             .toolbar { Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } }
             .overlay { if loading && ops == nil { ProgressView() } }
-            .task { await load() }
+            .task {
+                await load()
+                // Auto-Refresh alle 10s solange der Screen offen ist — dann sieht
+                // man den Progress live ohne manuell zu ziehen.
+                refreshTask?.cancel()
+                refreshTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 10_000_000_000)
+                        if !Task.isCancelled { await load() }
+                    }
+                }
+            }
+            .onDisappear { refreshTask?.cancel(); refreshTask = nil }
             .refreshable { await load() }
         }
+    }
+
+    @ViewBuilder private func progressRow(lane: OpsWorkers.Lane, iconName: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: iconName).foregroundStyle(.indigo)
+                Text(lane.label).font(.subheadline)
+                Spacer()
+                if let alive = lane.workers_alive, alive > 0 {
+                    Image(systemName: "circle.fill").foregroundStyle(.green).font(.caption2)
+                    Text("\(alive)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            ProgressView(value: max(0, min(1, lane.percent / 100.0)))
+            HStack {
+                Text("\(lane.done) / \(lane.total)").font(.caption).monospacedDigit()
+                Spacer()
+                Text(String(format: "%.1f %%", lane.percent))
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }.padding(.vertical, 2)
     }
 
     @ViewBuilder private func row(_ title: String, _ v: Int?) -> some View {
@@ -96,7 +150,13 @@ struct LeitstandView: View {
 
     private func load() async {
         loading = true; defer { loading = false }
-        do { ops = try await api.opsStatus(); err = nil }
-        catch { err = "Konnte Leitstand nicht laden (nur für Administratoren)." }
+        do {
+            async let a = api.opsStatus()
+            async let b = api.opsWorkers()
+            let (o, w) = try await (a, b)
+            ops = o; workers = w; err = nil
+        } catch {
+            err = "Konnte Leitstand nicht laden (nur für Administratoren)."
+        }
     }
 }

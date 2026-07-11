@@ -461,6 +461,21 @@ struct OpsStatus: Codable {
     let hinweis_restzeit: String?
 }
 
+struct OpsWorkers: Codable {
+    struct XmpRun: Codable {
+        let total: Int?; let done: Int?; let failed: Int?
+        let finished: Bool?; let full: Bool?; let started_at: Double?
+    }
+    struct Lane: Codable {
+        let total: Int; let done: Int; let pending: Int
+        let percent: Double; let label: String
+        let workers_alive: Int?
+        let active_run: XmpRun?
+    }
+    let embed: Lane
+    let xmp: Lane
+}
+
 // MARK: - Highlights (video assistant)
 
 /// A motto offered by GET /api/highlights/mottos. `params` lists which inputs
