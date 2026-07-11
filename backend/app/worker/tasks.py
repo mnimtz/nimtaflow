@@ -1912,7 +1912,15 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 async for db in get_db():
                     photo = await db.get(Photo, photo_id)
                     if photo:
-                        photo.video_webm_path = str(out_path); await db.commit()
+                        photo.video_webm_path = str(out_path)
+                        # Ehrliche Progress-Zähler für den Leitstand.
+                        from datetime import datetime as _dt_now, timezone as _tz_now
+                        _now = _dt_now.now(_tz_now.utc)
+                        if resolution == 720:
+                            photo.web_mp4_720_at = _now
+                        elif resolution == 1080:
+                            photo.web_mp4_1080_at = _now
+                        await db.commit()
                     break
                 flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {fname}")
                 return {"ok": True, "hw": hwname}

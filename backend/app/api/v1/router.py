@@ -1366,25 +1366,38 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
     embed_alive = await remote_worker_alive()
     video_alive = await video_transcode_worker_alive()
 
-    # ── Video-Transcode (Server-cpu + M3 remote) ──
-    # „Total": alle Videos die Anspruch auf einen Web-Transcode haben (Failure-
-    # gefiltert, wie der Sweep sie auch anbietet).
-    # „Done": Videos deren video_webm_path gesetzt ist (irgendeine Auflösung
-    # fertig). Für die neue 720p-Rendition (der Multi-Res-Push seit v1.525)
-    # gibt's noch kein DB-Feld — der Cache-Ordner ist die Quelle der Wahrheit.
+    # ── Video-Transcode: EHRLICHE Zahlen ──
+    # „Total": alle Videos die Anspruch auf einen Web-Transcode haben.
+    # „Done": Videos die MIT DEM NEUEN 8-bit-Fix transkodiert wurden — gemessen
+    # an web_mp4_720_at (der aktuellen Default-Rendition seit v1.525). Die alten
+    # video_webm_path-Zeiger dürfen NICHT mitgezählt werden, sonst zeigt der
+    # Leitstand 99% obwohl 13k Videos noch ruckeln.
     total_videos = int(await db.scalar(select(_f.count()).where(
         Photo.is_video == True,                                   # noqa: E712
         Photo.is_trashed == False,                                # noqa: E712
         Photo.is_missing == False,                                # noqa: E712
         Photo.video_transcode_failures < 3,
     )) or 0)
-    videos_done = int(await db.scalar(select(_f.count()).where(
+    videos_done_720 = int(await db.scalar(select(_f.count()).where(
+        Photo.is_video == True,                                   # noqa: E712
+        Photo.is_trashed == False,                                # noqa: E712
+        Photo.web_mp4_720_at.isnot(None),
+    )) or 0)
+    videos_done_1080 = int(await db.scalar(select(_f.count()).where(
+        Photo.is_video == True,                                   # noqa: E712
+        Photo.is_trashed == False,                                # noqa: E712
+        Photo.web_mp4_1080_at.isnot(None),
+    )) or 0)
+    # „Legacy": hat video_webm_path aber KEINEN neuen Fix — muss noch neu.
+    legacy_only = int(await db.scalar(select(_f.count()).where(
         Photo.is_video == True,                                   # noqa: E712
         Photo.is_trashed == False,                                # noqa: E712
         Photo.video_webm_path.isnot(None),
+        Photo.web_mp4_720_at.is_(None),
+        Photo.web_mp4_1080_at.is_(None),
     )) or 0)
-    videos_pending = max(0, total_videos - videos_done)
-    videos_pct = round(100 * videos_done / total_videos, 1) if total_videos else 0.0
+    videos_pending = max(0, total_videos - videos_done_720)
+    videos_pct = round(100 * videos_done_720 / total_videos, 1) if total_videos else 0.0
 
     return {
         "embed": {
@@ -1399,9 +1412,11 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
             "label": "XMP + Sidecars (Beschreibung ins Bild)",
         },
         "video_transcode": {
-            "total": total_videos, "done": videos_done, "pending": videos_pending,
+            "total": total_videos, "done": videos_done_720, "pending": videos_pending,
             "percent": videos_pct, "workers_alive": video_alive,
-            "label": "Video-Transcode (Web-MP4, 720p/1080p)",
+            "done_720": videos_done_720, "done_1080": videos_done_1080,
+            "legacy_only": legacy_only,   # alte 10-bit-Files, brauchen Re-Transcode
+            "label": "Video-Transcode 720p (neu, 8-bit HW-decodable)",
         },
     }
 
@@ -1416,6 +1431,64 @@ async def start_xmp_backfill_v1(full: bool = False,
     from app.worker.celery_app import celery_app
     r = celery_app.send_task("backfill_xmp", kwargs={"full": bool(full)}, queue="cpu")
     return {"task_id": r.id, "full": bool(full)}
+
+
+@router.post("/ops/video-timestamps-scan")
+async def video_timestamps_scan_v1(db: AsyncSession = Depends(get_db),
+                                   user: Optional[User] = Depends(current_user_optional)):
+    """Einmaliger Backfill: durchsucht /cache/videos/*.mp4, setzt web_mp4_720_at
+    und web_mp4_1080_at aus der Datei-mtime. So bekommt der Leitstand die ehrlichen
+    Zahlen sofort — ohne dass wir jedes Video neu transcodieren müssen. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    import os as _os, re as _re, pathlib as _pl
+    from datetime import datetime as _dt, timezone as _tz
+    cache = _pl.Path("/cache/videos")
+    if not cache.exists():
+        return {"scanned": 0, "set_720": 0, "set_1080": 0}
+    # Cutoff: nur Files die NACH dem v1.525-Fix erzeugt wurden zählen als
+    # „richtig 8-bit HW-decodable". Alte 1080p-Files aus 10-bit-Zeit dürfen
+    # nicht als „done" gemarkt werden, sonst ist die Zahl wieder gelogen.
+    _CUTOFF = _dt(2026, 7, 11, 0, 0, tzinfo=_tz.utc)
+    updates_720: dict = {}
+    updates_1080: dict = {}
+    pat = _re.compile(r"^(\d+)_(720|1080)\.mp4$")
+    for p in cache.iterdir():
+        m = pat.match(p.name)
+        if not m:
+            continue
+        try:
+            pid = int(m.group(1)); res = int(m.group(2))
+            mtime = _dt.fromtimestamp(p.stat().st_mtime, tz=_tz.utc)
+        except Exception:
+            continue
+        if mtime < _CUTOFF:
+            continue
+        (updates_720 if res == 720 else updates_1080)[pid] = mtime
+    # Bulk-Update in Chunks
+    from sqlalchemy import update as _upd, bindparam
+    def _chunks(d, sz=500):
+        it = iter(d.items())
+        while True:
+            batch = list(__import__("itertools").islice(it, sz))
+            if not batch:
+                break
+            yield batch
+    total_720 = total_1080 = 0
+    for batch in _chunks(updates_720):
+        for pid, mt in batch:
+            await db.execute(_upd(Photo).where(Photo.id == pid)
+                             .values(web_mp4_720_at=mt))
+            total_720 += 1
+        await db.commit()
+    for batch in _chunks(updates_1080):
+        for pid, mt in batch:
+            await db.execute(_upd(Photo).where(Photo.id == pid)
+                             .values(web_mp4_1080_at=mt))
+            total_1080 += 1
+        await db.commit()
+    return {"scanned": total_720 + total_1080,
+            "set_720": total_720, "set_1080": total_1080}
 
 
 @router.post("/ops/video-requeue-hdr")

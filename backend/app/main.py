@@ -60,6 +60,11 @@ _COLUMN_MIGRATIONS = [
     # Photo-ID — sonst queued er dieselben kaputten Files bei jedem Beat-Lauf
     # neu und die video-Queue wächst ins Endlose.
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS video_transcode_failures INTEGER NOT NULL DEFAULT 0",
+    # Ehrliche Progress-Anzeige im Leitstand: getrennte Timestamps je Rendition,
+    # damit „fertig transcodiert" nicht mehr die alten 10-bit-Files aus vor dem
+    # v1.525-Fix mitzählt. Wird beim transcode_result gesetzt.
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS web_mp4_720_at  TIMESTAMPTZ",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS web_mp4_1080_at TIMESTAMPTZ",
     # ── photos: face-aware crop, remote-worker lease, >2GB file sizes ─────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_x DOUBLE PRECISION",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_y DOUBLE PRECISION",

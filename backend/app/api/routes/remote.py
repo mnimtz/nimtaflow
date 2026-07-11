@@ -357,6 +357,7 @@ async def video(photo_id: int, db: AsyncSession = Depends(get_db),
 @router.get("/transcode-jobs")
 async def transcode_jobs(limit: int = 2, resolution: int = 720,
                          worker: str = "worker",
+                         max_src_pixels: Optional[int] = None,
                          db: AsyncSession = Depends(get_db),
                          x_remote_token: Optional[str] = Header(None)):
     """Lease Videos die noch keinen Web-Transcode in der gewünschten Auflösung haben.
@@ -460,6 +461,13 @@ async def transcode_result(photo_id: int, resolution: int = 1080,
     # erhalten, wenn ein Worker parallel den 720p geliefert hat.
     if resolution == 1080 or not photo.video_webm_path:
         photo.video_webm_path = str(out_path)
+    # Rendition-Timestamp für den Leitstand — zeigt ehrlich, wieviele Videos
+    # tatsächlich den NEUEN 8-bit-Transcode haben.
+    from datetime import datetime as _dt, timezone as _tz
+    if resolution == 720:
+        photo.web_mp4_720_at = _dt.now(_tz.utc)
+    elif resolution == 1080:
+        photo.web_mp4_1080_at = _dt.now(_tz.utc)
     await db.commit()
     try:
         r = await _redis()

@@ -477,6 +477,10 @@ struct OpsWorkers: Codable {
         let percent: Double; let label: String
         let workers_alive: Int?
         let active_run: XmpRun?
+        // Nur bei der video_transcode-Lane gesetzt: Detail-Aufschlüsselung.
+        let done_720: Int?
+        let done_1080: Int?
+        let legacy_only: Int?
     }
     let embed: Lane
     let xmp: Lane

@@ -425,6 +425,11 @@ final class APIClient: ObservableObject {
     func startVideoCloudFallback(limit: Int = 200) async throws -> Bool {
         try await action("api/v1/ops/video-cloud-fallback/start?limit=\(limit)", method: "POST")
     }
+    /// Triggert Re-Transcode von Videos mit alten 10-bit/HDR-Files (v1.525-Fix).
+    @discardableResult
+    func startVideoRequeueHdr(limit: Int = 500) async throws -> Bool {
+        try await action("api/v1/ops/video-requeue-hdr?limit=\(limit)", method: "POST")
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

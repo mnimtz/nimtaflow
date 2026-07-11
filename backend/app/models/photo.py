@@ -122,6 +122,10 @@ class Photo(Base):
     # Ab 3 gescheiterten Transcode-Läufen filtert der Sweep die ID raus, damit
     # ein permanent kaputtes File die Video-Queue nicht endlos flutet.
     video_transcode_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Pro Rendition ein Zeitstempel — der Leitstand zählt darauf, damit ALTE
+    # 10-bit-Transcodes aus vor v1.525 nicht fälschlich als „fertig" gelten.
+    web_mp4_720_at:  Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    web_mp4_1080_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     # ── User interaction ──────────────────────────────────────────────────────
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

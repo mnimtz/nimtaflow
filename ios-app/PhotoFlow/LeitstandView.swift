@@ -20,6 +20,23 @@ struct LeitstandView: View {
                         progressRow(lane: w.xmp, iconName: "doc.badge.arrow.up")
                         if let vt = w.video_transcode {
                             progressRow(lane: vt, iconName: "film.stack")
+                            HStack(spacing: 12) {
+                                Text("720p neu: \(vt.done_720 ?? vt.done)").font(.caption).monospacedDigit()
+                                Text("· 1080p neu: \(vt.done_1080 ?? 0)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                if let leg = vt.legacy_only, leg > 0 {
+                                    Text("· \(leg) alt (ruckelt)").font(.caption).foregroundStyle(.orange).monospacedDigit()
+                                }
+                            }
+                            if (vt.legacy_only ?? 0) > 0 {
+                                Button {
+                                    Task {
+                                        _ = try? await api.startVideoRequeueHdr(limit: 500)
+                                        await load()
+                                    }
+                                } label: {
+                                    Label("500 alte HDR-Videos neu transcodieren", systemImage: "arrow.clockwise.circle")
+                                }
+                            }
                         }
                         if let run = w.xmp.active_run, run.finished != true, let t = run.total, let d = run.done, t > 0 {
                             HStack {
