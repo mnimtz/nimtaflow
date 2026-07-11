@@ -404,6 +404,12 @@ final class APIClient: ObservableObject {
 
     // MARK: Leitstand / Ops (admin-only)
     func opsStatus() async throws -> OpsStatus { try await get("api/v1/ops", as: OpsStatus.self) }
+    /// Setzt ai_error=false für gescheiterte Beschreibungen zurück (Admin-only).
+    /// kind ∈ {"all","images","videos"} → alle / nur Bilder / nur Videos.
+    @discardableResult
+    func resetAiErrors(kind: String = "all") async throws -> Bool {
+        try await action("api/v1/ops/reset-ai-errors?kind=\(kind)", method: "POST")
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

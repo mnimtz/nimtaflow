@@ -444,6 +444,8 @@ struct OpsStatus: Codable {
     struct Backlog: Codable {
         let bilder_ohne_beschreibung: Int?
         let videos_ohne_beschreibung: Int?
+        let bilder_beschreibung_fehlgeschlagen: Int?
+        let videos_beschreibung_fehlgeschlagen: Int?
         let videos_ohne_gesichtsscan: Int?
         let fehlerhafte_medien: Int?
     }

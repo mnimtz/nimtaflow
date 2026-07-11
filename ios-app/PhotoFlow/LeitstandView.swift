@@ -31,11 +31,27 @@ struct LeitstandView: View {
                     }
                 }
                 if let b = ops?.backlog {
-                    Section("Backlog") {
+                    Section("Backlog (offen, retryfähig)") {
                         row("Bilder ohne Beschreibung", b.bilder_ohne_beschreibung)
                         row("Videos ohne Beschreibung", b.videos_ohne_beschreibung)
                         row("Videos ohne Gesichts-Scan", b.videos_ohne_gesichtsscan)
                         row("Fehlerhafte Medien", b.fehlerhafte_medien)
+                    }
+                    let failedImg = b.bilder_beschreibung_fehlgeschlagen ?? 0
+                    let failedVid = b.videos_beschreibung_fehlgeschlagen ?? 0
+                    if failedImg + failedVid > 0 {
+                        Section("Beschreibung fehlgeschlagen") {
+                            row("Bilder", failedImg)
+                            row("Videos", failedVid)
+                            Button {
+                                Task {
+                                    _ = try? await api.resetAiErrors(kind: "all")
+                                    await load()
+                                }
+                            } label: {
+                                Label("Fehler zurücksetzen & neu versuchen", systemImage: "arrow.clockwise")
+                            }
+                        }
                     }
                 }
                 if let e = ops?.restzeit_schaetzung_minuten {

@@ -647,10 +647,18 @@ async def _ops_status(db: AsyncSession) -> dict:
     async def c(*conds) -> int:  # global, kein acl (Admin)
         return int(await db.scalar(select(func.count()).where(Photo.is_trashed == False, *conds)) or 0)  # noqa: E712
 
+    # "Offen" = wirklich noch retry-fähig: ai_error=false. Sonst zählt der Leitstand
+    # ewig die Medien mit, bei denen der Provider damals gescheitert ist und die vom
+    # Remote-Claim gar nicht mehr angeboten werden (siehe remote.py claim-Filter).
     no_desc_img = await c(Photo.is_video == False, Photo.status == PhotoStatus.done,  # noqa: E712
+                          Photo.ai_error == False,                                    # noqa: E712
                           or_(Photo.description.is_(None), Photo.description == ""))
-    no_desc_vid = await c(Photo.is_video == True, Photo.status == PhotoStatus.done,  # noqa: E712
+    no_desc_vid = await c(Photo.is_video == True, Photo.status == PhotoStatus.done,   # noqa: E712
+                          Photo.ai_error == False,                                    # noqa: E712
                           or_(Photo.description.is_(None), Photo.description == ""))
+    # ai_error=true → früher versucht, gescheitert. Retry über /reset-ai-errors möglich.
+    failed_desc_img = await c(Photo.is_video == False, Photo.ai_error == True)        # noqa: E712
+    failed_desc_vid = await c(Photo.is_video == True, Photo.ai_error == True)         # noqa: E712
     video_faces_open = await c(Photo.is_video == True, Photo.faces_scanned == False)  # noqa: E712
     errors = await c(Photo.status == PhotoStatus.error)
 
@@ -664,6 +672,8 @@ async def _ops_status(db: AsyncSession) -> dict:
         "queues": queues, "worker": workers,
         "backlog": {"bilder_ohne_beschreibung": no_desc_img,
                     "videos_ohne_beschreibung": no_desc_vid,
+                    "bilder_beschreibung_fehlgeschlagen": failed_desc_img,
+                    "videos_beschreibung_fehlgeschlagen": failed_desc_vid,
                     "videos_ohne_gesichtsscan": video_faces_open,
                     "fehlerhafte_medien": errors},
         "restzeit_schaetzung_minuten": eta,

@@ -1247,9 +1247,15 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                 conds = [Photo.id.in_(list(set(int(x) for x in photo_ids)))]
                 flog("ai", "INFO", f"XMP-Backfill gezielt: {len(set(photo_ids))} Photo-IDs (vom Audit)")
             elif not full:
-                # nightly self-heal: only photos that were never stamped into a file
-                conds.append(or_(Photo.xmp_sidecar_written == False,  # noqa: E712
-                                 Photo.xmp_sidecar_written.is_(None)))
+                # nightly self-heal: photos that were never stamped OR whose DB row was
+                # updated after the last XMP write (Beschreibung/Rating/Tags haben sich
+                # seither geändert → Sidecar/XMP-Block ist veraltet).
+                conds.append(or_(
+                    Photo.xmp_sidecar_written == False,  # noqa: E712
+                    Photo.xmp_sidecar_written.is_(None),
+                    Photo.xmp_last_written_at.is_(None),
+                    Photo.xmp_last_written_at < Photo.updated_at,
+                ))
             photos = (await db.execute(
                 select(Photo).where(*conds).order_by(Photo.id)
             )).scalars().all()

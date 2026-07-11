@@ -1256,6 +1256,26 @@ async def ops_status_v1(db: AsyncSession = Depends(get_db),
     return await _ops_status(db)
 
 
+@router.post("/ops/reset-ai-errors")
+async def reset_ai_errors_v1(kind: str = "all",
+                             db: AsyncSession = Depends(get_db),
+                             user: Optional[User] = Depends(current_user_optional)):
+    """kind ∈ {"all","images","videos"}: setzt ai_error=false, damit die Beschreibung
+    beim nächsten Remote-Claim erneut versucht wird. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from sqlalchemy import update
+    stmt = update(Photo).where(Photo.ai_error == True)  # noqa: E712
+    if kind == "images":
+        stmt = stmt.where(Photo.is_video == False)      # noqa: E712
+    elif kind == "videos":
+        stmt = stmt.where(Photo.is_video == True)       # noqa: E712
+    stmt = stmt.values(ai_error=False, ai_claimed_at=None)
+    r = await db.execute(stmt)
+    await db.commit()
+    return {"reset": int(r.rowcount or 0), "kind": kind}
+
+
 # ── Erinnerungen / Memories (iOS app) ───────────────────────────────────────────
 
 class MemoryGroupV1(BaseModel):
