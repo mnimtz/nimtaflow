@@ -29,6 +29,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.Photo
+import email.nimtz.nimtaflow.tv.ui.LocalGridDensity
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.formatMonthYear
 import email.nimtz.nimtaflow.tv.util.monthKey
@@ -112,11 +113,10 @@ fun GalleryScreen(
         }
     }
 
+    val galleryCellMin = LocalGridDensity.current.galleryCellMin
     LazyVerticalGrid(
-        // 155dp minSize → auf FullHD (1920px sichtbare Content-Fläche nach Sidebar
-        // ~1680) sind das ~10 Spalten; auf 4K TVs entsprechend ~16. Vorher 220dp
-        // ergab nur 6-7 riesige Kacheln, wirkte klobig und leer.
-        columns = GridCells.Adaptive(minSize = 155.dp),
+        // GridDensity aus Settings → Compact/Medium/Comfy: 180/240/300dp minSize.
+        columns = GridCells.Adaptive(minSize = galleryCellMin),
         state = gridState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

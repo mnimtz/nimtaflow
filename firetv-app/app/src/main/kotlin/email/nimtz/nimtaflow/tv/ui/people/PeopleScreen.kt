@@ -22,6 +22,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +36,9 @@ import coil.request.ImageRequest
 import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.Person
 import email.nimtz.nimtaflow.tv.api.Photo
+import email.nimtz.nimtaflow.tv.ui.LocalGridDensity
+import email.nimtz.nimtaflow.tv.ui.LocalPeopleSort
+import email.nimtz.nimtaflow.tv.ui.PeopleSort
 import email.nimtz.nimtaflow.tv.ui.gallery.PhotoCard
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -88,13 +92,27 @@ fun PeopleScreen(
             }
         }
 
-        selectedPerson == null -> PersonGrid(
-            named   = persons.filter { it.name.isNotBlank() },
-            unknown = if (isAdmin) persons.filter { it.name.isBlank() } else emptyList(),
-            api = api,
-            token = token,
-            onSelect = { selectedPerson = it },
-        )
+        selectedPerson == null -> {
+            val sort = LocalPeopleSort.current
+            val named = persons.filter { it.name.isNotBlank() }.let { list ->
+                when (sort) {
+                    PeopleSort.ByPhotoCount ->
+                        list.sortedWith(compareByDescending<Person> { it.photoCount }.thenBy { it.name.lowercase() })
+                    PeopleSort.ByName ->
+                        list.sortedBy { it.name.lowercase() }
+                }
+            }
+            val unknown = if (isAdmin)
+                persons.filter { it.name.isBlank() }.sortedByDescending { it.photoCount }
+            else emptyList()
+            PersonGrid(
+                named = named,
+                unknown = unknown,
+                api = api,
+                token = token,
+                onSelect = { selectedPerson = it },
+            )
+        }
 
         else -> PersonPhotos(
             person = selectedPerson!!,
@@ -124,11 +142,12 @@ private fun PersonGrid(
             try { firstPersonFocus.requestFocus() } catch (_: Exception) {}
     }
 
+    val density = LocalGridDensity.current
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(180.dp),
+        columns = GridCells.Adaptive(density.personCellMin),
         contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         itemsIndexed(named, key = { _, p -> p.id }) { idx, person ->
@@ -183,31 +202,39 @@ private fun PersonCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
+    val density = LocalGridDensity.current
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f, label = "personCardScale",
+    )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .border(2.dp, if (focused) Accent else Color.Transparent, RoundedCornerShape(16.dp))
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(18.dp))
             .background(if (focused) SurfaceHi else Surface)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) Accent else SurfaceHi.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(18.dp),
+            )
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown &&
                     (e.key == Key.DirectionCenter || e.key == Key.Enter)) { onClick(); true } else false
             }
-            .padding(16.dp),
+            .padding(density.personCardPad),
     ) {
         // Face thumbnail (circle)
         Box(
             Modifier
-                .size(120.dp)
+                .size(density.personAvatar)
                 .clip(CircleShape)
                 .background(SurfaceHi),
             contentAlignment = Alignment.Center,
         ) {
-            // Nutzt Face-Crop-Endpoint /api/people/{id}/avatar
             AsyncImage(
                 model = ImageRequest.Builder(ctx)
                     .data(api.personAvatarUrl(person.id))
@@ -221,8 +248,8 @@ private fun PersonCard(
 
         Text(
             person.name.ifBlank { "Unbekannt" },
-            color = OnSurface,
-            fontSize = 15.sp,
+            color = if (focused) Accent else OnSurface,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -231,7 +258,7 @@ private fun PersonCard(
         Text(
             "${person.photoCount} Fotos",
             color = Muted,
-            fontSize = 13.sp,
+            fontSize = 11.sp,
             textAlign = TextAlign.Center,
         )
     }
@@ -273,8 +300,9 @@ private fun PersonPhotos(
                 CircularProgressIndicator(color = Accent)
             }
         } else {
+            val density = LocalGridDensity.current
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(220.dp),
+                columns = GridCells.Adaptive(density.galleryCellMin),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),

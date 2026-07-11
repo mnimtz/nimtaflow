@@ -24,6 +24,8 @@ import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.Album
 import email.nimtz.nimtaflow.tv.api.Person
 import email.nimtz.nimtaflow.tv.screensaver.ScreensaverPrefs
+import email.nimtz.nimtaflow.tv.ui.GridDensity
+import email.nimtz.nimtaflow.tv.ui.PeopleSort
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.ReleaseInfo
 import email.nimtz.nimtaflow.tv.util.UpdateChecker
@@ -79,6 +81,32 @@ fun FireTVSettingsScreen(api: APIClient) {
         SettingsCard("Diese App") {
             InfoRow(Icons.Filled.Info, "Version", "NimtaFlow TV $versionName")
             InfoRow(Icons.Filled.Cloud, "Server", serverUrl.ifBlank { "Nicht verbunden" })
+        }
+
+        // ── Ansicht (Grid-Dichte + Sortierung) ──────────────────────────────
+        val densityId by prefs.gridDensity.collectAsState(initial = "medium")
+        val peopleSortId by prefs.peopleSort.collectAsState(initial = "count")
+        SettingsCard("Ansicht") {
+            SectionLabel("Grid-Dichte (alle Ansichten)")
+            SegmentedPicker(
+                options = GridDensity.entries.map { it.id to it.label },
+                selected = densityId,
+                onSelect = { id -> scope.launch { prefs.saveGridDensity(id) } },
+            )
+            Text(
+                GridDensity.fromId(densityId).hint,
+                color = Muted, fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            SectionLabel("Personen sortieren nach")
+            SegmentedPicker(
+                options = PeopleSort.entries.map { it.id to when (it) {
+                    PeopleSort.ByPhotoCount -> "Fotoanzahl"
+                    PeopleSort.ByName       -> "Alphabetisch"
+                } },
+                selected = peopleSortId,
+                onSelect = { id -> scope.launch { prefs.savePeopleSort(id) } },
+            )
         }
 
         // ── Bildschirmschoner ────────────────────────────────────────────────
@@ -392,6 +420,45 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
 @Composable
 private fun SectionLabel(label: String) {
     Text(label, color = OnSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+}
+
+/** Chip-Row: mehrere Werte, fokusierbar; aktueller Wert visuell markiert. */
+@Composable
+private fun SegmentedPicker(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (id, label) ->
+            var focused by remember { mutableStateOf(false) }
+            val isSel = id == selected
+            val bg = when {
+                focused && isSel -> Accent
+                focused           -> Accent.copy(alpha = 0.28f)
+                isSel             -> AccentDim.copy(alpha = 0.4f)
+                else              -> SurfaceHi
+            }
+            val fg = if (isSel || focused) Color.White else OnSurface
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(bg)
+                    .onFocusChanged { focused = it.isFocused }
+                    .focusable()
+                    .onKeyEvent { e ->
+                        if (e.type == KeyEventType.KeyDown &&
+                            (e.key == Key.DirectionCenter || e.key == Key.Enter)
+                        ) { onSelect(id); true } else false
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, color = fg, fontSize = 13.sp,
+                     fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal)
+            }
+        }
+    }
 }
 
 @Composable

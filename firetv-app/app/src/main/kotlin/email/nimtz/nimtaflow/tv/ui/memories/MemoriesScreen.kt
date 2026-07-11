@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import email.nimtz.nimtaflow.tv.api.APIClient
 import email.nimtz.nimtaflow.tv.api.MemoryGroup
 import email.nimtz.nimtaflow.tv.api.Photo
+import email.nimtz.nimtaflow.tv.ui.LocalGridDensity
 import email.nimtz.nimtaflow.tv.ui.gallery.PhotoCard
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -126,12 +127,13 @@ private fun MemoryGroupRow(
         }
 
         // Horizontal photo strip
+        val tileSize = LocalGridDensity.current.memoryTile
         LazyRow(
             contentPadding = PaddingValues(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             itemsIndexed(group.items, key = { _, p -> p.id }) { idx, photo ->
-                val cardMod = Modifier.size(200.dp).let {
+                val cardMod = Modifier.size(tileSize).let {
                     if (idx == 0 && firstCardFocus != null) it.focusRequester(firstCardFocus) else it
                 }
                 PhotoCard(

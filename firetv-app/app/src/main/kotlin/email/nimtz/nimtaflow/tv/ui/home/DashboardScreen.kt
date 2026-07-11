@@ -37,6 +37,10 @@ import email.nimtz.nimtaflow.tv.api.Album
 import email.nimtz.nimtaflow.tv.api.MemoryGroup
 import email.nimtz.nimtaflow.tv.api.Person
 import email.nimtz.nimtaflow.tv.api.Photo
+import email.nimtz.nimtaflow.tv.ui.GridDensity
+import email.nimtz.nimtaflow.tv.ui.LocalGridDensity
+import email.nimtz.nimtaflow.tv.ui.LocalPeopleSort
+import email.nimtz.nimtaflow.tv.ui.PeopleSort
 import email.nimtz.nimtaflow.tv.ui.theme.*
 import email.nimtz.nimtaflow.tv.util.formatDate
 import kotlinx.coroutines.Dispatchers
@@ -72,11 +76,18 @@ fun DashboardScreen(
     var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    val sort = LocalPeopleSort.current
+    LaunchedEffect(sort) {
         withContext(Dispatchers.IO) {
             runCatching { recent = api.photos(limit = 20).items }
             runCatching { memories = api.memories() }
-            runCatching { people = api.persons().filter { it.name.isNotBlank() }.take(20) }
+            runCatching {
+                val all = api.persons().filter { it.name.isNotBlank() }
+                people = when (sort) {
+                    PeopleSort.ByPhotoCount -> all.sortedByDescending { it.photoCount }.take(20)
+                    PeopleSort.ByName       -> all.sortedBy { it.name.lowercase() }.take(20)
+                }
+            }
             runCatching { albums = api.albums().take(20) }
         }
         loading = false
@@ -418,10 +429,11 @@ private fun SmallPhotoTile(
         targetValue = if (focused) 1.08f else 1f, label = "photoTileScale",
     )
     val ctx = LocalContext.current
+    val d = LocalGridDensity.current
 
     Box(
         Modifier
-            .size(width = 200.dp, height = 130.dp)
+            .size(width = d.dashPhotoW, height = d.dashPhotoH)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(10.dp))
             .background(SurfaceHi)
@@ -473,10 +485,11 @@ private fun MemoryTile(
     )
     val ctx = LocalContext.current
     val cover = group.items.firstOrNull()
+    val d = LocalGridDensity.current
 
     Box(
         Modifier
-            .size(width = 240.dp, height = 150.dp)
+            .size(width = d.dashMemoryW, height = d.dashMemoryH)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(12.dp))
             .background(SurfaceHi)
@@ -535,10 +548,11 @@ private fun PersonTile(
         targetValue = if (focused) 1.08f else 1f, label = "personTileScale",
     )
     val ctx = LocalContext.current
+    val d = LocalGridDensity.current
 
     Column(
         Modifier
-            .width(120.dp)
+            .width(d.dashPersonAvatar + 20.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged { focused = it.isFocused }
             .focusable()
@@ -552,7 +566,7 @@ private fun PersonTile(
     ) {
         Box(
             Modifier
-                .size(100.dp)
+                .size(d.dashPersonAvatar)
                 .clip(CircleShape)
                 .border(
                     width = if (focused) 3.dp else 0.dp,
@@ -593,10 +607,11 @@ private fun AlbumTile(
         targetValue = if (focused) 1.06f else 1f, label = "albumTileScale",
     )
     val ctx = LocalContext.current
+    val d = LocalGridDensity.current
 
     Column(
         Modifier
-            .width(220.dp)
+            .width(d.dashAlbumW)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged { focused = it.isFocused }
             .focusable()

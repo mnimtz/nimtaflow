@@ -65,6 +65,10 @@ fun AppNavGraph(
     }
     var token by remember { mutableStateOf(initialToken) }
     val isAdmin by prefs.isAdmin.collectAsState(initial = false)
+    val densityId  by prefs.gridDensity.collectAsState(initial = "medium")
+    val peopleSortId by prefs.peopleSort.collectAsState(initial = "count")
+    val density = GridDensity.fromId(densityId)
+    val peopleSort = PeopleSort.fromId(peopleSortId)
     var tab by remember { mutableStateOf(HomeTab.Home) }
 
     val onUnauthorized: () -> Unit = {
@@ -135,6 +139,10 @@ fun AppNavGraph(
                     }
                 },
             ) {
+                CompositionLocalProvider(
+                    LocalGridDensity provides density,
+                    LocalPeopleSort provides peopleSort,
+                ) {
                 when (tab) {
                     HomeTab.Home      -> DashboardScreen(
                         api = api,
@@ -160,6 +168,7 @@ fun AppNavGraph(
                     HomeTab.People    -> PeopleScreen(api, token, isAdmin) { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Memories  -> MemoriesScreen(api, token) { p, i -> viewerPhotos = p; viewerIndex = i }
                     HomeTab.Settings  -> FireTVSettingsScreen(api)
+                }
                 }
             }
 
