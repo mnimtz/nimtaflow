@@ -153,7 +153,7 @@ struct LeitstandView: View {
             HStack {
                 Text("\(lane.done) / \(lane.total)").font(.caption).monospacedDigit()
                 Spacer()
-                Text(String(format: "%.1f %%", lane.percent))
+                Text(String(format: "%.1f %%", min(100.0, max(0.0, lane.percent))))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
         }.padding(.vertical, 2)

@@ -268,6 +268,13 @@ struct GalleryView: View {
             .task {
                 if photos.isEmpty { await load() }
                 if showTimeline && timelineBuckets.isEmpty { await loadTimelineBuckets() }
+                // Initial-Check: wenn Chat schon vor dem Tab-Switch die Filter-IDs
+                // gesetzt hat (das 50 ms-Delay im ChatView reicht auf langsamen
+                // Geräten nicht immer für den GalleryView-Mount), auch beim ersten
+                // Aufbau abgreifen — nicht nur via onChange.
+                if let ids = store.chatGalleryFilter, !ids.isEmpty {
+                    await applyChatFilter(ids)
+                }
             }
             .onChange(of: showTimeline) { _, v in
                 if v && timelineBuckets.isEmpty { Task { await loadTimelineBuckets() } }

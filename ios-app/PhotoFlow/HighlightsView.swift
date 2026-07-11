@@ -217,9 +217,15 @@ private struct HighlightPlayerView: View {
     /// Lädt das Highlight-Video und speichert es in die iOS-Fotomediathek (Kamerarolle).
     private func saveToPhotos() async {
         savingPhotos = true; defer { savingPhotos = false }
-        guard let url = api.url("api/highlights/\(highlight.id)/video?access_token=\(api.token)") else { return }
+        // Bearer NIE als Query-Parameter — landet in Server-Access-Logs. Als Header.
+        // pfSession statt URLSession.shared, damit self-signed-CA-Toggle greift.
+        guard let url = api.url("api/highlights/\(highlight.id)/video") else { return }
+        var req = URLRequest(url: url)
+        if !api.token.isEmpty {
+            req.setValue("Bearer \(api.token)", forHTTPHeaderField: "Authorization")
+        }
         do {
-            let (tmp, _) = try await URLSession.shared.download(from: url)
+            let (tmp, _) = try await pfSession.download(for: req)
             let dest = FileManager.default.temporaryDirectory.appendingPathComponent("highlight_\(highlight.id).mp4")
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmp, to: dest)

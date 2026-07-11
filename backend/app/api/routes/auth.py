@@ -1,6 +1,6 @@
 import re
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -77,8 +77,21 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = 
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(refresh_token: str, db: AsyncSession = Depends(get_db)):
-    user_id = decode_token(refresh_token)
+async def refresh(request: Request, db: AsyncSession = Depends(get_db)):
+    # Rückwärts-kompatibel: refresh_token darf sowohl in der Query stehen
+    # (v1.10-Client) als auch im Form-Body (v1.11+, verhindert Token-Leak in
+    # Access-Logs/Cache). Body wird bevorzugt.
+    tok = None
+    try:
+        form = await request.form()
+        tok = (form.get("refresh_token") or "").strip() or None
+    except Exception:
+        tok = None
+    if not tok:
+        tok = request.query_params.get("refresh_token")
+    if not tok:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing refresh_token")
+    user_id = decode_token(tok)
     if not user_id:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
     user = await db.get(User, int(user_id))

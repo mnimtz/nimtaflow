@@ -49,9 +49,24 @@ final class AutoUploadManager: ObservableObject {
     @Published var lastResult: String?
 
     private let uploadedKey = "autoUpload.uploadedIDs"
+    // In-Memory-Cache, damit ein Auto-Upload-Lauf nicht bei jedem einzelnen Foto
+    // ein 250-500 kB großes stringArray in UserDefaults neu serialisiert (auf
+    // MainActor → App-Ruckler + massives Disk-I/O). Lazy geladen, alle 50 markUploaded
+    // persistiert + am Ende immer.
+    private var _uploadedCache: Set<String>?
+    private var _uploadedDirty = 0
     private var uploadedIDs: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: uploadedKey) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: uploadedKey) }
+        get {
+            if let c = _uploadedCache { return c }
+            let c = Set(UserDefaults.standard.stringArray(forKey: uploadedKey) ?? [])
+            _uploadedCache = c
+            return c
+        }
+        set {
+            _uploadedCache = newValue
+            UserDefaults.standard.set(Array(newValue), forKey: uploadedKey)
+            _uploadedDirty = 0
+        }
     }
 
     var fromDate: Date {
@@ -154,10 +169,27 @@ final class AutoUploadManager: ObservableObject {
             done += 1
         }
         lastResult = "\(ok) hochgeladen, \(dup) Duplikate" + (fail > 0 ? ", \(fail) Fehler" : "")
+        flushUploaded()   // finaler persist am Ende
     }
 
     private func markUploaded(_ id: String) {
-        var s = uploadedIDs; s.insert(id); uploadedIDs = s
+        // Nur In-Memory-Set mutieren + selten persist. Vorher: 250-500 kB Serialize
+        // pro Foto → App-Ruckler. Jetzt: alle 50 Uploads (+ am Ende via flushUploaded).
+        var s = _uploadedCache ?? Set(UserDefaults.standard.stringArray(forKey: uploadedKey) ?? [])
+        s.insert(id)
+        _uploadedCache = s
+        _uploadedDirty += 1
+        if _uploadedDirty >= 50 {
+            UserDefaults.standard.set(Array(s), forKey: uploadedKey)
+            _uploadedDirty = 0
+        }
+    }
+
+    private func flushUploaded() {
+        if _uploadedDirty > 0, let s = _uploadedCache {
+            UserDefaults.standard.set(Array(s), forKey: uploadedKey)
+            _uploadedDirty = 0
+        }
     }
 
     // ── Background task (BGProcessingTask — iOS only) ─────────────────────────

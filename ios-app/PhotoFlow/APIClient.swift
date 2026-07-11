@@ -24,8 +24,16 @@ final class PFTrustDelegate: NSObject, URLSessionDelegate {
 }
 
 /// API session that honours the self-signed-cert toggle.
-let pfSession: URLSession = URLSession(configuration: .default,
-                                       delegate: PFTrustDelegate(), delegateQueue: nil)
+let pfSession: URLSession = {
+    let cfg = URLSessionConfiguration.default
+    // 5 Minuten pro Request-Chunk reicht für langsame WLANs; große Video-Uploads
+    // hingen sonst nach 60 s Standard-Timeout wenn zwischen 2 Chunks eine kurze
+    // Netz-Pause lag. Resource-Timeout auf 30 Min für 1 GB-Uploads.
+    cfg.timeoutIntervalForRequest = 300
+    cfg.timeoutIntervalForResource = 1800
+    cfg.waitsForConnectivity = true
+    return URLSession(configuration: cfg, delegate: PFTrustDelegate(), delegateQueue: nil)
+}()
 
 /// Talks to the PhotoFlow server. Uses the iOS `/api/v1` feed endpoints plus the
 /// regular `/api` endpoints for management actions (rename, merge, relationships).
@@ -89,9 +97,13 @@ final class APIClient: ObservableObject {
         guard !refresh.isEmpty else { return false }
         let task = Task<Bool, Never> { [weak self] in
             guard let self else { return false }
+            // Refresh-Token NIE in die URL — landet sonst in nginx/CDN-Access-Logs,
+            // iOS-URLCache und Fehlermeldungen. Immer als POST-Body senden.
             let enc = self.refresh.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? self.refresh
-            var req = URLRequest(url: self.absoluteURL("api/auth/refresh?refresh_token=\(enc)"))
+            var req = URLRequest(url: self.absoluteURL("api/auth/refresh"))
             req.httpMethod = "POST"
+            req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            req.httpBody = "refresh_token=\(enc)".data(using: .utf8)
             do {
                 let (data, resp) = try await pfSession.data(for: req)
                 guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return false }
@@ -447,7 +459,8 @@ final class APIClient: ObservableObject {
     }
 
     // MARK: Upload
-    func uploadFile(data: Data, filename: String, mime: String) async throws -> UploadResult {
+    func uploadFile(data: Data, filename: String, mime: String,
+                    allowRetry: Bool = true) async throws -> UploadResult {
         let boundary = "Boundary-\(UUID().uuidString)"
         var req = URLRequest(url: base.appendingPathComponent("api/v1/upload"))
         req.httpMethod = "POST"
@@ -462,7 +475,15 @@ final class APIClient: ObservableObject {
         add("\r\n--\(boundary)--\r\n")
         let (respData, resp) = try await pfSession.upload(for: req, from: body)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { await logout(); throw APIError.status(401) }
+        if code == 401 {
+            // Bei langem Auto-Upload läuft der Access-Token evtl. mitten drin ab.
+            // Vor logout() Refresh probieren — sonst wird der User stumm ausgeloggt.
+            if allowRetry, await refreshToken() {
+                return try await uploadFile(data: data, filename: filename, mime: mime,
+                                            allowRetry: false)
+            }
+            await logout(); throw APIError.status(401)
+        }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
         let results = try JSONDecoder().decode([UploadResult].self, from: respData)
         guard let first = results.first else { throw APIError.decode(URLError(.cannotParseResponse)) }
@@ -477,7 +498,7 @@ final class APIClient: ObservableObject {
     }
     func voiceNoteData(_ id: Int) async throws -> Data { try await getData("api/v1/photos/\(id)/voice-note") }
     func deleteVoiceNote(_ id: Int) async throws { try await action("api/v1/photos/\(id)/voice-note", method: "DELETE") }
-    func uploadVoiceNote(_ id: Int, data: Data) async throws {
+    func uploadVoiceNote(_ id: Int, data: Data, allowRetry: Bool = true) async throws {
         let boundary = "Boundary-\(UUID().uuidString)"
         var req = URLRequest(url: base.appendingPathComponent("api/v1/photos/\(id)/voice-note"))
         req.httpMethod = "POST"
@@ -492,7 +513,12 @@ final class APIClient: ObservableObject {
         add("\r\n--\(boundary)--\r\n")
         let (_, resp) = try await pfSession.upload(for: req, from: body)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { await logout(); throw APIError.status(401) }
+        if code == 401 {
+            if allowRetry, await refreshToken() {
+                return try await uploadVoiceNote(id, data: data, allowRetry: false)
+            }
+            await logout(); throw APIError.status(401)
+        }
         guard (200..<300).contains(code) else { throw APIError.status(code) }
     }
 
@@ -549,10 +575,22 @@ final class APIClient: ObservableObject {
     func faceSuggestions() async throws -> SuggestionGroups {
         try await get("api/people/faces/suggestions", as: SuggestionGroups.self)
     }
-    func confirmAllSuggestions(personId: Int) async throws { try await action("api/people/suggestions/confirm/\(personId)", method: "POST") }
-    func rejectAllSuggestions(personId: Int) async throws { try await action("api/people/suggestions/reject/\(personId)", method: "POST") }
-    func confirmSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/confirm-suggestion", method: "POST") }
-    func rejectSuggestion(faceId: Int) async throws { try await action("api/people/faces/\(faceId)/reject-suggestion", method: "POST") }
+    func confirmAllSuggestions(personId: Int) async throws {
+        try await action("api/people/suggestions/confirm/\(personId)", method: "POST")
+        invalidatePeopleCache()
+    }
+    func rejectAllSuggestions(personId: Int) async throws {
+        try await action("api/people/suggestions/reject/\(personId)", method: "POST")
+        invalidatePeopleCache()
+    }
+    func confirmSuggestion(faceId: Int) async throws {
+        try await action("api/people/faces/\(faceId)/confirm-suggestion", method: "POST")
+        invalidatePeopleCache()
+    }
+    func rejectSuggestion(faceId: Int) async throws {
+        try await action("api/people/faces/\(faceId)/reject-suggestion", method: "POST")
+        invalidatePeopleCache()
+    }
 
     // MARK: App settings (key/value)
     func appSettings() async throws -> [String: String] { try await get("api/settings", as: [String: String].self) }
