@@ -215,17 +215,30 @@ final class APIClient: ObservableObject {
 
     // MARK: Mutations
     func toggleFavorite(_ id: Int) async throws { try await action("api/v1/photos/\(id)/favorite", method: "PATCH") }
-    func renamePerson(_ id: Int, name: String) async throws { try await action("api/people/\(id)", method: "PATCH", json: ["name": name]) }
+    func renamePerson(_ id: Int, name: String) async throws {
+        try await action("api/people/\(id)", method: "PATCH", json: ["name": name])
+        invalidatePeopleCache()
+    }
     func mergePeople(target: Int, sources: [Int]) async throws {
         try await action("api/people/merge-multi", method: "POST", json: ["target_id": target, "source_ids": sources])
+        invalidatePeopleCache()
     }
-    func hidePerson(_ id: Int, hidden: Bool) async throws { try await action("api/people/\(id)/hide?hidden=\(hidden)", method: "POST") }
+    func hidePerson(_ id: Int, hidden: Bool) async throws {
+        try await action("api/people/\(id)/hide?hidden=\(hidden)", method: "POST")
+        invalidatePeopleCache()
+    }
     func addRelationship(from: Int, to: Int, type: String) async throws {
         try await action("api/relationships", method: "POST", json: ["from_person_id": from, "to_person_id": to, "rel_type": type])
     }
     func deleteRelationship(_ id: Int) async throws { try await action("api/relationships/\(id)", method: "DELETE") }
-    func deletePerson(_ id: Int) async throws { try await action("api/people/\(id)", method: "DELETE") }
-    func setAsMe(_ personId: Int) async throws { try await action("api/people/\(personId)/set-as-me", method: "POST") }
+    func deletePerson(_ id: Int) async throws {
+        try await action("api/people/\(id)", method: "DELETE")
+        invalidatePeopleCache()
+    }
+    func setAsMe(_ personId: Int) async throws {
+        try await action("api/people/\(personId)/set-as-me", method: "POST")
+        invalidatePeopleCache()
+    }
 
     // MARK: Single photo
     func photo(_ id: Int) async throws -> PhotoV1 { try await get("api/v1/photos/\(id)", as: PhotoV1.self) }
@@ -241,12 +254,15 @@ final class APIClient: ObservableObject {
     func photoFaces(_ id: Int) async throws -> [PhotoFace] { try await get("api/v1/photos/\(id)/faces", as: [PhotoFace].self) }
     func setProfileFace(personId: Int, faceId: Int) async throws {
         try await action("api/people/\(personId)/profile-face/\(faceId)", method: "POST")
+        invalidatePeopleCache()
     }
     func assignFace(_ faceId: Int, to personId: Int) async throws {
         try await action("api/people/faces/\(faceId)/assign/\(personId)", method: "POST")
+        invalidatePeopleCache()
     }
     func unassignFace(_ faceId: Int) async throws {
         try await action("api/people/faces/\(faceId)/unassign", method: "DELETE")
+        invalidatePeopleCache()
     }
     func archivePhoto(_ id: Int) async throws { try await action("api/photos/\(id)/archive", method: "PATCH") }
     func trashPhoto(_ id: Int) async throws { try await action("api/photos/\(id)/trash", method: "PATCH") }
