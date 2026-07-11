@@ -55,6 +55,11 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS missing_at TIMESTAMPTZ",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS video_preview_path VARCHAR(512)",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS ai_error BOOLEAN NOT NULL DEFAULT FALSE",
+    # ── photos: harter Failure-Counter für Transcode ─────────────────────────
+    # Nach 3 fehlgeschlagenen Transcode-Versuchen ignoriert der Sweep die
+    # Photo-ID — sonst queued er dieselben kaputten Files bei jedem Beat-Lauf
+    # neu und die video-Queue wächst ins Endlose.
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS video_transcode_failures INTEGER NOT NULL DEFAULT 0",
     # ── photos: face-aware crop, remote-worker lease, >2GB file sizes ─────────
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_x DOUBLE PRECISION",
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS focus_y DOUBLE PRECISION",

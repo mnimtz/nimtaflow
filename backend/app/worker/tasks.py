@@ -173,14 +173,36 @@ def sweep_pending_video_ai_task(self):
             # Videos without webm — need transcode regardless of description status.
             # Videos that already have a description still need a webm for streaming
             # and for the video face-scan (which requires video_webm_path IS NOT NULL).
+            #
+            # HARTE Filter gegen Queue-Amplifikation:
+            #  - video_transcode_failures < 3: nach 3 gescheiterten Läufen aufgeben,
+            #    sonst queued jeder 5-min-Beat dieselben kaputten Files erneut
+            #    (die Video-Queue wuchs sonst auf 3900+ Duplikate).
+            #  - Redis-SETNX-Marker "video:sweep_recent:<id>" mit 30 min TTL: dedupliziert
+            #    zusätzlich über Beat-Läufe hinweg, falls der Task noch in der Queue
+            #    hängt und der Counter noch nicht hochgezogen wurde.
             q_no_webm = select(Photo.id).where(
                 Photo.is_video == True,                     # noqa: E712
                 Photo.thumb_large.isnot(None),
                 Photo.video_webm_path.is_(None),
                 Photo.is_missing == False,                  # noqa: E712
                 Photo.is_trashed == False,                  # noqa: E712
+                Photo.video_transcode_failures < 3,
             ).limit(200)
-            no_webm_ids = [r[0] for r in (await db.execute(q_no_webm)).all()]
+            candidates = [r[0] for r in (await db.execute(q_no_webm)).all()]
+            no_webm_ids = []
+            try:
+                import redis.asyncio as _aior
+                from app.core.config import get_settings as _gs
+                _rc = _aior.from_url(_gs().redis_url)
+                for pid in candidates:
+                    # SETNX mit 30-min TTL: nur queuen wenn nicht in letzten 30 min
+                    # schon von Sweep gesehen.
+                    if await _rc.set(f"video:sweep_recent:{pid}", "1", nx=True, ex=1800):
+                        no_webm_ids.append(pid)
+                await _rc.aclose()
+            except Exception:
+                no_webm_ids = candidates
             for pid in no_webm_ids:
                 transcode_video_task.delay(pid, 1080)
             # Videos with webm but stale/no claim (remote didn't pick them up)
@@ -1787,8 +1809,21 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                     break
                 flog("video", "INFO", f"Web-Version erstellt ({hwname}, {resolution}p, {_t.time()-t0:.1f}s): {fname}")
                 return {"ok": True, "hw": hwname}
-            flog("video", "WARNING", f"Transkodierung fehlgeschlagen: {fname}: {proc.stderr.decode(errors='replace')[-200:]}")
-            return {"error": "ffmpeg"}
+            # Failure-Counter hochziehen: sonst queued sweep_pending_video_ai dieselben
+            # kaputten Files bei jedem Beat-Lauf neu (die video-Queue wuchs so auf 3900+).
+            async for db in get_db():
+                p = await db.get(Photo, photo_id)
+                if p:
+                    p.video_transcode_failures = (p.video_transcode_failures or 0) + 1
+                    await db.commit()
+                    _fails = p.video_transcode_failures
+                else:
+                    _fails = 0
+                break
+            flog("video", "WARNING",
+                 f"Transkodierung fehlgeschlagen ({_fails}. Versuch): {fname}: "
+                 f"{proc.stderr.decode(errors='replace')[-200:]}")
+            return {"error": "ffmpeg", "failures": _fails}
         finally:
             try:
                 if tmp_path is not None and tmp_path.exists():
@@ -1853,8 +1888,10 @@ def revalidate_transcodes_task(self, resolution: int = 1080):
         # 3) One session: bulk-clear the broken ones, then re-enqueue transcodes.
         if bad:
             async for db in get_db():
+                # Failure-Counter mit-resetten, damit der Sweep die IDs wieder
+                # als retry-fähig ansieht.
                 await db.execute(update(Photo).where(Photo.id.in_(bad)).values(
-                    video_webm_path=None, ai_error=False))
+                    video_webm_path=None, ai_error=False, video_transcode_failures=0))
                 await db.commit()
                 break
             for pid in bad:

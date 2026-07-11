@@ -1334,6 +1334,34 @@ async def start_xmp_backfill_v1(full: bool = False,
     return {"task_id": r.id, "full": bool(full)}
 
 
+@router.post("/ops/video-queue/reset-failures")
+async def reset_video_failures_v1(db: AsyncSession = Depends(get_db),
+                                  user: Optional[User] = Depends(current_user_optional)):
+    """Setzt video_transcode_failures für alle Videos zurück und re-queued die
+    (noch) nicht-transkodierten. Admin-only. Für den Fall dass echte Fixes am
+    Transcode-Task gelandet sind und man die alten „endgültig gescheitert" IDs
+    erneut probieren will."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from sqlalchemy import update
+    r = await db.execute(update(Photo).where(
+        Photo.is_video == True,                              # noqa: E712
+        Photo.video_transcode_failures > 0,
+    ).values(video_transcode_failures=0))
+    await db.commit()
+    # Neu einreihen
+    from app.worker.tasks import transcode_video_task
+    ids = (await db.execute(select(Photo.id).where(
+        Photo.is_video == True,                              # noqa: E712
+        Photo.video_webm_path.is_(None),
+        Photo.is_missing == False,                           # noqa: E712
+        Photo.is_trashed == False,                           # noqa: E712
+    ))).scalars().all()
+    for pid in ids:
+        transcode_video_task.delay(pid, 1080)
+    return {"reset": int(r.rowcount or 0), "requeued": len(ids)}
+
+
 @router.post("/ops/reset-ai-errors")
 async def reset_ai_errors_v1(kind: str = "all",
                              db: AsyncSession = Depends(get_db),

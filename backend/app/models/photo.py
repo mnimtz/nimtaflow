@@ -119,6 +119,9 @@ class Photo(Base):
     video_webm_path: Mapped[Optional[str]] = mapped_column(String(512))
     # short animated hover preview (webp/gif), like a thumbnail for videos
     video_preview_path: Mapped[Optional[str]] = mapped_column(String(512))
+    # Ab 3 gescheiterten Transcode-Läufen filtert der Sweep die ID raus, damit
+    # ein permanent kaputtes File die Video-Queue nicht endlos flutet.
+    video_transcode_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # ── User interaction ──────────────────────────────────────────────────────
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
