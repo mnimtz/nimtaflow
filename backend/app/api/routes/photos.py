@@ -1188,37 +1188,98 @@ async def get_original(photo_id: int, db: AsyncSession = Depends(get_db),
     return FileResponse(photo.path, media_type=mime, filename=photo.filename)
 
 
+@router.get("/{photo_id}/video/variants")
+async def video_variants(photo_id: int, db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(current_user_optional)):
+    """Liste der verfügbaren Web-Video-Auflösungen. Der Player nutzt sie für den
+    Qualitäts-Selector. Fehlt eine, kann sie per POST /transcode angefordert
+    werden."""
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_video or not can_see_photo(photo, user):
+        raise HTTPException(404)
+    out = []
+    for res in (480, 720, 1080):
+        p = pathlib.Path("/cache/videos") / f"{photo_id}_{res}.mp4"
+        if p.exists():
+            try:
+                sz = p.stat().st_size
+            except Exception:
+                sz = 0
+            out.append({"resolution": res, "size_bytes": sz,
+                        "url": f"/api/photos/{photo_id}/video/stream?res={res}"})
+    # Default-Rendition (das ist die die als „normal" ausgeliefert wird)
+    default_res = 720 if any(v["resolution"] == 720 for v in out) else (
+                  1080 if any(v["resolution"] == 1080 for v in out) else
+                  (out[0]["resolution"] if out else None))
+    return {"variants": out, "default": default_res}
+
+
 @router.get("/{photo_id}/video/stream")
-async def stream_video(photo_id: int, db: AsyncSession = Depends(get_db),
+async def stream_video(photo_id: int,
+                       res: Optional[int] = None,
+                       db: AsyncSession = Depends(get_db),
                        user: Optional[User] = Depends(current_user_optional)):
-    """Stream video directly or serve transcoded WebM."""
+    """Stream video. `res` wählt die Qualität (480/720/1080). Ohne `res` liefert der
+    Server 720p wenn vorhanden (sonst 1080p) — die Version die auf Handys/älteren
+    Rechnern flüssig läuft. Fehlt die gewünschte Auflösung: enqueue transcode +
+    fallback auf das nächste-höhere/niedrigere vorhandene."""
     photo = await db.get(Photo, photo_id)
     if not photo or not photo.is_video or not can_see_photo(photo, user):
         raise HTTPException(404)
 
-    # Prefer the cached web-optimised version (H.264 MP4 with faststart, or WebM)
-    web = photo.video_webm_path
-    if web and os.path.exists(web):
-        mt = "video/mp4" if web.endswith(".mp4") else "video/webm"
-        # X-Accel-Redirect: nginx liefert die Bytes mit sendfile + Range-Support
-        # direkt aus /cache. Vorher lief jeder Byte-Range-Request von ExoPlayer/
-        # AVPlayer durch FastAPI FileResponse → Python-RAM je Seek.
+    def _cache_path(r: int) -> pathlib.Path:
+        return pathlib.Path("/cache/videos") / f"{photo_id}_{r}.mp4"
+
+    def _serve(path: pathlib.Path):
+        mt = "video/mp4"
+        s = str(path)
         _cache_prefix = "/cache/"
-        if web.startswith(_cache_prefix):
-            accel_path = "/internal-video-cache/" + web[len(_cache_prefix):]
-            return Response(headers={
-                "X-Accel-Redirect": accel_path,
-                "Content-Type": mt,
-            })
-        return FileResponse(web, media_type=mt,
+        if s.startswith(_cache_prefix):
+            accel_path = "/internal-video-cache/" + s[len(_cache_prefix):]
+            return Response(headers={"X-Accel-Redirect": accel_path, "Content-Type": mt})
+        return FileResponse(s, media_type=mt,
                             headers={"Cache-Control": "public, max-age=86400"})
 
-    # No web version yet → kick off a background HW transcode (single-flight) so
-    # the NEXT play starts instantly, and serve the original meanwhile (works for
-    # native mp4/mov; non-streamable formats become playable after the transcode).
+    # 1) explizit gewünschte Auflösung
+    if res in (480, 720, 1080):
+        p = _cache_path(res)
+        if p.exists():
+            return _serve(p)
+        # nicht da → enqueue + Fallback auf beste vorhandene
+        try:
+            from app.worker.tasks import transcode_video_task
+            transcode_video_task.delay(photo_id, res)
+        except Exception:
+            pass
+        # Fallback in Präferenz-Reihenfolge
+        for alt in (720, 1080, 480):
+            if alt == res:
+                continue
+            ap = _cache_path(alt)
+            if ap.exists():
+                return _serve(ap)
+
+    # 2) Default: 720p bevorzugt (kleiner + garantiert HW-decodable), sonst 1080p
+    for r in (720, 1080, 480):
+        p = _cache_path(r)
+        if p.exists():
+            return _serve(p)
+
+    # 3) DB-Fallback (falls video_webm_path an andere Stelle zeigt) + enqueue 720
+    web = photo.video_webm_path
+    if web and os.path.exists(web):
+        try:
+            from app.worker.tasks import transcode_video_task
+            transcode_video_task.delay(photo_id, 720)
+        except Exception:
+            pass
+        return _serve(pathlib.Path(web))
+
+    # 4) Nichts transkodiert → HW transcode enqueue + Original als Fallback
     try:
         from app.worker.tasks import transcode_video_task
-        transcode_video_task.delay(photo_id)
+        transcode_video_task.delay(photo_id, 720)
+        transcode_video_task.delay(photo_id, 1080)
     except Exception:
         pass
     mime = photo.mime_type or "video/mp4"

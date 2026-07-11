@@ -30,6 +30,45 @@ def _probe_dims(path: str):
         return None
 
 
+def _probe_source(path: str) -> dict:
+    """Umfassendere Quell-Info: Dimensions, Framerate, Pixelformat, Farb-Transfer.
+    Nötig für den Web-Transcode (10-bit-Erkennung, HDR-Downmix, fps-Cap).
+    Fällt bei Fehler auf leeres dict zurück — nie fatal."""
+    try:
+        r = subprocess.run(
+            [_FFPROBE, "-v", "error", "-select_streams", "v:0",
+             "-show_entries",
+             "stream=width,height,r_frame_rate,pix_fmt,color_transfer,color_primaries",
+             "-of", "default=nw=1", path],
+            capture_output=True, text=True, timeout=20)
+        out = {}
+        for ln in (r.stdout or "").splitlines():
+            if "=" in ln:
+                k, v = ln.split("=", 1)
+                out[k.strip()] = v.strip()
+        # framerate parsen (r_frame_rate = "60000/1001" o.ä.)
+        try:
+            fr = out.get("r_frame_rate", "")
+            if "/" in fr:
+                n, d = fr.split("/"); out["_fps"] = float(n) / float(d)
+            else:
+                out["_fps"] = float(fr) if fr else 0.0
+        except Exception:
+            out["_fps"] = 0.0
+        return out
+    except Exception:
+        return {}
+
+
+def _is_hdr_or_10bit(info: dict) -> bool:
+    """Erkennt 10-bit- oder HDR-Content. Web-Player können 10-bit AVC NICHT hardware-
+    dekodieren → software decoding → Ruckeln. HDR-Farbtiefe wird zusätzlich zu SDR
+    heruntergemischt."""
+    pix = (info.get("pix_fmt") or "").lower()
+    tr  = (info.get("color_transfer") or "").lower()
+    return ("10le" in pix) or ("12le" in pix) or (tr in {"smpte2084", "arib-std-b67"})
+
+
 def _scale_target(iw: int, ih: int, long_cap: int):
     """Cap the LONGER side to long_cap, preserve aspect, NEVER upscale, even dims."""
     m = max(iw, ih)
@@ -234,6 +273,47 @@ def build_transcode_cmd(
     scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
              ":force_original_aspect_ratio=decrease:force_divisible_by=2")
 
+    # Quellenanalyse für HDR/10-bit + Framerate.
+    src = _probe_source(input_path)
+    is_hdr = _is_hdr_or_10bit(src)
+    src_fps = src.get("_fps", 0.0)
+    # 60fps-HDR-4K führt selbst auf Desktops zu Software-Decoding-Ruckeln, wenn 10-bit
+    # nicht auf 8-bit abgemappt wird UND die Bitrate niedrig genug ist. Der Player
+    # bekommt eine 30-fps-8-bit-SDR-Version, die Hardware-decodable ist.
+    cap_fps = 30 if src_fps > 45 else 0   # 0 = keine Cap
+
+    # Farbraum + 8-bit erzwingen. Ohne yuv420p behält ffmpeg das Quell-Pixelformat
+    # (yuv420p10le bei iPhones ab 12 Pro) → H.264 „High 10" Profile → kein Browser
+    # dekodiert das in Hardware → CPU-Software-Decoding → Ruckeln in Safari/iOS.
+    #
+    # Für HDR (HLG/PQ) mappen wir zusätzlich Farbraum + Gamma auf BT.709/SDR mit einem
+    # Hable-Tonemap (billiger als reinhard, robuster als linear-clamp). zscale
+    # existiert in Debian-ffmpeg (libzimg).
+    if is_hdr:
+        color_ops = (
+            ",zscale=t=linear:npl=100,format=gbrpf32le,"
+            "zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+        )
+    else:
+        color_ops = ",format=yuv420p"
+    fps_op = f",fps={cap_fps}" if cap_fps else ""
+    scale = scale + fps_op + color_ops
+
+    # Web-optimiertes Encoder-Preset: konstante-Qualität CRF + Bitrate-Deckel.
+    # 1080p Zielbitrate ≤ 6 Mbps, 720p ≤ 3.5 Mbps — reicht für Handy-Aufnahmen im
+    # Web, spart Bandbreite auf schlechten Verbindungen. profile:v high + level 4.1
+    # sind die kompatibelsten Werte für iOS/Safari HW-Decoder.
+    _target_bitrate = {2160: "12M", 1440: "8M", 1080: "6M", 720: "3500k", 480: "1500k"}.get(resolution, "6M")
+    _bufsize = {"12M": "24M", "8M": "16M", "6M": "12M", "3500k": "7M", "1500k": "3M"}.get(_target_bitrate, "12M")
+    _sw_quality_args = [
+        "-preset", "veryfast",
+        "-profile:v", "high", "-level", "4.1",
+        "-crf", "23",
+        "-maxrate", _target_bitrate, "-bufsize", _bufsize,
+        "-g", "60", "-keyint_min", "60",   # 2s GOP bei 30fps → Seek-freundlich
+    ]
+
     # QSV: software-decode → scale → upload to QSV surfaces → h264_qsv encode.
     # This is the validated, codec-agnostic path (no HW-decode init that breaks on
     # odd input codecs); the expensive encode runs on the Intel GPU. Falls back to
@@ -282,12 +362,23 @@ def build_transcode_cmd(
         if hw.encode_extra:
             cmd += hw.encode_extra
         if "nvenc" in vcodec or "vaapi" in vcodec or "videotoolbox" in vcodec:
-            cmd += ["-vf", f"scale_{'npp' if 'nvenc' in vcodec else vcodec.split('_')[1]}={'-2'}:{resolution}"]
-        else:
+            # HW-Encoder-Pfad: nutzt CPU-Filter-Kette (mit yuv420p/tonemap) auf CPU,
+            # gibt an HW-Encoder weiter. Deutlich robuster als HW-Scaler + HW-Encoder
+            # gemischt (die kollidieren bei HDR).
             cmd += ["-vf", scale]
+            # HW-Encoder wollen kein CRF; steuern über Bitrate.
+            cmd += [
+                "-b:v", _target_bitrate, "-maxrate", _target_bitrate, "-bufsize", _bufsize,
+                "-profile:v", "high", "-level", "4.1", "-g", "60",
+            ]
+        else:
+            # libx264 → nutze die kompletten Qualitäts-Args (CRF + bitrate cap + GOP).
+            cmd += ["-vf", scale]
+            cmd += _sw_quality_args
         cmd += ["-threads", _FF_THREADS,
                 "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
-                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output_path]
+                "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart", output_path]
 
     else:  # vp9 / webm
         vcodec = hw.encode_video_codec if "vp9" in hw.encode_video_codec or hw.name == "software" else "libvpx-vp9"

@@ -1890,18 +1890,17 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
             proc = subprocess.run(cmd, capture_output=True, timeout=1800)
             ok = proc.returncode == 0 and tmp_path.exists() and _probe_ok(tmp_path)
             if not ok:
-                # Software fallback — same no-upscale cap as build_transcode_cmd.
-                _long = int(resolution * 16 / 9)
-                sw_scale = (f"scale=w='min({_long},iw)':h='min({_long},ih)'"
-                            ":force_original_aspect_ratio=decrease:force_divisible_by=2")
-                import os as _os
-                _ff_threads = _os.environ.get("FFMPEG_THREADS", "3")
-                sw = ["ffmpeg", "-y", "-i", src_path, "-c:v", "libx264",
-                      "-threads", _ff_threads,  # cap cores so the UI stays responsive
-                      "-vf", sw_scale, "-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn",
-                      "-c:a", "aac", "-b:a", "128k",
-                      "-movflags", "+faststart", str(tmp_path)]
-                proc = subprocess.run(sw, capture_output=True, timeout=1800)
+                # Software-Fallback: nutzt build_transcode_cmd mit hw=software statt
+                # eines hand-gestrickten kürzeren Kommandos (das früher pix_fmt und
+                # profile weggelassen hat und 10-bit-Input als High10 raus schrieb,
+                # was Safari/iOS nicht in Hardware dekodieren können → Ruckeln).
+                from app.services.hw_accel import HWProfile as _HWP
+                sw_hw = _HWP(name="software", hwaccel=None,
+                             encode_h264_codec="libx264", available=True)
+                sw_cmd = build_transcode_cmd(src_path, str(tmp_path),
+                                             resolution=resolution, codec="h264",
+                                             hw=sw_hw)
+                proc = subprocess.run(sw_cmd, capture_output=True, timeout=1800)
                 ok = proc.returncode == 0 and tmp_path.exists() and _probe_ok(tmp_path)
                 hwname = "software"
             else:
@@ -1944,6 +1943,64 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                 except Exception:
                     pass
     return _run(_run_tc())
+
+
+@celery_app.task(bind=True, name="requeue_hdr_transcodes")
+def requeue_hdr_transcodes_task(self, limit: int = 500):
+    """Alle Web-MP4s mit 10-bit / HDR-Pixel-Format re-transcodieren. Grund:
+    frühere transcode-Läufe haben pix_fmt=yuv420p10le beibehalten → H.264 High 10
+    → Safari/iOS/FireTV können das NICHT in Hardware dekodieren → Ruckeln. Der
+    neue build_transcode_cmd erzwingt yuv420p (8-bit) + tonemap wenn HDR."""
+    async def _main():
+        import os as _os
+        import subprocess
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select, update
+        init_db()
+        rows = []
+        async for db in get_db():
+            rows = (await db.execute(
+                select(Photo.id, Photo.video_webm_path).where(
+                    Photo.is_video == True,                      # noqa: E712
+                    Photo.video_webm_path.isnot(None),
+                    Photo.is_trashed == False,                   # noqa: E712
+                ).order_by(Photo.id).limit(limit * 4)
+            )).all()
+            break
+        bad = []
+        for pid, wp in rows:
+            if not wp or not _os.path.exists(wp):
+                continue
+            try:
+                pr = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=pix_fmt,color_transfer",
+                     "-of", "default=nw=1", wp],
+                    capture_output=True, text=True, timeout=15)
+                out = pr.stdout or ""
+                if "10le" in out.lower() or "12le" in out.lower() \
+                        or "smpte2084" in out.lower() or "arib-std-b67" in out.lower():
+                    bad.append(pid)
+                    if len(bad) >= limit:
+                        break
+            except Exception:
+                continue
+        if not bad:
+            return {"checked": len(rows), "requeued": 0}
+        async for db in get_db():
+            await db.execute(update(Photo).where(Photo.id.in_(bad)).values(
+                video_webm_path=None, video_transcode_failures=0))
+            await db.commit()
+            break
+        for pid in bad:
+            _os.path.exists  # keep linter quiet
+            transcode_video_task.delay(pid, 720)
+            transcode_video_task.delay(pid, 1080)
+        flog("video", "INFO", f"HDR/10-bit Re-Transcode: {len(bad)} Videos neu eingereiht")
+        return {"checked": len(rows), "requeued": len(bad)}
+    return _run(_main())
 
 
 @celery_app.task(bind=True, name="revalidate_transcodes")

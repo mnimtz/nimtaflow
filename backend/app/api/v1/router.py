@@ -1334,6 +1334,21 @@ async def start_xmp_backfill_v1(full: bool = False,
     return {"task_id": r.id, "full": bool(full)}
 
 
+@router.post("/ops/video-requeue-hdr")
+async def video_requeue_hdr_v1(limit: int = 500,
+                               db: AsyncSession = Depends(get_db),
+                               user: Optional[User] = Depends(current_user_optional)):
+    """Reiht bis zu `limit` Videos mit 10-bit/HDR-Web-MP4 zum Re-Transcode ein.
+    Vorher: pix_fmt=yuv420p10le → HW-Decoder aus → Ruckeln in Safari/iOS.
+    Neue Transcodes zwingen yuv420p (8-bit) + HDR-Tonemap. Admin-only."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.worker.celery_app import celery_app
+    r = celery_app.send_task("requeue_hdr_transcodes",
+                             kwargs={"limit": int(limit)}, queue="cpu")
+    return {"task_id": r.id, "limit": int(limit)}
+
+
 @router.post("/ops/video-cloud-fallback/start")
 async def video_cloud_fallback_v1(limit: int = 200,
                                   db: AsyncSession = Depends(get_db),

@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
-import { Play, Pause, Volume2, VolumeX, Maximize, RotateCcw } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Maximize, RotateCcw, Settings } from 'lucide-react'
+
+type Variant = { resolution: number; size_bytes: number; url: string }
 
 type Props = {
   photoId: number
@@ -21,11 +23,53 @@ export default function VideoPlayer({ photoId, className = '', autoPlay = false 
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [showControls, setShowControls] = useState(true)
+  const [variants, setVariants] = useState<Variant[]>([])
+  const [selectedRes, setSelectedRes] = useState<number | undefined>(undefined)
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (autoPlay) videoRef.current?.play()
   }, [autoPlay])
+
+  // Qualitäts-Varianten laden (nur die transkodierten Auflösungen anbieten).
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/photos/${photoId}/video/variants`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!alive || !j) return
+        setVariants(j.variants || [])
+        if (selectedRes === undefined && typeof j.default === 'number') {
+          setSelectedRes(j.default)
+        }
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [photoId])
+
+  const src = selectedRes
+    ? `/api/photos/${photoId}/video/stream?res=${selectedRes}`
+    : `/api/photos/${photoId}/video/stream`
+
+  function switchRes(r: number) {
+    const v = videoRef.current
+    const wasPlaying = v && !v.paused
+    const at = v ? v.currentTime : 0
+    setSelectedRes(r)
+    setQualityMenuOpen(false)
+    // Nach dem Src-Wechsel Position + Play wiederherstellen
+    requestAnimationFrame(() => {
+      const nv = videoRef.current
+      if (!nv) return
+      const restore = () => {
+        nv.currentTime = at
+        if (wasPlaying) nv.play().catch(() => {})
+        nv.removeEventListener('loadedmetadata', restore)
+      }
+      nv.addEventListener('loadedmetadata', restore)
+    })
+  }
 
   function scheduleHide() {
     if (hideTimer.current) clearTimeout(hideTimer.current)
@@ -76,7 +120,7 @@ export default function VideoPlayer({ photoId, className = '', autoPlay = false 
     >
       <video
         ref={videoRef}
-        src={`/api/photos/${photoId}/video/stream`}
+        src={src}
         className="w-full h-full object-contain"
         muted={muted}
         loop
@@ -130,6 +174,34 @@ export default function VideoPlayer({ photoId, className = '', autoPlay = false 
           >
             <RotateCcw size={14} />
           </button>
+          {variants.length > 1 && (
+            <div className="relative">
+              <button
+                onClick={() => setQualityMenuOpen(v => !v)}
+                className="text-white hover:text-gray-300 transition-colors flex items-center gap-1"
+                title="Qualität"
+              >
+                <Settings size={15} />
+                <span className="text-[10px] font-mono">{selectedRes ? `${selectedRes}p` : 'auto'}</span>
+              </button>
+              {qualityMenuOpen && (
+                <div className="absolute bottom-6 right-0 bg-black/90 rounded-lg py-1 min-w-[100px] text-xs">
+                  {variants.slice().sort((a, b) => b.resolution - a.resolution).map(v => (
+                    <button
+                      key={v.resolution}
+                      onClick={() => switchRes(v.resolution)}
+                      className={`block w-full text-left px-3 py-1.5 hover:bg-white/10 ${selectedRes === v.resolution ? 'text-indigo-300' : 'text-white'}`}
+                    >
+                      {v.resolution}p
+                      <span className="text-white/40 ml-2">
+                        {(v.size_bytes / 1024 / 1024).toFixed(0)} MB
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={fullscreen} className="text-white hover:text-gray-300 transition-colors">
             <Maximize size={15} />
           </button>
