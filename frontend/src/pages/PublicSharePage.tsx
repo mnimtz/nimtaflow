@@ -7,7 +7,7 @@ type Item = {
   id: number; is_video: boolean; width?: number; height?: number
   filename?: string | null; taken_at?: string | null; place?: string | null
 }
-type Meta = { type: string; title?: string; requires_password: boolean; allow_download: boolean; allow_upload?: boolean; items: Item[] }
+type Meta = { type: string; title?: string; requires_password: boolean; allow_download: boolean; allow_upload?: boolean; items: Item[]; params?: Record<string, any> | null }
 
 /** Guest upload zone for a shared album (only when the owner enabled it). */
 function GuestUpload({ token, pw, onDone }: { token: string; pw: string; onDone: () => void }) {
@@ -130,6 +130,50 @@ export default function PublicSharePage() {
               </a>
             </div>
           )}
+        </div>
+        <footer className="border-t border-white/10 mt-6 py-6 text-center">
+          <a href="https://www.nimtaflow.com" target="_blank" rel="noopener"
+            className="text-sm font-bold bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">
+            {t('share.pub.sharedVia')} NimtaFlow
+          </a>
+        </footer>
+      </div>
+    )
+  }
+
+  // Video-Grußkarte: der Empfänger sieht das echte Video mit Grußtext oben statt
+  // eines statischen PNG. Params (text, subtitle, text_color) kommen aus /public/.
+  if (meta.type === 'video_postcard') {
+    const vurl = `/api/public/${token}/postcard-video${pw ? `?pw=${encodeURIComponent(pw)}` : ''}`
+    const pr = meta.params || {}
+    const text = (pr.text as string) || meta.title || ''
+    const subtitle = (pr.subtitle as string) || ''
+    const textColor = (pr.text_color as string) || '#ffffff'
+    return (
+      <div className="min-h-screen text-white"
+        style={{ background: 'radial-gradient(900px 480px at 80% -8%, rgba(232,181,74,.10), transparent 60%), #0a0a0d' }}>
+        <header className="px-5 py-4 border-b border-white/10 sticky top-0 bg-[#0a0a0d]/85 backdrop-blur z-10">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+            <h1 className="text-lg font-semibold truncate">{meta.title || t('share.pub.defaultTitle')}</h1>
+            <span className="shrink-0 text-base font-extrabold tracking-tight bg-gradient-to-r from-amber-300 to-amber-500 bg-clip-text text-transparent">NimtaFlow</span>
+          </div>
+        </header>
+        <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10">
+          <div className="relative rounded-2xl overflow-hidden bg-black shadow-2xl">
+            <video src={vurl} controls autoPlay playsInline className="block w-full max-h-[75vh]" />
+            {(text || subtitle) && (
+              <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/80 via-black/50 to-transparent pointer-events-none">
+                {text && (
+                  <div className="text-2xl sm:text-3xl font-bold drop-shadow-md leading-tight"
+                       style={{ color: textColor }}>{text}</div>
+                )}
+                {subtitle && (
+                  <div className="mt-2 text-sm sm:text-base opacity-90 drop-shadow"
+                       style={{ color: textColor }}>{subtitle}</div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <footer className="border-t border-white/10 mt-6 py-6 text-center">
           <a href="https://www.nimtaflow.com" target="_blank" rel="noopener"

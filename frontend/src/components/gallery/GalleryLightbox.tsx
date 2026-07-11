@@ -414,6 +414,7 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
     queryFn: () => api.get(`/photos/${photoId}`).then(r => r.data),
     staleTime: 60_000,
   })
+  const isVideo = !!p?.is_video
   const place = p ? ([p.city, p.country].filter(Boolean).join(', ') || p.location_name || '') : ''
   const defaultGreet = lang === 'en'
     ? (place ? `Greetings from ${place}` : 'Warm wishes')
@@ -424,6 +425,10 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
   const [textColor, setTextColor] = useState('')
   const [touched, setTouched] = useState(false)
   const [linkShare, setLinkShare] = useState(false)
+  // Bei Video: 2 Modi — "still" = klassische PNG-Postkarte aus Standbild,
+  // "video" = Empfänger bekommt Link auf Seite mit echtem Video + Grußtext oben.
+  const [mode, setMode] = useState<'still' | 'video'>(isVideo ? 'video' : 'still')
+  useEffect(() => { if (!isVideo) setMode('still') }, [isVideo])
   // Prefill the greeting from the place once the detail loads (unless the user typed).
   useEffect(() => { if (!touched && p) setGreet(defaultGreet) }, [p, defaultGreet, touched])
   // Debounce text → preview URL so typing doesn't fire a request per keystroke.
@@ -473,8 +478,36 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm">{t('gallery.close')}</button>
         </div>
         <div className="p-4 space-y-3">
-          <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950">
-            <img src={imgSrc} alt="Postkarte" className="block w-full" />
+          {isVideo && (
+            <div className="flex gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-sm">
+              <button onClick={() => setMode('video')}
+                className={`flex-1 px-3 py-1.5 rounded-md transition ${mode === 'video' ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-sm font-medium' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                🎬 {t('gallery.pcVideoMode') || 'Video mitschicken'}
+              </button>
+              <button onClick={() => setMode('still')}
+                className={`flex-1 px-3 py-1.5 rounded-md transition ${mode === 'still' ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-sm font-medium' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                🖼️ {t('gallery.pcStillMode') || 'Standbild-Postkarte'}
+              </button>
+            </div>
+          )}
+          <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950 relative">
+            {mode === 'video' && isVideo ? (
+              <>
+                <video src={`/api/photos/${photoId}/video/stream?res=720`}
+                       muted loop playsInline autoPlay
+                       className="block w-full max-h-[50vh] object-contain bg-black" />
+                {(greet || msg) && (
+                  <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 via-black/40 to-transparent">
+                    <div className="text-white font-semibold text-lg drop-shadow" style={textColor ? { color: textColor } : undefined}>
+                      {greet || defaultGreet}
+                    </div>
+                    {msg && <div className="text-white/90 text-sm mt-1 drop-shadow">{msg}</div>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <img src={imgSrc} alt="Postkarte" className="block w-full" />
+            )}
           </div>
           <div>
             <label className="block text-xs text-zinc-500 mb-1">{t('gallery.pcGreeting')}</label>
@@ -513,15 +546,20 @@ function PostcardDialog({ photoId, onClose }: { photoId: number; onClose: () => 
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-            <button onClick={download} disabled={busy} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">⬇ {t('gallery.pcDownload')}</button>
-            <button onClick={() => setLinkShare(true)} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 inline-flex items-center gap-1.5">🔗 {t('gallery.pcShareLink')}</button>
-            <button onClick={share} disabled={busy} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50 inline-flex items-center gap-1.5"><Share2 size={15} /> {t('gallery.shareTooltip')}</button>
+            {mode === 'still' && (
+              <>
+                <button onClick={download} disabled={busy} className="px-4 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">⬇ {t('gallery.pcDownload')}</button>
+                <button onClick={share} disabled={busy} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50 inline-flex items-center gap-1.5"><Share2 size={15} /> {t('gallery.shareTooltip')}</button>
+              </>
+            )}
+            <button onClick={() => setLinkShare(true)} className={`px-4 py-2 text-sm rounded-lg inline-flex items-center gap-1.5 ${mode === 'video' ? 'bg-indigo-600 text-white font-medium hover:bg-indigo-500' : 'border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>🔗 {t('gallery.pcShareLink')}</button>
           </div>
         </div>
       </div>
       {linkShare && <ShareDialog
         target={{ kind: 'postcard', photoId, title: greet || defaultGreet,
-                  params: { text: greet || defaultGreet, subtitle: msg, theme, lang, text_color: textColor } }}
+                  params: { text: greet || defaultGreet, subtitle: msg, theme, lang, text_color: textColor,
+                            ...(mode === 'video' ? { video: true } : {}) } }}
         onClose={() => setLinkShare(false)} />}
     </div>
   )
@@ -613,7 +651,11 @@ export default function GalleryLightbox({ photos, index, onClose, onFavorite, ha
       <Share2 className="yarl__icon" />
     </button>
   )
-  const postcardBtn = (photos[cur] && !photos[cur].is_video) ? (
+  // Auch für Videos: der Backend-Endpoint fällt auf thumb_large (Video-Standbild)
+  // zurück und produziert eine ganz normale PNG-Postkarte. Bei Video schaltet der
+  // Dialog zusätzlich die Video-Grußkarte frei (Empfänger sieht das echte Video
+  // + Grußtext, statt nur ein Standbild-PNG).
+  const postcardBtn = (photos[cur]) ? (
     <button key="postcard" type="button" className="yarl__button" onClick={() => setPostcardOpen(true)} title={t('gallery.postcardTooltip')}>
       <ImgIcon className="yarl__icon" />
     </button>

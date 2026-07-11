@@ -248,6 +248,8 @@ class PublicShare(BaseModel):
     allow_download: bool
     allow_upload: bool = False
     items: List[PublicPhoto] = []
+    # Nur bei Video-Postkarte gesetzt: {text, subtitle, theme, text_color, lang, video}
+    params: Optional[dict] = None
 
 
 @public_router.get("/{token}", response_model=PublicShare)
@@ -270,8 +272,24 @@ async def public_meta(token: str, db: AsyncSession = Depends(get_db),
     if share.share_type == ShareType.postcard:
         share.view_count = (share.view_count or 0) + 1
         await db.commit()
-        return PublicShare(type="postcard", title=share.title, requires_password=False,
-                           allow_download=False, items=[])
+        # Video-Grußkarte: eine Postkarte, deren Photo ein Video ist und
+        # params.video=true. Der Frontend-Guest zeigt dann den Video-Player mit
+        # Grußtext-Overlay statt eines statischen PNG. Wir signalisieren das über
+        # den Type — der bestehende /postcard-PNG-Endpoint bleibt Fallback.
+        _pr = share.params or {}
+        _kind = "video_postcard" if _pr.get("video") else "postcard"
+        _items = []
+        if _kind == "video_postcard" and share.photo_id:
+            ph = await db.get(Photo, share.photo_id)
+            if ph and ph.is_video:
+                _items = [PublicPhoto(id=ph.id, is_video=True,
+                                      width=ph.width, height=ph.height,
+                                      filename=ph.filename,
+                                      taken_at=ph.taken_at.isoformat() if ph.taken_at else None,
+                                      place=None)]
+        return PublicShare(type=_kind, title=share.title, requires_password=False,
+                           allow_download=False, items=_items,
+                           params=(_pr if _kind == "video_postcard" else None))
     sub = await _photo_ids_query(share)
     rows = (await db.execute(
         select(Photo.id, Photo.is_video, Photo.width, Photo.height,
@@ -458,6 +476,58 @@ async def public_postcard(token: str, pw: Optional[str] = Query(None),
                              pr.get("text_color") or None)
     return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
+
+
+@public_router.get("/{token}/postcard-video")
+async def public_postcard_video(token: str, res: Optional[int] = Query(None),
+                                pw: Optional[str] = Query(None),
+                                db: AsyncSession = Depends(get_db)):
+    """Stream für Video-Grußkarte: share.share_type=postcard mit params.video=true
+    hat als share.photo_id ein Video. Der Gast bekommt den 720p-Transcode (bevorzugt),
+    sonst 1080p/480p — je nachdem was fertig ist. `res` schaltet die Wunsch-Auflösung."""
+    share = await _load_valid(token, db)
+    _check_pw(share, pw)
+    if share.share_type != ShareType.postcard or not share.photo_id:
+        raise HTTPException(404)
+    if not (share.params or {}).get("video"):
+        raise HTTPException(404, "Kein Video für diese Postkarte")
+    photo = await db.get(Photo, share.photo_id)
+    if not photo or not photo.is_video:
+        raise HTTPException(404)
+    import pathlib as _pl
+
+    def _cache_path(r: int) -> _pl.Path:
+        return _pl.Path("/cache/videos") / f"{photo.id}_{r}.mp4"
+
+    def _serve(p: _pl.Path):
+        _cache_prefix = "/cache/"
+        s = str(p)
+        if s.startswith(_cache_prefix):
+            return Response(headers={
+                "X-Accel-Redirect": "/internal-video-cache/" + s[len(_cache_prefix):],
+                "Content-Type": "video/mp4",
+            })
+        return FileResponse(s, media_type="video/mp4",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
+    if res in (480, 720, 1080):
+        p = _cache_path(res)
+        if p.exists():
+            return _serve(p)
+        try:
+            from app.worker.tasks import transcode_video_task
+            transcode_video_task.delay(photo.id, res)
+        except Exception:
+            pass
+    for r in (720, 1080, 480):
+        p = _cache_path(r)
+        if p.exists():
+            return _serve(p)
+    web = photo.video_webm_path
+    if web and os.path.exists(web):
+        return _serve(_pl.Path(web))
+    mime = photo.mime_type or "video/mp4"
+    return FileResponse(photo.path, media_type=mime)
 
 
 @public_router.get("/{token}/highlight-video")
