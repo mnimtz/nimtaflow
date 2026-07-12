@@ -83,13 +83,19 @@ SYSTEM = (
     "nutze datum_von/datum_bis (YYYY-MM-DD), z. B. 'Lea an Ostern 2022' → person='Lea', "
     "datum_von='2022-04-15', datum_bis='2022-04-18'. "
     "Zu 'WANN lernte X …' / 'wann konnte X das erste Mal …' / 'ab wann …' (Meilensteine "
-    "wie laufen, sprechen, schwimmen, Fahrrad fahren): nutze IMMER zeitliche_eckdaten "
-    "mit person=X UND suchbegriff='<Meilenstein> <Synonyme>'. Beispiele: "
-    "'wann lernte Lea laufen' → zeitliche_eckdaten(person='Lea', suchbegriff='laufen erste Schritte krabbeln stehen'); "
-    "'wann konnte Lea schwimmen' → zeitliche_eckdaten(person='Lea', suchbegriff='schwimmen wasser schwimmbad'); "
-    "'ab wann fuhr Lea Fahrrad' → zeitliche_eckdaten(person='Lea', suchbegriff='fahrrad rad bicycle'). "
-    "Antworte mit dem 'erstes_datum' und dem passenden Foto #id — das ist die verlässlich "
-    "früheste Antwort (datumssortiert, nicht relevanzsortiert). "
+    "wie laufen, sprechen, schwimmen, Fahrrad fahren, krabbeln, sitzen): nutze IMMER "
+    "zeitliche_eckdaten mit person=X UND einem KURZEN, PRÄGNANTEN suchbegriff — das "
+    "Werkzeug filtert intern auf das medizinisch plausible Altersfenster (Laufen 9-24 "
+    "Monate, Sprechen 10-30 Monate, Schwimmen 24-120 Monate, Fahrrad 36-120 Monate). "
+    "Beispiele: 'wann lernte Lea laufen' → zeitliche_eckdaten(person='Lea', suchbegriff='laufen'); "
+    "'wann konnte Lea schwimmen' → zeitliche_eckdaten(person='Lea', suchbegriff='schwimmen'); "
+    "'ab wann fuhr Lea Fahrrad' → zeitliche_eckdaten(person='Lea', suchbegriff='fahrrad'). "
+    "Das Werkzeug liefert 'erstes_datum' + 'alter_erstes_monate' (Alter in Monaten). "
+    "Antworte MIT Alter: 'Lea machte ihre ersten Schritte im Alter von etwa 13 Monaten "
+    "(Foto vom …)'. Bei 'treffer'=0 mit 'hinweis' HONESTLY sagen: 'Ich habe im plausiblen "
+    "Zeitfenster keine passenden Fotos gefunden' und alternative Aktion vorschlagen "
+    "(z. B. 'zeig mir Fotos von Lea 1 Jahr' → suche_fotos). NIEMALS ein Datum wenige "
+    "Tage/Wochen nach Geburt als Meilenstein-Antwort ausgeben — das ist medizinisch unmöglich. "
     "Für allgemeine 'WANN …'-Fragen ohne Meilenstein: normale suche_fotos, schau die DATEN "
     "der Treffer an, nenne das früheste passende Datum. "
     "Für 'wann habe ich X das erste Mal getroffen/gesehen', 'seit wann kenne ich X', "
@@ -477,7 +483,8 @@ async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[
 async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Optional[str] = None,
                            medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
                            jahr_bis: Optional[int] = None, acl: Optional[list] = None,
-                           suchbegriff: Optional[str] = None) -> dict:
+                           suchbegriff: Optional[str] = None,
+                           settings: Optional[dict] = None) -> dict:
     """Earliest & latest DATED photo of a person (optionally two people TOGETHER on
     one photo). Answers 'wann zum ersten/letzten Mal …' precisely — unlike semantic
     search this is sorted by DATE, so the true first/last is never missed.
@@ -498,14 +505,28 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         conds.append(_has(person))
     if person2 and person2.strip():
         conds.append(_has(person2))
-    # v1.541 BIRTHDATE-SANITY: kein Foto von VOR der Geburt der Person liefern.
+    # v1.541 BIRTHDATE-SANITY + v1.544 MILESTONE-AGE: für einen konkreten
+    # Meilenstein (laufen/sprechen/schwimmen/…) begrenzen wir auf das medizinisch
+    # plausible Altersfenster. Sonst matchen generische Wörter ("Kleinkind",
+    # "steht") auf Neugeborenen- oder Familien-Fotos und der Chat behauptet
+    # "Lea lernte 1 Tag nach Geburt laufen".
+    from datetime import timedelta as _mtd
+    person_birthdate = None
     if person and person.strip():
-        bd = await db.scalar(select(Person.birthdate).where(_strict_name(person)).limit(1))
-        if bd:
-            conds.append(Photo.taken_at >= bd)
-    # v1.543 STATISCHE QUERY-EXPANSION statt HyDE-Embed (das im backend-container
-    # auf CPU hängt): "laufen erste Schritte" → 12+ Synonyme via _expand_query,
-    # ILIKE ODER-verkettet. Deterministisch, Millisekunden, kein Cold-Start.
+        person_birthdate = await db.scalar(
+            select(Person.birthdate).where(_strict_name(person)).limit(1))
+        if person_birthdate:
+            conds.append(Photo.taken_at >= person_birthdate)
+    milestone_key = _milestone_key(suchbegriff) if suchbegriff else ""
+    milestone_window = None
+    if milestone_key and person_birthdate:
+        lo_mo, hi_mo = _MILESTONE_AGE_MONTHS[milestone_key]
+        lo_dt = person_birthdate + _mtd(days=int(lo_mo * 30.44))
+        hi_dt = person_birthdate + _mtd(days=int(hi_mo * 30.44))
+        conds.append(Photo.taken_at >= lo_dt)
+        conds.append(Photo.taken_at <= hi_dt)
+        milestone_window = (lo_dt, hi_dt, lo_mo, hi_mo)
+    # v1.543 statische Query-Expansion (deutsche Synonym-Wörterbuch).
     if suchbegriff and suchbegriff.strip():
         toks = _expand_query(suchbegriff)
         if toks:
@@ -526,14 +547,57 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
                _f.min(Photo.taken_at).label("mind"),
                _f.max(Photo.taken_at).label("maxd")).where(*conds))).one()
     if not agg.cnt:
+        # v1.544: bei Meilensteinen mit Age-Fenster ehrlich zurückgeben
+        # dass wir NICHTS Passendes gefunden haben — statt später ein
+        # falsches Datum zu behaupten.
+        if milestone_window:
+            return {"treffer": 0,
+                    "hinweis": f"Im Altersfenster {milestone_window[2]}-{milestone_window[3]} "
+                               f"Monate ({str(milestone_window[0])[:10]} bis "
+                               f"{str(milestone_window[1])[:10]}) keine passenden "
+                               f"Foto-Beschreibungen gefunden."}
         return {"treffer": 0}
     first_id = await db.scalar(
         select(Photo.id).where(*conds, Photo.taken_at == agg.mind).limit(1))
     last_id = await db.scalar(
         select(Photo.id).where(*conds, Photo.taken_at == agg.maxd).limit(1))
-    return {"treffer": int(agg.cnt),
-            "erstes_datum": str(agg.mind)[:10], "erstes_foto_id": first_id,
-            "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
+    # v1.544 VLM-RERANK bei Meilensteinen mit vielen Treffern: nur weil ILIKE
+    # matcht, heisst das noch nicht, dass das Bild wirklich den Meilenstein zeigt.
+    # Wir holen die 12 frühesten und lassen Gemini in die BILDER schauen.
+    if milestone_window and settings and int(agg.cnt) > 3:
+        early = (await db.execute(
+            select(Photo.id).where(*conds).order_by(Photo.taken_at.asc()).limit(12)
+        )).scalars().all()
+        if early:
+            rr = await _vlm_rerank(db, list(early),
+                                   frage=f"Zeigt das Foto wirklich, dass die Person '{suchbegriff}' tut / kann? "
+                                         f"(Meilenstein-Frage: erst wenn wirklich sichtbar, nicht schon 'liegt'/'schläft')",
+                                   settings=settings, max_bilder=12)
+            passend = rr.get("passend") or []
+            if passend:
+                first_id = passend[0]
+                first_photo = await db.get(Photo, first_id)
+                if first_photo and first_photo.taken_at:
+                    agg_mind_new = first_photo.taken_at
+                    out = {"treffer": int(agg.cnt),
+                           "erstes_datum": str(agg_mind_new)[:10],
+                           "erstes_foto_id": first_id,
+                           "letztes_datum": str(agg.maxd)[:10],
+                           "letztes_foto_id": last_id,
+                           "vlm_urteile": rr.get("urteile", [])}
+                    if person_birthdate:
+                        d = agg_mind_new.date() - person_birthdate
+                        out["alter_erstes_monate"] = round(d.days / 30.44, 1)
+                    return out
+    out = {"treffer": int(agg.cnt),
+           "erstes_datum": str(agg.mind)[:10], "erstes_foto_id": first_id,
+           "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
+    if person_birthdate:
+        delta_erst = agg.mind.date() - person_birthdate
+        delta_letzt = agg.maxd.date() - person_birthdate
+        out["alter_erstes_monate"] = round(delta_erst.days / 30.44, 1)
+        out["alter_letztes_monate"] = round(delta_letzt.days / 30.44, 1)
+    return out
 
 
 # v1.543: HyDE mit jina-clip-v2 auf CPU im backend-container hing >5 min
@@ -542,15 +606,18 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
 # deterministisch. Deckt 90 % der Alltags-Fragen ab.
 
 _SYNONYMS = {
-    # Meilensteine Kind
-    "laufen":   ["laufen", "läuft", "gelaufen", "läuft frei", "gehen", "geht", "aufrecht",
-                 "steht", "stehen", "kleinkind", "krabbelt", "krabbeln", "schritt", "schritte"],
-    "sprechen": ["sprechen", "spricht", "redet", "reden", "gesprochen", "gesagt", "wort", "worte"],
-    "schwimm":  ["schwimm", "wasser", "planscht", "planschen", "schwimmbad", "pool", "meer", "see"],
-    "fahrrad":  ["fahrrad", "rad", "bicycle", "radfährt", "radfahren", "laufrad"],
-    "zahn":     ["zahn", "zähne", "zahnend", "milchzahn"],
-    "essen":    ["essen", "isst", "gegessen", "füttern", "gefüttert", "kaut", "gabel", "löffel"],
-    "krabbel":  ["krabbelt", "krabbeln", "krabbelnd", "auf allen vieren", "am boden"],
+    # Meilensteine Kind — bewusst SCHMAL: "stehen"/"kleinkind" matchen zu viele
+    # generische Fotos (auch Neugeborene im Krankenhausbett). Nur Wörter die den
+    # Meilenstein wirklich ausdrücken.
+    "laufen":   ["laufen", "läuft", "läuft frei", "gelaufen", "erste schritte",
+                 "läuft alleine", "läuft selbst"],
+    "sprechen": ["sprechen", "spricht", "erstes wort", "erste worte", "papa mama sagen"],
+    "schwimm":  ["schwimm", "schwimmt", "geschwommen", "schwimmen"],
+    "fahrrad":  ["fahrrad", "radfährt", "radfahren", "auf dem rad"],
+    "zahn":     ["zahn", "zähne", "erster zahn", "zahnend", "milchzahn"],
+    "essen":    ["isst selbst", "füttert sich", "mit gabel", "mit löffel"],
+    "krabbel":  ["krabbelt", "krabbeln", "krabbelnd", "auf allen vieren"],
+    "sitzen":   ["sitzt", "sitzen", "sitzt aufrecht", "erstes sitzen"],
     # Aktivitäten
     "spiel":    ["spielt", "spielen", "gespielt", "spielzeug"],
     "malen":    ["malt", "malen", "gemalt", "zeichnet", "zeichnen", "bild", "farbe"],
@@ -568,6 +635,33 @@ _SYNONYMS = {
     "hochzeit": ["hochzeit", "braut", "bräutigam", "trauung", "brautkleid"],
     "weihnacht": ["weihnacht", "weihnachten", "christbaum", "tannenbaum", "adventskranz"],
 }
+
+
+# v1.544: Meilensteine haben ein realistisches ALTERSFENSTER. Ohne dieses
+# Fenster matched Query-Expansion auf Neugeborenen-Fotos ("Kleinkind" in einem
+# Multi-Person-Foto) und behauptet "Lea lernte 1 Tag nach Geburt laufen".
+# Werte in MONATEN nach Geburt, medizinische Entwicklungsspannen.
+_MILESTONE_AGE_MONTHS = {
+    "sitzen":   (4, 12),      # freies Sitzen ab ca. 6 Monaten
+    "krabbel":  (6, 15),      # Krabbeln 8-11 Monate typisch
+    "stehen":   (8, 16),      # freies Stehen
+    "laufen":   (9, 24),      # freies Laufen 12-18 Monate typisch, breiter Puffer
+    "sprechen": (10, 30),     # erste Wörter
+    "zahn":     (4, 30),      # erste Zähne 6-12 Monate
+    "essen":    (6, 36),      # selbst essen
+    "schwimm":  (24, 120),    # schwimmen lernen 2-10 J
+    "fahrrad":  (36, 120),    # Fahrradfahren 3-10 J
+}
+
+
+def _milestone_key(suchbegriff: str) -> str:
+    """Erkennt den Meilenstein-Schlüssel aus einem Suchbegriff, um das
+    Alterfenster nachschlagen zu können."""
+    t = suchbegriff.lower()
+    for key in _MILESTONE_AGE_MONTHS:
+        if key in t:
+            return key
+    return ""
 
 
 def _expand_query(suchbegriff: str) -> list:
@@ -591,6 +685,64 @@ def _expand_query(suchbegriff: str) -> list:
     # de-dupliziere und filtere kurze/gemeinsame Worte
     stop = {"und", "oder", "der", "die", "das", "auf", "mit", "vom"}
     return [t for t in sorted(expanded) if len(t) >= 3 and t not in stop]
+
+
+async def _vlm_rerank(db: AsyncSession, photo_ids: list, frage: str,
+                      settings: dict, max_bilder: int = 12) -> dict:
+    """v1.544 VLM-Rerank (Google 'Ask Photos' Ansatz): schickt bis zu 12 Bilder
+    als Bytes an Gemini 2.5 Flash und lässt den echten Bild-Inhalt prüfen.
+    Kernbug ohne dieses Werkzeug: unsere Descriptions verpassen Details, ILIKE
+    matcht generische Wörter → Falsch-Positive (Neugeborenes im Krankenhaus als
+    'lernt laufen'). Der VLM sieht das Bild und weiss es besser.
+
+    Antwort: {passend:[ids], nicht_passend:[ids], begruendung:str}"""
+    import base64, os, httpx
+    key = (settings.get("chat.gemini.api_key")
+           or settings.get("ai.gemini.api_key") or "").strip()
+    if not key or not photo_ids:
+        return {"passend": photo_ids, "begruendung": "kein VLM verfügbar"}
+    photos = (await db.execute(
+        select(Photo).where(Photo.id.in_(photo_ids[:max_bilder]))
+    )).scalars().all()
+    if not photos:
+        return {"passend": [], "begruendung": "keine Fotos gefunden"}
+    parts = [{"text":
+        f"Frage: {frage}\n"
+        f"Für jedes der folgenden Fotos: passt es zur Frage? Antworte AUSSCHLIESSLICH "
+        f"mit einer JSON-Liste dieser Form (Foto-ID + true/false + kurze Begründung):\n"
+        f"[{{\"id\":123,\"passt\":true,\"warum\":\"…\"}}]"}]
+    for p in photos:
+        try:
+            path = p.thumb_medium or p.thumb_large or p.path
+            if not path or not os.path.exists(path): continue
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            mime = "image/jpeg" if path.lower().endswith((".jpg", ".jpeg")) else "image/webp" if path.lower().endswith(".webp") else "image/png"
+            parts.append({"text": f"\nFoto #{p.id}:"})
+            parts.append({"inline_data": {"mime_type": mime, "data": b64}})
+        except Exception:
+            continue
+    model = settings.get("chat.gemini.model") or settings.get("ai.gemini.model", "gemini-2.5-flash")
+    payload = {"contents": [{"role": "user", "parts": parts}],
+               "generationConfig": {"thinkingConfig": {"thinkingBudget": 0},
+                                    "responseMimeType": "application/json"}}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                params={"key": key}, json=payload)
+        if r.status_code != 200:
+            return {"passend": photo_ids, "begruendung": f"VLM {r.status_code}"}
+        txt = ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
+        raw = txt[0].get("text", "[]")
+        import json as _json
+        arr = _json.loads(raw)
+        passend = [int(x["id"]) for x in arr if x.get("passt")]
+        nicht = [int(x["id"]) for x in arr if not x.get("passt")]
+        return {"passend": passend, "nicht_passend": nicht,
+                "urteile": arr[:10]}
+    except Exception as e:
+        return {"passend": photo_ids, "begruendung": f"VLM-Fehler: {str(e)[:120]}"}
 
 
 async def _personen_zusammenhang(db: AsyncSession, person: str, top: int = 8,
@@ -1548,7 +1700,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         resp = await _temporal_bounds(db, args.get("person"), args.get("person2"),
                                                       args.get("medientyp"), args.get("jahr_von"),
                                                       args.get("jahr_bis"), acl=acl,
-                                                      suchbegriff=args.get("suchbegriff"))
+                                                      suchbegriff=args.get("suchbegriff"),
+                                                      settings=settings)
                         eids = [resp[k] for k in ("erstes_foto_id", "letztes_foto_id") if resp.get(k)]
                         seen_ids.extend(eids)
                         if eids:
