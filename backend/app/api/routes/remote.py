@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.photo import Photo, PhotoStatus
 from app.services.settings_loader import load_settings
+from app.worker.celery_app import celery_app
 
 router = APIRouter(prefix="/remote", tags=["remote"])
 
@@ -637,6 +638,23 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         await db.commit()
         flog("ai", "WARNING", f"Remote-Fehler ({body.provider}): {photo.filename}: {body.error[:160]}")
         flog("remote", "WARNING", f"[{worker}] #{photo_id} {photo.filename} fehlgeschlagen nach {dur}: {body.error[:120]}")
+        # v1.537: Auto-Fallback zu Gemini für final-fails (degenerate output),
+        # nur wenn wir ein transkodiertes Video haben und ein Gemini-Key konfiguriert
+        # ist. Vorher musste man diesen Fallback manuell via Admin-Route triggern
+        # → tausende Videos ohne Beschreibung. Idempotent gegen Doppeltrigger via
+        # ai_error+description-Check im Task selbst.
+        if final and photo.is_video and photo.video_webm_path:
+            try:
+                from app.services.settings_loader import load_settings
+                s = await load_settings(db)
+                if (s.get("ai.gemini.api_key") or "").strip():
+                    celery_app.send_task("describe_video_via_gemini",
+                                         args=[photo_id], queue="cpu")
+                    flog("video", "INFO",
+                         f"Auto-Fallback → Gemini für #{photo_id} {photo.filename}")
+            except Exception as _e:
+                flog("video", "WARNING",
+                     f"Auto-Fallback konnte nicht enqueued werden: {str(_e)[:120]}")
         return {"ok": True, "stored": "error"}
 
     if body.description:

@@ -1,0 +1,6 @@
+{
+  "assets": [
+    {"filename": "App Icon.imagestack", "idiom": "tv-marketing", "role": "primary-app-icon"}
+  ],
+  "info": {"author": "xcode", "version": 1}
+}

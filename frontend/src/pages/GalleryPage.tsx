@@ -26,7 +26,7 @@ type MemoryGroup = {
 }
 
 const ROW_HEIGHT = 200
-const PAGE_SIZE = 100
+const PAGE_SIZE = 150
 const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 640
 
 function buildFilterParams(f: Filters) {
@@ -309,7 +309,7 @@ export default function GalleryPage() {
       if (entries[0].isIntersecting && infiniteQuery.hasNextPage && !infiniteQuery.isFetchingNextPage) {
         infiniteQuery.fetchNextPage()
       }
-    }, { rootMargin: '2000px' })
+    }, { rootMargin: '3500px' })
     io.observe(el)
     return () => io.disconnect()
   }, [infiniteQuery.hasNextPage, infiniteQuery.isFetchingNextPage, viewMode])

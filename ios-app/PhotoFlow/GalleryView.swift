@@ -387,7 +387,13 @@ struct GalleryView: View {
     }
 
     private func onAppearLast(_ p: PhotoV1) {
-        if p.id == displayPhotos.last?.id && chatFilteredPhotos == nil { Task { await load() } }
+        guard chatFilteredPhotos == nil, hasMore, !loading else { return }
+        // v1.537: Prefetch schon wenn der User im letzten Viertel ist, nicht erst
+        // am aller-letzten Foto. Sonst sichtbare Ladelücke beim Scrollen. 30 Fotos
+        // Vorlauf reicht bei 120er Batches für flüssiges Nachrücken.
+        let all = displayPhotos
+        guard let idx = all.firstIndex(where: { $0.id == p.id }) else { return }
+        if idx >= all.count - 30 { Task { await load() } }
     }
 
     func upload(_ items: [PhotosPickerItem]) async {

@@ -1,0 +1,8 @@
+{
+  "assets": [
+    {"filename": "App Icon.imagestack", "idiom": "tv", "role": "primary-app-icon"},
+    {"filename": "App Icon Marketing.imagestack", "idiom": "tv-marketing", "role": "primary-app-icon"},
+    {"filename": "Top Shelf Image Wide.imageset", "idiom": "tv", "role": "top-shelf-image-wide"}
+  ],
+  "info": {"author": "xcode", "version": 1}
+}

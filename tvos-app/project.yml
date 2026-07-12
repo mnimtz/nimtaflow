@@ -25,6 +25,7 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "3"
         TVOS_DEPLOYMENT_TARGET: "16.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
     info:
       path: NimtaFlowTV/Info.plist
       properties:
@@ -34,3 +35,7 @@ targets:
         UIUserInterfaceStyle: Dark
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        CFBundleIcons:
+          CFBundlePrimaryIcon: App Icon
+        TVTopShelfImage:
+          TVTopShelfPrimaryImageWide: Top Shelf Image Wide

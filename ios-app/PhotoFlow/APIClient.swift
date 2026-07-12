@@ -190,7 +190,7 @@ final class APIClient: ObservableObject {
     // MARK: Feeds
     func photos(cursor: Int?, favorites: Bool = false, mediaType: String? = nil,
                 sort: String = "newest", personId: Int? = nil) async throws -> PhotoPage {
-        var p = "api/v1/photos?limit=60&sort=\(sort)"
+        var p = "api/v1/photos?limit=120&sort=\(sort)"
         if let cursor { p += "&cursor=\(cursor)" }
         if favorites { p += "&favorites=true" }
         if let mediaType { p += "&media_type=\(mediaType)" }
@@ -213,7 +213,7 @@ final class APIClient: ObservableObject {
     }
     func invalidatePeopleCache() { _peopleFetchedAt = .distantPast }
     func personPhotos(_ id: Int, cursor: Int?, sort: String? = nil, mediaType: String? = nil) async throws -> PhotoPage {
-        var p = "api/v1/people/\(id)/photos?limit=60"; if let cursor { p += "&cursor=\(cursor)" }
+        var p = "api/v1/people/\(id)/photos?limit=120"; if let cursor { p += "&cursor=\(cursor)" }
         if let sort { p += "&sort=\(sort)" }
         if let mediaType { p += "&media_type=\(mediaType)" }
         return try await get(p, as: PhotoPage.self)

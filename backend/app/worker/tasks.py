@@ -1077,34 +1077,34 @@ def verify_unnamed_faces_task(self, limit: int = 20000, include_named: bool = Tr
             if not os.path.exists(cp):
                 continue  # no cached crop yet → warm task will make it, next run verifies
             try:
-                # Named Faces (bereits einer Person zugewiesen) sind der User-Wille:
-                # der Re-Verify-Filter darf NICHT eine einzige knappe Fehl-Detektion
-                # (0.25 statt 0.35) reichen lassen, um Marcus Nimtz aus einem
-                # Profilbild rauszuwerfen. Für Named-Faces: niedrigere Schwelle
-                # (0.25), damit reale Faces mit knappem Score erhalten bleiben.
-                # Für Unnamed-Faces: 0.35 wie bisher, um Cluster-Müll zu filtern.
-                _min = 0.25 if person_id is not None else 0.35
+                # v1.537: Filter war KATASTROPHAL aggressiv — 56.873 Faces (avg
+                # conf 0.82!) wurden auf ignored gesetzt weil der Re-Detect auf
+                # dem gecropten Thumbnail versagte (kleiner Crop-Rand, PNG-Kompression,
+                # nicht ideale Aspect-Ratio). Das sind KEINE FPs, das sind echte
+                # Gesichter, die der Detector im Crop verliert. Konsequenz: Lea/Anja/
+                # Marcus verloren zusammen ~35 % ihrer Zuordnungen.
+                #   min_conf massiv runter (0.15) — nur ECHTER Junk (kein Face
+                #     erkennbar) fällt raus. Reale Faces auch mit Nebel/Winkel
+                #     erreichen 0.15 mühelos.
+                #   Named-Faces: NIE mehr auto-unassign (person_id bleibt) —
+                #     die menschliche Zuordnung ist der Ground-Truth, keine
+                #     Detector-Rundfahrt darf sie überschreiben.
+                _min = 0.15
                 found = fdi.detect_faces(Image.open(cp), min_conf=_min)
             except Exception:
                 continue
             checked += 1
-            if not found:
+            if not found and person_id is None:
                 to_ignore.append(fid)
-                if person_id is not None:
-                    to_unassign.append(fid)
         # phase 3: apply removals in short batched sessions
-        unassign_set = set(to_unassign)
         for i in range(0, len(to_ignore), 300):
             batch = to_ignore[i:i + 300]
-            unb = [f for f in batch if f in unassign_set]
             async for db in get_db():
                 await db.execute(_upd(Face).where(Face.id.in_(batch)).values(is_ignored=True))
-                if unb:
-                    await db.execute(_upd(Face).where(Face.id.in_(unb)).values(person_id=None))
                 await db.commit()
                 break
-        flog("faces", "INFO", f"FP-Filter fertig: {checked} geprüft, {len(to_ignore)} entfernt ({len(to_unassign)} von Personen gelöst)")
-        return {"checked": checked, "ignored": len(to_ignore), "unassigned": len(to_unassign)}
+        flog("faces", "INFO", f"FP-Filter fertig: {checked} geprüft, {len(to_ignore)} als Junk markiert (Named-Faces unangetastet)")
+        return {"checked": checked, "ignored": len(to_ignore), "unassigned": 0}
     return _run(_main())
 
 
