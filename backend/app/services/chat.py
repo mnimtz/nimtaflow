@@ -21,7 +21,7 @@ import httpx
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.photo import Photo
+from app.models.photo import Photo, PhotoStatus
 from app.models.face import Face
 from app.models.person import Person
 
@@ -43,15 +43,23 @@ from app.models.tag import Tag, PhotoTag
 from app.services.photo_search import search_photos
 
 SYSTEM = (
-    "Du bist der Foto-Assistent von PhotoFlow und beantwortest Fragen zur privaten "
-    "Foto-/Videosammlung des Nutzers auf Deutsch. Zu jedem Foto bekommst du: die "
-    "visuelle Beschreibung (Personen oft anonym beschrieben), die per "
-    "Gesichtserkennung ERKANNTEN Namen, Tags, Datum und Ort. Kombiniere diese: "
-    "eine anonym beschriebene Person ist sehr wahrscheinlich eine der erkannten "
-    "benannten Personen (z. B. „Person im blauen Hemd“ + erkannt „Günter Nimtz“ → "
-    "die Person im blauen Hemd ist Günter Nimtz). Antworte ausschließlich anhand "
-    "der gefundenen Fotos; gibt es keine Treffer, sage das ehrlich. Nenne relevante "
-    "Fotos per #id. "
+    "Du bist der Foto-Assistent von NimtaFlow und beantwortest Fragen zur privaten "
+    "Foto-/Videosammlung des Nutzers auf Deutsch. Du hast VIELE Werkzeuge — nutze "
+    "sie großzügig: lieber 2-3 Werkzeuge nacheinander aufrufen und eine echte Antwort "
+    "geben als sofort 'ich habe nichts gefunden'. Wenn ein Werkzeug 0 Treffer hat, "
+    "PROBIER ein anderes, lockere Filter, formuliere den suchbegriff neu, oder frage "
+    "kurz nach. Zu jedem Foto bekommst du reichhaltigen Kontext: Datum + Wochentag + "
+    "Tageszeit, Ort (Stadt, Region, Land, ortsname), erkannte PERSONEN, Tags, Alben-"
+    "Zugehörigkeit, volle Beschreibung, Nutzer-Notiz, Titel, Favorit/Bewertung, Kamera, "
+    "und (bei Videos) Dauer. Kombiniere all das: eine anonym beschriebene Person ist "
+    "sehr wahrscheinlich eine der erkannten benannten Personen (z. B. „Person im blauen "
+    "Hemd“ + erkannt „Günter Nimtz“ → die Person im blauen Hemd ist Günter Nimtz). "
+    "Ein Foto vom Sonntagabend mit Tag „Grillen“ und Personen „Marcus, Anja“ ist eine "
+    "Familienrunde. Antworte hauptsächlich anhand der gefundenen Fotos, DARFST aber auch "
+    "vernünftige Schlussfolgerungen ziehen wenn Datum/Ort/Personen/Tags eindeutig sind — "
+    "sag dann klar 'wahrscheinlich' oder 'vermutlich'. Bei wirklich 0 Treffern ehrlich "
+    "sagen und Alternativen vorschlagen (andere Interpretation, anderer Zeitraum). "
+    "Nenne relevante Fotos per #id. "
     "Nutze bei Fragen nach VIDEOS den Filter medientyp='video', bei Bildern/Fotos "
     "medientyp='bild'. Für 'wie viele …'-Fragen nutze das Werkzeug zaehle_fotos "
     "(exakte Anzahl) statt zu schätzen. Jahresangaben → jahr_von/jahr_bis. "
@@ -102,6 +110,14 @@ SYSTEM = (
     "verändert' als Video) nutze highlight_erstellen mit passendem thema. Bei einem Video zu "
     "einem ORT/einer Reise erst album_erstellen (mit ort/jahr), dann highlight_erstellen "
     "thema='trip' mit dem gelieferten album_id. Sag danach, dass das Rendern ein paar Minuten dauert. "
+    "NEUE analytische WERKZEUGE — nutze sie wenn die Frage sie natürlich passt: "
+    "'mit wem ist X am häufigsten' → personen_zusammenhang(person=X). "
+    "'wo war X am meisten', 'welche Länder mit X' → orte_von_person(person=X). "
+    "'wann sehe ich X meistens', 'sind wir eher Wochenende unterwegs' → alltag_muster(person=X). "
+    "'was war noch bei diesem Foto', 'zeig mehr aus dem Tag/Ausflug' → kontext_um_foto(photo_id=…). "
+    "'zeig ähnliche', 'weitere Fotos wie dieses' → aehnliche_szenen(photo_id=…). "
+    "Kombiniere Werkzeuge — z. B. erst suche_fotos → dann kontext_um_foto vom besten Treffer, "
+    "oder erst zeitliche_eckdaten → dann kontext_um_foto vom erstes_foto_id für die Erzählung. "
     "Zu STATUS/VERARBEITUNG: Für Fragen zur eigenen Bibliothek (wie viele Fotos/Videos, "
     "wie viele noch in Verarbeitung, wie viele ohne Beschreibung, ältestes/neuestes Foto) "
     "nutze bibliothek_status. Für Fragen zum SERVER-BETRIEB (Queue-Auslastung, laufen die "
@@ -228,8 +244,11 @@ async def _identity_context(db: AsyncSession, settings: dict, user=None) -> str:
 
 
 async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
-    """Bundle description + recognised people + tags + date/place per photo so the
-    LLM can reason over everything at once."""
+    """v1.539: Reicheres Record pro Foto — der Agent soll mit ALLEN Signalen
+    argumentieren können. Datum + Wochentag + Uhrzeit + Ort (Stadt/Region/Land)
+    + Personen + Tags (uncapped bis 40) + volle Beschreibung + Nutzer-Notiz
+    + Titel + Album-Mitgliedschaft + Kamera + Favorit/Rating + Videodauer.
+    Statt Info zu blockieren geben wir alles, was der Nutzer hat."""
     if not photos:
         return []
     ids = [p.id for p in photos]
@@ -241,32 +260,78 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
     )).all():
         if name:
             people.setdefault(pid, set()).add(name)
-    # tags per photo
     tags: dict = {}
     for pid, tname in (await db.execute(
         select(PhotoTag.photo_id, Tag.name).join(Tag, Tag.id == PhotoTag.tag_id)
         .where(PhotoTag.photo_id.in_(ids))
     )).all():
         tags.setdefault(pid, []).append(tname)
+    # Album-Mitgliedschaft — verrät zusätzlichen menschlichen Kontext
+    # ("in Album 'Kroatien 2023'"), den keine Beschreibung liefert.
+    albums: dict = {}
+    try:
+        from app.models.album import AlbumPhoto, Album  # type: ignore
+        for pid, aname in (await db.execute(
+            select(AlbumPhoto.photo_id, Album.name).join(Album, Album.id == AlbumPhoto.album_id)
+            .where(AlbumPhoto.photo_id.in_(ids), Album.name.isnot(None))
+        )).all():
+            if aname:
+                albums.setdefault(pid, []).append(aname)
+    except Exception:
+        pass
+    # Wochentag-Map (deutsch, kurz)
+    _WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
     out = []
     for p in photos:
-        # Give the model the FULL rich description (we generate detailed, multi-
-        # sentence descriptions — truncating to 400 chars threw most of it away).
-        # 1500-char cap only bounds pathological outliers. Plus the user's own note
-        # + title, which are strong, human-curated signals.
         desc = (p.description or "").strip()
         note = (getattr(p, "user_description", None) or "").strip()
-        out.append({
+        # Datum + Wochentag + Uhrzeit-Bucket → dem Agent das temporale
+        # Muster verfügbar machen (Wochenende? Abend? Sommerferien?).
+        datum = None; wtag = None; ustd = None
+        if p.taken_at:
+            try:
+                datum = str(p.taken_at)[:10]
+                wtag = _WD[p.taken_at.weekday()]
+                h = p.taken_at.hour
+                if h < 6:   ustd = "Nacht"
+                elif h < 11: ustd = "Vormittag"
+                elif h < 14: ustd = "Mittag"
+                elif h < 18: ustd = "Nachmittag"
+                elif h < 22: ustd = "Abend"
+                else:       ustd = "Nacht"
+            except Exception:
+                pass
+        # Ort so detailliert wie vorhanden (Stadt/Region/Land + location_name)
+        ort_parts = [x for x in (p.city, getattr(p, "region", None), p.country) if x]
+        loc_name = (getattr(p, "location_name", None) or "").strip()
+        ort = ", ".join(ort_parts) or None
+        rec = {
             "id": p.id,
-            "datum": str(p.taken_at)[:10] if p.taken_at else None,
-            "ort": ", ".join([x for x in (p.city, p.country) if x]) or None,
+            "datum": datum,
+            "wochentag": wtag,
+            "tageszeit": ustd,
+            "ort": ort,
+            "ortsname": loc_name or None,
             "titel": (getattr(p, "title", None) or "").strip() or None,
             "personen": sorted(people.get(p.id, [])) or None,
-            "tags": (tags.get(p.id) or [])[:25] or None,
+            "tags": (tags.get(p.id) or [])[:40] or None,
+            "alben": (albums.get(p.id) or []) or None,
             "beschreibung": desc[:1500] or None,
             "notiz": note[:500] or None,
             "ist_video": bool(p.is_video),
-        })
+            "favorit": bool(getattr(p, "is_favorite", False)),
+            "bewertung": getattr(p, "rating", None) or None,
+        }
+        # Kamera-Kontext hilft für „Fotos von meiner alten Kamera" / „Handy-Fotos"
+        cam = (getattr(p, "camera_make", None) or getattr(p, "camera_model", None))
+        if cam: rec["kamera"] = str(cam)[:60]
+        # Videodauer nur bei Video
+        if p.is_video:
+            dur = getattr(p, "video_duration", None) or getattr(p, "duration", None)
+            if dur:
+                try: rec["dauer_sek"] = int(float(dur))
+                except Exception: pass
+        out.append(rec)
     return out
 
 
@@ -368,8 +433,15 @@ async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 2
         # 2. Retry mit lockerem max_distance
         loose_settings = dict(settings)
         loose_settings["search.max_distance"] = "0.62"
+        loose_settings["search.min_score"] = "0.15"
         photos = await search_photos(db, query or "", loose_settings, limit=limit,
                                      extra_conditions=extra or None)
+    # v1.539: Wenn Person/Ort/Datum-Filter aktiv aber IMMER noch 0 Treffer
+    # (auch nach loose retry) → volle strukturelle Suche ohne Freitext.
+    # Der Nutzer erwartet bei „Frank in Boston" eher Frank UND Boston als leer.
+    if not photos and extra:
+        photos = await search_photos(db, "", settings, limit=limit,
+                                     extra_conditions=extra)
     return await _fused_records(db, photos)
 
 
@@ -455,6 +527,131 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
     return {"treffer": int(agg.cnt),
             "erstes_datum": str(agg.mind)[:10], "erstes_foto_id": first_id,
             "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
+
+
+async def _personen_zusammenhang(db: AsyncSession, person: str, top: int = 8,
+                                 acl: Optional[list] = None) -> dict:
+    """Wer war am häufigsten mit dieser Person zusammen auf Fotos? Aggregate über
+    Face-Co-Occurrence pro Photo. Für 'mit wem ist Lea am häufigsten', 'wer sind
+    Anjas engste Kontakte'."""
+    if not person or not person.strip():
+        return {"treffer": 0, "hinweis": "Kein Name angegeben."}
+    from sqlalchemy import func as _f
+    ref_ids = (await db.execute(select(Person.id).where(_strict_name(person)))).scalars().all()
+    if not ref_ids:
+        return {"treffer": 0, "hinweis": f"'{person}' ist nicht als Person hinterlegt."}
+    photo_ids_sub = select(Face.photo_id).where(Face.person_id.in_(ref_ids))
+    q = (select(Person.name, _f.count(_f.distinct(Face.photo_id)).label("n"))
+         .join(Face, Face.person_id == Person.id)
+         .where(Face.photo_id.in_(photo_ids_sub), Person.name.isnot(None),
+                ~Person.id.in_(ref_ids), Person.name != "")
+         .group_by(Person.name).order_by(_f.count(_f.distinct(Face.photo_id)).desc())
+         .limit(int(top)))
+    rows = (await db.execute(q)).all()
+    return {"person": person,
+            "gemeinsam_mit": [{"name": n, "gemeinsame_fotos": int(c)} for n, c in rows],
+            "treffer": len(rows)}
+
+
+async def _orte_von_person(db: AsyncSession, person: str, top: int = 12,
+                           acl: Optional[list] = None) -> dict:
+    """Wo war eine Person am häufigsten? Aggregate über (city, country) mit counts.
+    Für 'wo war Lea am meisten', 'welche Länder haben wir besucht'."""
+    if not person or not person.strip():
+        return {"treffer": 0}
+    from sqlalchemy import func as _f
+    ref_ids = (await db.execute(select(Person.id).where(_strict_name(person)))).scalars().all()
+    if not ref_ids:
+        return {"treffer": 0}
+    photo_sub = select(Face.photo_id).where(Face.person_id.in_(ref_ids))
+    cond = [Photo.id.in_(photo_sub), Photo.is_trashed == False,   # noqa: E712
+            Photo.city.isnot(None)] + list(acl or [])
+    q = (select(Photo.city, Photo.country, _f.count().label("n"),
+                _f.min(Photo.taken_at).label("erstmalig"),
+                _f.max(Photo.taken_at).label("letztmalig"))
+         .where(*cond).group_by(Photo.city, Photo.country)
+         .order_by(_f.count().desc()).limit(int(top)))
+    rows = (await db.execute(q)).all()
+    return {"person": person, "orte": [
+        {"stadt": c, "land": co, "fotos": int(n),
+         "von": str(mn)[:10] if mn else None, "bis": str(mx)[:10] if mx else None}
+        for c, co, n, mn, mx in rows]}
+
+
+async def _alltag_muster(db: AsyncSession, person: str,
+                         acl: Optional[list] = None) -> dict:
+    """Wochentag- und Uhrzeit-Muster der Fotos einer Person. Für 'wann sehe ich
+    Lea meistens', 'sind Reise-Fotos eher Wochenende'."""
+    if not person or not person.strip():
+        return {"treffer": 0}
+    from sqlalchemy import func as _f
+    ref_ids = (await db.execute(select(Person.id).where(_strict_name(person)))).scalars().all()
+    if not ref_ids:
+        return {"treffer": 0}
+    photo_sub = select(Face.photo_id).where(Face.person_id.in_(ref_ids))
+    cond = [Photo.id.in_(photo_sub), Photo.is_trashed == False,   # noqa: E712
+            Photo.taken_at.isnot(None)] + list(acl or [])
+    # dow: 0=Sonntag in Postgres → wir mappen: extract('isodow') = 1..7 Mo..So
+    q = (select(_f.extract("isodow", Photo.taken_at).label("dow"),
+                _f.extract("hour", Photo.taken_at).label("h"),
+                _f.count().label("n"))
+         .where(*cond).group_by("dow", "h"))
+    rows = (await db.execute(q)).all()
+    _WD = {1: "Mo", 2: "Di", 3: "Mi", 4: "Do", 5: "Fr", 6: "Sa", 7: "So"}
+    by_wd = {v: 0 for v in _WD.values()}
+    by_tz = {"Nacht": 0, "Vormittag": 0, "Mittag": 0, "Nachmittag": 0, "Abend": 0}
+    for dow, h, n in rows:
+        if dow: by_wd[_WD.get(int(dow), "?")] = by_wd.get(_WD.get(int(dow), "?"), 0) + int(n)
+        hi = int(h or 0)
+        bucket = ("Nacht" if hi < 6 else "Vormittag" if hi < 11 else "Mittag" if hi < 14
+                  else "Nachmittag" if hi < 18 else "Abend" if hi < 22 else "Nacht")
+        by_tz[bucket] += int(n)
+    return {"person": person, "wochentag_verteilung": by_wd,
+            "tageszeit_verteilung": by_tz,
+            "gesamt": sum(by_wd.values())}
+
+
+async def _kontext_um(db: AsyncSession, photo_id: int, radius_tage: int = 1,
+                      max_ergebnisse: int = 30, acl: Optional[list] = None) -> dict:
+    """Was war um dieses Foto herum? Fotos vom gleichen Tag ±N Tage, gleicher Ort,
+    Personen die dabei waren. Für 'was war noch bei diesem Foto', 'zeig mir mehr
+    aus diesem Ausflug'."""
+    anchor = await db.get(Photo, int(photo_id))
+    if not anchor or not anchor.taken_at:
+        return {"treffer": 0, "hinweis": "Ankerfoto hat kein Datum."}
+    from datetime import timedelta as _td
+    lo = anchor.taken_at - _td(days=max(0, int(radius_tage)))
+    hi = anchor.taken_at + _td(days=max(1, int(radius_tage)))
+    conds = [Photo.taken_at >= lo, Photo.taken_at <= hi,
+             Photo.is_trashed == False, Photo.id != anchor.id] + list(acl or [])  # noqa: E712
+    if anchor.city:
+        conds.append(Photo.city == anchor.city)
+    rows = (await db.execute(
+        select(Photo).where(*conds).order_by(Photo.taken_at).limit(int(max_ergebnisse))
+    )).scalars().all()
+    return {"anker_id": anchor.id,
+            "anker_datum": str(anchor.taken_at)[:10],
+            "anker_ort": anchor.city,
+            "treffer": len(rows),
+            "fotos": await _fused_records(db, rows)}
+
+
+async def _aehnliche_szenen(db: AsyncSession, photo_id: int, limit: int = 15,
+                            acl: Optional[list] = None) -> dict:
+    """Visuell ähnliche Fotos via pgvector cosine über photo.embedding.
+    Für 'zeig ähnliche', 'gibt es weitere Fotos wie diese'."""
+    anchor = await db.get(Photo, int(photo_id))
+    if not anchor or anchor.embedding is None:
+        return {"treffer": 0, "hinweis": "Anker hat kein Embedding."}
+    dist = Photo.embedding.cosine_distance(anchor.embedding)
+    conds = [Photo.id != anchor.id, Photo.embedding.isnot(None),
+             Photo.is_trashed == False, Photo.status == PhotoStatus.done,   # noqa: E712
+             dist < 0.35] + list(acl or [])
+    rows = (await db.execute(
+        select(Photo).where(*conds).order_by(dist).limit(int(limit))
+    )).scalars().all()
+    return {"anker_id": anchor.id, "treffer": len(rows),
+            "fotos": await _fused_records(db, rows)}
 
 
 async def _birthday_date(db: AsyncSession, person: Optional[str], alter=None) -> dict:
@@ -1042,6 +1239,56 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             }, "required": ["suchbegriff"]},
         },
         {
+            "name": "personen_zusammenhang",
+            "description": "Wer war am häufigsten MIT einer Person zusammen auf Fotos? Liefert "
+                           "Top-N-Kontakte mit Anzahl gemeinsamer Fotos. Für Fragen wie 'mit wem "
+                           "ist Lea am häufigsten', 'wer sind Anjas engste Kontakte', 'wer ist immer "
+                           "bei Marcus dabei'.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "Name der Person (Pflicht)"},
+                "top": {"type": "integer", "description": "Wie viele Top-Kontakte, Default 8"},
+            }, "required": ["person"]},
+        },
+        {
+            "name": "orte_von_person",
+            "description": "Wo war eine Person am häufigsten? Aggregate (Stadt, Land, Anzahl Fotos, "
+                           "erstes+letztes Datum). Für 'wo war Lea am meisten', 'welche Länder haben "
+                           "wir besucht mit Anja', 'welche Städte kennt Marcus'.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "Name der Person (Pflicht)"},
+                "top": {"type": "integer", "description": "Wie viele Top-Orte, Default 12"},
+            }, "required": ["person"]},
+        },
+        {
+            "name": "alltag_muster",
+            "description": "Wochentag- und Tageszeit-Verteilung der Fotos einer Person. Für "
+                           "'wann sehe ich Lea meistens', 'sind unsere Fotos eher Wochenende', "
+                           "'zu welcher Tageszeit machen wir Fotos'.",
+            "parameters": {"type": "object", "properties": {
+                "person": {"type": "string", "description": "Name der Person (Pflicht)"},
+            }, "required": ["person"]},
+        },
+        {
+            "name": "kontext_um_foto",
+            "description": "Was war RUND UM ein Foto herum? Fotos vom selben Zeitraum (±N Tage) und "
+                           "möglichst am selben Ort. Für 'was war noch bei diesem Foto', 'zeig mehr "
+                           "aus dem Tag', 'was ist noch aus dem Ausflug'.",
+            "parameters": {"type": "object", "properties": {
+                "photo_id": {"type": "integer", "description": "ID des Ankerfotos (Pflicht)"},
+                "radius_tage": {"type": "integer", "description": "±N Tage um das Ankerfoto, Default 1"},
+                "max_ergebnisse": {"type": "integer", "description": "Obergrenze der Treffer, Default 30"},
+            }, "required": ["photo_id"]},
+        },
+        {
+            "name": "aehnliche_szenen",
+            "description": "Visuell ähnliche Fotos zu einem gegebenen Foto (via Bild-Embedding). "
+                           "Für 'zeig ähnliche', 'weitere Fotos wie dieses', 'was sieht so aus wie #123'.",
+            "parameters": {"type": "object", "properties": {
+                "photo_id": {"type": "integer", "description": "ID des Ankerfotos (Pflicht)"},
+                "limit": {"type": "integer", "description": "Max Treffer, Default 15"},
+            }, "required": ["photo_id"]},
+        },
+        {
             "name": "bibliothek_status",
             "description": "Status der EIGENEN Bibliothek des Nutzers: Anzahl Fotos/Bilder/Videos, "
                            "wie viele noch in Verarbeitung sind, Fehler, wie viele noch keine KI-"
@@ -1236,6 +1483,37 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "geburtstag_datum":
                         resp = await _birthday_date(db, args.get("person"), args.get("alter"))
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "personen_zusammenhang":
+                        resp = await _personen_zusammenhang(db, args.get("person"), int(args.get("top") or 8), acl=acl)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "orte_von_person":
+                        resp = await _orte_von_person(db, args.get("person"), int(args.get("top") or 12), acl=acl)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "alltag_muster":
+                        resp = await _alltag_muster(db, args.get("person"), acl=acl)
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "kontext_um_foto":
+                        pid_arg = args.get("photo_id")
+                        try: pid_arg = int(pid_arg) if pid_arg is not None else 0
+                        except Exception: pid_arg = 0
+                        resp = await _kontext_um(db, pid_arg,
+                                                 int(args.get("radius_tage") or 1),
+                                                 int(args.get("max_ergebnisse") or 30),
+                                                 acl=acl) if pid_arg else {"treffer": 0, "hinweis": "Keine photo_id."}
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "aehnliche_szenen":
+                        pid_arg = args.get("photo_id")
+                        try: pid_arg = int(pid_arg) if pid_arg is not None else 0
+                        except Exception: pid_arg = 0
+                        resp = await _aehnliche_szenen(db, pid_arg,
+                                                       int(args.get("limit") or 15),
+                                                       acl=acl) if pid_arg else {"treffer": 0, "hinweis": "Keine photo_id."}
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "bibliothek_status":

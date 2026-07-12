@@ -141,7 +141,10 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
             # Default 0.48 (statt 0.62): Jina-CLIP-v2 Cross-Modal ist qualitativ
             # solide, aber 0.62 hat massive Recall-Noise gebracht (visuelle "vielleicht"-
             # Treffer als sichere Hits). 0.48 → Similarity ≈ 0.52, sinnvoller Schwelle.
-            max_dist = float(settings.get("search.max_distance", "0.48") or 0.48)
+            # v1.539: Default von 0.48 → 0.55 — der alte Wert war zu strikt und
+            # ließ eindeutige semantische Matches durchfallen. Präzision fangen
+            # wir über min_score im Combine-Schritt ab.
+            max_dist = float(settings.get("search.max_distance", "0.55") or 0.55)
             for col in (Photo.embedding, Photo.embedding_text):
                 dist = col.cosine_distance(vec)
                 rows = (await db.execute(
