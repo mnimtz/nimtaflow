@@ -255,7 +255,11 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
         return {"photo_id": None}
     # faces-only when the worker is a faces worker, or the photo already has a
     # description (imported/Gemini) and only needs its face pass.
-    faces_only = faces_mode or (photo.description is not None)
+    # v1.550: faces_only wenn (a) reiner faces-Worker ODER (b) description SCHON da
+    # UND structured_desc auch schon da (nichts mehr zu beschreiben). Solange
+    # structured_desc fehlt bleibt der Photo für den describe-Worker offen.
+    faces_only = faces_mode or (
+        photo.description is not None and photo.structured_desc is not None)
     # Embed workers don't take the describe lease (they don't describe) — just
     # release the row lock so another worker can describe/face it meanwhile.
     if not embed_mode:
