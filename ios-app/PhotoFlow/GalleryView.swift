@@ -1250,13 +1250,24 @@ struct PhotoInfoView: View {
     @State private var pcLinkCopied = false
     @State private var allPeople: [PersonV1] = []
 
+    @State private var faceOpError: String? = nil
     private func reassignFace(_ faceId: Int, to personId: Int) async {
-        try? await api.assignFace(faceId, to: personId)
-        detail = try? await api.photoDetail(photo.id)
+        do {
+            try await api.assignFace(faceId, to: personId)
+            detail = try? await api.photoDetail(photo.id)
+        } catch {
+            faceOpError = "Zuweisen fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
     private func removeFace(_ faceId: Int) async {
-        try? await api.unassignFace(faceId)
-        detail = try? await api.photoDetail(photo.id)
+        // v1.540: try? schluckte den Fehler still → UI sah aus als passiere nichts.
+        // Jetzt Fehler explizit anzeigen, damit erkennbar ist ob der Server ablehnt.
+        do {
+            try await api.unassignFace(faceId)
+            detail = try? await api.photoDetail(photo.id)
+        } catch {
+            faceOpError = "Entfernen fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 
     /// Alter der Person zum Aufnahmezeitpunkt, falls Geburtsdatum + Foto-Datum bekannt.
@@ -1482,6 +1493,13 @@ struct PhotoInfoView: View {
                 detail = try? await api.photoDetail(photo.id)
                 if allPeople.isEmpty { allPeople = (try? await api.people()) ?? [] }
             }
+        }
+        .alert("Personen-Aktion", isPresented: Binding(
+            get: { faceOpError != nil },
+            set: { if !$0 { faceOpError = nil } })) {
+            Button("OK", role: .cancel) { faceOpError = nil }
+        } message: {
+            Text(faceOpError ?? "")
         }
     }
 

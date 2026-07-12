@@ -510,6 +510,12 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
                             Photo.location_name.ilike(pat)])
             from sqlalchemy import or_ as _or
             conds.append(_or(*ors))
+    # v1.541 BIRTHDATE-SANITY: kein Foto von VOR der Geburt der Person liefern.
+    # Sonst behauptet der Chat auf einem 2001er-Foto, Lea (geb. 2017) sei da drauf.
+    if person and person.strip():
+        bd = await db.scalar(select(Person.birthdate).where(_strict_name(person)).limit(1))
+        if bd:
+            conds.append(Photo.taken_at >= bd)
     # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
     # Query 7k Rows in Python-Liste (Timeout-Killer bei "wann lernte Lea laufen").
     # Wir brauchen nur MIN/MAX + je 1 Foto-ID an den Extremen.

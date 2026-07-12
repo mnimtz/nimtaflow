@@ -58,6 +58,7 @@ celery_app.conf.update(
         "sweep_video_faces":  {"queue": "cpu"},     # light enqueuer, stays on cpu
         "warm_face_crops":    {"queue": "cpu"},   # pre-generate face-crop cache
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
+        "birthdate_sanity_faces": {"queue": "cpu"},  # v1.541: FP-cleanup vor Geburtsdatum
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "sweep_pending_video_ai": {"queue": "cpu"},  # self-heal videos stuck without description
@@ -133,6 +134,12 @@ celery_app.conf.beat_schedule = {
     "suggest-faces-daily": {
         "task": "suggest_faces",
         "schedule": crontab(hour=4, minute=15),
+    },
+    # v1.541: alle 6 h False-Positives entfernen die vor der Geburt der Person
+    # datiert sind (die Grow-Phase kann das gelegentlich produzieren).
+    "birthdate-sanity-6h": {
+        "task": "birthdate_sanity_faces",
+        "schedule": 21600.0,
     },
     # "Highlight der Woche" — täglich 07:00 UTC prüfen, ob für die AKTUELLE ISO-Woche
     # noch keins existiert. Sonst würde ein Server-Ausfall am Montag 07:00 die ganze

@@ -365,6 +365,38 @@ def mirror_originals_task(self, force: bool = False):
     return _run(_run_mirror())
 
 
+@celery_app.task(bind=True, name="birthdate_sanity_faces")
+def birthdate_sanity_faces_task(self):
+    """v1.541: Setzt person_id auf NULL für Faces auf Fotos, deren taken_at VOR
+    dem birthdate der Person liegt. Räumt False-Positives auf, die die Grow-
+    Phase gelegentlich produziert (siehe 1.334 Lea-Zuordnungen vor ihrer Geburt
+    2017). Idempotent — läuft täglich."""
+    async def _run_bs():
+        from app.core.database import init_db, get_db
+        from app.models.face import Face
+        from app.models.person import Person
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select as _s, update as _u
+        init_db()
+        async for db in get_db():
+            wrong = (await db.execute(
+                _s(Face.id).select_from(Face)
+                .join(Person, Person.id == Face.person_id)
+                .join(Photo, Photo.id == Face.photo_id)
+                .where(Person.birthdate.isnot(None),
+                       Photo.taken_at < Person.birthdate)
+            )).scalars().all()
+            if wrong:
+                await db.execute(_u(Face).where(Face.id.in_(wrong)).values(
+                    person_id=None, suggested_person_id=None))
+                await db.commit()
+                flog("faces", "INFO",
+                     f"Birthdate-Sanity: {len(wrong)} Zuordnungen vor Geburt entfernt")
+            return {"cleaned": len(wrong)}
+    return _run(_run_bs())
+
+
 @celery_app.task(bind=True, name="auto_cluster_faces")
 def auto_cluster_faces_task(self):
     """Beat task: periodically group unassigned faces into (unnamed) people, so

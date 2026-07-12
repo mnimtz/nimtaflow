@@ -210,6 +210,40 @@ async def cluster_unassigned(db: AsyncSession, grow_only: bool = False, suggest:
             return by_pid, rem_ids, rem_idx
 
         by_pid, remaining_ids, remaining_idx = await asyncio.to_thread(_grow_compute)
+        # v1.541 SANITY-GATE: verweigere Zuordnungen zu einem Foto, dessen
+        # taken_at VOR dem hinterlegten birthdate der Person liegt (bzw. sehr weit
+        # danach). Ohne diesen Gate wurden ~1.3k Faces vor Leas Geburt fälschlich
+        # ihr zugeordnet — der Chat baute darauf falsche Antworten.
+        if by_pid:
+            pids_involved = list(by_pid.keys())
+            bday_map = dict((await db.execute(
+                select(Person.id, Person.birthdate).where(Person.id.in_(pids_involved))
+            )).all())
+            # Alle Foto-Daten für die betroffenen Faces holen
+            all_face_ids = [fid for lst in by_pid.values() for fid in lst]
+            date_map = dict((await db.execute(
+                select(Face.id, Photo.taken_at).join(Photo, Photo.id == Face.photo_id)
+                .where(Face.id.in_(all_face_ids))
+            )).all())
+            filtered = {}
+            skipped = 0
+            for pid, fids in by_pid.items():
+                bd = bday_map.get(pid)
+                if not bd:
+                    filtered[pid] = fids; continue
+                ok = []
+                for fid in fids:
+                    ta = date_map.get(fid)
+                    if ta is not None and ta.date() < bd:
+                        skipped += 1
+                        continue  # vor Geburt → nie zuordnen
+                    ok.append(fid)
+                if ok:
+                    filtered[pid] = ok
+            if skipped:
+                from app.services.feature_log import log as _flg
+                _flg("faces", "INFO", f"Grow-Gate: {skipped} Zuordnungen wegen birthdate übersprungen")
+            by_pid = filtered
         for pid, fids in by_pid.items():
             await db.execute(update(Face).where(Face.id.in_(fids)).values(person_id=pid))
             assigned += len(fids)
