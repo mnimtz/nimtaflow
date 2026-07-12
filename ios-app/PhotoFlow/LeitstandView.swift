@@ -19,12 +19,38 @@ struct LeitstandView: View {
                         progressRow(lane: w.embed, iconName: "brain.head.profile")
                         progressRow(lane: w.xmp, iconName: "doc.badge.arrow.up")
                         if let vt = w.video_transcode {
+                            // Zwei separate ProgressRows für 720p und 1080p — damit sofort
+                            // sichtbar ist, welcher Rendition-Backlog wo steht.
                             progressRow(lane: vt, iconName: "film.stack")
-                            HStack(spacing: 12) {
-                                Text("720p neu: \(vt.done_720 ?? vt.done)").font(.caption).monospacedDigit()
-                                Text("· 1080p neu: \(vt.done_1080 ?? 0)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                                if let leg = vt.legacy_only, leg > 0 {
-                                    Text("· \(leg) alt (ruckelt)").font(.caption).foregroundStyle(.orange).monospacedDigit()
+                            if let d720 = vt.done_720 {
+                                subProgressRow(title: "720p", done: d720, total: vt.total,
+                                               lastHour: vt.last_hour_720)
+                            }
+                            if let d1080 = vt.done_1080 {
+                                subProgressRow(title: "1080p", done: d1080, total: vt.total,
+                                               lastHour: vt.last_hour_1080)
+                            }
+                            if let leg = vt.legacy_only, leg > 0 {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill").font(.caption)
+                                        .foregroundStyle(.orange)
+                                    Text("\(leg) alte 10-bit-Files (ruckeln)")
+                                        .font(.caption).foregroundStyle(.orange).monospacedDigit()
+                                }
+                            }
+                            if let rate = vt.hourly_rate, let eta = vt.eta_hours {
+                                HStack {
+                                    Image(systemName: "hare.fill").font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(rate) Videos/h · Restzeit ≈ \(fmtEta(eta))")
+                                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                }
+                            } else if (vt.hourly_rate ?? 0) == 0 {
+                                HStack {
+                                    Image(systemName: "pause.circle.fill").font(.caption)
+                                        .foregroundStyle(.orange)
+                                    Text("Rate: 0/h — Worker steht (siehe Backend-Log)")
+                                        .font(.caption).foregroundStyle(.orange)
                                 }
                             }
                             if (vt.legacy_only ?? 0) > 0 {
@@ -157,6 +183,29 @@ struct LeitstandView: View {
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
         }.padding(.vertical, 2)
+    }
+
+    @ViewBuilder private func subProgressRow(title: String, done: Int, total: Int, lastHour: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(done) / \(total)")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                if let lh = lastHour {
+                    Text("· +\(lh)/h")
+                        .font(.caption2).foregroundStyle(lh > 0 ? .green : .orange).monospacedDigit()
+                }
+            }
+            ProgressView(value: total > 0 ? min(1, Double(done) / Double(total)) : 0)
+                .tint(title == "1080p" ? .indigo : .cyan)
+        }.padding(.vertical, 1)
+    }
+
+    private func fmtEta(_ hours: Double) -> String {
+        if hours < 1 { return "\(Int(hours * 60)) Min" }
+        if hours < 48 { return String(format: "%.1f h", hours) }
+        return "\(Int(hours / 24)) T"
     }
 
     @ViewBuilder private func row(_ title: String, _ v: Int?) -> some View {

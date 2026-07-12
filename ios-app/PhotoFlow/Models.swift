@@ -481,6 +481,11 @@ struct OpsWorkers: Codable {
         let done_720: Int?
         let done_1080: Int?
         let legacy_only: Int?
+        // Live-Rate (letzte Stunde) + Restzeit — echte Zahl statt Fake.
+        let hourly_rate: Int?
+        let last_hour_720: Int?
+        let last_hour_1080: Int?
+        let eta_hours: Double?
     }
     let embed: Lane
     let xmp: Lane

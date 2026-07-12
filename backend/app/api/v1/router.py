@@ -1412,6 +1412,20 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
     )) or 0)
     videos_pending = max(0, total_videos - videos_done_720)
     videos_pct = round(100 * videos_done_720 / total_videos, 1) if total_videos else 0.0
+    # Ehrliche Rate: wie viele Videos wurden IN DER LETZTEN STUNDE fertig? Diese
+    # Zahl ist die einzige verlässliche für die ETA — die alte hart-verdrahtete
+    # „8s/Video über 2 Slots" (siehe remote.py:1005) ergab 15h bei 13k pending,
+    # aber die realen Encode-Zeiten sind 30-500s/Video je nach 4K/HDR.
+    from sqlalchemy import text as _sql_text
+    last_hour_720 = int(await db.scalar(_sql_text(
+        "SELECT COUNT(*) FROM photos WHERE is_video AND is_trashed=false "
+        "AND web_mp4_720_at > NOW() - INTERVAL '1 hour'")) or 0)
+    last_hour_1080 = int(await db.scalar(_sql_text(
+        "SELECT COUNT(*) FROM photos WHERE is_video AND is_trashed=false "
+        "AND web_mp4_1080_at > NOW() - INTERVAL '1 hour'")) or 0)
+    # Gemischte Rate (720p + 1080p, halbiert weil beide separate Encodes sind)
+    hourly_rate = last_hour_720 + last_hour_1080
+    eta_hours = round(videos_pending / hourly_rate, 1) if hourly_rate > 0 else None
 
     return {
         "embed": {
@@ -1429,7 +1443,11 @@ async def ops_workers_v1(db: AsyncSession = Depends(get_db),
             "total": total_videos, "done": videos_done_720, "pending": videos_pending,
             "percent": videos_pct, "workers_alive": video_alive,
             "done_720": videos_done_720, "done_1080": videos_done_1080,
-            "legacy_only": legacy_only,   # alte 10-bit-Files, brauchen Re-Transcode
+            "legacy_only": legacy_only,
+            "hourly_rate": hourly_rate,
+            "last_hour_720": last_hour_720,
+            "last_hour_1080": last_hour_1080,
+            "eta_hours": eta_hours,
             "label": "Video-Transcode 720p (neu, 8-bit HW-decodable)",
         },
     }

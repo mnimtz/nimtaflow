@@ -996,13 +996,25 @@ async def status(db: AsyncSession = Depends(get_db)):
         roles.append({"role": role, "label": role_label[role], "pending": pend,
                       "done": role_done.get(role, 0),
                       "workers": len(rw), "avg_dur": ravg, "eta_seconds": eta})
-    # Video 1080p transcode — server-side (worker-video, 2 QSV slots), no remote
-    # heartbeat; rough ETA at ~8s/video over 2 parallel slots.
+    # Video-Transcode — Server-Worker-video + M3-Remote. Reale ETA aus der Anzahl
+    # Videos die in der letzten Stunde tatsächlich fertig wurden (der alte
+    # 8s/Video-Wert war Wunschdenken: bei 4K-HDR-Quelle sind 100-500s/Video normal).
     if transcode_pending or vid_1080:
-        roles.append({"role": "transcode", "label": "Video 1080p (Web)",
+        try:
+            from sqlalchemy import text as _sql_text
+            last_hour = int(await db.scalar(_sql_text(
+                "SELECT COUNT(*) FROM photos WHERE is_video AND is_trashed=false "
+                "AND ( web_mp4_720_at > NOW() - INTERVAL '1 hour' "
+                "     OR web_mp4_1080_at > NOW() - INTERVAL '1 hour' )")) or 0)
+        except Exception:
+            last_hour = 0
+        eta = int(transcode_pending * 3600 / last_hour) if last_hour > 0 else None
+        roles.append({"role": "transcode", "label": "Video 720p / 1080p (Web)",
                       "pending": transcode_pending, "done": vid_1080 or 0,
-                      "workers": 2, "avg_dur": None,
-                      "eta_seconds": int(transcode_pending * 8 / 2) if transcode_pending else 0})
+                      "workers": 2 + (await video_transcode_worker_alive()),
+                      "avg_dur": None,
+                      "last_hour": last_hour,
+                      "eta_seconds": eta})
 
     local_active = await _celery_active_tasks()
 

@@ -1854,14 +1854,38 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
             tmp_path = out_dir / f"{photo_id}_{resolution}.part.mp4"
 
             def _probe_ok(p):
-                """A transcode is only usable if ffprobe reads a positive duration —
-                catches truncated / no-moov files left by an interrupted ffmpeg run."""
+                """A transcode is only usable if ffprobe reads a positive duration AND
+                das File ist 8-bit yuv420p — sonst würde ein alter 10-bit-HDR-Transcode
+                aus vor v1.525 als „cached" akzeptiert, obwohl er weiter ruckelt.
+                Genau DAS blockierte den Batch-Requeue-Fortschritt: der Server-Worker
+                pickte Jobs, sah alte Files, meldete cached=True und ging weiter."""
                 try:
                     pr = subprocess.run(
-                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                         "-of", "csv=p=0", str(p)], capture_output=True, timeout=60)
-                    d = (pr.stdout or b"").decode().strip()
-                    return pr.returncode == 0 and d not in ("", "N/A") and float(d) > 0
+                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=pix_fmt,color_transfer:format=duration",
+                         "-of", "default=nw=1", str(p)],
+                        capture_output=True, timeout=60)
+                    out = (pr.stdout or b"").decode()
+                    if pr.returncode != 0:
+                        return False
+                    dur = pix = tr = ""
+                    for ln in out.splitlines():
+                        if "=" in ln:
+                            k, v = ln.split("=", 1)
+                            k = k.strip(); v = v.strip()
+                            if k == "duration": dur = v
+                            elif k == "pix_fmt": pix = v
+                            elif k == "color_transfer": tr = v
+                    if dur in ("", "N/A") or float(dur) <= 0:
+                        return False
+                    # 10-bit / HDR erkannt → NICHT als „cached" akzeptieren, damit der
+                    # neue Transcode wirklich ausgeführt wird.
+                    px = pix.lower(); trl = tr.lower()
+                    if "10le" in px or "12le" in px:
+                        return False
+                    if trl in ("smpte2084", "arib-std-b67"):
+                        return False
+                    return True
                 except Exception:
                     return False
             # 1) SHORT session: resolve the source path / early-exit if cached. We
