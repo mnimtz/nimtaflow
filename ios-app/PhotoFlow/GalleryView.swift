@@ -1141,7 +1141,7 @@ struct VideoPlayerView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .topLeading) {
             Group {
                 if let player {
                     VideoPlayer(player: player)
@@ -1163,7 +1163,10 @@ struct VideoPlayerView: View {
                 }
             }
 
-            // Quality-Picker nur wenn ≥ 2 Varianten und photoId gesetzt.
+            // Quality-Picker — links oben positioniert (symmetrisch zum Button-Cluster
+            // rechts oben mit Herz/Info/Menü/X). Konsistenter Circle-Style wie die
+            // anderen Buttons, kein überlagerndes Capsule mehr. Kleines Label neben
+            // dem Zahnrad zeigt die aktuelle Auflösung.
             if variants.count > 1 {
                 Menu {
                     ForEach(variants.sorted(by: { $0.resolution > $1.resolution }), id: \.resolution) { v in
@@ -1182,14 +1185,16 @@ struct VideoPlayerView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "gearshape.fill")
-                        Text(selectedRes.map { "\($0)p" } ?? "auto")
-                            .font(.caption2.monospacedDigit())
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                        if let r = selectedRes {
+                            Text("\(r)p")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.white)
+                        }
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(.black.opacity(0.55), in: Capsule())
                 }
-                .padding(.top, 12).padding(.trailing, 12)
+                .padding().safeAreaPadding(.top)
             }
         }
         .task(id: url) {
@@ -1236,6 +1241,7 @@ struct PhotoInfoView: View {
     @State private var pcText = ""    // Grußformel (Kopfzeile)
     @State private var pcSubtitle = ""// Untertitel/persönliche Nachricht
     @State private var pcVideoMode = true  // bei Video: true = echtes Video, false = Standbild-PNG
+    @State private var pcLinkCopied = false
     @State private var allPeople: [PersonV1] = []
 
     private func reassignFace(_ faceId: Int, to personId: Int) async {
@@ -1384,16 +1390,18 @@ struct PhotoInfoView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    TextField("Grußzeile (optional)", text: $pcText)
+                    TextField("Grußzeile (oben, optional)", text: $pcText)
                         .autocorrectionDisabled(false)
-                    TextField("Nachricht (optional)", text: $pcSubtitle, axis: .vertical)
+                    TextField("Nachricht (unten, optional)", text: $pcSubtitle, axis: .vertical)
                         .lineLimit(1...3)
-                    if !(photo.is_video && pcVideoMode) {
-                        Picker("Layout", selection: $pcTheme) {
-                            Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
-                            Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
-                            Text("Vintage").tag("vintage")
-                        }
+                    // Layout auch für Video-Modus zeigen — das Design färbt die
+                    // Karten-Karte (Hintergrund, Textfarbe, Schriftart) auf der
+                    // Public-Share-Seite; das Video sitzt sauber in der Mitte
+                    // dazwischen.
+                    Picker("Layout / Design", selection: $pcTheme) {
+                        Text("Klassisch").tag("classic"); Text("Modern").tag("modern")
+                        Text("Polaroid").tag("polaroid"); Text("Kino").tag("film")
+                        Text("Vintage").tag("vintage")
                     }
                     Picker("Schriftfarbe", selection: $pcColor) {
                         Text("Standard").tag(""); Text("Weiß").tag("#ffffff")
@@ -1412,7 +1420,18 @@ struct PhotoInfoView: View {
                         ShareLink(item: u) { Label("Link teilen", systemImage: "square.and.arrow.up") }
                         Button {
                             UIPasteboard.general.string = u.absoluteString
-                        } label: { Label("Link kopieren", systemImage: "doc.on.doc") }
+                            // Sichtbares Feedback: der User sieht sonst gar nichts
+                            // und weiß nicht, ob geklickt wurde.
+                            pcLinkCopied = true
+                            Task {
+                                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                                pcLinkCopied = false
+                            }
+                        } label: {
+                            Label(pcLinkCopied ? "Kopiert!" : "Link kopieren",
+                                  systemImage: pcLinkCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                                .foregroundStyle(pcLinkCopied ? Color.green : .accentColor)
+                        }
                     }
                 }
                 if !photo.is_video {

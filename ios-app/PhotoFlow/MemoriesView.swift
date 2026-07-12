@@ -2,13 +2,24 @@ import SwiftUI
 
 /// "Erinnerungen" — photos from exactly X years ago today, grouped by year.
 /// Each group is a horizontal strip; tap a photo to open the full-screen pager.
+/// State-Bundle für den fullScreenCover: BEIDE Werte (items + start) müssen atomisch
+/// propagiert werden, sonst öffnet SwiftUI den Pager mit noch leeren items (schwarze
+/// Anzeige beim ersten Klick, funktioniert erst nach einem 2. Klick). Vorher hatten
+/// wir @State selected + @State pagerItems getrennt — zwei State-Updates in einer
+/// Zeile sind NICHT batched, `fullScreenCover(item:)` reagiert auf selected sofort
+/// mit noch alten pagerItems=[].
+private struct MemoryPagerContext: Identifiable {
+    let id: Int   // photo id als stabile identity
+    let items: [PhotoV1]
+    let start: PhotoV1
+}
+
 struct MemoriesView: View {
     @EnvironmentObject var api: APIClient
     @State private var groups: [MemoryGroupV1] = []
     @State private var loading = false
     @State private var loadError: String?
-    @State private var selected: PhotoV1?
-    @State private var pagerItems: [PhotoV1] = []
+    @State private var pager: MemoryPagerContext?
 
     private func prefetchGroup(_ items: [PhotoV1]) {
         for p in items where !p.is_video {
@@ -48,7 +59,11 @@ struct MemoriesView: View {
                                         PhotoTile(photo: p)
                                             .frame(width: 140, height: 140)
                                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            .onTapGesture { pagerItems = g.items; selected = p }
+                                            .onTapGesture {
+                                                // Atomisch: eine einzige State-Änderung, damit
+                                                // fullScreenCover nicht mit leeren items startet.
+                                                pager = MemoryPagerContext(id: p.id, items: g.items, start: p)
+                                            }
                                     }
                                 }.padding(.horizontal)
                             }
@@ -59,7 +74,7 @@ struct MemoriesView: View {
             .navigationTitle("Erinnerungen")
             .task { await load() }
             .refreshable { await load() }
-            .fullScreenCover(item: $selected) { p in PhotoPager(photos: pagerItems, start: p) }
+            .fullScreenCover(item: $pager) { ctx in PhotoPager(photos: ctx.items, start: ctx.start) }
         }
     }
 

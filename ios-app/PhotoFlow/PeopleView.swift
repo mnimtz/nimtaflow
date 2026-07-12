@@ -11,6 +11,7 @@ struct PeopleView: View {
     @State private var showMergeSheet = false
     @State private var showSuggestions = false
     @State private var error: String?
+    @State private var searchText = ""
     @AppStorage("people_filter") private var filter = "named"
     @AppStorage("people_sort") private var sortMode = "count"   // "count" (Default) | "name"
 
@@ -25,8 +26,13 @@ struct PeopleView: View {
         return list.sorted { count($0) != count($1) ? count($0) > count($1)
                              : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
-    private var namedPeople: [PersonV1] { sorted(people.filter { isNamed($0) }) }
-    private var unknownPeople: [PersonV1] { sorted(people.filter { !isNamed($0) }) }
+    private func matchesSearch(_ p: PersonV1) -> Bool {
+        let q = searchText.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { return true }
+        return p.name.localizedCaseInsensitiveContains(q)
+    }
+    private var namedPeople: [PersonV1] { sorted(people.filter { isNamed($0) && matchesSearch($0) }) }
+    private var unknownPeople: [PersonV1] { sorted(people.filter { !isNamed($0) && matchesSearch($0) }) }
     private let sorts: [(String, String)] = [("count", "Nach Anzahl"), ("name", "Nach Name")]
 
     @ViewBuilder
@@ -93,6 +99,9 @@ struct PeopleView: View {
                 }
             }
             .navigationTitle("Personen")
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Nach Name suchen")
+            .autocorrectionDisabled()
             .navigationDestination(for: PersonV1.self) { p in PersonDetailView(person: p) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

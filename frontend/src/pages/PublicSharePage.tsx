@@ -149,6 +149,17 @@ export default function PublicSharePage() {
     const text = (pr.text as string) || meta.title || ''
     const subtitle = (pr.subtitle as string) || ''
     const textColor = (pr.text_color as string) || '#ffffff'
+    const theme = (pr.theme as string) || 'classic'
+    // Theme-Style-Karte: bestimmt Card-Hintergrund, Textfarbe-Fallback und Border.
+    const themeStyles: Record<string, { bg: string; textDefault: string; ring: string; font: string }> = {
+      classic:  { bg: 'bg-white',                        textDefault: '#1a1a1a', ring: 'ring-1 ring-black/10',        font: '"Playfair Display", Georgia, serif' },
+      modern:   { bg: 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900', textDefault: '#f8fafc', ring: 'ring-1 ring-white/10',  font: 'Inter, system-ui, sans-serif' },
+      polaroid: { bg: 'bg-white',                        textDefault: '#1a1a1a', ring: 'ring-1 ring-black/10 shadow-2xl', font: '"Kalam", "Comic Sans MS", cursive' },
+      film:     { bg: 'bg-black',                        textDefault: '#f8fafc', ring: 'ring-1 ring-amber-500/30',      font: '"Playfair Display", Georgia, serif' },
+      vintage:  { bg: 'bg-amber-50',                     textDefault: '#5b3a1f', ring: 'ring-1 ring-amber-800/20',       font: '"Special Elite", "Courier New", monospace' },
+    }
+    const st = themeStyles[theme] || themeStyles.classic
+    const finalTextColor = (pr.text_color as string) || st.textDefault
     return (
       <div className="min-h-screen text-white"
         style={{ background: 'radial-gradient(900px 480px at 80% -8%, rgba(232,181,74,.10), transparent 60%), #0a0a0d' }}>
@@ -159,19 +170,29 @@ export default function PublicSharePage() {
           </div>
         </header>
         <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10">
-          <div className="relative rounded-2xl overflow-hidden bg-black shadow-2xl">
-            <video src={vurl} controls autoPlay playsInline className="block w-full max-h-[75vh]" />
-            {(text || subtitle) && (
-              <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/80 via-black/50 to-transparent pointer-events-none">
-                {text && (
-                  <div className="text-2xl sm:text-3xl font-bold drop-shadow-md leading-tight"
-                       style={{ color: textColor }}>{text}</div>
-                )}
-                {subtitle && (
-                  <div className="mt-2 text-sm sm:text-base opacity-90 drop-shadow"
-                       style={{ color: textColor }}>{subtitle}</div>
-                )}
+          {/* Postkarten-Card mit Theme: Grußzeile OBEN, Video MITTE, Nachricht UNTEN
+              — nicht mehr als Overlay auf dem Video, sondern formschön wie eine
+              echte Grußkarte. */}
+          <div className={`${st.bg} ${st.ring} rounded-3xl overflow-hidden shadow-2xl`}
+               style={{ fontFamily: st.font, color: finalTextColor }}>
+            {text && (
+              <div className="px-6 sm:px-10 pt-8 sm:pt-10 text-center">
+                <div className="text-3xl sm:text-4xl font-bold leading-tight"
+                     style={{ color: finalTextColor }}>{text}</div>
               </div>
+            )}
+            <div className={`${text ? 'mt-6 sm:mt-8' : 'mt-0'} bg-black`}>
+              <video src={vurl} controls autoPlay playsInline
+                     className="block w-full max-h-[70vh]" />
+            </div>
+            {subtitle && (
+              <div className="px-6 sm:px-10 py-6 sm:py-8 text-center">
+                <div className="text-base sm:text-lg leading-relaxed whitespace-pre-line"
+                     style={{ color: finalTextColor, opacity: 0.9 }}>{subtitle}</div>
+              </div>
+            )}
+            {!text && !subtitle && (
+              <div className="h-4"></div>
             )}
           </div>
         </div>
