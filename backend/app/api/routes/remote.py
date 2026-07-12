@@ -223,8 +223,13 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
                 and_(Photo.is_video == False, Photo.thumb_large.isnot(None)),   # noqa: E712
                 and_(Photo.is_video == True, Photo.video_webm_path.isnot(None)),  # noqa: E712
             )
+            # v1.549: auch Fotos claimen die BESCHRIEBEN sind aber noch KEIN
+            # structured_desc haben → Reingest neu bearbeiten, damit der Chat auf
+            # präzises JSON filtern kann statt Fuzzy-ILIKE zu spielen.
             where_terms.append(and_(
-                Photo.description.is_(None), Photo.ai_error == False,  # noqa: E712
+                or_(Photo.description.is_(None),
+                    Photo.structured_desc.is_(None)),
+                Photo.ai_error == False,  # noqa: E712
                 src_ok, not_claimed, or_(*desc_scope), *media_conds,
             ))
         # Images still lacking a face pass. A faces-only worker takes ANY such image;
