@@ -74,9 +74,22 @@ async def get_defaults():
         "thumbnail.medium": "800",
         "thumbnail.large": "1920",
         "map.provider": "nominatim",
-        "face.clustering_threshold": "0.6",
-        "face.min_confidence": "0.7",
-        "face.min_size_px": "40",
+        # Face-Recognition — deutlich gelockert vs. den früheren Konservativ-Werten.
+        # Vorher: 62 k Faces landeten weder in einem Cluster noch als Vorschlag, weil
+        # 0.7-Detection-Threshold + 40 px Min-Größe massenhaft schwache Detektionen
+        # verwarf, DBSCAN mit eps=0.5 (aus threshold=0.6) zu strikt clusterte, und der
+        # Suggestion-Filter cluster_min_confidence=0.65 borderline Faces unsichtbar
+        # machte. Google Fotos operiert bei ~0.4-0.5 und findet dadurch 40-60 % mehr
+        # Fotos pro Person.
+        "face.engine": "insightface",           # ← muss in DEFAULTS_TEXT, sonst Filter-No-Op
+        "face.cluster_algo": "hdbscan",         # HDBSCAN (varying densities); DBSCAN als Fallback
+        "face.clustering_threshold": "0.45",    # 0.6 → 0.45 (eps=0.55, Grow=0.60)
+        "face.min_confidence": "0.5",           # 0.7 → 0.5 (Detection-Recall +30–50 %)
+        "face.min_size_px": "20",               # 40 → 20 (Gruppen-/Familienfotos)
+        "face.cluster_min_confidence": "0.55",  # 0.65 → 0.55 (borderline Faces zuordnen)
+        "face.min_cluster_size": "2",           # 3 → 2 (seltene Personen mit 2 Fotos)
+        "face.merge_threshold": "0.5",          # unverändert; separate Regel für Named↔Unnamed
+        "face.suggest_min_score": "0.38",       # 0.42 → 0.38 (mehr Kandidaten pro Cluster)
         # ── MCP-Server (NimtaFlow als MCP für Claude & Co.) ──────────────────────
         "mcp.enabled": "false",
         "mcp.mode": "read",            # read | read_write

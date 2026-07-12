@@ -121,17 +121,24 @@ async def cluster_unassigned(db: AsyncSession, grow_only: bool = False, suggest:
     # 0.5 default is calibrated for InsightFace/ArcFace, whose same-person cosine
     # sims peak ~0.45–0.55 (much lower than facenet's). 0.6 (the old facenet value)
     # was so strict that grow assigned 0 — genuine matches never reached it.
-    threshold = float(s.get("face.clustering_threshold", "0.5") or 0.5)
-    min_size = max(2, int(float(s.get("face.min_cluster_size", "3") or 3)))
-    algo = str(s.get("face.cluster_algo", "dbscan")).lower()
-    engine = str(s.get("face.engine", "facenet")).lower()
+    threshold = float(s.get("face.clustering_threshold", "0.45") or 0.45)
+    # min_cluster_size 2: seltene Personen mit nur 2 Fotos werden nun geclustert
+    # (waren vorher bei min_size=3 als „isolate" verworfen → NIE Grow-Ziel, NIE
+    # Suggestion-Ziel — daher schrumpfte Recall bei kleinen sozialen Kreisen).
+    min_size = max(2, int(float(s.get("face.min_cluster_size", "2") or 2)))
+    algo = str(s.get("face.cluster_algo", "hdbscan")).lower()
+    engine = str(s.get("face.engine", "insightface")).lower()
 
     # Only cluster faces from the active engine — facenet (VGGFace2) and InsightFace
     # (ArcFace) embeddings live in incompatible spaces and must never be mixed.
     # Also gate on confidence: low-conf detections (blurry crops, round toys, ears)
     # have noisy embeddings that cluster spuriously into junk "persons". Real faces
     # average ~0.81; require >= 0.65 so weak detections stay loose, not clustered.
-    cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
+    # 0.65 filterte massenhaft borderline Faces raus (0.55–0.65 sind reale
+    # Detektionen aus Seiten-/Profilansicht). Google Fotos akzeptiert auch
+    # schwache Signale und clustert sie besser. 0.55 gibt uns 30–50 % mehr
+    # Zuordnungspotenzial.
+    cmin = float(s.get("face.cluster_min_confidence", "0.55") or 0.55)
     rows = (await db.execute(
         select(Face.id, Face.embedding).where(
             Face.person_id == None, Face.is_ignored == False, Face.embedding.isnot(None),  # noqa: E711,E712

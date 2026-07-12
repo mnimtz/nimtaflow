@@ -1077,7 +1077,14 @@ def verify_unnamed_faces_task(self, limit: int = 20000, include_named: bool = Tr
             if not os.path.exists(cp):
                 continue  # no cached crop yet → warm task will make it, next run verifies
             try:
-                found = fdi.detect_faces(Image.open(cp), min_conf=0.35)
+                # Named Faces (bereits einer Person zugewiesen) sind der User-Wille:
+                # der Re-Verify-Filter darf NICHT eine einzige knappe Fehl-Detektion
+                # (0.25 statt 0.35) reichen lassen, um Marcus Nimtz aus einem
+                # Profilbild rauszuwerfen. Für Named-Faces: niedrigere Schwelle
+                # (0.25), damit reale Faces mit knappem Score erhalten bleiben.
+                # Für Unnamed-Faces: 0.35 wie bisher, um Cluster-Müll zu filtern.
+                _min = 0.25 if person_id is not None else 0.35
+                found = fdi.detect_faces(Image.open(cp), min_conf=_min)
             except Exception:
                 continue
             checked += 1
@@ -1143,7 +1150,7 @@ def detect_faces_local_task(self, photo_id: int):
                 if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
                     continue
                 ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
-                if ar < 0.45 or ar > 1.8:   # same non-face gate as the remote path
+                if ar < 0.35 or ar > 2.2:   # same non-face gate as the remote path
                     continue
                 db.add(Face(photo_id=photo_id, bbox_x=f.bbox_x, bbox_y=f.bbox_y,
                             bbox_w=f.bbox_w, bbox_h=f.bbox_h, confidence=f.confidence,
@@ -1267,7 +1274,7 @@ def detect_video_faces_task(self, photo_id: int):
                 if min_px > 0 and (f.bbox_h * H < min_px or f.bbox_w * W < min_px):
                     continue
                 ar = (f.bbox_w / f.bbox_h) if f.bbox_h else 0.0
-                if ar < 0.45 or ar > 1.8:
+                if ar < 0.35 or ar > 2.2:
                     continue
                 emb = np.asarray(f.embedding, dtype="float32")
                 matched = False
@@ -1735,22 +1742,26 @@ def suggest_faces_task(self, low: Optional[float] = None, margin: Optional[float
         async for db in get_db():
             s = await load_settings(db)
             engine = str(s.get("face.engine", "insightface")).lower()
-            floor = low if low is not None else float(s.get("face.suggest_min_score", "0.42") or 0.42)
+            floor = low if low is not None else float(s.get("face.suggest_min_score", "0.38") or 0.38)
             mrg = margin if margin is not None else float(s.get("face.suggest_margin", "0.06") or 0.06)
             K = int(topk if topk is not None else int(s.get("face.suggest_topk", "3") or 3))
             min_ex = int(min_exemplars if min_exemplars is not None
                          else int(s.get("face.suggest_min_exemplars", "3") or 3))
-            cmin = float(s.get("face.cluster_min_confidence", "0.65") or 0.65)
-            # Reset previous suggestions (re-run prunes old, too-loose matches).
-            await db.execute(_upd(Face).where(Face.suggested_person_id.isnot(None))
-                             .values(suggested_person_id=None, suggested_score=None))
-            await db.commit()
-            named_ids = [pid for (pid,) in (await db.execute(
-                select(Person.id).where(Person.name != ""))).all()]
-            if not named_ids:
+            cmin = float(s.get("face.cluster_min_confidence", "0.55") or 0.55)
+            # Inkrementell statt „reset alles": nur Suggestions clearen die auf
+            # Personen zeigen, die NICHT MEHR in der Kandidatenliste sind (gelöscht
+            # oder unter min_ex gefallen). So verliert der User keine Suggestions
+            # wenn der Task abbricht (OOM/Timeout). Der Rest wird unten pro Face
+            # neu berechnet und via UPDATE überschrieben.
+            # Auch UNNAMED Cluster mit ≥ min_ex sind Vorschlagsziele — sonst
+            # bleiben die 2.076 unbenannten Cluster (viele = derselbe Mensch)
+            # unsichtbar. Der User kann sie später umbenennen.
+            named_and_clustered = [pid for (pid,) in (await db.execute(
+                select(Person.id).where(Person.is_hidden == False))).all()]  # noqa: E712
+            if not named_and_clustered:
                 return {"suggested": 0}
             ex = (await db.execute(select(Face.person_id, Face.embedding).where(
-                Face.person_id.in_(named_ids), Face.embedding.isnot(None),
+                Face.person_id.in_(named_and_clustered), Face.embedding.isnot(None),
                 Face.detector == engine))).all()
             un = (await db.execute(select(Face.id, Face.embedding).where(
                 Face.person_id == None, Face.is_ignored == False,  # noqa: E711,E712
@@ -2629,7 +2640,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         from app.services.face_detect import detect_faces_engine, engine_available
                         from app.models.face import Face
                         from sqlalchemy import func as _func
-                        face_engine = str(ai_settings.get("face.engine", "facenet")).lower()
+                        face_engine = str(ai_settings.get("face.engine", "insightface")).lower()
                         # Skip if this photo already has faces — re-detecting on every
                         # reprocess would wipe Face IDs and break person clusters.
                         existing = await db.scalar(select(_func.count()).where(Face.photo_id == photo_id))

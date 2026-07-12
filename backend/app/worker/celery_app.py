@@ -118,6 +118,15 @@ celery_app.conf.beat_schedule = {
         "task": "auto_cluster_faces",
         "schedule": 600.0,
     },
+    # Face-Vorschläge — vorher gab es KEINEN Beat-Schedule, deshalb waren bei einem
+    # User 62 k Faces (47 %) weder assigned noch mit Suggestion versehen. Läuft
+    # täglich 04:15 UTC (nach dem 03:50 UTC Cluster-Full und vor dem 07:00 UTC
+    # Wochen-Highlight), damit alle neu detektierten und alle nicht-zugeordneten
+    # Faces regelmäßig Kandidaten pro Person bekommen.
+    "suggest-faces-daily": {
+        "task": "suggest_faces",
+        "schedule": crontab(hour=4, minute=15),
+    },
     # "Highlight der Woche" — täglich 07:00 UTC prüfen, ob für die AKTUELLE ISO-Woche
     # noch keins existiert. Sonst würde ein Server-Ausfall am Montag 07:00 die ganze
     # Woche ohne Highlight lassen (siehe KW 26/27 in Prod: mussten manuell nachgeholt
