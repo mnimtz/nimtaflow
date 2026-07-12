@@ -65,15 +65,48 @@ def embed_image(image: Image.Image) -> Optional[List[float]]:
         return None
 
 
+_LOAD_ATTEMPTED = False
+_LOAD_FAILED = False
+
+
 def embed_text(text: str) -> Optional[List[float]]:
-    """768-dim L2-normalised text vector (multilingual), or None."""
+    """v1.543: Auf CPU-only-Containern (backend im LXC) hängt der Modell-Load
+    oft und blockt so JEDEN Chat-Call auf 90 s Timeout. Wir versuchen den
+    Load EINMAL beim ersten Aufruf mit hartem Timeout. Failed er, schalten
+    wir für den Prozess dauerhaft auf None-Rückgabe — Text-Vector-Search fällt
+    weg, Suche degradiert auf Keyword+Structural, aber der Chat antwortet
+    innerhalb Sekunden."""
+    global _LOAD_ATTEMPTED, _LOAD_FAILED
     text = (text or "").strip()
     if not text:
         return None
+    if _LOAD_FAILED:
+        return None
+    if not _LOAD_ATTEMPTED:
+        _LOAD_ATTEMPTED = True
+        # Model-Load mit 12 s Deckel — fällt es länger, bleibt es aus dem
+        # Chat-Pfad raus, statt jeden Turn zu blockieren.
+        import threading, queue as _q
+        q: _q.Queue = _q.Queue()
+        def _try_load():
+            try:
+                _get(); q.put(True)
+            except Exception as e:
+                q.put(e)
+        th = threading.Thread(target=_try_load, daemon=True)
+        th.start()
+        try:
+            r = q.get(timeout=12.0)
+            if r is not True:
+                _LOAD_FAILED = True
+                return None
+        except _q.Empty:
+            _LOAD_FAILED = True
+            return None
     try:
         import torch
         m = _get()
-        with torch.inference_mode():  # no autograd graph → no per-call memory leak (see embed_image)
+        with torch.inference_mode():
             vec = m.encode_text([text], truncate_dim=_DIM)[0]
         return _norm(vec)
     except Exception:

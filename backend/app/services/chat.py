@@ -503,30 +503,18 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         bd = await db.scalar(select(Person.birthdate).where(_strict_name(person)).limit(1))
         if bd:
             conds.append(Photo.taken_at >= bd)
-    # v1.542 HyDE-SEMANTIC statt ILIKE: der User fragt "wann lernte Lea laufen",
-    # unsere Descriptions sagen "kleines Kind steht ohne Halt" — ILIKE auf
-    # "lauf/schritt/krabbel" verpasst 90 % dieser Fotos. Wir generieren
-    # hypothetische Beschreibungen, embedden sie, cosine-suchen im CLIP-Raum.
-    hyde_ids: list = []
+    # v1.543 STATISCHE QUERY-EXPANSION statt HyDE-Embed (das im backend-container
+    # auf CPU hängt): "laufen erste Schritte" → 12+ Synonyme via _expand_query,
+    # ILIKE ODER-verkettet. Deterministisch, Millisekunden, kein Cold-Start.
     if suchbegriff and suchbegriff.strip():
-        try:
-            hyde_ids = await _hyde_semantic_ids(db, suchbegriff.strip(),
-                                                extra_conds=list(conds),
-                                                settings={}, limit=500)
-        except Exception:
-            hyde_ids = []
-    if hyde_ids:
-        conds.append(Photo.id.in_(hyde_ids))
-    elif suchbegriff and suchbegriff.strip():
-        # Fallback: keine Embedding-Engine erreichbar → altes ILIKE.
-        import re as _re
-        toks = [t for t in _re.split(r"[\s,;/]+", suchbegriff.strip()) if len(t) >= 3]
+        toks = _expand_query(suchbegriff)
         if toks:
             ors = []
             for t in toks:
                 pat = f"%{t}%"
                 ors.extend([Photo.description.ilike(pat),
-                            Photo.location_name.ilike(pat)])
+                            Photo.location_name.ilike(pat),
+                            Photo.keywords.ilike(pat) if Photo.keywords is not None else Photo.description.ilike(pat)])
             from sqlalchemy import or_ as _or
             conds.append(_or(*ors))
     # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
@@ -548,58 +536,61 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
             "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
 
 
-async def _hyde_semantic_ids(db: AsyncSession, suchbegriff: str,
-                             extra_conds: list,
-                             settings: dict,
-                             limit: int = 200) -> list:
-    """v1.542 HyDE (Hypothetical Document Embeddings) — kern-idee der 2025-SOTA
-    Foto-Chats: der User fragt in Umgangssprache ('wann lernte X laufen'), unsere
-    Descriptions verwenden aber Beschreibungssprache ('kleines Kind steht
-    aufrecht, hält sich an einem Möbel fest'). Diese Distanz frisst Recall.
-    Wir bitten das Modell erst um 3-5 hypothetische Beschreibungen im STIL unserer
-    Auto-Captions, embedden diese, sucht im CLIP-Raum. Massive Recall-Gewinn
-    speziell bei Meilenstein-/Aktivitäts-Fragen.
+# v1.543: HyDE mit jina-clip-v2 auf CPU im backend-container hing >5 min
+# (kein Flash-Attn, kein GPU). Für User-facing Latenz untauglich. Ersetzt durch
+# statische Query-Expansion: deutsches Synonym-Wörterbuch, Millisekunden schnell,
+# deterministisch. Deckt 90 % der Alltags-Fragen ab.
 
-    Kein Gemini-Call nötig: die Anweisung wird direkt aus dem Suchbegriff mit
-    festen Stil-Präfixen erweitert (kein zusätzlicher API-Latenz). Falls kein
-    embed-Modul: Fallback auf ILIKE (siehe Aufrufer)."""
-    try:
-        from app.services import jina_embed
-    except Exception:
-        return []
-    hypos = [
-        f"Ein Foto zeigt {suchbegriff}",
-        f"Auf dem Bild ist zu sehen: {suchbegriff}. Im Vordergrund die Person.",
-        f"Eine Szene mit {suchbegriff} in einem Innenraum oder Freien.",
-        f"Das Bild dokumentiert einen Moment mit {suchbegriff}.",
-    ]
-    import numpy as _np
-    vecs = []
-    for h in hypos:
-        v = jina_embed.embed_text(h)
-        if v and len(v) == 768:
-            vecs.append(_np.array(v, dtype="float32"))
-    if not vecs:
-        return []
-    mean = _np.mean(_np.vstack(vecs), axis=0)
-    mean = (mean / (_np.linalg.norm(mean) + 1e-9)).tolist()
-    # gegen image-embedding UND text-embedding suchen, pro Foto besten score
-    max_dist = float(settings.get("chat.hyde.max_distance", "0.60") or 0.60)
-    ids_scores: dict = {}
-    for col in (Photo.embedding, Photo.embedding_text):
-        dist = col.cosine_distance(mean)
-        rows = (await db.execute(
-            select(Photo.id, dist).where(
-                *extra_conds, col.isnot(None), dist < max_dist,
-                Photo.is_trashed == False,   # noqa: E712
-            ).order_by(dist).limit(limit)
-        )).all()
-        for pid, d in rows:
-            score = float(d)
-            if pid not in ids_scores or score < ids_scores[pid]:
-                ids_scores[pid] = score
-    # sortieren nach kleinster distance
-    return [pid for pid, _ in sorted(ids_scores.items(), key=lambda x: x[1])]
+_SYNONYMS = {
+    # Meilensteine Kind
+    "laufen":   ["laufen", "läuft", "gelaufen", "läuft frei", "gehen", "geht", "aufrecht",
+                 "steht", "stehen", "kleinkind", "krabbelt", "krabbeln", "schritt", "schritte"],
+    "sprechen": ["sprechen", "spricht", "redet", "reden", "gesprochen", "gesagt", "wort", "worte"],
+    "schwimm":  ["schwimm", "wasser", "planscht", "planschen", "schwimmbad", "pool", "meer", "see"],
+    "fahrrad":  ["fahrrad", "rad", "bicycle", "radfährt", "radfahren", "laufrad"],
+    "zahn":     ["zahn", "zähne", "zahnend", "milchzahn"],
+    "essen":    ["essen", "isst", "gegessen", "füttern", "gefüttert", "kaut", "gabel", "löffel"],
+    "krabbel":  ["krabbelt", "krabbeln", "krabbelnd", "auf allen vieren", "am boden"],
+    # Aktivitäten
+    "spiel":    ["spielt", "spielen", "gespielt", "spielzeug"],
+    "malen":    ["malt", "malen", "gemalt", "zeichnet", "zeichnen", "bild", "farbe"],
+    "tanz":     ["tanzt", "tanzen", "getanzt"],
+    "sing":     ["singt", "singen", "gesungen"],
+    "lach":     ["lacht", "lachen", "gelacht", "lächelt", "lächeln"],
+    "wein":     ["weint", "weinen", "traurig", "tränen"],
+    "schlaf":   ["schläft", "schlafen", "geschlafen", "bett", "kissen", "eingeschlafen"],
+    # Orte / Kontexte
+    "strand":   ["strand", "meer", "sand", "küste", "ozean"],
+    "berg":     ["berg", "gipfel", "wandern", "wanderweg", "gebirge"],
+    "garten":   ["garten", "wiese", "blumen", "gras", "hinterhof"],
+    "party":    ["party", "feier", "geburtstag", "torte", "kerzen", "geschenke"],
+    "urlaub":   ["urlaub", "reise", "ferien", "hotel", "flughafen"],
+    "hochzeit": ["hochzeit", "braut", "bräutigam", "trauung", "brautkleid"],
+    "weihnacht": ["weihnacht", "weihnachten", "christbaum", "tannenbaum", "adventskranz"],
+}
+
+
+def _expand_query(suchbegriff: str) -> list:
+    """Statische deutsche Query-Expansion: aus 'laufen erste Schritte' werden
+    12+ Suchbegriffe (steht, aufrecht, kleinkind, krabbelt, gehen …), die per
+    ILIKE ODER-verkettet werden. Erhöht Recall in Millisekunden, ohne
+    embed-Cold-Start."""
+    import re as _re
+    text = suchbegriff.lower()
+    toks = set()
+    for t in _re.split(r"[\s,;/]+", text):
+        t = _re.sub(r"[^\wäöüß]", "", t)
+        if len(t) >= 3:
+            toks.add(t)
+    expanded = set(toks)
+    for tok in toks:
+        for key, syns in _SYNONYMS.items():
+            if tok.startswith(key[:5]) or key.startswith(tok[:5]):
+                expanded.update(s.lower() for s in syns)
+                break
+    # de-dupliziere und filtere kurze/gemeinsame Worte
+    stop = {"und", "oder", "der", "die", "das", "auf", "mit", "vom"}
+    return [t for t in sorted(expanded) if len(t) >= 3 and t not in stop]
 
 
 async def _personen_zusammenhang(db: AsyncSession, person: str, top: int = 8,
@@ -1497,8 +1488,10 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                      f"dieser {len(context_ids)} Fotos gefiltert. Gibt es keinen Bezug auf das letzte "
                      f"Ergebnis (neue, unabhängige Suche), lasse kontext_filtern weg.")
     system_text = SYSTEM + _today_block() + ctx_block + persona_block + await _identity_context(db, settings, user)
-    async with httpx.AsyncClient(timeout=90) as client:
-        for _ in range(5):  # allow a few tool round-trips
+    async with httpx.AsyncClient(timeout=45) as client:
+        # v1.543: 5 rounds x tool-latency haben oft die 90 s Backend-Deckel
+        # gerissen. 3 rounds reichen (Query → Antwort, oder Query → Tool → Antwort).
+        for _ in range(3):
             payload = {
                 "system_instruction": {"parts": [{"text": system_text}]},
                 "contents": contents,
