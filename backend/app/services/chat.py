@@ -123,6 +123,9 @@ SYSTEM = (
     "einem ORT/einer Reise erst album_erstellen (mit ort/jahr), dann highlight_erstellen "
     "thema='trip' mit dem gelieferten album_id. Sag danach, dass das Rendern ein paar Minuten dauert. "
     "NEUE analytische WERKZEUGE — nutze sie wenn die Frage sie natürlich passt: "
+    "'wer sind meine häufigsten Personen', 'wer ist auf den meisten Fotos', "
+    "'wer war mit mir in Kroatien' → top_personen (mit ort='Kroatien'). "
+    "'wen habe ich 2023 am meisten fotografiert' → top_personen(jahr_von=2023, jahr_bis=2023). "
     "'mit wem ist X am häufigsten' → personen_zusammenhang(person=X). "
     "'wo war X am meisten', 'welche Länder mit X' → orte_von_person(person=X). "
     "'wann sehe ich X meistens', 'sind wir eher Wochenende unterwegs' → alltag_muster(person=X). "
@@ -707,6 +710,43 @@ def _expand_query(suchbegriff: str) -> list:
     # de-dupliziere und filtere kurze/gemeinsame Worte
     stop = {"und", "oder", "der", "die", "das", "auf", "mit", "vom"}
     return [t for t in sorted(expanded) if len(t) >= 3 and t not in stop]
+
+
+async def _top_personen(db: AsyncSession, top: int = 15,
+                        ort: Optional[str] = None,
+                        jahr_von: Optional[int] = None,
+                        jahr_bis: Optional[int] = None,
+                        acl: Optional[list] = None) -> dict:
+    """v1.547: Top-Personen der gesamten Sammlung (oder gefiltert nach Ort/Jahr).
+    Antwortet Fragen wie 'wer sind meine häufigsten Personen', 'welche Familie
+    sehe ich am meisten', 'wer war mit mir in Kroatien' (ort='Kroatien'),
+    'wen habe ich 2023 am meisten fotografiert'."""
+    from sqlalchemy import func as _f
+    photo_filters = [Photo.is_trashed == False] + list(acl or [])   # noqa: E712
+    if ort:
+        # Ort-Präfix-Cleanup (Großraum, Umgebung, bei, …)
+        import re as _re
+        o = ort.strip()
+        m = _re.match(r"^(?:großraum|greater|umgebung|nähe|naehe|bei|in der nähe von|in der naehe von)\s+(?:von\s+)?(.+)$", o, _re.IGNORECASE)
+        if m: o = m.group(1).strip()
+        o = _re.sub(r"\s+und\s+umgebung\s*$", "", o, flags=_re.IGNORECASE).strip()
+        pat = f"%{o}%"
+        from sqlalchemy import or_ as _or
+        photo_filters.append(_or(Photo.city.ilike(pat), Photo.country.ilike(pat),
+                                 Photo.location_name.ilike(pat)))
+    if jahr_von:
+        photo_filters.append(Photo.taken_at >= date(int(jahr_von), 1, 1))
+    if jahr_bis:
+        photo_filters.append(Photo.taken_at < date(int(jahr_bis) + 1, 1, 1))
+    photo_sub = select(Photo.id).where(*photo_filters)
+    q = (select(Person.name, _f.count(_f.distinct(Face.photo_id)).label("n"))
+         .join(Face, Face.person_id == Person.id)
+         .where(Face.photo_id.in_(photo_sub), Person.name.isnot(None), Person.name != "")
+         .group_by(Person.name).order_by(_f.count(_f.distinct(Face.photo_id)).desc())
+         .limit(int(top)))
+    rows = (await db.execute(q)).all()
+    return {"ort": ort, "jahr_von": jahr_von, "jahr_bis": jahr_bis,
+            "personen": [{"name": n, "fotos": int(c)} for n, c in rows]}
 
 
 async def _vlm_rerank(db: AsyncSession, photo_ids: list, frage: str,
@@ -1477,6 +1517,19 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             }, "required": ["suchbegriff"]},
         },
         {
+            "name": "top_personen",
+            "description": "Die häufigsten Personen der GESAMTEN Sammlung — oder gefiltert nach Ort und/oder Jahr. "
+                           "Für 'wer sind meine häufigsten Personen', 'wer ist auf den meisten Fotos', 'wer war mit mir "
+                           "in Kroatien' (ort='Kroatien'), 'wen habe ich 2023 am meisten fotografiert'. "
+                           "KEINE Person nötig — dieses Werkzeug liefert die Rangliste global.",
+            "parameters": {"type": "object", "properties": {
+                "top": {"type": "integer", "description": "Wie viele Top-Personen, Default 15"},
+                "ort": {"type": "string", "description": "Optional: nur Fotos an diesem Ort (Stadt/Region/Land)"},
+                "jahr_von": {"type": "integer", "description": "Optional: frühestes Jahr"},
+                "jahr_bis": {"type": "integer", "description": "Optional: spätestes Jahr"},
+            }},
+        },
+        {
             "name": "personen_zusammenhang",
             "description": "Wer war am häufigsten MIT einer Person zusammen auf Fotos? Liefert "
                            "Top-N-Kontakte mit Anzahl gemeinsamer Fotos. Für Fragen wie 'mit wem "
@@ -1734,6 +1787,15 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "geburtstag_datum":
                         resp = await _birthday_date(db, args.get("person"), args.get("alter"))
+                        contents.append({"role": "user", "parts": [{"functionResponse": {
+                            "name": c["name"], "response": resp}}]})
+                    elif c.get("name") == "top_personen":
+                        resp = await _top_personen(db,
+                                                   int(args.get("top") or 15),
+                                                   ort=args.get("ort"),
+                                                   jahr_von=args.get("jahr_von"),
+                                                   jahr_bis=args.get("jahr_bis"),
+                                                   acl=acl)
                         contents.append({"role": "user", "parts": [{"functionResponse": {
                             "name": c["name"], "response": resp}}]})
                     elif c.get("name") == "personen_zusammenhang":
