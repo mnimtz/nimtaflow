@@ -1453,6 +1453,16 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                 contents.append({"role": "model", "parts": parts})
                 for c in calls:
                     args = c.get("args") or {}
+                    # v1.540: Debug-Log jedes Tool-Calls im Klartext, damit wir sehen
+                    # was der Agent tut und woran ein Miss liegt.
+                    try:
+                        from app.services.feature_log import log as _flog
+                        _snip = {k: (str(v)[:80] if not isinstance(v, (int, float, bool)) else v)
+                                 for k, v in list(args.items())[:10]}
+                        _flog("chat", "INFO",
+                              f"Tool[{c.get('name')}] args={_snip}")
+                    except Exception:
+                        pass
                     if c.get("name") == "zaehle_fotos":
                         if args.get("kontext_filtern") and context_ids:
                             # Zähle direkt innerhalb des Kontexts (filtere nach Medientyp etc.)
@@ -1674,6 +1684,12 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             # result_ids = VOLLES Such-Ergebnis (alle Treffer), für den Ambient-Assistenten,
             # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
             intents = await _build_intents(db, last_search_args, nav_target)
+            try:
+                from app.services.feature_log import log as _flog2
+                _flog2("chat", "INFO",
+                       f"Antwort ({len(uniq)} Fotos): {(text or '')[:250]}")
+            except Exception:
+                pass
             return {"answer": text or "(keine Antwort)", "photo_ids": uniq,
                     "result_ids": list(dict.fromkeys(seen_ids)),
                     "suggestions": suggestions, "navigate": nav_target,
@@ -1710,6 +1726,12 @@ async def chat(message: str, history: list, settings: dict, db: AsyncSession,
                provider: Optional[str] = None, user=None,
                context_ids: Optional[List[int]] = None) -> dict:
     prov = (provider or settings.get("chat.provider") or "gemini").lower()
+    # v1.540: Frage in Klartext loggen — damit wir konkret sehen was ankommt.
+    try:
+        from app.services.feature_log import log as _flog0
+        _flog0("chat", "INFO", f"Frage: {(message or '')[:300]}")
+    except Exception:
+        pass
     if prov == "local":
         return await _local_rag(message, settings, db, user=user)
     # Gesamt-Deadline für einen Chat-Turn — sonst kann der Agent-Loop (Retry × Tool-
