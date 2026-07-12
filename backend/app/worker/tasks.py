@@ -465,6 +465,45 @@ def cluster_faces_full_task(self):
     return _run(_run_full())
 
 
+@celery_app.task(bind=True, name="reingest_structured_descriptions")
+def reingest_structured_descriptions_task(self, limit: int = 500,
+                                          only_missing: bool = True):
+    """v1.549: Alle Fotos ohne structured_desc zurück in die AI-Queue werfen.
+    Sortiert nach neuestem Datum (aktuelle Fotos sind für den Chat wichtiger).
+    Die remote-Worker (M3/M5) liefern jetzt zusätzlich JSON — der neue Endpoint
+    speichert es in photos.structured_desc.
+
+    Setzt status=pending damit der Sweep den Photo wieder claimed. ai_error
+    wird gelöscht damit auch bislang failed-out Photos nochmal probiert werden.
+    only_missing=True → nur Photos ohne structured_desc anfassen (idempotent)."""
+    async def _run_ri():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo, PhotoStatus
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select as _s, update as _u
+        init_db()
+        async for db in get_db():
+            q = _s(Photo.id).where(
+                Photo.is_trashed == False,   # noqa: E712
+                Photo.is_missing == False,   # noqa: E712
+                Photo.is_video == False,     # noqa: E712 (Videos separat)
+            )
+            if only_missing:
+                q = q.where(Photo.structured_desc.is_(None))
+            q = q.order_by(Photo.taken_at.desc().nullslast()).limit(int(limit))
+            ids = (await db.execute(q)).scalars().all()
+            if ids:
+                await db.execute(_u(Photo).where(Photo.id.in_(ids)).values(
+                    status=PhotoStatus.pending,
+                    ai_error=False,
+                    ai_claimed_at=None,
+                ))
+                await db.commit()
+            flog("ai", "INFO", f"Reingest structured: {len(ids)} Fotos zur Neubeschreibung markiert")
+            return {"marked": len(ids)}
+    return _run(_run_ri())
+
+
 @celery_app.task(bind=True, name="retry_failed_ai")
 def retry_failed_ai_task(self):
     """Retry queue: re-enqueue photos whose AI failed (e.g. a Gemini outage) so a

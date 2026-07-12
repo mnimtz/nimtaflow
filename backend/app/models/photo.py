@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import String, DateTime, Integer, BigInteger, Float, Boolean, Text, Enum, ForeignKey, Index, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -89,6 +90,11 @@ class Photo(Base):
     description_model: Mapped[Optional[str]] = mapped_column(String(128))
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))        # jina-clip-v2 IMAGE vector (visual search)
     embedding_text: Mapped[Optional[List[float]]] = mapped_column(Vector(768))   # jina-clip-v2 vector of the description (semantic)
+    # v1.549: Strukturierte Beschreibung (JSONB) statt/zusätzlich zum Freitext.
+    # Schema: {subject, action, place, participants, activity, mood, milestone,
+    # notable_details, indoor_outdoor, event_type}. Der Chat kann darauf präzise
+    # filtern statt Fuzzy-ILIKE über 800-Zeichen-Freitext.
+    structured_desc: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # ── Processing ────────────────────────────────────────────────────────────
     status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)

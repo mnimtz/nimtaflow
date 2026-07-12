@@ -535,17 +535,39 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         conds.append(Photo.taken_at >= lo_dt)
         conds.append(Photo.taken_at <= hi_dt)
         milestone_window = (lo_dt, hi_dt, lo_mo, hi_mo)
-    # v1.543 statische Query-Expansion (deutsche Synonym-Wörterbuch).
+    # v1.549: STRUKTURIERTES Feld bevorzugt — wenn structured_desc->'milestone'
+    # oder 'action' gesetzt ist, matcht das PRÄZISE (kein ILIKE-Rauschen). Als
+    # Fallback + Zusatz-Recall bleibt die alte Fuzzy-ILIKE-Expansion aktiv.
     if suchbegriff and suchbegriff.strip():
+        from sqlalchemy import or_ as _or, cast as _cast, String as _S
+        ors = []
+        # 1) strukturiertes Feld: milestone / action / activity / event_type
+        if milestone_key:
+            # z.B. milestone_key='laufen' → structured_desc->>'milestone' ILIKE '%schritt%|lauf%|krabbel%'
+            _mk_patterns = {
+                "laufen":   ["erste_schritt", "erste schritt", "lauf", "gehen"],
+                "sprechen": ["sprech", "erste_wort", "erste wort", "reden"],
+                "sitzen":   ["sitz"],
+                "krabbel":  ["krabbel"],
+                "stehen":   ["stehen"],
+                "zahn":     ["zahn"],
+                "essen":    ["essen"],
+                "schwimm":  ["schwimm"],
+                "fahrrad":  ["fahrrad", "rad"],
+            }
+            pats = _mk_patterns.get(milestone_key, [milestone_key])
+            for p in pats:
+                ors.append(_cast(Photo.structured_desc["milestone"], _S).ilike(f"%{p}%"))
+                ors.append(_cast(Photo.structured_desc["action"], _S).ilike(f"%{p}%"))
+        # 2) Freitext-ILIKE-Expansion als zusätzlicher Recall
         toks = _expand_query(suchbegriff)
-        if toks:
-            ors = []
-            for t in toks:
-                pat = f"%{t}%"
-                ors.extend([Photo.description.ilike(pat),
-                            Photo.location_name.ilike(pat),
-                            Photo.keywords.ilike(pat) if Photo.keywords is not None else Photo.description.ilike(pat)])
-            from sqlalchemy import or_ as _or
+        for t in toks:
+            pat = f"%{t}%"
+            ors.extend([Photo.description.ilike(pat),
+                        Photo.location_name.ilike(pat)])
+            if Photo.keywords is not None:
+                ors.append(Photo.keywords.ilike(pat))
+        if ors:
             conds.append(_or(*ors))
     # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
     # Query 7k Rows in Python-Liste (Timeout-Killer bei "wann lernte Lea laufen").

@@ -60,6 +60,7 @@ celery_app.conf.update(
         "verify_unnamed_faces": {"queue": "cpu"},  # nightly FP filter (re-detect crops)
         "birthdate_sanity_faces": {"queue": "cpu"},  # v1.541: FP-cleanup vor Geburtsdatum
         "reembed_imported":   {"queue": "cpu"},
+        "reingest_structured_descriptions": {"queue": "cpu"},  # v1.549
         "retry_failed_ai":    {"queue": "cpu"},
         "sweep_pending_video_ai": {"queue": "cpu"},  # self-heal videos stuck without description
         "sweep_websafe_videos":   {"queue": "cpu"},  # v1.538: promote H.264 8-bit videos ohne Transcode

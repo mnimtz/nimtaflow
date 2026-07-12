@@ -158,6 +158,10 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ",
+    # v1.549: strukturierte Beschreibung (JSONB) für präzise Chat-Filter
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS structured_desc JSONB",
+    # GIN-Index auf JSONB — schnelles jsonb_path_ops für Existenz-/Equals-Queries
+    "CREATE INDEX IF NOT EXISTS ix_photos_structured_desc_gin ON photos USING gin (structured_desc jsonb_path_ops)",
 ]
 
 

@@ -569,11 +569,13 @@ class ResultIn(BaseModel):
     provider: str = "remote"
     error: Optional[str] = None
     worker: Optional[str] = None
-    duration: Optional[float] = None   # seconds the worker spent on this photo
-    faces_done: bool = True            # did a face pass actually run? describe-only
-                                       # workers (e.g. Ollama on a Mac, no InsightFace)
-                                       # set this False so the photo stays claimable
-                                       # for a faces worker. Default True = legacy agents.
+    duration: Optional[float] = None
+    faces_done: bool = True
+    # v1.549: strukturierte Beschreibung im JSONB-Feld. Der Worker kann ein
+    # Objekt liefern mit subject/action/place/participants/activity/mood/
+    # milestone/notable_details/indoor_outdoor/event_type — der Chat filtert
+    # dann darauf präzise statt Fuzzy-ILIKE.
+    structured: Optional[dict] = None
 
 
 async def _record_worker_stat(worker: str, duration: Optional[float]):
@@ -661,6 +663,21 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
         flog("ai", "INFO", f"Beschreibung ({body.provider}): {photo.filename} — {body.description}")
         if photo.is_video:
             flog("video", "INFO", f"KI-Beschreibung (remote, {dur}): {photo.filename} — {body.description[:120]}")
+    # v1.549: strukturierte Beschreibung übernehmen (getrennt vom Freitext).
+    if body.structured and isinstance(body.structured, dict):
+        # Werte trimmen — Modelle liefern manchmal 500-Wort-Prosa in einem Slot.
+        clean = {}
+        for k, v in body.structured.items():
+            if v is None: continue
+            if isinstance(v, (list, tuple)):
+                clean[k] = [str(x)[:120] for x in v if x][:20]
+            elif isinstance(v, dict):
+                clean[k] = {kk: str(vv)[:160] for kk, vv in v.items()}[:20]
+            elif isinstance(v, (int, float, bool)):
+                clean[k] = v
+            else:
+                clean[k] = str(v)[:400]
+        photo.structured_desc = clean
 
     # tags (replace previous AI tags)
     n_tags = 0
