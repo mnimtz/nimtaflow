@@ -660,13 +660,29 @@ _MILESTONE_AGE_MONTHS = {
 }
 
 
+_MILESTONE_TRIGGERS = {
+    "laufen":   ["laufen", "läuft", "läuft frei", "gelaufen", "erste schritt",
+                 "erste laufversuch", "ersten schritt", "gehen lernen", "läuft alleine"],
+    "sprechen": ["sprechen", "spricht", "erstes wort", "erste worte", "erstes reden"],
+    "sitzen":   ["sitzen", "sitzt", "erstes sitzen", "aufrecht sitzen", "aufrechten sitz"],
+    "krabbel":  ["krabbel", "krabbelt", "auf allen vieren"],
+    "stehen":   ["stehen", "steht", "erstes stehen", "freies stehen"],
+    "zahn":     ["zahn", "zähne", "erster zahn", "milchzahn"],
+    "essen":    ["isst selbst", "füttert sich", "mit gabel", "mit löffel", "selbst essen"],
+    "schwimm":  ["schwimm", "schwimmt", "geschwommen", "erstes schwimmen"],
+    "fahrrad":  ["fahrrad", "radfährt", "radfahren", "erstes rad", "auf dem rad"],
+}
+
+
 def _milestone_key(suchbegriff: str) -> str:
-    """Erkennt den Meilenstein-Schlüssel aus einem Suchbegriff, um das
-    Alterfenster nachschlagen zu können."""
+    """Erkennt den Meilenstein-Schlüssel aus einem Suchbegriff. Prüft nicht nur
+    den Key-Namen (v1.545-Bug: 'erste Schritte' matcht nicht 'laufen'), sondern
+    ALLE Trigger-Phrasen pro Meilenstein."""
     t = suchbegriff.lower()
-    for key in _MILESTONE_AGE_MONTHS:
-        if key in t:
-            return key
+    for key, triggers in _MILESTONE_TRIGGERS.items():
+        for trig in triggers:
+            if trig in t:
+                return key
     return ""
 
 
@@ -1683,7 +1699,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         from app.services.feature_log import log as _flog
                         _snip = {k: (str(v)[:80] if not isinstance(v, (int, float, bool)) else v)
                                  for k, v in list(args.items())[:10]}
-                        _flog("chat", "INFO",
+                        _flog("ai", "INFO",
                               f"Tool[{c.get('name')}] args={_snip}")
                     except Exception:
                         pass
@@ -1911,7 +1927,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             intents = await _build_intents(db, last_search_args, nav_target)
             try:
                 from app.services.feature_log import log as _flog2
-                _flog2("chat", "INFO",
+                _flog2("ai", "INFO",
                        f"Antwort ({len(uniq)} Fotos): {(text or '')[:250]}")
             except Exception:
                 pass
@@ -1954,7 +1970,7 @@ async def chat(message: str, history: list, settings: dict, db: AsyncSession,
     # v1.540: Frage in Klartext loggen — damit wir konkret sehen was ankommt.
     try:
         from app.services.feature_log import log as _flog0
-        _flog0("chat", "INFO", f"Frage: {(message or '')[:300]}")
+        _flog0("ai", "INFO", f"Chat-Frage: {(message or '')[:300]}")
     except Exception:
         pass
     if prov == "local":
