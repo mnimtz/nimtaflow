@@ -1981,9 +1981,20 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     ph = (await db.execute(select(Photo).where(Photo.id.in_(missing)))).scalars().all()
                     for rrec in await _fused_records(db, ph):
                         seen_recs.setdefault(rrec["id"], rrec)
-                uniq = [i for i in cited if i in seen_recs]
+                # v1.548: zitierte + weitere aus dem Voll-Ergebnis → Chat-Bubble
+                # zeigt jetzt ~20 Beispiele, nicht nur 3-6. Der User war sonst
+                # verwirrt: Chat sagt "416 Boston-Fotos", Bubble zeigt 6.
+                cited_set = set(cited)
+                extras = [i for i in seen_ids if i not in cited_set]
+                uniq = (cited + extras)[:24]
+                miss_extra = [i for i in uniq if i not in seen_recs]
+                if miss_extra:
+                    ph2 = (await db.execute(select(Photo).where(Photo.id.in_(miss_extra)))).scalars().all()
+                    for rrec in await _fused_records(db, ph2):
+                        seen_recs.setdefault(rrec["id"], rrec)
+                uniq = [i for i in uniq if i in seen_recs]
             else:
-                uniq = list(dict.fromkeys(seen_ids))
+                uniq = list(dict.fromkeys(seen_ids))[:24]
             # result_ids = VOLLES Such-Ergebnis (alle Treffer), für den Ambient-Assistenten,
             # der die Galerie darauf filtert. photo_ids = nur die zitierten Beispiele (Chat-Blase).
             intents = await _build_intents(db, last_search_args, nav_target)
