@@ -510,10 +510,8 @@ async def video_broken(photo_id: int, db: AsyncSession = Depends(get_db),
     photo.ai_error = False
     photo.ai_claimed_at = None
     await db.commit()
-    # Beide gewünschten Renditionen neu einreihen — sonst blockt der Client mit
-    # ?res=720 auf ewig, wenn nur 1080p enqueued wurde.
+    # v1.538: nur 1080p vorab, 720p on-demand via stream-Endpoint.
     from app.worker.tasks import transcode_video_task
-    transcode_video_task.delay(photo_id, 720)
     transcode_video_task.delay(photo_id, 1080)
     return {"ok": True, "requeued": True}
 

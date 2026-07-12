@@ -74,9 +74,16 @@ SYSTEM = (
     "Zu DATUM/EREIGNISSEN: Für konkrete Anlässe rechne den Zeitraum selbst aus und "
     "nutze datum_von/datum_bis (YYYY-MM-DD), z. B. 'Lea an Ostern 2022' → person='Lea', "
     "datum_von='2022-04-15', datum_bis='2022-04-18'. "
-    "Zu 'WANN …'-Fragen (z. B. 'wann lernte Lea laufen'): suche mit person + passendem "
-    "suchbegriff ('erste Schritte laufen lernen krabbeln'), schau dir die DATEN der "
-    "Treffer an und nenne das früheste passende Datum als Antwort (Monat/Jahr). "
+    "Zu 'WANN lernte X …' / 'wann konnte X das erste Mal …' / 'ab wann …' (Meilensteine "
+    "wie laufen, sprechen, schwimmen, Fahrrad fahren): nutze IMMER zeitliche_eckdaten "
+    "mit person=X UND suchbegriff='<Meilenstein> <Synonyme>'. Beispiele: "
+    "'wann lernte Lea laufen' → zeitliche_eckdaten(person='Lea', suchbegriff='laufen erste Schritte krabbeln stehen'); "
+    "'wann konnte Lea schwimmen' → zeitliche_eckdaten(person='Lea', suchbegriff='schwimmen wasser schwimmbad'); "
+    "'ab wann fuhr Lea Fahrrad' → zeitliche_eckdaten(person='Lea', suchbegriff='fahrrad rad bicycle'). "
+    "Antworte mit dem 'erstes_datum' und dem passenden Foto #id — das ist die verlässlich "
+    "früheste Antwort (datumssortiert, nicht relevanzsortiert). "
+    "Für allgemeine 'WANN …'-Fragen ohne Meilenstein: normale suche_fotos, schau die DATEN "
+    "der Treffer an, nenne das früheste passende Datum. "
     "Für 'wann habe ich X das erste Mal getroffen/gesehen', 'seit wann kenne ich X', "
     "'wann zuletzt …' nutze IMMER das Werkzeug zeitliche_eckdaten (person=X) — es liefert "
     "das wirklich früheste/späteste Foto-Datum (datumssortiert). Geht es um GEMEINSAME "
@@ -397,10 +404,16 @@ async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[
 
 async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Optional[str] = None,
                            medientyp: Optional[str] = None, jahr_von: Optional[int] = None,
-                           jahr_bis: Optional[int] = None, acl: Optional[list] = None) -> dict:
+                           jahr_bis: Optional[int] = None, acl: Optional[list] = None,
+                           suchbegriff: Optional[str] = None) -> dict:
     """Earliest & latest DATED photo of a person (optionally two people TOGETHER on
     one photo). Answers 'wann zum ersten/letzten Mal …' precisely — unlike semantic
-    search this is sorted by DATE, so the true first/last is never missed."""
+    search this is sorted by DATE, so the true first/last is never missed.
+
+    v1.538: optional `suchbegriff` filtert VOR dem MIN/MAX auf Fotos mit passender
+    Beschreibung (ILIKE ODER-verkettet über die Wörter). Damit beantwortet der
+    Chat „Wann lernte Lea laufen" korrekt: Personen-Filter + ILIKE 'lauf'/'schritt'/
+    'krabbel'/'steh', MIN(taken_at) → früheste passende Szene."""
     conds = _filter_conditions(medientyp, jahr_von, jahr_bis) + [
         Photo.is_trashed == False, Photo.taken_at.isnot(None)] + list(acl or [])  # noqa: E712
 
@@ -413,6 +426,18 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         conds.append(_has(person))
     if person2 and person2.strip():
         conds.append(_has(person2))
+    if suchbegriff and suchbegriff.strip():
+        import re as _re
+        # Wortstämme mit ILIKE ODER-verkettet. Kurze/leere Wörter raus.
+        toks = [t for t in _re.split(r"[\s,;/]+", suchbegriff.strip()) if len(t) >= 3]
+        if toks:
+            ors = []
+            for t in toks:
+                pat = f"%{t}%"
+                ors.extend([Photo.description.ilike(pat),
+                            Photo.location_name.ilike(pat)])
+            from sqlalchemy import or_ as _or
+            conds.append(_or(*ors))
     # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
     # Query 7k Rows in Python-Liste (Timeout-Killer bei "wann lernte Lea laufen").
     # Wir brauchen nur MIN/MAX + je 1 Foto-ID an den Extremen.
@@ -972,10 +997,14 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
             "description": "Liefert das FRÜHESTE und SPÄTESTE Foto-Datum für eine Person (optional zwei "
                            "Personen GEMEINSAM auf einem Foto). Nutze das für 'wann habe ich X das erste "
                            "Mal getroffen/gesehen', 'seit wann kenne ich X', 'wann zuletzt …' — die normale "
-                           "Suche ist nach Relevanz sortiert und verpasst das wirklich früheste/späteste Foto.",
+                           "Suche ist nach Relevanz sortiert und verpasst das wirklich früheste/späteste Foto. "
+                           "MIT suchbegriff filtert auf Fotos, deren Beschreibung die Wörter enthält — für "
+                           "'wann lernte X laufen' setze person='X', suchbegriff='laufen erste Schritte krabbeln stehen' "
+                           "→ liefert das früheste passende Datum.",
             "parameters": {"type": "object", "properties": {
                 "person": {"type": "string", "description": "Name der Person (Pflicht), z. B. 'Anja'"},
                 "person2": {"type": "string", "description": "Optional: zweite Person, die GEMEINSAM mit 'person' auf demselben Foto sein muss — z. B. der Nutzer selbst bei 'wann habe ICH X getroffen'."},
+                "suchbegriff": {"type": "string", "description": "Optional: Wörter, die in der Foto-Beschreibung vorkommen müssen (ODER-verknüpft). Für Meilenstein-Fragen: 'laufen erste Schritte' o. Ä."},
                 "medientyp": _filter_props["medientyp"], "jahr_von": _filter_props["jahr_von"], "jahr_bis": _filter_props["jahr_bis"],
             }, "required": ["person"]},
         },
@@ -1195,7 +1224,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                     elif c.get("name") == "zeitliche_eckdaten":
                         resp = await _temporal_bounds(db, args.get("person"), args.get("person2"),
                                                       args.get("medientyp"), args.get("jahr_von"),
-                                                      args.get("jahr_bis"), acl=acl)
+                                                      args.get("jahr_bis"), acl=acl,
+                                                      suchbegriff=args.get("suchbegriff"))
                         eids = [resp[k] for k in ("erstes_foto_id", "letztes_foto_id") if resp.get(k)]
                         seen_ids.extend(eids)
                         if eids:

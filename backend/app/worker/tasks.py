@@ -1935,6 +1935,50 @@ def transcode_video_task(self, photo_id: int, resolution: int = 1080):
                     if photo.video_webm_path:
                         photo.video_webm_path = None; await db.commit()
                 break
+            # v1.538 WEB-SAFE SHORT-CIRCUIT: viele Videos SIND bereits web-safe
+            # (H.264 8-bit, ≤1920 px lang, keine HDR). Für die brauchen wir KEINEN
+            # Transcode — wir setzen video_webm_path direkt aufs Original und sind
+            # fertig. Das schlägt bei ~40 % der Videos Sekunden zu Minuten heraus.
+            def _is_web_safe(p: str) -> bool:
+                try:
+                    pr = subprocess.run(
+                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries",
+                         "stream=codec_name,pix_fmt,width,height,color_transfer",
+                         "-of", "default=nw=1", str(p)],
+                        capture_output=True, timeout=30)
+                    if pr.returncode != 0: return False
+                    d = {}
+                    for ln in (pr.stdout or b"").decode().splitlines():
+                        if "=" in ln:
+                            k, v = ln.split("=", 1); d[k.strip()] = v.strip().lower()
+                    if d.get("codec_name") not in ("h264", "avc1"): return False
+                    px = d.get("pix_fmt", "")
+                    if "10le" in px or "12le" in px or "yuv422" in px or "yuv444" in px: return False
+                    if d.get("color_transfer") in ("smpte2084", "arib-std-b67"): return False
+                    try:
+                        w = int(d.get("width") or "0"); h = int(d.get("height") or "0")
+                    except Exception: return False
+                    if max(w, h) > 1920 or max(w, h) == 0: return False
+                    return True
+                except Exception:
+                    return False
+            if resolution == 1080 and src_path and os.path.exists(src_path) and _is_web_safe(src_path):
+                # Fertig ohne Transcode: Original ist web-safe.
+                from datetime import datetime as _dtws, timezone as _tzws
+                _now_ws = _dtws.now(_tzws.utc)
+                async for db in get_db():
+                    photo = await db.get(Photo, photo_id)
+                    if photo:
+                        # video_webm_path direkt aufs Original zeigen — der Stream-
+                        # Endpoint served es dann ohne weiteren Transcode.
+                        photo.video_webm_path = src_path
+                        if photo.web_mp4_1080_at is None:
+                            photo.web_mp4_1080_at = _now_ws
+                        await db.commit()
+                    break
+                flog("video", "INFO", f"Web-Safe (skip): {fname}")
+                return {"web_safe": True}
             # 2) Transcode to a .part file — NO DB session held while ffmpeg runs.
             hw = detect_hw()
             t0 = _t.time()
@@ -2133,11 +2177,80 @@ def requeue_hdr_transcodes_task(self, limit: int = 500):
                 if _os.path.exists(cached):
                     try: _os.unlink(cached)
                     except Exception: pass
-            transcode_video_task.delay(pid, 720)
+            # v1.538: 720p wird NICHT mehr pre-transkodiert. Nur 1080p vorab,
+            # 720p on-demand über den stream-Endpoint (mobil-Fallback).
             transcode_video_task.delay(pid, 1080)
         flog("video", "INFO", f"HDR/10-bit Re-Transcode: {len(bad)} Videos neu eingereiht")
         return {"checked": len(rows), "requeued": len(bad)}
     return _run(_main())
+
+
+@celery_app.task(bind=True, name="sweep_websafe_videos")
+def sweep_websafe_videos_task(self, limit: int = 5000):
+    """v1.538: Kurzschluss für Videos, die BEREITS web-safe sind (H.264 8-bit,
+    ≤1920 lang, keine HDR). Setzt video_webm_path direkt aufs Original und
+    web_mp4_1080_at auf jetzt — spart Transcode-Zeit für vermutlich ~40 % des
+    Backlogs. Läuft direkt (kein delay), macht ffprobe schnell und commited
+    in Batches."""
+    async def _run_ws():
+        import subprocess as _sp
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select as _sel, update as _upd
+        from datetime import datetime as _dtsw, timezone as _tzsw
+        init_db()
+        rows = []
+        async for db in get_db():
+            rows = (await db.execute(
+                _sel(Photo.id, Photo.path).where(
+                    Photo.is_video == True,                          # noqa: E712
+                    Photo.web_mp4_1080_at.is_(None),
+                    Photo.is_missing == False,                       # noqa: E712
+                    Photo.is_trashed == False,                       # noqa: E712
+                    Photo.video_transcode_failures < 3,
+                ).limit(limit)
+            )).all()
+            break
+        promoted = 0
+        for pid, path in rows:
+            if not path: continue
+            try:
+                pr = _sp.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries",
+                     "stream=codec_name,pix_fmt,width,height,color_transfer",
+                     "-of", "default=nw=1", path],
+                    capture_output=True, timeout=25)
+                if pr.returncode != 0: continue
+                d = {}
+                for ln in (pr.stdout or b"").decode().splitlines():
+                    if "=" in ln:
+                        k, v = ln.split("=", 1); d[k.strip()] = v.strip().lower()
+                if d.get("codec_name") not in ("h264", "avc1"): continue
+                px = d.get("pix_fmt", "")
+                if "10le" in px or "12le" in px or "yuv422" in px or "yuv444" in px: continue
+                if d.get("color_transfer") in ("smpte2084", "arib-std-b67"): continue
+                try: w = int(d.get("width") or "0"); h = int(d.get("height") or "0")
+                except Exception: continue
+                if max(w, h) > 1920 or max(w, h) == 0: continue
+            except Exception:
+                continue
+            # web-safe → promote
+            _now = _dtsw.now(_tzsw.utc)
+            async for db in get_db():
+                await db.execute(_upd(Photo).where(Photo.id == pid).values(
+                    video_webm_path=path,
+                    web_mp4_1080_at=_now,
+                    video_transcode_failures=0,
+                ))
+                await db.commit()
+                break
+            promoted += 1
+        flog("video", "INFO",
+             f"Web-Safe-Sweep: {len(rows)} geprüft, {promoted} als 1080p promoted (kein Transcode)")
+        return {"checked": len(rows), "promoted": promoted}
+    return _run(_run_ws())
 
 
 @celery_app.task(bind=True, name="revalidate_transcodes")

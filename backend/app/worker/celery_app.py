@@ -61,6 +61,7 @@ celery_app.conf.update(
         "reembed_imported":   {"queue": "cpu"},
         "retry_failed_ai":    {"queue": "cpu"},
         "sweep_pending_video_ai": {"queue": "cpu"},  # self-heal videos stuck without description
+        "sweep_websafe_videos":   {"queue": "cpu"},  # v1.538: promote H.264 8-bit videos ohne Transcode
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
         "write_faces":        {"queue": "cpu"},   # MWG face regions (button + nightly incremental)
@@ -117,6 +118,12 @@ celery_app.conf.beat_schedule = {
     "auto-cluster-faces": {
         "task": "auto_cluster_faces",
         "schedule": 600.0,
+    },
+    # v1.538: alle 30 Min die verbleibenden Videos gegen die Web-Safe-Regel
+    # scannen — spart massenhaft Transcodes für schon fertige H.264-Videos.
+    "websafe-video-sweep": {
+        "task": "sweep_websafe_videos",
+        "schedule": 1800.0,
     },
     # Face-Vorschläge — vorher gab es KEINEN Beat-Schedule, deshalb waren bei einem
     # User 62 k Faces (47 %) weder assigned noch mit Suggestion versehen. Läuft
