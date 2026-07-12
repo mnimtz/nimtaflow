@@ -498,9 +498,28 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         conds.append(_has(person))
     if person2 and person2.strip():
         conds.append(_has(person2))
+    # v1.541 BIRTHDATE-SANITY: kein Foto von VOR der Geburt der Person liefern.
+    if person and person.strip():
+        bd = await db.scalar(select(Person.birthdate).where(_strict_name(person)).limit(1))
+        if bd:
+            conds.append(Photo.taken_at >= bd)
+    # v1.542 HyDE-SEMANTIC statt ILIKE: der User fragt "wann lernte Lea laufen",
+    # unsere Descriptions sagen "kleines Kind steht ohne Halt" — ILIKE auf
+    # "lauf/schritt/krabbel" verpasst 90 % dieser Fotos. Wir generieren
+    # hypothetische Beschreibungen, embedden sie, cosine-suchen im CLIP-Raum.
+    hyde_ids: list = []
     if suchbegriff and suchbegriff.strip():
+        try:
+            hyde_ids = await _hyde_semantic_ids(db, suchbegriff.strip(),
+                                                extra_conds=list(conds),
+                                                settings={}, limit=500)
+        except Exception:
+            hyde_ids = []
+    if hyde_ids:
+        conds.append(Photo.id.in_(hyde_ids))
+    elif suchbegriff and suchbegriff.strip():
+        # Fallback: keine Embedding-Engine erreichbar → altes ILIKE.
         import re as _re
-        # Wortstämme mit ILIKE ODER-verkettet. Kurze/leere Wörter raus.
         toks = [t for t in _re.split(r"[\s,;/]+", suchbegriff.strip()) if len(t) >= 3]
         if toks:
             ors = []
@@ -510,12 +529,6 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
                             Photo.location_name.ilike(pat)])
             from sqlalchemy import or_ as _or
             conds.append(_or(*ors))
-    # v1.541 BIRTHDATE-SANITY: kein Foto von VOR der Geburt der Person liefern.
-    # Sonst behauptet der Chat auf einem 2001er-Foto, Lea (geb. 2017) sei da drauf.
-    if person and person.strip():
-        bd = await db.scalar(select(Person.birthdate).where(_strict_name(person)).limit(1))
-        if bd:
-            conds.append(Photo.taken_at >= bd)
     # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
     # Query 7k Rows in Python-Liste (Timeout-Killer bei "wann lernte Lea laufen").
     # Wir brauchen nur MIN/MAX + je 1 Foto-ID an den Extremen.
@@ -533,6 +546,60 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
     return {"treffer": int(agg.cnt),
             "erstes_datum": str(agg.mind)[:10], "erstes_foto_id": first_id,
             "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
+
+
+async def _hyde_semantic_ids(db: AsyncSession, suchbegriff: str,
+                             extra_conds: list,
+                             settings: dict,
+                             limit: int = 200) -> list:
+    """v1.542 HyDE (Hypothetical Document Embeddings) — kern-idee der 2025-SOTA
+    Foto-Chats: der User fragt in Umgangssprache ('wann lernte X laufen'), unsere
+    Descriptions verwenden aber Beschreibungssprache ('kleines Kind steht
+    aufrecht, hält sich an einem Möbel fest'). Diese Distanz frisst Recall.
+    Wir bitten das Modell erst um 3-5 hypothetische Beschreibungen im STIL unserer
+    Auto-Captions, embedden diese, sucht im CLIP-Raum. Massive Recall-Gewinn
+    speziell bei Meilenstein-/Aktivitäts-Fragen.
+
+    Kein Gemini-Call nötig: die Anweisung wird direkt aus dem Suchbegriff mit
+    festen Stil-Präfixen erweitert (kein zusätzlicher API-Latenz). Falls kein
+    embed-Modul: Fallback auf ILIKE (siehe Aufrufer)."""
+    try:
+        from app.services import jina_embed
+    except Exception:
+        return []
+    hypos = [
+        f"Ein Foto zeigt {suchbegriff}",
+        f"Auf dem Bild ist zu sehen: {suchbegriff}. Im Vordergrund die Person.",
+        f"Eine Szene mit {suchbegriff} in einem Innenraum oder Freien.",
+        f"Das Bild dokumentiert einen Moment mit {suchbegriff}.",
+    ]
+    import numpy as _np
+    vecs = []
+    for h in hypos:
+        v = jina_embed.embed_text(h)
+        if v and len(v) == 768:
+            vecs.append(_np.array(v, dtype="float32"))
+    if not vecs:
+        return []
+    mean = _np.mean(_np.vstack(vecs), axis=0)
+    mean = (mean / (_np.linalg.norm(mean) + 1e-9)).tolist()
+    # gegen image-embedding UND text-embedding suchen, pro Foto besten score
+    max_dist = float(settings.get("chat.hyde.max_distance", "0.60") or 0.60)
+    ids_scores: dict = {}
+    for col in (Photo.embedding, Photo.embedding_text):
+        dist = col.cosine_distance(mean)
+        rows = (await db.execute(
+            select(Photo.id, dist).where(
+                *extra_conds, col.isnot(None), dist < max_dist,
+                Photo.is_trashed == False,   # noqa: E712
+            ).order_by(dist).limit(limit)
+        )).all()
+        for pid, d in rows:
+            score = float(d)
+            if pid not in ids_scores or score < ids_scores[pid]:
+                ids_scores[pid] = score
+    # sortieren nach kleinster distance
+    return [pid for pid, _ in sorted(ids_scores.items(), key=lambda x: x[1])]
 
 
 async def _personen_zusammenhang(db: AsyncSession, person: str, top: int = 8,

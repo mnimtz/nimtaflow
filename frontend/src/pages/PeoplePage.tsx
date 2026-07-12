@@ -586,11 +586,22 @@ function Pager({ page, pageSize, total, onPage, onSize }: {
       </div>
       <div className="flex items-center gap-2 ml-auto">
         <span className="text-zinc-500">{t('people.pagerRange', { from, to, total })}</span>
+        <button disabled={page <= 1} onClick={() => onPage(1)}
+          title="Erste Seite"
+          className="px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">«</button>
         <button disabled={page <= 1} onClick={() => onPage(page - 1)}
           className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">{t('people.pagerPrev')}</button>
-        <span className="text-zinc-500 tabular-nums">{t('people.pagerPage', { page, pages })}</span>
+        {/* v1.542: Direktsprung auf beliebige Seite (154 Seiten sind unmöglich manuell durchzublättern) */}
+        <input type="number" min={1} max={pages} value={page}
+          onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v>=1 && v<=pages) onPage(v) }}
+          className="w-16 text-center px-1 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent tabular-nums"
+          aria-label="Seite" />
+        <span className="text-zinc-500 tabular-nums">/ {pages}</span>
         <button disabled={page >= pages} onClick={() => onPage(page + 1)}
           className="px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">{t('people.pagerNext')}</button>
+        <button disabled={page >= pages} onClick={() => onPage(pages)}
+          title="Letzte Seite"
+          className="px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40">»</button>
       </div>
     </div>
   )

@@ -134,8 +134,22 @@ function InfoPanel({ photoId, onClose }: { photoId: number; onClose: () => void 
     finally { setGpsBusy(false) }
   }
   const removePerson = async (faceId: number) => {
-    try { await api.delete(`/people/faces/${faceId}/unassign`); qc.invalidateQueries({ queryKey: ['photo-detail', photoId] }); toast(t('gallery.personRemoved'), 'success') }
-    catch { toast(t('gallery.personEditFailed'), 'error') }
+    // v1.542: echten Fehlertext zeigen statt schweigend zu scheitern. Der User
+    // klickte auf X, „passierte nichts" — wahrscheinlich weil der Toast einen
+    // generischen Text zeigte und untergegangen ist, oder der Backend-Call 403
+    // gab. Jetzt: expliziter Dialog + echte Fehlermeldung.
+    if (!window.confirm('Person von diesem Foto entfernen? (Das Gesicht bleibt als „unbekannt" erhalten und kann später neu zugewiesen werden.)')) return
+    try {
+      await api.delete(`/people/faces/${faceId}/unassign`)
+      qc.invalidateQueries({ queryKey: ['photo-detail', photoId] })
+      qc.invalidateQueries({ queryKey: ['people'] })
+      toast(t('gallery.personRemoved'), 'success')
+    } catch (e: any) {
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail || e?.message || 'unbekannter Fehler'
+      toast(`Entfernen fehlgeschlagen (${status || '?'}): ${detail}`, 'error')
+      console.error('unassign face failed', e)
+    }
   }
   const reassignPerson = async (faceId: number, personId: number) => {
     setEditFaceId(null)
