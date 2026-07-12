@@ -234,8 +234,14 @@ async def search_photos(db: AsyncSession, query: str, settings: dict,
     # semantische Zweig fängt Recall auf, falls es das PERFEKTE-Match nicht gibt).
     sem_floor = float(settings.get("search.min_score", "0.28") or 0.28)
     n_tokens = len(tokens)
-    if n_tokens >= 2:
-        # Mindestens 2 Token-Hits nötig (oder max, falls weniger als 2 Wörter existieren).
+    # Bei aktiven extra_conditions (strukturelle Filter Person/Ort/Datum aus dem
+    # Chat) MUSS der Token-AND-Zwang aufgeweicht werden — sonst filtern wir Fotos
+    # mit „Lea+Karin+Wolfgang" alle weg, weil das dritte Namens-Token als Freitext
+    # kommt und keinen Token-Hit im Description-Feld findet.
+    # Ohne Filter (rein Freitext-Search): AND bleibt streng, damit unspezifische
+    # Wörter nicht verwässern.
+    has_struct_filter = bool(extra_conditions)
+    if n_tokens >= 2 and not has_struct_filter:
         required = min(n_tokens, 2)
         kw = {pid: c for pid, c in kw.items() if c >= required}
     scores: dict = {}

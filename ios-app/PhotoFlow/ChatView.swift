@@ -48,6 +48,13 @@ struct ChatView: View {
                     .onChange(of: messages.count) { _, _ in
                         if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                     }
+                    .onChange(of: inputFocused) { _, focused in
+                        // Beim Tastatur-Öffnen die letzte Nachricht wieder sichtbar
+                        // machen — sonst verschwindet sie hinter dem Keyboard.
+                        if focused, let last = messages.last {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
+                    }
                 }
                 Divider()
                 HStack(spacing: 8) {
@@ -67,6 +74,18 @@ struct ChatView: View {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Fertig") { inputFocused = false }
+                }
+                // Schließen-Button ganz links — sonst kam man aus dem Sheet mit
+                // offener Tastatur nicht mehr raus („man kommt nicht raus").
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        inputFocused = false
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .task { status = try? await api.chatStatus() }

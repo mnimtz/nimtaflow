@@ -266,7 +266,8 @@ async def _fused_records(db: AsyncSession, photos: List[Photo]) -> List[dict]:
 def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_bis: Optional[int],
                        person: Optional[str] = None, datum_von: Optional[str] = None,
                        datum_bis: Optional[str] = None, person2: Optional[str] = None,
-                       ort: Optional[str] = None):
+                       ort: Optional[str] = None, person3: Optional[str] = None,
+                       person4: Optional[str] = None):
     """SQLAlchemy conditions for the structured filters the chat tools expose.
     (No is_trashed here — search_photos adds its own; _count adds it explicitly.)"""
     from datetime import datetime as _dt, timedelta as _td
@@ -306,13 +307,25 @@ def _filter_conditions(medientyp: Optional[str], jahr_von: Optional[int], jahr_b
     # the photo must contain BOTH.
     if person2 and person2.strip():
         conds.append(_person_cond(person2))
-    # ort = place filter across city / region / country / description. Vorher hat
-    # der ort-Zweig NUR city/country/location_name geprüft. Fotos deren city z.B.
-    # "Chelsea" ist, aber die KI-Beschreibung "Boston" nennt (Anreise-Aufnahme,
-    # Umland, Verwaltungsstruktur), fielen durch. `description` als 4. Kandidat
-    # hebt den Recall ohne Präzisionsverlust bei üblichen Ortsnamen (>= 4 Zeichen).
+    if person3 and person3.strip():
+        conds.append(_person_cond(person3))
+    if person4 and person4.strip():
+        conds.append(_person_cond(person4))
+    # ort = place filter across city / region / country / description. Präfixe wie
+    # "Großraum", "Umgebung", "Nähe", "bei" verwerfen — sonst matcht
+    # ILIKE '%Großraum Boston%' garantiert nichts. Bei erkannter Metro-Präfix zusätzlich
+    # eine gelockerte Description-Suche.
     if ort and ort.strip():
-        o = f"%{ort.strip()}%"
+        o_raw = ort.strip()
+        import re as _re
+        # Präfixe entfernen: "Großraum Boston" → "Boston", "in der Nähe von Köln" → "Köln"
+        _m = _re.match(r"^(?:großraum|greater|umgebung|nähe|naehe|nahe|bei|in der nähe von|in der naehe von)\s+(?:von\s+)?(.+)$",
+                       o_raw, _re.IGNORECASE)
+        if _m:
+            o_raw = _m.group(1).strip()
+        # Prä-/Suffix "und Umgebung" ebenfalls stutzen.
+        o_raw = _re.sub(r"\s+und\s+umgebung\s*$", "", o_raw, flags=_re.IGNORECASE).strip()
+        o = f"%{o_raw}%"
         from sqlalchemy import or_ as _or
         conds.append(_or(Photo.city.ilike(o), Photo.country.ilike(o),
                          Photo.location_name.ilike(o), Photo.description.ilike(o)))
@@ -324,30 +337,43 @@ async def _retrieve(db: AsyncSession, query: str, settings: dict, limit: int = 2
                     jahr_bis: Optional[int] = None, person: Optional[str] = None,
                     datum_von: Optional[str] = None, datum_bis: Optional[str] = None,
                     acl: Optional[list] = None, person2: Optional[str] = None,
-                    ort: Optional[str] = None) -> List[dict]:
-    # acl = photo_conditions(user): a restricted account only ever searches within the
-    # photos it may see (else chat would surface the whole library).
+                    ort: Optional[str] = None, person3: Optional[str] = None,
+                    person4: Optional[str] = None) -> List[dict]:
     extra = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
-                               datum_bis, person2, ort) + list(acl or [])
-    # With strong structural filters (person/place/date) the semantic top-K is the wrong
-    # tool — "alle Fotos von Lea in der Türkei" wants the WHOLE set, not 20 best matches.
-    # So when filters are present and the free-text query is weak/empty, widen the net.
-    if (person or person2 or ort or datum_von or jahr_von) and len((query or "").strip()) < 12:
+                               datum_bis, person2, ort, person3, person4) + list(acl or [])
+    if (person or person2 or person3 or person4 or ort or datum_von or jahr_von) and len((query or "").strip()) < 12:
         limit = max(limit, 60)
     photos = await search_photos(db, query or "", settings, limit=limit,
                                  extra_conditions=extra or None)
+    # Fallback-Retry: wenn strukturelle Filter (Ort/Datum) 0 Treffer produzieren,
+    # locker eskalieren — erst Ort weglassen, dann Freitext-Search-Distanz erhöhen.
+    # Bug-Beispiel: „Frank in Boston" 3 Fotos, „Großraum Boston" 0 — der User erwartet
+    # min. das Personen-Match, nicht ein leeres Ergebnis.
+    if not photos and (ort or datum_von):
+        # 1. Retry ohne Ort
+        if ort:
+            extra_no_ort = _filter_conditions(medientyp, jahr_von, jahr_bis, person,
+                                              datum_von, datum_bis, person2, None,
+                                              person3, person4) + list(acl or [])
+            photos = await search_photos(db, query or "", settings, limit=limit,
+                                         extra_conditions=extra_no_ort or None)
+    if not photos and (query or "").strip():
+        # 2. Retry mit lockerem max_distance
+        loose_settings = dict(settings)
+        loose_settings["search.max_distance"] = "0.62"
+        photos = await search_photos(db, query or "", loose_settings, limit=limit,
+                                     extra_conditions=extra or None)
     return await _fused_records(db, photos)
 
 
 async def _structural_ids(db: AsyncSession, medientyp, jahr_von, jahr_bis, person,
-                          person2, ort, datum_von, datum_bis, acl, cap: int = 2000) -> List[int]:
-    """ALLE passenden Foto-IDs für die GALERIE (nicht nur die ~60 Modell-Kontext-Records),
-    neueste zuerst — damit „zeig alle Fotos von X" wirklich jeden Treffer liefert statt
-    einer Top-K-Auswahl. Rein strukturell (Person/Ort/Datum/Jahr/Medientyp); wird genutzt,
-    wenn solche Filter die Anfrage dominieren."""
+                          person2, ort, datum_von, datum_bis, acl, cap: int = 20000,
+                          person3: Optional[str] = None, person4: Optional[str] = None) -> List[int]:
+    """ALLE passenden Foto-IDs — Cap 20000 (vorher 2000, war der „nur 2000 Bilder"-Bug
+    im Chat-Galerie-Handoff). Rein strukturell (Person/Ort/Datum/Jahr/Medientyp)."""
     from app.models.photo import PhotoStatus
     conds = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
-                               datum_bis, person2, ort) + list(acl or [])
+                               datum_bis, person2, ort, person3, person4) + list(acl or [])
     rows = await db.execute(
         select(Photo.id).where(Photo.status == PhotoStatus.done, Photo.is_trashed == False,  # noqa: E712
                                Photo.thumb_small.isnot(None), *conds)
@@ -358,12 +384,11 @@ async def _structural_ids(db: AsyncSession, medientyp, jahr_von, jahr_bis, perso
 async def _count(db: AsyncSession, medientyp: Optional[str], jahr_von: Optional[int],
                  jahr_bis: Optional[int], person: Optional[str], acl: Optional[list] = None,
                  person2: Optional[str] = None, ort: Optional[str] = None,
-                 datum_von: Optional[str] = None, datum_bis: Optional[str] = None) -> dict:
-    """Exact count for 'wie viele …' questions — structural filters, not top-K search.
-    Nutzt ALLE Filter (person2/ort/Datum), damit die Zahl zur gefilterten Galerie passt
-    ('wie viele Fotos von Lea in der Türkei 2022' zählt Ort+Jahr korrekt mit)."""
+                 datum_von: Optional[str] = None, datum_bis: Optional[str] = None,
+                 person3: Optional[str] = None, person4: Optional[str] = None) -> dict:
+    """Exact count for 'wie viele …' questions."""
     conds = _filter_conditions(medientyp, jahr_von, jahr_bis, person, datum_von,
-                               datum_bis, person2, ort) + [Photo.is_trashed == False] + list(acl or [])  # noqa: E712
+                               datum_bis, person2, ort, person3, person4) + [Photo.is_trashed == False] + list(acl or [])  # noqa: E712
     n = await db.scalar(select(func.count(func.distinct(Photo.id))).select_from(Photo).where(*conds))
     return {"anzahl": int(n or 0), "medientyp": medientyp or "beide",
             "jahr_von": jahr_von, "jahr_bis": jahr_bis, "person": person,
@@ -388,15 +413,23 @@ async def _temporal_bounds(db: AsyncSession, person: Optional[str], person2: Opt
         conds.append(_has(person))
     if person2 and person2.strip():
         conds.append(_has(person2))
-    rows = (await db.execute(
-        select(Photo.id, Photo.taken_at).where(*conds).order_by(Photo.taken_at.asc())
-    )).all()
-    if not rows:
+    # Aggregat statt LADEN ALLE ZEILEN: bei Personen mit 7000+ Fotos zog die alte
+    # Query 7k Rows in Python-Liste (Timeout-Killer bei "wann lernte Lea laufen").
+    # Wir brauchen nur MIN/MAX + je 1 Foto-ID an den Extremen.
+    from sqlalchemy import func as _f
+    agg = (await db.execute(
+        select(_f.count().label("cnt"),
+               _f.min(Photo.taken_at).label("mind"),
+               _f.max(Photo.taken_at).label("maxd")).where(*conds))).one()
+    if not agg.cnt:
         return {"treffer": 0}
-    first, last = rows[0], rows[-1]
-    return {"treffer": len(rows),
-            "erstes_datum": str(first[1])[:10], "erstes_foto_id": first[0],
-            "letztes_datum": str(last[1])[:10], "letztes_foto_id": last[0]}
+    first_id = await db.scalar(
+        select(Photo.id).where(*conds, Photo.taken_at == agg.mind).limit(1))
+    last_id = await db.scalar(
+        select(Photo.id).where(*conds, Photo.taken_at == agg.maxd).limit(1))
+    return {"treffer": int(agg.cnt),
+            "erstes_datum": str(agg.mind)[:10], "erstes_foto_id": first_id,
+            "letztes_datum": str(agg.maxd)[:10], "letztes_foto_id": last_id}
 
 
 async def _birthday_date(db: AsyncSession, person: Optional[str], alter=None) -> dict:
@@ -896,6 +929,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
     _filter_props = {
         "person": {"type": "string", "description": "Name einer ERKANNTEN Person — schränkt auf Fotos MIT dieser Person ein. Nutze das IMMER, wenn die Frage einen Namen enthält (z. B. 'Lea traurig' → person='Lea', suchbegriff='traurig weinen')."},
         "person2": {"type": "string", "description": "ZWEITE Person, die GEMEINSAM mit 'person' auf dem Foto sein muss. Für 'X mit Y', 'ich und meine Tochter', 'Lea und Anja zusammen'. Bei 'ich/mir/mich' setze hier deinen eigenen Namen aus der Identität."},
+        "person3": {"type": "string", "description": "DRITTE Person, die GEMEINSAM mit person und person2 auf dem Foto sein muss. Für 'Lea mit Karin und Wolfgang'."},
+        "person4": {"type": "string", "description": "VIERTE Person, gemeinsam mit person, person2, person3. Für Gruppenfotos mit 4 Namen."},
         "ort": {"type": "string", "description": "Ortsfilter (Stadt, Region ODER Land), z. B. ort='Türkei', ort='Antalya', ort='Köln'. Nutze das IMMER bei Ortsangaben ('in der Türkei', 'in Köln'). Für Länder den deutschen Landesnamen verwenden."},
         "medientyp": {"type": "string", "enum": ["bild", "video", "beide"],
                       "description": "Nur Bilder, nur Videos, oder beide. WICHTIG: fragt der Nutzer nach Videos → 'video', nach Bildern/Fotos → 'bild'."},
@@ -1241,6 +1276,7 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                                medientyp=args.get("medientyp"),
                                                jahr_von=args.get("jahr_von"), jahr_bis=args.get("jahr_bis"),
                                                person=args.get("person"), person2=args.get("person2"),
+                                               person3=args.get("person3"), person4=args.get("person4"),
                                                ort=args.get("ort"),
                                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
                                                acl=ctx_acl)
@@ -1250,8 +1286,8 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                         # Datum/Jahr) das VOLLE ID-Set liefern statt nur der ~60 Modell-
                         # Kontext-Records — behebt „findet viel zu wenig". Bei reiner
                         # Freitext-Semantik ohne Filter bleibt es bei den gerankten Records.
-                        has_struct = any(args.get(k) for k in ("person", "person2", "ort",
-                                          "datum_von", "datum_bis", "jahr_von", "jahr_bis"))
+                        has_struct = any(args.get(k) for k in ("person", "person2", "person3", "person4",
+                                          "ort", "datum_von", "datum_bis", "jahr_von", "jahr_bis"))
                         gallery_ids = [rrec["id"] for rrec in recs]
                         # Echte gesamt_anzahl: separater COUNT ohne 2000er-Cap, damit das Modell
                         # "2000 Fotos von Anja" nicht sagt, wenn es 7742 sind.
@@ -1281,12 +1317,14 @@ async def _gemini_agent(message: str, history: list, settings: dict, db: AsyncSe
                                 db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
                                 args.get("person"), acl=acl,
                                 person2=args.get("person2"), ort=args.get("ort"),
-                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"))
+                                datum_von=args.get("datum_von"), datum_bis=args.get("datum_bis"),
+                                person3=args.get("person3"), person4=args.get("person4"))
                             gesamt = cnt_res["anzahl"]
                             full = await _structural_ids(
                                 db, args.get("medientyp"), args.get("jahr_von"), args.get("jahr_bis"),
                                 args.get("person"), args.get("person2"), args.get("ort"),
-                                args.get("datum_von"), args.get("datum_bis"), acl)
+                                args.get("datum_von"), args.get("datum_bis"), acl,
+                                person3=args.get("person3"), person4=args.get("person4"))
                             if full:
                                 gallery_ids = full
                         else:
@@ -1366,5 +1404,18 @@ async def chat(message: str, history: list, settings: dict, db: AsyncSession,
     prov = (provider or settings.get("chat.provider") or "gemini").lower()
     if prov == "local":
         return await _local_rag(message, settings, db, user=user)
-    return await _gemini_agent(message, history, settings, db, user=user,
-                               context_ids=context_ids or None)
+    # Gesamt-Deadline für einen Chat-Turn — sonst kann der Agent-Loop (Retry × Tool-
+    # Rounds × httpx-Backoff) 30 min laufen und der User bekommt „Konnte gerade
+    # nicht antworten" nach 5 min Client-Timeout. Backend-Deckel 90 s lässt Zeit
+    # für 2-3 Tool-Rounds und einen Retry.
+    import asyncio as _asyncio
+    try:
+        return await _asyncio.wait_for(
+            _gemini_agent(message, history, settings, db, user=user,
+                          context_ids=context_ids or None),
+            timeout=90.0)
+    except _asyncio.TimeoutError:
+        return {"answer": "Ich habe zu lange gebraucht — bitte formuliere die Frage "
+                          "vielleicht etwas konkreter (Person, Jahr, Ort). Ich versuche's "
+                          "gleich nochmal.",
+                "photo_ids": [], "photos": []}
