@@ -502,13 +502,18 @@ def reingest_structured_descriptions_task(self, limit: int = 500,
                 q = q.where(Photo.taken_at < _d2(int(jahr_bis) + 1, 1, 1))
             q = q.order_by(Photo.taken_at.desc().nullslast()).limit(int(limit))
             ids = (await db.execute(q)).scalars().all()
+            # v1.558: asyncpg erlaubt max 32767 Query-Args. Bei limit=50000 sprengt
+            # ein einziger UPDATE WHERE id IN (…) das Limit. In 5000er-Chunks fahren.
             if ids:
-                await db.execute(_u(Photo).where(Photo.id.in_(ids)).values(
-                    status=PhotoStatus.pending,
-                    ai_error=False,
-                    ai_claimed_at=None,
-                ))
-                await db.commit()
+                CHUNK = 5000
+                for i in range(0, len(ids), CHUNK):
+                    batch = ids[i:i+CHUNK]
+                    await db.execute(_u(Photo).where(Photo.id.in_(batch)).values(
+                        status=PhotoStatus.pending,
+                        ai_error=False,
+                        ai_claimed_at=None,
+                    ))
+                    await db.commit()
             flog("ai", "INFO", f"Reingest structured: {len(ids)} Fotos zur Neubeschreibung markiert")
             return {"marked": len(ids)}
     return _run(_run_ri())
