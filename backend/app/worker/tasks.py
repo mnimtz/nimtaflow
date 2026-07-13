@@ -467,7 +467,9 @@ def cluster_faces_full_task(self):
 
 @celery_app.task(bind=True, name="reingest_structured_descriptions")
 def reingest_structured_descriptions_task(self, limit: int = 500,
-                                          only_missing: bool = True):
+                                          only_missing: bool = True,
+                                          jahr_von: int = 0,
+                                          jahr_bis: int = 9999):
     """v1.549: Alle Fotos ohne structured_desc zurück in die AI-Queue werfen.
     Sortiert nach neuestem Datum (aktuelle Fotos sind für den Chat wichtiger).
     Die remote-Worker (M3/M5) liefern jetzt zusätzlich JSON — der neue Endpoint
@@ -490,6 +492,14 @@ def reingest_structured_descriptions_task(self, limit: int = 500,
             )
             if only_missing:
                 q = q.where(Photo.structured_desc.is_(None))
+            # v1.557: Jahresbereich filtern — für priorisierten Reingest (neueste
+            # Jahre zuerst). Default (0..9999) = alle.
+            if int(jahr_von) > 0:
+                from datetime import date as _d
+                q = q.where(Photo.taken_at >= _d(int(jahr_von), 1, 1))
+            if int(jahr_bis) < 9999:
+                from datetime import date as _d2
+                q = q.where(Photo.taken_at < _d2(int(jahr_bis) + 1, 1, 1))
             q = q.order_by(Photo.taken_at.desc().nullslast()).limit(int(limit))
             ids = (await db.execute(q)).scalars().all()
             if ids:
