@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
 import { Globe, Plane, X, Info } from 'lucide-react'
+// @ts-ignore — three ist als runtime-dep drin, aber ohne @types/three
 import * as THREE from 'three'
 
 type Photo = {
@@ -296,7 +297,7 @@ function SphereViewer({ imageUrl }: { imageUrl: string }) {
     const loader = new THREE.TextureLoader()
     loader.setCrossOrigin('anonymous')
     let mesh: THREE.Mesh | null = null
-    loader.load(imageUrl, (tex) => {
+    loader.load(imageUrl, (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace
       const material = new THREE.MeshBasicMaterial({ map: tex })
       mesh = new THREE.Mesh(geometry, material)
