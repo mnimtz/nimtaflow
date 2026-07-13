@@ -1320,12 +1320,23 @@ async def ops_status_v1(db: AsyncSession = Depends(get_db),
                         user: Optional[User] = Depends(current_user_optional)):
     """Betriebs-/Leitstand-Status für die iOS-App: Queue-Tiefen, Worker-Liveness,
     globaler Backlog, grobe Restzeit — NUR für Administratoren (system-weite Daten)."""
-    # Echte Admin-Prüfung (role == admin), NICHT _is_unrestricted — die gibt für
-    # Admins mit self_restrict=true False zurück und würde admins aussperren.
     if not user or user.role != UserRole.admin:
         raise HTTPException(403, "Nur für Administratoren.")
     from app.services.chat import _ops_status
     return await _ops_status(db)
+
+
+@router.get("/leitstand")
+async def leitstand_v1(db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """v1.559 EINHEITLICHER Leitstand für Web + iOS: exakt 6 Kacheln in einem
+    JSON, aus einer Quelle. Beide UIs zeigen identische Zahlen.
+
+    Kacheln: descriptions, videos, metadata, people, reingest, workers."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.services.leitstand import build_leitstand
+    return await build_leitstand(db)
 
 
 @router.get("/ops/workers")
