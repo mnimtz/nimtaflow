@@ -34,6 +34,7 @@ struct PhotoV1: Codable, Identifiable, Hashable {
         let gimbal_pitch: Double?
         let make: String?
         let model: String?
+        let story: String?
     }
 }
 

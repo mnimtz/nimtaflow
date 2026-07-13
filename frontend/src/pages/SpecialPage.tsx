@@ -30,6 +30,7 @@ type Photo = {
     gimbal_pitch?: number | null
     make?: string | null
     model?: string | null
+    story?: string | null
   } | null
 }
 type PhotoPage = {
@@ -117,12 +118,22 @@ function Tile({ photo, onOpen }: { photo: Photo; onOpen: () => void }) {
   const isDrone = !!photo.is_drone
   const is360 = !!photo.is_360
   const altitude = photo.drone_metadata?.relative_altitude_m
+  // v1.563: für 360°-Fotos den Little-Planet als Thumbnail — visuell viel
+  // erkennbarer als der verzerrte Streifen (equirectangular).
+  const thumbSrc = is360 && !photo.is_video
+    ? `/api/v1/photos/${photo.id}/planet`
+    : photo.thumb_medium_url
   return (
     <button onClick={onOpen}
       className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none">
-      <img src={photo.thumb_medium_url} alt=""
+      <img src={thumbSrc} alt=""
         loading="lazy"
-        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+        onError={(e) => {
+          // Falls Little-Planet-Rendering noch nicht durch: Fallback auf normalen Thumb
+          const el = e.currentTarget
+          if (el.src.includes('/planet')) el.src = photo.thumb_medium_url
+        }} />
       {is360 && (
         <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
           <Globe size={11} /> 360°
@@ -142,6 +153,7 @@ function Tile({ photo, onOpen }: { photo: Photo; onOpen: () => void }) {
 
 function ViewerModal({ photo, onClose }: { photo: Photo; onClose: () => void }) {
   const is360 = !!photo.is_360
+  const [mode, setMode] = useState<'sphere' | 'reframe'>('sphere')
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -154,7 +166,21 @@ function ViewerModal({ photo, onClose }: { photo: Photo; onClose: () => void }) 
         <X size={20} />
       </button>
       {is360 && !photo.is_video && (
-        <SphereViewer imageUrl={photo.original_url} />
+        <>
+          <div className="absolute top-4 left-4 z-10 flex gap-2">
+            <button onClick={() => setMode('sphere')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold ${mode==='sphere' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}>
+              🌍 360°-Viewer
+            </button>
+            <button onClick={() => setMode('reframe')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold ${mode==='reframe' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}>
+              📸 Perspektiven
+            </button>
+          </div>
+          {mode === 'sphere'
+            ? <SphereViewer imageUrl={photo.original_url} />
+            : <ReframeChooser photoId={photo.id} />}
+        </>
       )}
       {is360 && photo.is_video && photo.video_url && (
         <SphereVideoViewer videoUrl={photo.video_url} />
@@ -175,6 +201,46 @@ function ViewerModal({ photo, onClose }: { photo: Photo; onClose: () => void }) 
   )
 }
 
+function ReframeChooser({ photoId }: { photoId: number }) {
+  // 4 Fest-Perspektiven aus dem 360° — vorne, rechts, hinten, links.
+  // v0 (fest); spätere Version: VLM findet die interessantesten Winkel.
+  const views = [
+    { idx: 0, label: 'Vorne', hint: 'yaw 0°' },
+    { idx: 1, label: 'Rechts', hint: 'yaw 90°' },
+    { idx: 2, label: 'Hinten', hint: 'yaw 180°' },
+    { idx: 3, label: 'Links', hint: 'yaw −90°' },
+  ]
+  const [selected, setSelected] = useState<number | null>(null)
+  return (
+    <div className="w-screen h-screen flex flex-col items-center justify-center p-4">
+      {selected == null ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-5xl">
+          {views.map(v => (
+            <button key={v.idx} onClick={() => setSelected(v.idx)}
+              className="group relative rounded-2xl overflow-hidden bg-zinc-800">
+              <img src={`/api/v1/photos/${photoId}/reframe/${v.idx}`}
+                className="w-full aspect-video object-cover" />
+              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
+                <div className="text-white text-sm font-semibold">{v.label}</div>
+                <div className="text-white/60 text-[10px]">{v.hint}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+          <img src={`/api/v1/photos/${photoId}/reframe/${selected}`}
+            className="max-h-[85vh] max-w-full object-contain rounded-xl" />
+          <button onClick={() => setSelected(null)}
+            className="px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-zinc-200">
+            ← Zurück zu den Perspektiven
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DroneInfoOverlay({ photo }: { photo: Photo }) {
   const m = photo.drone_metadata
   if (!m) return null
@@ -184,6 +250,9 @@ function DroneInfoOverlay({ photo }: { photo: Photo }) {
         <Plane size={16} />
         <span className="font-semibold text-sm">Drohnen-Aufnahme</span>
       </div>
+      {m.story && (
+        <p className="text-sm mb-2 leading-relaxed">{m.story}</p>
+      )}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         {m.relative_altitude_m != null && (
           <div><span className="text-white/60">Höhe (rel.)</span><br />{Math.round(m.relative_altitude_m)} m</div>

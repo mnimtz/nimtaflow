@@ -117,8 +117,23 @@ def _to_v1(photo: Photo, req: Request) -> PhotoV1:
         preview_url=f"{base}/api/v1/photos/{photo.id}/preview" if photo.is_video else None,
         is_360=bool(photo.is_360) if hasattr(photo, "is_360") else None,
         is_drone=bool(photo.is_drone) if hasattr(photo, "is_drone") else None,
-        drone_metadata=photo.drone_metadata if hasattr(photo, "drone_metadata") else None,
+        drone_metadata=_enrich_drone_meta(photo) if hasattr(photo, "is_drone") and photo.is_drone else None,
     )
+
+
+def _enrich_drone_meta(photo) -> Optional[dict]:
+    """v1.563: Drohnen-Metadaten um ortsspezifische Story ergänzen (falls
+    beim Detect noch nicht mit Ort erzeugt)."""
+    d = dict(photo.drone_metadata or {})
+    if not d.get("story"):
+        try:
+            from app.services.drone_story import story_for_photo
+            s = story_for_photo(d, city=photo.city, country=photo.country)
+            if s:
+                d["story"] = s
+        except Exception:
+            pass
+    return d
 
 
 # ── Photo list with cursor pagination ─────────────────────────────────────────
@@ -205,6 +220,58 @@ async def list_photos_v1(
         total=total or 0,
         has_more=has_more,
     )
+
+
+@router.get("/photos/{photo_id}/reframe/{idx}")
+async def photo_reframe(photo_id: int, idx: int,
+                        yaw: Optional[float] = Query(None),
+                        pitch: float = Query(-10.0),
+                        fov: float = Query(90.0),
+                        db: AsyncSession = Depends(get_db),
+                        user: Optional[User] = Depends(current_user_optional)):
+    """v1.563: Perspektivischer Ausschnitt aus einem 360°-Foto.
+    idx: 0=Vorne, 1=Rechts, 2=Hinten, 3=Links (Default-Yaws).
+    yaw/pitch/fov überschreiben die Defaults für Custom-Reframes (Chat/API)."""
+    from fastapi.responses import FileResponse
+    from app.services.pano_render import render_reframe, reframe_path
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_360:
+        raise HTTPException(404, "Nicht 360°")
+    # Standard-Perspektiven: 4 Blickrichtungen um die Kugel
+    if yaw is None:
+        yaws = {0: 0.0, 1: 90.0, 2: 180.0, 3: -90.0}
+        yaw = yaws.get(idx, 0.0)
+    p = reframe_path(photo.id, idx)
+    if not os.path.exists(p):
+        src = photo.path if photo.path and os.path.exists(photo.path) else (photo.thumb_large or "")
+        out = render_reframe(src, photo.id, idx,
+                             yaw=float(yaw), pitch=float(pitch), h_fov=float(fov))
+        if not out:
+            raise HTTPException(500, "Reframe-Rendering fehlgeschlagen")
+    return FileResponse(p, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/photos/{photo_id}/planet")
+async def photo_planet(photo_id: int,
+                       db: AsyncSession = Depends(get_db),
+                       user: Optional[User] = Depends(current_user_optional)):
+    """v1.563: Little-Planet-Ansicht eines 360°-Fotos. Wird on-demand gerendert
+    (Cache-hit gibt es schon nach dem ersten Aufruf)."""
+    from fastapi.responses import FileResponse
+    from app.services.pano_render import render_little_planet, little_planet_path
+    photo = await db.get(Photo, photo_id)
+    if not photo or not photo.is_360:
+        raise HTTPException(404, "Nicht 360°")
+    p = little_planet_path(photo.id)
+    if not os.path.exists(p):
+        # Original bevorzugen, notfalls thumb_large als fallback
+        src = photo.path if photo.path and os.path.exists(photo.path) else (photo.thumb_large or "")
+        out = render_little_planet(src, photo.id, out_size=800)
+        if not out:
+            raise HTTPException(500, "Little-Planet-Rendering fehlgeschlagen")
+    return FileResponse(p, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/photos/special", response_model=PhotoPageV1)

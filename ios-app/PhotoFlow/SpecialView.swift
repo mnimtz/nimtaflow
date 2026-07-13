@@ -98,8 +98,12 @@ struct SpecialView: View {
     }
 
     private func tile(_ p: PhotoV1) -> some View {
-        ZStack(alignment: .topLeading) {
-            AsyncImage(url: api.url(p.thumb_medium_url)) { img in
+        // v1.563: bei 360°-Fotos Little-Planet-Thumbnail anzeigen.
+        let thumbURL: URL? = (p.is_360 == true && !p.is_video)
+            ? api.url("/api/v1/photos/\(p.id)/planet")
+            : api.url(p.thumb_medium_url)
+        return ZStack(alignment: .topLeading) {
+            AsyncImage(url: thumbURL) { img in
                 img.resizable().aspectRatio(1, contentMode: .fill)
             } placeholder: { Color.gray.opacity(0.2) }
             .aspectRatio(1, contentMode: .fill)
@@ -147,6 +151,8 @@ struct SpecialViewerScreen: View {
     @EnvironmentObject var api: APIClient
     let photo: PhotoV1
     let onClose: () -> Void
+    // v1.563: bei 360°-Fotos zwei Modi: Sphere-Viewer ODER 4 Perspektiv-Ausschnitte
+    @State private var mode: String = "sphere"   // "sphere" | "reframe"
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -154,8 +160,32 @@ struct SpecialViewerScreen: View {
 
             if photo.is_360 == true, !photo.is_video,
                let u = api.url(photo.original_url) {
-                Sphere360PhotoView(imageURL: u)
-                    .ignoresSafeArea()
+                if mode == "sphere" {
+                    Sphere360PhotoView(imageURL: u).ignoresSafeArea()
+                } else {
+                    ReframeChooserView(photoId: photo.id)
+                }
+                VStack {
+                    HStack(spacing: 8) {
+                        Button { mode = "sphere" } label: {
+                            Label("360°", systemImage: "globe.europe.africa.fill")
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(mode == "sphere" ? .white : .black.opacity(0.5),
+                                            in: Capsule())
+                                .foregroundStyle(mode == "sphere" ? .black : .white)
+                        }
+                        Button { mode = "reframe" } label: {
+                            Label("Perspektiven", systemImage: "camera.viewfinder")
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(mode == "reframe" ? .white : .black.opacity(0.5),
+                                            in: Capsule())
+                                .foregroundStyle(mode == "reframe" ? .black : .white)
+                        }
+                        Spacer()
+                    }
+                    .font(.caption).padding(.horizontal).padding(.top, 8)
+                    Spacer()
+                }
             } else if photo.is_360 == true, photo.is_video,
                       let u = api.url(photo.video_url ?? "") {
                 Sphere360VideoView(videoURL: u)
@@ -187,6 +217,11 @@ struct SpecialViewerScreen: View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Drohnen-Aufnahme", systemImage: "airplane")
                 .font(.subheadline).bold()
+            if let s = m.story {
+                Text(s).font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 2)
+            }
             HStack(spacing: 16) {
                 if let r = m.relative_altitude_m {
                     stat("Höhe (rel.)", "\(Int(r)) m")
@@ -211,6 +246,55 @@ struct SpecialViewerScreen: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption2).foregroundStyle(.white.opacity(0.6))
             Text(value).font(.body).bold()
+        }
+    }
+}
+
+
+// MARK: - Reframe-Chooser (4 Perspektiven aus einem 360°)
+struct ReframeChooserView: View {
+    @EnvironmentObject var api: APIClient
+    let photoId: Int
+    @State private var selected: Int? = nil
+    private let views: [(idx: Int, label: String)] = [
+        (0, "Vorne"), (1, "Rechts"), (2, "Hinten"), (3, "Links"),
+    ]
+    var body: some View {
+        Group {
+            if let s = selected {
+                VStack {
+                    Spacer()
+                    AsyncImage(url: api.url("/api/v1/photos/\(photoId)/reframe/\(s)")) { img in
+                        img.resizable().scaledToFit()
+                    } placeholder: { ProgressView().tint(.white) }
+                    Spacer()
+                    Button { selected = nil } label: {
+                        Label("Zurück zu den Perspektiven", systemImage: "arrow.left")
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(.white, in: Capsule())
+                            .foregroundStyle(.black)
+                    }.padding(.bottom, 30)
+                }
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        ForEach(views, id: \.idx) { v in
+                            Button { selected = v.idx } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    AsyncImage(url: api.url("/api/v1/photos/\(photoId)/reframe/\(v.idx)")) { img in
+                                        img.resizable().aspectRatio(16/9, contentMode: .fill)
+                                    } placeholder: { Color.gray.opacity(0.3).aspectRatio(16/9, contentMode: .fill) }
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    Text(v.label).font(.subheadline).bold()
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .padding(.top, 60)
+                }
+            }
         }
     }
 }

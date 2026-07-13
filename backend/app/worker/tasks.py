@@ -501,6 +501,16 @@ def detect_special_media_task(self, limit: int = 5000, only_missing: bool = True
                 continue
             res = detect_special(path, filename)
             if res.get("is_360") or res.get("is_drone"):
+                # v1.563: Drohnen-Story mitgenerieren (aus Metadaten, kein VLM-Call)
+                if res.get("is_drone") and res.get("drone_metadata"):
+                    try:
+                        from app.services.drone_story import story_for_photo
+                        # Ort später bei Response holen; hier nur die Basis-Story
+                        s = story_for_photo(res["drone_metadata"])
+                        if s:
+                            res["drone_metadata"]["story"] = s
+                    except Exception:
+                        pass
                 buf.append((pid, res))
                 if res.get("is_360"): n_360 += 1
                 if res.get("is_drone"): n_drone += 1
