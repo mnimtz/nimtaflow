@@ -125,7 +125,7 @@ struct LeitstandView: View {
                                         await load()
                                     }
                                 } label: {
-                                    Label("Videos via Gemini nachziehen (Cloud)", systemImage: "cloud.and.arrow.up")
+                                    Label("Videos via Gemini nachziehen (Cloud)", systemImage: "icloud.and.arrow.up")
                                 }
                             }
                         }

@@ -1585,20 +1585,25 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                 try:
                     new_taken = None
                     xmp_path = None
-                    if mode in ("file", "file_sidecar"):
+                    # v1.553: exiftool kann in einige Container KEIN XMP direkt
+                    # schreiben (AVCHD .MTS, .M2TS, .MOD, .TOD, altes MOV mit
+                    # kaputtem moov). Für diese: nur Sidecar. Sonst bekommt der
+                    # Nutzer laufend "Writing of MTS files is not yet supported".
+                    _NATIVE_UNSUPPORTED = (".mts", ".m2ts", ".mod", ".tod", ".3gp", ".3g2")
+                    _ext = os.path.splitext(it["path"])[1].lower()
+                    _mode = "sidecar" if _ext in _NATIVE_UNSUPPORTED else mode
+                    if _mode in ("file", "file_sidecar"):
                         set_date = await _ecd(it["path"])
                         if set_date and it["taken_at"] is None:
                             try:
                                 new_taken = datetime.strptime(set_date[:19], "%Y:%m:%d %H:%M:%S")
                             except Exception:
                                 new_taken = None
-                        # ONE exiftool call for description+keywords+rating+title+place
-                        # (favourite = 5 stars) — ~5× faster than the old per-field spawns.
                         eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
                         await _wall(it["path"], description=it["description"],
                                     keywords=it["kw"] or None, rating=(eff if eff > 0 else None),
                                     title=it["title"], city=it["city"], country=it["country"])
-                    if mode in ("file_sidecar", "sidecar"):
+                    if _mode in ("file_sidecar", "sidecar"):
                         cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
                         # KEIN new_taken = cap: file_capture_date() liefert os.path.getmtime()
                         # (= Sync-/Transcode-Zeit), darf nie als Aufnahmedatum in die DB.
