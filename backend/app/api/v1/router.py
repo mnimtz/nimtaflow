@@ -201,6 +201,44 @@ async def list_photos_v1(
     )
 
 
+@router.get("/photos/special", response_model=PhotoPageV1)
+async def list_special_v1(request: Request,
+                          filter: str = Query("all", regex="^(all|360|drone)$"),
+                          cursor: Optional[int] = Query(None),
+                          limit: int = Query(60, ge=1, le=200),
+                          db: AsyncSession = Depends(get_db),
+                          user: Optional[User] = Depends(current_user_optional)):
+    """v1.561: 360° und Drohnen-Aufnahmen. filter=all|360|drone."""
+    acl = photo_conditions(user)
+    conds = [Photo.is_trashed == False, Photo.thumb_small.isnot(None), *acl]   # noqa: E712
+    if filter == "360":
+        conds.append(Photo.is_360 == True)                                      # noqa: E712
+    elif filter == "drone":
+        conds.append(Photo.is_drone == True)                                    # noqa: E712
+    else:  # all → nur wenn eines von beiden gesetzt
+        from sqlalchemy import or_ as _or
+        conds.append(_or(Photo.is_360 == True, Photo.is_drone == True))         # noqa: E712
+    q = (select(Photo).where(*conds)
+         .order_by(Photo.taken_at.desc().nullslast(), Photo.id.desc()))
+    offset = max(0, cursor or 0)
+    rows = (await db.execute(q.offset(offset).limit(limit + 1))).scalars().all()
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    # Zähler für die Filter-Chips (schnell, gecached wäre besser aber für UX ok)
+    total_360 = int(await db.scalar(select(func.count()).select_from(Photo).where(
+        Photo.is_trashed == False, Photo.is_360 == True, *acl)) or 0)             # noqa: E712
+    total_drone = int(await db.scalar(select(func.count()).select_from(Photo).where(
+        Photo.is_trashed == False, Photo.is_drone == True, *acl)) or 0)           # noqa: E712
+    resp = PhotoPageV1(items=[_to_v1(p, request) for p in items],
+                       next_cursor=(offset + limit) if has_more else None,
+                       total=0, has_more=has_more)
+    # Kachel-Counts als extra Felder anhängen (Model ist kompatibel via .dict())
+    d = resp.model_dump()
+    d["counts"] = {"total_360": total_360, "total_drone": total_drone}
+    from fastapi.responses import JSONResponse
+    return JSONResponse(d)
+
+
 @router.get("/photos/pets", response_model=PhotoPageV1)
 async def list_pets_v1(request: Request, cursor: Optional[int] = Query(None),
                        limit: int = Query(60, ge=1, le=200),

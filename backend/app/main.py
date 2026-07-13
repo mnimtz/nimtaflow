@@ -160,8 +160,15 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ",
     # v1.549: strukturierte Beschreibung (JSONB) für präzise Chat-Filter
     "ALTER TABLE photos ADD COLUMN IF NOT EXISTS structured_desc JSONB",
-    # GIN-Index auf JSONB — schnelles jsonb_path_ops für Existenz-/Equals-Queries
     "CREATE INDEX IF NOT EXISTS ix_photos_structured_desc_gin ON photos USING gin (structured_desc jsonb_path_ops)",
+    # v1.561: Spezielle Medien (360° + Drohnen). is_360/is_drone als indexierte
+    # Booleans für schnelle Filter, plus JSONB für Extra-Metadaten (Höhe, FOV, etc.)
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_360 BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS is_drone BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS drone_metadata JSONB",
+    "ALTER TABLE photos ADD COLUMN IF NOT EXISTS pano_metadata JSONB",
+    "CREATE INDEX IF NOT EXISTS ix_photos_is_360 ON photos (is_360) WHERE is_360 = true",
+    "CREATE INDEX IF NOT EXISTS ix_photos_is_drone ON photos (is_drone) WHERE is_drone = true",
 ]
 
 

@@ -95,6 +95,12 @@ class Photo(Base):
     # notable_details, indoor_outdoor, event_type}. Der Chat kann darauf präzise
     # filtern statt Fuzzy-ILIKE über 800-Zeichen-Freitext.
     structured_desc: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # v1.561: Spezielle Medien-Kategorien (360°-Fotos/Videos, Drohnen-Aufnahmen).
+    # Werden beim Scan automatisch gesetzt (siehe services/special_detect.py).
+    is_360: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_drone: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    drone_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    pano_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # ── Processing ────────────────────────────────────────────────────────────
     status: Mapped[PhotoStatus] = mapped_column(Enum(PhotoStatus), default=PhotoStatus.pending, index=True)

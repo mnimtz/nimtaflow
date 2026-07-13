@@ -465,6 +465,75 @@ def cluster_faces_full_task(self):
     return _run(_run_full())
 
 
+@celery_app.task(bind=True, name="detect_special_media")
+def detect_special_media_task(self, limit: int = 5000, only_missing: bool = True):
+    """v1.561: Erkennt 360°- und Drohnen-Aufnahmen in der Bibliothek und setzt
+    is_360 / is_drone + Metadaten. Idempotent — läuft nur über Fotos die noch
+    NIE erkannt wurden (Marker: pano_metadata IS NULL AND drone_metadata IS NULL
+    AND is_360=false AND is_drone=false).
+
+    Priorisiert nach: erst mit EXIF-Make-Match, dann Rest per Filename-Fallback."""
+    async def _run_ds():
+        from app.core.database import init_db, get_db
+        from app.models.photo import Photo
+        from app.services.special_detect import detect_special
+        from app.services.feature_log import log as flog
+        from sqlalchemy import select as _s, update as _u, or_ as _or
+        import os as _os
+        init_db()
+        rows = []
+        async for db in get_db():
+            q = _s(Photo.id, Photo.path, Photo.filename).where(
+                Photo.is_trashed == False,     # noqa: E712
+                Photo.is_missing == False,     # noqa: E712
+            )
+            if only_missing:
+                q = q.where(Photo.is_360 == False, Photo.is_drone == False,   # noqa: E712
+                            Photo.pano_metadata.is_(None), Photo.drone_metadata.is_(None))
+            q = q.order_by(Photo.id.desc()).limit(int(limit))
+            rows = (await db.execute(q)).all()
+            break
+        n_360 = 0; n_drone = 0
+        BATCH = 200
+        buf = []
+        for pid, path, filename in rows:
+            if not path or not _os.path.exists(path):
+                continue
+            res = detect_special(path, filename)
+            if res.get("is_360") or res.get("is_drone"):
+                buf.append((pid, res))
+                if res.get("is_360"): n_360 += 1
+                if res.get("is_drone"): n_drone += 1
+            if len(buf) >= BATCH:
+                async for db in get_db():
+                    for pid_, r_ in buf:
+                        await db.execute(_u(Photo).where(Photo.id == pid_).values(
+                            is_360=r_.get("is_360", False),
+                            is_drone=r_.get("is_drone", False),
+                            pano_metadata=r_.get("pano_metadata"),
+                            drone_metadata=r_.get("drone_metadata"),
+                        ))
+                    await db.commit()
+                    break
+                buf = []
+        # flush
+        if buf:
+            async for db in get_db():
+                for pid_, r_ in buf:
+                    await db.execute(_u(Photo).where(Photo.id == pid_).values(
+                        is_360=r_.get("is_360", False),
+                        is_drone=r_.get("is_drone", False),
+                        pano_metadata=r_.get("pano_metadata"),
+                        drone_metadata=r_.get("drone_metadata"),
+                    ))
+                await db.commit()
+                break
+        flog("scanner", "INFO",
+             f"Spezial-Detect: {len(rows)} geprüft, {n_360} 360°, {n_drone} Drohne")
+        return {"checked": len(rows), "found_360": n_360, "found_drone": n_drone}
+    return _run(_run_ds())
+
+
 @celery_app.task(bind=True, name="reingest_structured_descriptions")
 def reingest_structured_descriptions_task(self, limit: int = 500,
                                           only_missing: bool = True,

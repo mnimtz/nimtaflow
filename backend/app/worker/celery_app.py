@@ -64,6 +64,7 @@ celery_app.conf.update(
         "retry_failed_ai":    {"queue": "cpu"},
         "sweep_pending_video_ai": {"queue": "cpu"},  # self-heal videos stuck without description
         "sweep_websafe_videos":   {"queue": "cpu"},  # v1.538: promote H.264 8-bit videos ohne Transcode
+        "detect_special_media":   {"queue": "cpu"},  # v1.561: 360°/Drohnen-Erkennung
         "retry_missing_thumbnails": {"queue": "cpu"},
         "backfill_xmp":       {"queue": "cpu"},   # one-off: stamp DB metadata into files
         "write_faces":        {"queue": "cpu"},   # MWG face regions (button + nightly incremental)
