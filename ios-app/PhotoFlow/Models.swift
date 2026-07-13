@@ -437,6 +437,72 @@ struct AssistantMapFilter: Equatable {
     }
 }
 
+// MARK: - Leitstand v2 (v1.560, einheitlich Web+iOS)
+
+struct LeitstandV2: Codable {
+    let updated_at: String
+    let kacheln: Kacheln
+    struct Kacheln: Codable {
+        let descriptions: Descriptions
+        let videos: Videos
+        let metadata: Metadata
+        let people: People
+        let reingest: Reingest
+        let workers: [Worker]
+        let warteschlangen: [String: Int]
+    }
+    struct Slice: Codable {
+        let done: Int
+        let total: Int
+        let pct: Double
+        let rate_pro_stunde: Int?
+    }
+    struct Descriptions: Codable {
+        let title: String
+        let text: Slice
+        let structured: Slice
+        let ohne_beschreibung: Int
+        let detail: String
+    }
+    struct Videos: Codable {
+        let title: String
+        let transcode: Slice
+        let beschreibung: Slice
+        let fehler: Int
+    }
+    struct Metadata: Codable {
+        let title: String
+        let sidecar: Slice
+        let fehlend: Int
+        let action_label: String
+        let action_task: String
+        let detail: String
+    }
+    struct People: Codable {
+        let title: String
+        let namen: Int
+        let faces_zugeordnet: Int
+        let faces_offen: Int
+        let faces_vorschlaege: Int
+    }
+    struct Reingest: Codable {
+        let title: String
+        let pending: Int
+        let in_batch: Int
+        let done_last_hour: Int
+        let eta_stunden: Double?
+    }
+    struct Worker: Codable, Identifiable {
+        var id: String { name }
+        let name: String
+        let status: String  // "aktiv" | "idle" | "offline"
+        let letzte_arbeit_vor_sekunden: Int?
+        let durchschnitt_sek: Double
+        let rate_pro_stunde: Int
+    }
+}
+
+
 // MARK: - Leitstand / Ops-Status (admin-only)
 
 struct OpsStatus: Codable {

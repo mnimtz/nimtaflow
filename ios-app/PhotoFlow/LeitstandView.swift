@@ -1,241 +1,283 @@
 import SwiftUI
 
-/// Betriebs-/Leitstand-Status — Warteschlangen, Worker, Backlog, grobe Restzeit.
-/// Nur für Administratoren (Endpoint /api/v1/ops ist admin-gated; die Menü-Zeile wird
-/// zusätzlich über api.isAdmin ausgeblendet).
+/// v1.560: Neuer einheitlicher Leitstand — 6 Kacheln, identisch zu Web.
+/// Datenquelle: GET /api/v1/leitstand — ein Endpoint, eine Wahrheit.
 struct LeitstandView: View {
     @EnvironmentObject var api: APIClient
-    @State private var ops: OpsStatus?
-    @State private var workers: OpsWorkers?
+    @State private var data: LeitstandV2?
     @State private var loading = false
     @State private var err: String?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var actionMsg: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                if let w = workers {
-                    Section("Worker-Fortschritt") {
-                        progressRow(lane: w.embed, iconName: "brain.head.profile")
-                        progressRow(lane: w.xmp, iconName: "doc.badge.arrow.up")
-                        if let vt = w.video_transcode {
-                            // Zwei separate ProgressRows für 720p und 1080p — damit sofort
-                            // sichtbar ist, welcher Rendition-Backlog wo steht.
-                            progressRow(lane: vt, iconName: "film.stack")
-                            if let d720 = vt.done_720 {
-                                subProgressRow(title: "720p", done: d720, total: vt.total,
-                                               lastHour: vt.last_hour_720)
-                            }
-                            if let d1080 = vt.done_1080 {
-                                subProgressRow(title: "1080p", done: d1080, total: vt.total,
-                                               lastHour: vt.last_hour_1080)
-                            }
-                            if let leg = vt.legacy_only, leg > 0 {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "exclamationmark.triangle.fill").font(.caption)
-                                        .foregroundStyle(.orange)
-                                    Text("\(leg) alte 10-bit-Files (ruckeln)")
-                                        .font(.caption).foregroundStyle(.orange).monospacedDigit()
-                                }
-                            }
-                            if let rate = vt.hourly_rate, let eta = vt.eta_hours {
-                                HStack {
-                                    Image(systemName: "hare.fill").font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text("\(rate) Videos/h · Restzeit ≈ \(fmtEta(eta))")
-                                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                                }
-                            } else if (vt.hourly_rate ?? 0) == 0 {
-                                HStack {
-                                    Image(systemName: "pause.circle.fill").font(.caption)
-                                        .foregroundStyle(.orange)
-                                    Text("Rate: 0/h — Worker steht (siehe Backend-Log)")
-                                        .font(.caption).foregroundStyle(.orange)
-                                }
-                            }
-                            if (vt.legacy_only ?? 0) > 0 {
-                                Button {
-                                    Task {
-                                        _ = try? await api.startVideoRequeueHdr(limit: 500)
-                                        await load()
-                                    }
-                                } label: {
-                                    Label("500 alte HDR-Videos neu transcodieren", systemImage: "arrow.clockwise.circle")
-                                }
-                            }
-                        }
-                        if let run = w.xmp.active_run, run.finished != true, let t = run.total, let d = run.done, t > 0 {
-                            HStack {
-                                Text("Aktueller XMP-Run").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                Text("\(d)/\(t) · \(run.failed ?? 0) Fehler")
-                                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                            }
-                        }
-                        Button {
-                            Task { _ = try? await api.startXmpBackfill(full: true); await load() }
-                        } label: {
-                            Label("XMP-Backfill jetzt starten (voll)", systemImage: "play.circle")
-                        }
+            ScrollView {
+                VStack(spacing: 14) {
+                    if let e = err {
+                        Text(e).font(.caption).foregroundStyle(.red).padding()
+                    }
+                    if let k = data?.kacheln {
+                        descriptionsCard(k.descriptions)
+                        videosCard(k.videos)
+                        metadataCard(k.metadata)
+                        peopleCard(k.people)
+                        reingestCard(k.reingest)
+                        workersCard(workers: k.workers, queues: k.warteschlangen)
+                    } else if loading {
+                        ProgressView().padding()
+                    } else {
+                        Text("Keine Daten").foregroundStyle(.secondary).padding()
                     }
                 }
-                if let q = ops?.queues {
-                    Section("Warteschlangen") {
-                        row("CPU · Scans/Thumbnails", q.cpu)
-                        row("GPU · KI/Gesichter", q.gpu)
-                        row("Scan", q.scan)
-                        row("Video · Transcode", q.video)
-                    }
-                }
-                if let w = ops?.worker {
-                    Section("Worker") {
-                        let active = w.values.filter { $0 == "aktiv" }.count
-                        HStack {
-                            Image(systemName: active > 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundStyle(active > 0 ? .green : .orange)
-                            Text(active > 0 ? "\(active) aktiv" : "keine Antwort")
-                        }
-                    }
-                }
-                if let b = ops?.backlog {
-                    Section("Backlog (offen, retryfähig)") {
-                        row("Bilder ohne Beschreibung", b.bilder_ohne_beschreibung)
-                        row("Videos ohne Beschreibung", b.videos_ohne_beschreibung)
-                        row("Videos ohne Gesichts-Scan", b.videos_ohne_gesichtsscan)
-                        row("Fehlerhafte Medien", b.fehlerhafte_medien)
-                    }
-                    let failedImg = b.bilder_beschreibung_fehlgeschlagen ?? 0
-                    let failedVid = b.videos_beschreibung_fehlgeschlagen ?? 0
-                    if failedImg + failedVid > 0 {
-                        Section("Beschreibung fehlgeschlagen") {
-                            row("Bilder", failedImg)
-                            row("Videos", failedVid)
-                            Button {
-                                Task {
-                                    _ = try? await api.resetAiErrors(kind: "all")
-                                    await load()
-                                }
-                            } label: {
-                                Label("Fehler zurücksetzen & neu versuchen", systemImage: "arrow.clockwise")
-                            }
-                            if failedVid > 0 {
-                                Button {
-                                    Task {
-                                        _ = try? await api.startVideoCloudFallback(limit: 200)
-                                        await load()
-                                    }
-                                } label: {
-                                    Label("Videos via Gemini nachziehen (Cloud)", systemImage: "icloud.and.arrow.up")
-                                }
-                            }
-                        }
-                    }
-                }
-                if let e = ops?.restzeit_schaetzung_minuten {
-                    Section {
-                        etaRow("GPU-Gesichter", e.gpu_gesichter)
-                        etaRow("Bild-Beschreibungen", e.bild_beschreibungen)
-                        etaRow("Video-Beschreibungen", e.video_beschreibungen)
-                    } header: {
-                        Text("Restzeit (grobe Schätzung)")
-                    } footer: {
-                        Text(ops?.hinweis_restzeit ?? "")
-                    }
-                }
-                if let err { Text(err).foregroundStyle(.red) }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
             }
             .navigationTitle("Leitstand")
-            .toolbar { Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } }
-            .overlay { if loading && ops == nil { ProgressView() } }
-            .task {
-                await load()
-                // Auto-Refresh alle 10s solange der Screen offen ist — dann sieht
-                // man den Progress live ohne manuell zu ziehen.
-                refreshTask?.cancel()
-                refreshTask = Task {
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 10_000_000_000)
-                        if !Task.isCancelled { await load() }
+            .toolbar {
+                if let ts = data?.updated_at {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Text("aktualisiert " + shortTime(ts))
+                            .font(.caption2).foregroundStyle(.tertiary)
                     }
                 }
             }
-            .onDisappear { refreshTask?.cancel(); refreshTask = nil }
-            .refreshable { await load() }
+            .task { startAutoRefresh() }
+            .onDisappear { refreshTask?.cancel() }
+            .alert("Aktion", isPresented: Binding(
+                get: { actionMsg != nil },
+                set: { if !$0 { actionMsg = nil } })) {
+                Button("OK") { actionMsg = nil }
+            } message: {
+                Text(actionMsg ?? "")
+            }
         }
     }
 
-    @ViewBuilder private func progressRow(lane: OpsWorkers.Lane, iconName: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: iconName).foregroundStyle(.indigo)
-                Text(lane.label).font(.subheadline)
-                Spacer()
-                if let alive = lane.workers_alive, alive > 0 {
-                    Image(systemName: "circle.fill").foregroundStyle(.green).font(.caption2)
-                    Text("\(alive)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
+    // MARK: - Auto-Refresh alle 3 s
+    private func startAutoRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
-            ProgressView(value: max(0, min(1, lane.percent / 100.0)))
-            HStack {
-                Text("\(lane.done) / \(lane.total)").font(.caption).monospacedDigit()
-                Spacer()
-                Text(String(format: "%.1f %%", min(100.0, max(0.0, lane.percent))))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-        }.padding(.vertical, 2)
-    }
-
-    @ViewBuilder private func subProgressRow(title: String, done: Int, total: Int, lastHour: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(title).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(done) / \(total)")
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                if let lh = lastHour {
-                    Text("· +\(lh)/h")
-                        .font(.caption2).foregroundStyle(lh > 0 ? .green : .orange).monospacedDigit()
-                }
-            }
-            ProgressView(value: total > 0 ? min(1, Double(done) / Double(total)) : 0)
-                .tint(title == "1080p" ? .indigo : .cyan)
-        }.padding(.vertical, 1)
-    }
-
-    private func fmtEta(_ hours: Double) -> String {
-        if hours < 1 { return "\(Int(hours * 60)) Min" }
-        if hours < 48 { return String(format: "%.1f h", hours) }
-        return "\(Int(hours / 24)) T"
-    }
-
-    @ViewBuilder private func row(_ title: String, _ v: Int?) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(v.map { String($0) } ?? "–").foregroundStyle(.secondary).monospacedDigit()
         }
     }
-
-    @ViewBuilder private func etaRow(_ title: String, _ mins: Int?) -> some View {
-        HStack { Text(title); Spacer(); Text(fmtMin(mins)).foregroundStyle(.secondary) }
-    }
-
-    private func fmtMin(_ m: Int?) -> String {
-        guard let m, m > 0 else { return "–" }
-        if m < 60 { return "\(m) Min" }
-        let h = m / 60, r = m % 60
-        return r > 0 ? "\(h) Std \(r) Min" : "\(h) Std"
-    }
-
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            async let a = api.opsStatus()
-            async let b = api.opsWorkers()
-            let (o, w) = try await (a, b)
-            ops = o; workers = w; err = nil
+            data = try await api.leitstand()
+            err = nil
         } catch {
-            err = "Konnte Leitstand nicht laden (nur für Administratoren)."
+            err = error.localizedDescription
         }
+    }
+
+    // MARK: - Kachel 1: Beschreibungen
+    private func descriptionsCard(_ d: LeitstandV2.Descriptions) -> some View {
+        card(title: d.title, systemImage: "text.document") {
+            VStack(alignment: .leading, spacing: 12) {
+                metricRow(label: "Freitext-Beschreibung", slice: d.text)
+                metricRow(label: "Strukturiertes JSON (28 Felder)", slice: d.structured)
+                if let r = d.structured.rate_pro_stunde, r > 0 {
+                    Text("aktuell \(r.formatted()) Fotos/h neu strukturiert")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Text(d.detail)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    // MARK: - Kachel 2: Videos
+    private func videosCard(_ v: LeitstandV2.Videos) -> some View {
+        card(title: v.title, systemImage: "film") {
+            VStack(alignment: .leading, spacing: 12) {
+                metricRow(label: "1080p-Version bereit", slice: v.transcode)
+                metricRow(label: "KI-Beschreibung", slice: v.beschreibung)
+                if v.fehler > 0 {
+                    HStack {
+                        Text("\(v.fehler) Videos mit Fehler")
+                            .font(.caption).foregroundStyle(.red)
+                        Spacer()
+                        Button("Cloud (Gemini) nachziehen") {
+                            Task {
+                                _ = try? await api.startVideoCloudFallback(limit: 500)
+                                actionMsg = "Cloud-Fallback für bis zu 500 Videos gestartet."
+                            }
+                        }
+                        .font(.caption).buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Kachel 3: Metadaten
+    private func metadataCard(_ m: LeitstandV2.Metadata) -> some View {
+        card(title: m.title, systemImage: "doc.badge.arrow.up") {
+            VStack(alignment: .leading, spacing: 12) {
+                metricRow(label: "XMP-Sidecar geschrieben", slice: m.sidecar)
+                Text(m.detail).font(.caption2).foregroundStyle(.secondary)
+                if m.fehlend > 0 {
+                    HStack {
+                        Text("\(m.fehlend.formatted()) fehlen noch")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(m.action_label) {
+                            Task {
+                                _ = try? await api.startXmpBackfill(full: true)
+                                actionMsg = "XMP-Backfill gestartet. Der Task läuft im Hintergrund; die Zahlen aktualisieren sich hier automatisch."
+                            }
+                        }
+                        .font(.caption).buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Kachel 4: Personen
+    private func peopleCard(_ p: LeitstandV2.People) -> some View {
+        card(title: p.title, systemImage: "person.2") {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                statTile("Benannte Personen", value: p.namen)
+                statTile("Gesichter zugeordnet", value: p.faces_zugeordnet)
+                statTile("Offene Gesichter", value: p.faces_offen,
+                         tone: p.faces_offen > 1000 ? .warn : .ok)
+                statTile("Vorschläge", value: p.faces_vorschlaege)
+            }
+        }
+    }
+
+    // MARK: - Kachel 5: Reingest
+    private func reingestCard(_ r: LeitstandV2.Reingest) -> some View {
+        card(title: r.title, systemImage: "arrow.triangle.2.circlepath") {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                statTile("In Bearbeitung", value: r.pending,
+                         tone: r.pending > 0 ? .info : .ok)
+                statTile("Gesamter Batch offen", value: r.in_batch)
+                statTile("Letzte Stunde fertig", value: r.done_last_hour)
+                if let e = r.eta_stunden {
+                    statTileText("Restzeit (grob)", value: "\(Int(e)) h")
+                } else {
+                    statTileText("Restzeit (grob)", value: "—")
+                }
+            }
+        }
+    }
+
+    // MARK: - Kachel 6: Worker
+    private func workersCard(workers: [LeitstandV2.Worker], queues: [String: Int]) -> some View {
+        card(title: "Worker-Fleet", systemImage: "cpu") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(workers) { w in
+                    HStack {
+                        Circle()
+                            .fill(workerColor(w.status))
+                            .frame(width: 8, height: 8)
+                        Text(w.name).font(.subheadline)
+                        Spacer()
+                        Text("\(w.rate_pro_stunde) /h")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        Text("Ø \(Int(w.durchschnitt_sek))s")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        Text(w.status == "offline" ? "offline" :
+                                (w.letzte_arbeit_vor_sekunden.map { "\($0)s" } ?? "—"))
+                            .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                    }
+                    .padding(8)
+                    .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                }
+                if workers.isEmpty {
+                    Text("Keine Worker aktiv.").font(.caption).foregroundStyle(.secondary)
+                }
+                Divider().padding(.vertical, 4)
+                HStack {
+                    Text("Warteschlangen:").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(queuesShort(queues))
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+        }
+    }
+
+    // MARK: - Helfer
+    @ViewBuilder
+    private func card<Content: View>(title: String, systemImage: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: systemImage).foregroundStyle(.indigo)
+                Text(title).font(.subheadline).bold()
+            }
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func metricRow(label: String, slice: LeitstandV2.Slice) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(slice.done.formatted()) / \(slice.total.formatted())")
+                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            }
+            HStack(spacing: 6) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4).fill(Color.gray.opacity(0.2)).frame(height: 6)
+                        RoundedRectangle(cornerRadius: 4).fill(pctColor(slice.pct))
+                            .frame(width: min(geo.size.width, geo.size.width * CGFloat(slice.pct / 100.0)), height: 6)
+                    }
+                }.frame(height: 6)
+                Text("\(String(format: "%.1f", slice.pct))%")
+                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    .frame(width: 48, alignment: .trailing)
+            }
+        }
+    }
+
+    enum Tone { case ok, warn, info }
+    private func statTile(_ label: String, value: Int, tone: Tone = .ok) -> some View {
+        statTileText(label, value: value.formatted(), tone: tone)
+    }
+    private func statTileText(_ label: String, value: String, tone: Tone = .ok) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.title2.monospacedDigit()).bold()
+                .foregroundStyle(toneColor(tone))
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func toneColor(_ t: Tone) -> Color {
+        switch t { case .ok: return .primary; case .warn: return .orange; case .info: return .indigo }
+    }
+    private func pctColor(_ p: Double) -> Color {
+        if p >= 95 { return .green }
+        if p >= 60 { return .yellow }
+        return .red
+    }
+    private func workerColor(_ s: String) -> Color {
+        switch s { case "aktiv": return .green; case "idle": return .yellow; default: return .red }
+    }
+    private func queuesShort(_ q: [String: Int]) -> String {
+        ["cpu", "gpu", "scan", "video"]
+            .map { "\($0) \(q[$0] ?? 0)" }
+            .joined(separator: " · ")
+    }
+    private func shortTime(_ iso: String) -> String {
+        let df = ISO8601DateFormatter()
+        guard let d = df.date(from: iso) else { return "—" }
+        let out = DateFormatter(); out.dateFormat = "HH:mm:ss"
+        return out.string(from: d)
     }
 }

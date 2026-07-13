@@ -416,6 +416,8 @@ final class APIClient: ObservableObject {
 
     // MARK: Leitstand / Ops (admin-only)
     func opsStatus() async throws -> OpsStatus { try await get("api/v1/ops", as: OpsStatus.self) }
+    /// v1.560: neuer einheitlicher Leitstand-Endpoint für Web + iOS.
+    func leitstand() async throws -> LeitstandV2 { try await get("api/v1/leitstand", as: LeitstandV2.self) }
     /// Setzt ai_error=false für gescheiterte Beschreibungen zurück (Admin-only).
     /// kind ∈ {"all","images","videos"} → alle / nur Bilder / nur Videos.
     @discardableResult
