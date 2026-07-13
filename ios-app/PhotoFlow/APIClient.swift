@@ -418,6 +418,12 @@ final class APIClient: ObservableObject {
     func opsStatus() async throws -> OpsStatus { try await get("api/v1/ops", as: OpsStatus.self) }
     /// v1.560: neuer einheitlicher Leitstand-Endpoint für Web + iOS.
     func leitstand() async throws -> LeitstandV2 { try await get("api/v1/leitstand", as: LeitstandV2.self) }
+    /// v1.561: 360°- und Drohnen-Aufnahmen. filter ∈ {"all","360","drone"}
+    func specialPhotos(filter: String = "all", cursor: Int? = nil, limit: Int = 60) async throws -> SpecialPage {
+        var p = "api/v1/photos/special?filter=\(filter)&limit=\(limit)"
+        if let cursor { p += "&cursor=\(cursor)" }
+        return try await get(p, as: SpecialPage.self)
+    }
     /// Setzt ai_error=false für gescheiterte Beschreibungen zurück (Admin-only).
     /// kind ∈ {"all","images","videos"} → alle / nur Bilder / nur Videos.
     @discardableResult

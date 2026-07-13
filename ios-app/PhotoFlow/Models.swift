@@ -24,6 +24,29 @@ struct PhotoV1: Codable, Identifiable, Hashable {
     let video_url: String?
     let preview_url: String?
     let blur_data: String?      // base64 micro-JPEG LQIP placeholder
+    // v1.561: Spezielle Medien (360°/Drohnen)
+    let is_360: Bool?
+    let is_drone: Bool?
+    let drone_metadata: DroneMeta?
+    struct DroneMeta: Codable, Hashable {
+        let relative_altitude_m: Double?
+        let absolute_altitude_m: Double?
+        let gimbal_pitch: Double?
+        let make: String?
+        let model: String?
+    }
+}
+
+struct SpecialPage: Codable {
+    let items: [PhotoV1]
+    let next_cursor: Int?
+    let total: Int
+    let has_more: Bool
+    let counts: Counts?
+    struct Counts: Codable {
+        let total_360: Int
+        let total_drone: Int
+    }
 }
 
 struct PhotoPage: Codable {

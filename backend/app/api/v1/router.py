@@ -67,6 +67,9 @@ class PhotoV1(BaseModel):
     original_url: str
     video_url: Optional[str]
     preview_url: Optional[str]
+    is_360: Optional[bool] = None
+    is_drone: Optional[bool] = None
+    drone_metadata: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 
@@ -112,6 +115,9 @@ def _to_v1(photo: Photo, req: Request) -> PhotoV1:
         original_url=f"{base}/api/photos/{photo.id}/original",
         video_url=f"{base}/api/photos/{photo.id}/video/stream" if photo.is_video else None,
         preview_url=f"{base}/api/v1/photos/{photo.id}/preview" if photo.is_video else None,
+        is_360=bool(photo.is_360) if hasattr(photo, "is_360") else None,
+        is_drone=bool(photo.is_drone) if hasattr(photo, "is_drone") else None,
+        drone_metadata=photo.drone_metadata if hasattr(photo, "drone_metadata") else None,
     )
 
 
