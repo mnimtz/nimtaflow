@@ -34,15 +34,20 @@ _MAKES_360 = (
     "z cam",
 )
 _MODELS_360 = (
-    "onex", "one x", "onerx",
+    "onex", "onerx",
     "insta360",
     "theta",
     "gear 360",
     "gopro max", "hero max",
     "qoocam",
-    "z cam", "s1",
-    "one r",           # Insta360 One R (nur Panorama-Modus)
+    "z cam s1",
     "fixframe",        # Insta360 One R FixFrame
+)
+# Modelle die als Ganzwort erscheinen müssen (verhindert dass "one x" in "iphone x" matched)
+_MODELS_360_WORD = (
+    r"\bone\s*x\b",
+    r"\bone\s*r\b",
+    r"\bone\s*rx\b",
 )
 
 # EXIF Make/Model-Signaturen für Drohnen
@@ -120,6 +125,8 @@ def detect_special(path: str, filename: Optional[str] = None) -> dict:
         if not (make == "samsung" and "gear 360" not in model):
             is_360 = True
     if not is_360 and any(m in model for m in _MODELS_360):
+        is_360 = True
+    if not is_360 and any(re.search(p, model) for p in _MODELS_360_WORD):
         is_360 = True
     # Nur Aspect-Ratio 2:1 als 360°-Fallback: sehr schwach — nur wenn Filename hinweist
     if not is_360 and w and h and abs(w / h - 2.0) < 0.05 and _FN_360.search(filename):
