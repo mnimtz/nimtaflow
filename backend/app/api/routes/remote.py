@@ -304,11 +304,37 @@ async def claim(body: ClaimReq, db: AsyncSession = Depends(get_db),
             t = round((i + 0.5) * dur / nf, 2) if dur else 0
             face_frames.append({"url": f"/api/remote/frame/{photo.id}/{i}?n={nf}", "t": t})
 
+    # v1.552: Bekannte Personen aus vorhandenen Face-Zuordnungen zusammenstellen —
+    # der Worker bekommt sie als Prompt-Hinweis, damit er "Lea Marie Nimtz" statt
+    # "ein Kleinkind" schreibt. Nur benannte Personen mit ausreichender Confidence.
+    known_people = []
+    try:
+        from sqlalchemy import select as _s
+        from app.models.face import Face
+        from app.models.person import Person as _P
+        pnames = (await db.execute(
+            _s(_P.name, _P.birthdate).join(Face, Face.person_id == _P.id)
+            .where(Face.photo_id == photo.id, _P.name.isnot(None), _P.name != "")
+            .distinct()
+        )).all()
+        for name, bd in pnames:
+            entry = {"name": name}
+            if bd and photo.taken_at:
+                try:
+                    yrs = (photo.taken_at.date() - bd).days // 365
+                    if 0 <= yrs < 130:
+                        entry["age_years"] = int(yrs)
+                except Exception:
+                    pass
+            known_people.append(entry)
+    except Exception:
+        known_people = []
     return {
         "photo_id": photo.id,
         "is_video": bool(photo.is_video),
         "faces_only": faces_only,
         "image_url": f"/api/remote/image/{photo.id}",
+        "known_people": known_people,
         # Native-video worker (Qwen3-VL/MLX): the pre-transcoded 1080p web MP4 is
         # the AI source (player + AI share it). duration drives adaptive frame
         # sampling on the worker. Non-video → null.
