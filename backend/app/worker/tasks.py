@@ -1585,14 +1585,14 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                 try:
                     new_taken = None
                     xmp_path = None
-                    # v1.553: exiftool kann in einige Container KEIN XMP direkt
-                    # schreiben (AVCHD .MTS, .M2TS, .MOD, .TOD, altes MOV mit
-                    # kaputtem moov). Für diese: nur Sidecar. Sonst bekommt der
-                    # Nutzer laufend "Writing of MTS files is not yet supported".
-                    _NATIVE_UNSUPPORTED = (".mts", ".m2ts", ".mod", ".tod", ".3gp", ".3g2")
-                    _ext = os.path.splitext(it["path"])[1].lower()
-                    _mode = "sidecar" if _ext in _NATIVE_UNSUPPORTED else mode
-                    if _mode in ("file", "file_sidecar"):
+                    # v1.554 ECHTES FALLBACK-KONZEPT: file_native VERSUCHEN — wenn
+                    # es scheitert (AVCHD .MTS, altes MOV, was auch immer), MUSS
+                    # der Sidecar geschrieben werden. Sonst geht die AI-Beschreibung
+                    # verloren (steht nur in der DB) und beim Reingest ist sie weg.
+                    # Vorher-Bug: der äußere try/except hat _wall-Fehler geschluckt
+                    # UND den Sidecar-Write nie erreicht.
+                    file_native_failed = False
+                    if mode in ("file", "file_sidecar"):
                         set_date = await _ecd(it["path"])
                         if set_date and it["taken_at"] is None:
                             try:
@@ -1600,19 +1600,33 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                             except Exception:
                                 new_taken = None
                         eff = 5 if it["is_favorite"] else int(it["user_rating"] or 0)
-                        await _wall(it["path"], description=it["description"],
-                                    keywords=it["kw"] or None, rating=(eff if eff > 0 else None),
-                                    title=it["title"], city=it["city"], country=it["country"])
-                    if _mode in ("file_sidecar", "sidecar"):
+                        try:
+                            await _wall(it["path"], description=it["description"],
+                                        keywords=it["kw"] or None,
+                                        rating=(eff if eff > 0 else None),
+                                        title=it["title"], city=it["city"], country=it["country"])
+                        except Exception as ew:
+                            file_native_failed = True
+                            _err = str(ew)[:120]
+                            flog("ai", "INFO",
+                                 f"XMP file-native fehlgeschlagen für {it['filename']}: "
+                                 f"{_err} — schreibe Sidecar als Fallback")
+                    # Sidecar wird geschrieben wenn:
+                    #  - mode enthält 'sidecar' (also file_sidecar oder sidecar)
+                    #  - ODER file_native gescheitert ist (Fallback für 'file' mode)
+                    if mode in ("file_sidecar", "sidecar") or file_native_failed:
                         cap = it["taken_at"] or new_taken or file_capture_date(it["path"])
-                        # KEIN new_taken = cap: file_capture_date() liefert os.path.getmtime()
-                        # (= Sync-/Transcode-Zeit), darf nie als Aufnahmedatum in die DB.
-                        xmp_path = write_sidecar(
-                            it["path"], description=it["description"], title=it["title"],
-                            keywords=it["kw"] or None, latitude=it["latitude"], longitude=it["longitude"],
-                            city=it["city"], country=it["country"],
-                            capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
-                        )
+                        try:
+                            xmp_path = write_sidecar(
+                                it["path"], description=it["description"], title=it["title"],
+                                keywords=it["kw"] or None,
+                                latitude=it["latitude"], longitude=it["longitude"],
+                                city=it["city"], country=it["country"],
+                                capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                            )
+                        except Exception as es:
+                            # Sidecar konnte auch nicht geschrieben werden — echter Failure
+                            raise RuntimeError(f"weder file noch sidecar möglich: {es}")
                     stamps.append((it["id"], new_taken, xmp_path))
                     done += 1
                 except Exception as e:
@@ -2754,11 +2768,12 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                         # Write XMP for ANY model (local/gemini/…) whenever there's a
                         # description OR keywords — not gemini-only, not description-only.
                         if (description or kw) and xmp_mode in ("file", "file_sidecar", "sidecar"):
+                            file_native_failed = False
                             try:
-                                # Videos never embed (exiftool can't write MTS/AVCHD etc.) → sidecar only.
+                                # Videos: nativer Write geht in AVCHD/MTS/… fast nie →
+                                # immer direkt Sidecar (weiter unten).
                                 if xmp_mode in ("file", "file_sidecar") and not photo.is_video:
                                     from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
-                                    # No capture date? Derive one from the file date before editing.
                                     set_date = await _ecd(photo.path)
                                     if set_date and photo.taken_at is None:
                                         try:
@@ -2766,12 +2781,23 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                             flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt: {photo.filename} → {set_date}")
                                         except Exception:
                                             pass
-                                    if description:
-                                        await _wd(photo.path, description, overwrite=True)
-                                    if kw:
-                                        await _wk(photo.path, kw)
-                                    flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
-                                if photo.is_video or xmp_mode in ("file_sidecar", "sidecar"):
+                                    try:
+                                        if description:
+                                            await _wd(photo.path, description, overwrite=True)
+                                        if kw:
+                                            await _wk(photo.path, kw)
+                                        flog("ai", "INFO", f"Beschreibung in Datei geschrieben: {photo.filename}")
+                                    except Exception as ew:
+                                        # v1.554: file-native Fehlschlag → Sidecar-Fallback
+                                        file_native_failed = True
+                                        flog("ai", "INFO",
+                                             f"XMP file-native fehlgeschlagen für {photo.filename}: "
+                                             f"{str(ew)[:120]} — schreibe Sidecar als Fallback")
+                                # Sidecar wenn: Video (immer), mode=file_sidecar|sidecar,
+                                # ODER file-native ist gescheitert (auch für mode=file).
+                                if (photo.is_video
+                                        or xmp_mode in ("file_sidecar", "sidecar")
+                                        or file_native_failed):
                                     from app.services.xmp_sidecar import write_sidecar, file_capture_date
                                     # Nur taken_at für den Sidecar-Header verwenden — nie das DB-Feld
                                     # überschreiben, weil file_capture_date() das Datei-Modifikationsdatum
