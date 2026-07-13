@@ -102,18 +102,18 @@ export default function LeitstandPage() {
   const { t } = useT()
   const { data, dataUpdatedAt, isLoading } = useQuery<Leitstand>({
     queryKey: ['leitstand-v2'],
-    queryFn: () => api.get('/leitstand').then(r => r.data),
+    queryFn: () => api.get('/v1/leitstand').then(r => r.data),
     refetchInterval: 3000,
   })
 
   const backfill = useMutation({
-    mutationFn: () => api.post('/ops/xmp-backfill/start', { full: true }),
+    mutationFn: () => api.post('/v1/ops/xmp-backfill/start', { full: true }),
   })
   const cloudFallback = useMutation({
-    mutationFn: () => api.post('/ops/video-cloud-fallback/start', { limit: 500 }),
+    mutationFn: () => api.post('/v1/ops/video-cloud-fallback/start', { limit: 500 }),
   })
   const resetAiErrors = useMutation({
-    mutationFn: () => api.post('/ops/reset-ai-errors', { kind: 'all' }),
+    mutationFn: () => api.post('/v1/ops/reset-ai-errors', { kind: 'all' }),
   })
 
   const k = data?.kacheln

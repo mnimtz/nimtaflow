@@ -46,7 +46,7 @@ export default function SpecialPage() {
 
   const { data } = useQuery<PhotoPage>({
     queryKey: ['special', filter],
-    queryFn: () => api.get('/photos/special', { params: { filter, limit: 120 } }).then(r => r.data),
+    queryFn: () => api.get('/v1/photos/special', { params: { filter, limit: 120 } }).then(r => r.data),
     refetchOnWindowFocus: false,
   })
 
