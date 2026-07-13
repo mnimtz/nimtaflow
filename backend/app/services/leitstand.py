@@ -118,9 +118,11 @@ async def build_leitstand(db: AsyncSession) -> dict:
         ) or 0)
         return n
 
-    totals, people, per_hour = await _asyncio.gather(
-        _photos_totals(), _people_stats(), _structured_last_hour()
-    )
+    # v1.559 sequentiell, NICHT asyncio.gather — SQLAlchemy async session erlaubt
+    # keine concurrent queries auf derselben Session (IllegalStateChangeError).
+    totals = await _photos_totals()
+    people = await _people_stats()
+    per_hour = await _structured_last_hour()
     (total, fotos, videos, mit_desc, mit_v556, mit_sidecar,
      v_transcoded, v_beschrieben, v_ai_error, status_pending, ohne_v556,
      ohne_desc) = totals
