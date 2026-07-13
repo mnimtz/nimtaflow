@@ -77,6 +77,7 @@ def write_sidecar(
     faces: Optional[list] = None,
     width: Optional[int] = None,
     height: Optional[int] = None,
+    structured: Optional[dict] = None,
 ) -> str:
     """Create or update the consolidated `<name>.xmp` sidecar and return its path.
 
@@ -101,7 +102,13 @@ def write_sidecar(
             pass
 
     exists = os.path.exists(sc)
+    # v1.555: -config bindet unser Custom-Namespace-Modul (nimtaflow) ein, damit
+    # -XMP-nimtaflow:StructuredDesc als benannter Tag mit URI http://nimtaflow.com/
+    # xmp/1.0/ landet (statt "unknown" verworfen zu werden).
+    _cfg = os.path.join(os.path.dirname(__file__), "xmp_nimtaflow.config")
     args = [_EXIFTOOL, "-m", "-P"]
+    if os.path.exists(_cfg):
+        args = [_EXIFTOOL, "-config", _cfg, "-m", "-P"]
     if not exists:
         args += ["-o", sc]          # create a fresh sidecar
     else:
@@ -137,6 +144,19 @@ def write_sidecar(
         args.append(f"-XMP-iptcCore:Location={city}")
     if country:
         args.append(f"-XMP-photoshop:Country={country}")
+    # v1.555: Strukturierte Beschreibung als Custom-XMP-Feld ins Sidecar.
+    # Namespace nimtaflow (http://nimtaflow.com/xmp/1.0/), Property StructuredDesc
+    # als JSON-String. Damit ist bei DB-Verlust wirklich alles portabel:
+    # Beschreibung, Tags, Face-Regions UND strukturiertes JSON.
+    if structured and isinstance(structured, dict):
+        try:
+            import json as _json
+            jstr = _json.dumps(structured, ensure_ascii=False, separators=(",", ":"))
+            # exiftool: neuen Namespace mit -XMP-<ns>:<Tag>= ; ohne Config-File wird
+            # der Namespace als 'unknown' behandelt aber trotzdem geschrieben.
+            args.append(f"-XMP-nimtaflow:StructuredDesc={jstr}")
+        except Exception:
+            pass
     if faces:
         w = int(width or 0) or 1000
         h = int(height or 0) or 1000

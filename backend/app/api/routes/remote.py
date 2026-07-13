@@ -750,13 +750,10 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
             photo.is_missing = True
             flog("ai", "INFO", f"Datei nicht mehr am Pfad — als fehlend markiert (remote): {photo.filename}")
     elif (body.description or clean) and xmp_mode in ("file", "file_sidecar", "sidecar"):
+        file_native_failed = False
         try:
-            # Videos: never embed (exiftool can't write MTS/AVCHD and many video
-            # containers) — always use a .xmp sidecar instead. Images embed per mode.
             if xmp_mode in ("file", "file_sidecar") and not photo.is_video:
                 from app.services.exif_edit import write_description as _wd, write_keywords as _wk, ensure_capture_date as _ecd
-                # If the file has no capture date, derive one from its filesystem
-                # date BEFORE we touch it (and mirror it into the DB).
                 set_date = await _ecd(photo.path)
                 if set_date and photo.taken_at is None:
                     try:
@@ -764,16 +761,22 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                         flog("ai", "INFO", f"Aufnahmedatum aus Dateidatum gesetzt (remote): {photo.filename} → {set_date}")
                     except Exception:
                         pass
-                if body.description:
-                    await _wd(photo.path, body.description, overwrite=True)
-                if clean:
-                    await _wk(photo.path, clean)
-                wrote_file = True
-                flog("ai", "INFO", f"Beschreibung in Datei geschrieben (remote): {photo.filename}")
-            if photo.is_video or xmp_mode in ("file_sidecar", "sidecar"):
+                try:
+                    if body.description:
+                        await _wd(photo.path, body.description, overwrite=True)
+                    if clean:
+                        await _wk(photo.path, clean)
+                    wrote_file = True
+                    flog("ai", "INFO", f"Beschreibung in Datei geschrieben (remote): {photo.filename}")
+                except Exception as ew:
+                    # v1.555: file-native Fehlschlag → Sidecar-Fallback erzwingen
+                    file_native_failed = True
+                    flog("ai", "INFO",
+                         f"XMP file-native fehlgeschlagen (remote) für {photo.filename}: "
+                         f"{str(ew)[:120]} — schreibe Sidecar als Fallback")
+            if (photo.is_video or xmp_mode in ("file_sidecar", "sidecar")
+                    or file_native_failed):
                 from app.services.xmp_sidecar import write_sidecar, file_capture_date
-                # Nur photo.taken_at für den Sidecar-Header — KEIN file_capture_date() in die DB.
-                # file_capture_date() = os.path.getmtime() = Sync-Datum, nicht Aufnahmedatum.
                 cap = photo.taken_at or file_capture_date(photo.path)
                 xmp_path = write_sidecar(
                     photo.path, description=body.description, title=photo.title,
@@ -781,6 +784,7 @@ async def result(photo_id: int, body: ResultIn, db: AsyncSession = Depends(get_d
                     latitude=photo.latitude, longitude=photo.longitude,
                     city=photo.city, country=photo.country,
                     capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                    structured=photo.structured_desc,   # v1.555 — im XMP portabel
                 )
                 photo.xmp_sidecar_written = True
                 photo.xmp_sidecar_path = xmp_path

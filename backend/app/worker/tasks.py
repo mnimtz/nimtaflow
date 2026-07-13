@@ -1476,6 +1476,7 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                 "user_rating": p.user_rating, "is_favorite": p.is_favorite,
                 "taken_at": p.taken_at,
                 "xmp_last_written_at": p.xmp_last_written_at,
+                "structured_desc": p.structured_desc,   # v1.555
             } for p in photos]
             break
         total = len(items)
@@ -1623,6 +1624,7 @@ def backfill_xmp_task(self, full: bool = False, photo_ids: list | None = None):
                                 latitude=it["latitude"], longitude=it["longitude"],
                                 city=it["city"], country=it["country"],
                                 capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                                structured=it.get("structured_desc"),   # v1.555
                             )
                         except Exception as es:
                             # Sidecar konnte auch nicht geschrieben werden — echter Failure
@@ -2811,6 +2813,7 @@ def ai_photo_task(self, photo_id: int, job_id: Optional[int] = None, redo_faces:
                                         latitude=photo.latitude, longitude=photo.longitude,
                                         city=photo.city, country=photo.country,
                                         capture_date=cap.strftime("%Y-%m-%dT%H:%M:%S") if cap else None,
+                                        structured=photo.structured_desc,   # v1.555
                                     )
                                     photo.xmp_sidecar_written = True
                                     photo.xmp_sidecar_path = xmp_path
