@@ -23,6 +23,7 @@ struct LeitstandView: View {
                         metadataCard(k.metadata)
                         peopleCard(k.people)
                         reingestCard(k.reingest)
+                        if let s = k.special { specialCard(s) }
                         workersCard(workers: k.workers, queues: k.warteschlangen)
                     } else if loading {
                         ProgressView().padding()
@@ -165,6 +166,35 @@ struct LeitstandView: View {
                     statTileText("Restzeit (grob)", value: "\(Int(e)) h")
                 } else {
                     statTileText("Restzeit (grob)", value: "—")
+                }
+            }
+        }
+    }
+
+    // MARK: - Kachel 7: Spezial-Medien (v1.566)
+    private func specialCard(_ s: LeitstandV2.Special) -> some View {
+        card(title: s.title, systemImage: "globe") {
+            VStack(alignment: .leading, spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    statTile("360°-Aufnahmen", value: s.erkannt_360, tone: .info)
+                    statTile("Drohnen-Aufnahmen", value: s.erkannt_drone, tone: .info)
+                    statTile("Noch zu prüfen", value: s.zu_pruefen,
+                             tone: s.zu_pruefen > 100 ? .warn : .ok)
+                    statTile("Little-Planet im Cache", value: s.little_planet_cached)
+                }
+                if s.zu_pruefen > 0 {
+                    HStack {
+                        Text("Erkennung läuft im Hintergrund.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(s.action_label) {
+                            Task {
+                                _ = try? await api.startDetectSpecialMedia()
+                                actionMsg = "Spezial-Medien-Erkennung neu gestartet."
+                            }
+                        }
+                        .font(.caption).buttonStyle(.borderedProminent)
+                    }
                 }
             }
         }

@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useT } from '../i18n'
 import {
-  FileText, Film, FileCode, Users, RefreshCw, Cpu, Play, PlayCircle
+  FileText, Film, FileCode, Users, RefreshCw, Cpu, Play, PlayCircle, Globe
 } from 'lucide-react'
 
 type Slice = { done: number; total: number; pct: number; rate_pro_stunde?: number }
@@ -54,6 +54,15 @@ type Leitstand = {
       rate_pro_stunde: number
     }[]
     warteschlangen: Record<string, number>
+    special?: {
+      title: string
+      erkannt_360: number
+      erkannt_drone: number
+      zu_pruefen: number
+      little_planet_cached: number
+      action_label: string
+      action_task: string
+    }
   }
 }
 
@@ -114,6 +123,9 @@ export default function LeitstandPage() {
   })
   const resetAiErrors = useMutation({
     mutationFn: () => api.post('/v1/ops/reset-ai-errors', { kind: 'all' }),
+  })
+  const startDetectSpecial = useMutation({
+    mutationFn: () => api.post('/v1/ops/detect-special/start', { limit: 200000 }),
   })
 
   const k = data?.kacheln
@@ -210,6 +222,33 @@ export default function LeitstandPage() {
                     val={k.reingest.eta_stunden == null ? '—' : `${k.reingest.eta_stunden} h`} />
             </div>
           </Card>
+
+          {/* 7. Special Media (360°/Drohne) */}
+          {k.special && (
+            <Card title={k.special.title} icon={Globe}>
+              <div className="grid grid-cols-2 gap-3">
+                <Stat label="360°-Aufnahmen" val={k.special.erkannt_360} />
+                <Stat label="Drohnen-Aufnahmen" val={k.special.erkannt_drone} />
+                <Stat label="Noch zu prüfen" val={k.special.zu_pruefen}
+                      tone={k.special.zu_pruefen > 100 ? 'info' : 'ok'} />
+                <Stat label="Little-Planet-Cache" val={k.special.little_planet_cached} />
+              </div>
+              {k.special.zu_pruefen > 0 && (
+                <div className="pt-3 flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">
+                    Erkennung läuft im Hintergrund — hier fortschritts-Zahlen live.
+                  </span>
+                  <button
+                    onClick={() => startDetectSpecial.mutate()}
+                    disabled={startDetectSpecial.isPending}
+                    className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs hover:bg-indigo-700 disabled:opacity-40"
+                  >
+                    {k.special.action_label}
+                  </button>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* 6. Worker */}
           <Card title="Worker-Fleet" icon={Cpu}>

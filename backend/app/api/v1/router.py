@@ -1437,6 +1437,17 @@ async def ops_status_v1(db: AsyncSession = Depends(get_db),
     return await _ops_status(db)
 
 
+@router.post("/ops/detect-special/start")
+async def start_detect_special(limit: int = 200000,
+                               user: Optional[User] = Depends(current_user_optional)):
+    """v1.566: 360°/Drohnen-Erkennungs-Batch (im CPU-Worker) manuell starten."""
+    if not user or user.role != UserRole.admin:
+        raise HTTPException(403, "Nur für Administratoren.")
+    from app.worker.celery_app import celery_app
+    celery_app.send_task("detect_special_media", kwargs={"limit": limit})
+    return {"queued": True}
+
+
 @router.get("/leitstand")
 async def leitstand_v1(db: AsyncSession = Depends(get_db),
                        user: Optional[User] = Depends(current_user_optional)):

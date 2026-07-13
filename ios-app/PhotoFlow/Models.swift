@@ -474,6 +474,7 @@ struct LeitstandV2: Codable {
         let reingest: Reingest
         let workers: [Worker]
         let warteschlangen: [String: Int]
+        let special: Special?
     }
     struct Slice: Codable {
         let done: Int
@@ -515,6 +516,15 @@ struct LeitstandV2: Codable {
         let in_batch: Int
         let done_last_hour: Int
         let eta_stunden: Double?
+    }
+    struct Special: Codable {
+        let title: String
+        let erkannt_360: Int
+        let erkannt_drone: Int
+        let zu_pruefen: Int
+        let little_planet_cached: Int
+        let action_label: String
+        let action_task: String
     }
     struct Worker: Codable, Identifiable {
         var id: String { name }

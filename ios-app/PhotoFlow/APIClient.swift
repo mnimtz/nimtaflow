@@ -450,6 +450,11 @@ final class APIClient: ObservableObject {
     func startVideoRequeueHdr(limit: Int = 500) async throws -> Bool {
         try await action("api/v1/ops/video-requeue-hdr?limit=\(limit)", method: "POST")
     }
+    /// v1.566: Erkennung 360°/Drohne über gesamte Bibliothek erneut fahren.
+    @discardableResult
+    func startDetectSpecialMedia(limit: Int = 200000) async throws -> Bool {
+        try await action("api/v1/ops/detect-special/start?limit=\(limit)", method: "POST")
+    }
 
     // MARK: Map
     func mapPoints() async throws -> [MapPointV1] { try await get("api/v1/map", as: [MapPointV1].self) }

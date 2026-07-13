@@ -60,6 +60,16 @@ from app.models.face import Face
 from app.models.person import Person
 
 
+def _count_planet_cache() -> int:
+    """Anzahl bereits gerenderter Little-Planet-Thumbnails im Cache."""
+    try:
+        import os as _os, glob as _glob
+        p = _os.path.join(_os.environ.get("CACHE_PATH", "/cache"), "panorama")
+        return len(_glob.glob(_os.path.join(p, "*_planet.jpg")))
+    except Exception:
+        return 0
+
+
 async def _count(db: AsyncSession, *conds) -> int:
     return int(await db.scalar(
         select(func.count()).select_from(Photo).where(Photo.is_trashed == False, *conds)  # noqa: E712
@@ -98,6 +108,13 @@ async def build_leitstand(db: AsyncSession) -> dict:
                     Photo.is_trashed == False, Photo.is_missing == False),                                           # noqa: E712
                 func.count(Photo.id).filter(
                     Photo.description.is_(None), Photo.is_trashed == False),
+                # v1.566: Spezial-Medien
+                func.count(Photo.id).filter(Photo.is_360 == True, Photo.is_trashed == False),                        # noqa: E712
+                func.count(Photo.id).filter(Photo.is_drone == True, Photo.is_trashed == False),                      # noqa: E712
+                func.count(Photo.id).filter(
+                    Photo.is_360 == False, Photo.is_drone == False,                                                   # noqa: E712
+                    Photo.pano_metadata.is_(None), Photo.drone_metadata.is_(None),
+                    Photo.is_trashed == False, Photo.is_missing == False),
             )
         )).one()
         return row
@@ -125,7 +142,7 @@ async def build_leitstand(db: AsyncSession) -> dict:
     per_hour = await _structured_last_hour()
     (total, fotos, videos, mit_desc, mit_v556, mit_sidecar,
      v_transcoded, v_beschrieben, v_ai_error, status_pending, ohne_v556,
-     ohne_desc) = totals
+     ohne_desc, n_360, n_drone, spezial_zu_pruefen) = totals
     (named, faces_assigned, faces_unassigned, faces_sugg) = people
     total = int(total or 0); fotos = int(fotos or 0); videos = int(videos or 0)
 
@@ -216,6 +233,16 @@ async def build_leitstand(db: AsyncSession) -> dict:
         },
         "workers": worker_stats,
         "warteschlangen": queues,
+        # v1.566: 7. Kachel — Spezial-Medien (360°/Drohne)
+        "special": {
+            "title": "360° & Drohne",
+            "erkannt_360":   int(n_360 or 0),
+            "erkannt_drone": int(n_drone or 0),
+            "zu_pruefen":    int(spezial_zu_pruefen or 0),
+            "little_planet_cached": _count_planet_cache(),
+            "action_label": "Erkennung erneut fahren",
+            "action_task": "detect_special_media",
+        },
     }
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
