@@ -78,7 +78,7 @@ struct RootView: View {
 struct MoreView: View {
     @EnvironmentObject var api: APIClient
     private enum Dest: String, Identifiable {
-        case search, library, people, memories, highlights, trips, special, map, relationships, shares, settings, leitstand
+        case search, library, people, memories, highlights, trips, map, relationships, shares, settings, leitstand
         var id: String { rawValue }
     }
     @State private var dest: Dest?
@@ -92,7 +92,6 @@ struct MoreView: View {
                 row("Erinnerungen", "sparkles", .memories)
                 row("Highlights", "sparkles.tv", .highlights)
                 row("Reisen", "airplane", .trips)
-                row("360° & Drohne", "globe.europe.africa.fill", .special)
                 row("Karte", "map.fill", .map)
                 row("Beziehungen", "point.3.connected.trianglepath.dotted", .relationships)
                 row("Geteilte Links", "link", .shares)
@@ -114,7 +113,6 @@ struct MoreView: View {
                 case .memories: MemoriesView()
                 case .highlights: ProGate(feature: "Highlights") { HighlightsView() }
                 case .trips: TripsView()
-                case .special: SpecialView()
                 case .map: MapScreen()
                 case .relationships: RelationshipsView()
                 case .shares: SharesListView()

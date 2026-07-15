@@ -84,7 +84,6 @@ const nav = [
   { to: '/people', icon: Users, labelKey: 'nav.people' },
   { to: '/map', icon: Map, labelKey: 'nav.map' },
   { to: '/trips', icon: Plane, labelKey: 'nav.trips' },
-  { to: '/special', icon: Globe, labelKey: 'nav.special' },
   { to: '/leitstand', icon: Gauge, labelKey: 'nav.leitstand' },
 ]
 

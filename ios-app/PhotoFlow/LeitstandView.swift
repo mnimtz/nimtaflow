@@ -23,7 +23,6 @@ struct LeitstandView: View {
                         metadataCard(k.metadata)
                         peopleCard(k.people)
                         reingestCard(k.reingest)
-                        if let s = k.special { specialCard(s) }
                         workersCard(workers: k.workers, queues: k.warteschlangen)
                     } else if loading {
                         ProgressView().padding()
